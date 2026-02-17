@@ -3,7 +3,7 @@ const TILE_SIZE = 120;
 const SEA_LEVEL = 200;
 const LAUNCHPAD_ALTITUDE = 100;
 const GRAVITY = 0.06;
-const VIEW_RANGE = 60; 
+const VIEW_RANGE = 28;
 
 let ship;
 let trees = [];
@@ -11,20 +11,63 @@ let particles = [];
 let bullets = [];
 let enemies = [];
 let score = 0;
+let gameFont;
+
+// Infection system
+let infectedTiles = {};
+const MAX_INFECTED = 800;
+const INFECTION_SPREAD_RATE = 0.12;
+
+function preload() {
+  // Load a monospace-style font for WEBGL text rendering
+  gameFont = loadFont('https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Bold.otf');
+}
 
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
+  textFont(gameFont);
+
   ship = {
     x: 400, y: LAUNCHPAD_ALTITUDE - 20, z: 400,
     vx: 0, vy: 0, vz: 0,
-    pitch: 0, yaw: 0    
+    pitch: 0, yaw: 0
   };
-  
+
   randomSeed(42);
-  for(let i=0; i<150; i++) {
-    trees.push({x: random(-5000, 5000), z: random(-5000, 5000), type: random()>0.5});
+  // Virus-style geometric trees - more of them, bigger
+  for (let i = 0; i < 250; i++) {
+    trees.push({
+      x: random(-5000, 5000),
+      z: random(-5000, 5000),
+      variant: floor(random(3)),
+      trunkH: random(25, 50),
+      canopyScale: random(1.0, 1.8)
+    });
   }
-  for(let i=0; i<15; i++) spawnEnemy();
+  for (let i = 0; i < 15; i++) spawnEnemy();
+
+  // Seed infection closer - visible from launchpad
+  // Multiple infection clusters radiating outward
+  let seeds = [
+    { x: 8, z: 8 }, { x: -5, z: 10 }, { x: 12, z: -3 },
+    { x: -10, z: -8 }, { x: 15, z: 12 }, { x: -15, z: 5 },
+    { x: 20, z: -10 }, { x: -8, z: -15 }, { x: 5, z: -12 }
+  ];
+  for (let s of seeds) {
+    // Cluster of tiles around each seed
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        if (random() > 0.6) continue;
+        let tx = s.x + dx;
+        let tz = s.z + dz;
+        let wx = tx * TILE_SIZE;
+        let wz = tz * TILE_SIZE;
+        if (wx >= 0 && wx < 800 && wz >= 0 && wz < 800) continue;
+        let key = tx + ',' + tz;
+        infectedTiles[key] = { tick: floor(random(100)) };
+      }
+    }
+  }
 }
 
 function spawnEnemy() {
@@ -35,13 +78,15 @@ function spawnEnemy() {
 }
 
 function draw() {
-  background(5, 10, 20); 
-  
+  // Virus-style sky: deep blue-black at top, lighter at horizon
+  background(30, 60, 120);
+
   // Handle Controls & Physics
   updateShip();
   updateEnemies();
   checkCollisions();
-  
+  spreadInfection();
+
   // --- 3D WORLD RENDERING ---
   push();
   // Camera Setup
@@ -52,31 +97,68 @@ function draw() {
   if (camY > SEA_LEVEL - 60) camY = SEA_LEVEL - 60;
   camera(camX, camY, camZ, ship.x, ship.y, ship.z, 0, 1, 0);
 
-  // Scene Elements
-  directionalLight(255, 255, 255, 0.5, 1, -0.5);
-  ambientLight(70);
+  // Virus-style flat lighting
+  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
+  ambientLight(60, 60, 70);
   drawLandscape();
+  drawSea();
   drawTrees();
   drawEnemies();
   shipDisplay();
-  updateParticles(); // Now handles movement for all particles
+  updateParticles();
   pop();
 
   // --- HUD LAYER ---
   drawRadar();
+  drawScoreHUD();
+}
+
+// --- INFECTION SYSTEM ---
+function spreadInfection() {
+  if (frameCount % 5 !== 0) return;
+  if (Object.keys(infectedTiles).length >= MAX_INFECTED) return;
+
+  let newInfections = [];
+  let keys = Object.keys(infectedTiles);
+
+  for (let k of keys) {
+    if (random() > INFECTION_SPREAD_RATE) continue;
+    let parts = k.split(',');
+    let tx = int(parts[0]);
+    let tz = int(parts[1]);
+
+    let dx = floor(random(-1, 2));
+    let dz = floor(random(-1, 2));
+    let nx = tx + dx;
+    let nz = tz + dz;
+    let nKey = nx + ',' + nz;
+
+    let wx = nx * TILE_SIZE;
+    let wz = nz * TILE_SIZE;
+    if (wx >= 0 && wx < 800 && wz >= 0 && wz < 800) continue;
+    let alt = getAltitude(wx, wz);
+    if (alt >= SEA_LEVEL - 1) continue;
+
+    if (!infectedTiles[nKey]) {
+      newInfections.push({ key: nKey, tick: frameCount });
+    }
+  }
+
+  for (let inf of newInfections) {
+    infectedTiles[inf.key] = { tick: inf.tick };
+  }
 }
 
 function updateShip() {
   if (document.pointerLockElement) {
     ship.yaw -= movedX * 0.003;
-    ship.pitch = constrain(ship.pitch + movedY * 0.003, -PI/2.2, PI/2.2);
+    ship.pitch = constrain(ship.pitch + movedY * 0.003, -PI / 2.2, PI / 2.2);
   }
 
-  ship.vy += GRAVITY; 
+  ship.vy += GRAVITY;
 
   if (mouseIsPressed && document.pointerLockElement) {
     let power = 0.45;
-    // Directional vectors
     let dirX = sin(ship.pitch) * -sin(ship.yaw);
     let dirY = -cos(ship.pitch);
     let dirZ = sin(ship.pitch) * -cos(ship.yaw);
@@ -85,13 +167,12 @@ function updateShip() {
     ship.vy += dirY * power;
     ship.vz += dirZ * power;
 
-    // Spawn exhaust particles
     if (frameCount % 2 == 0) {
       particles.push({
-        x: ship.x, y: ship.y, z: ship.z, 
-        vx: -dirX * 8 + random(-1,1), 
-        vy: -dirY * 8 + random(-1,1), 
-        vz: -dirZ * 8 + random(-1,1), 
+        x: ship.x, y: ship.y, z: ship.z,
+        vx: -dirX * 8 + random(-1, 1),
+        vy: -dirY * 8 + random(-1, 1),
+        vz: -dirZ * 8 + random(-1, 1),
         life: 255
       });
     }
@@ -120,22 +201,31 @@ function updateShip() {
 
 function drawRadar() {
   push();
-  // Set to 2D Overlay mode
-  ortho(-width/2, width/2, -height/2, height/2, 0, 1000);
+  ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
   resetMatrix();
-  
-  // Position in Top Right
-  translate(width/2 - 100, -height/2 + 100, 0); 
-  
-  // Background
+
+  translate(width / 2 - 100, -height / 2 + 100, 0);
+
   fill(0, 150); stroke(0, 255, 0); strokeWeight(2);
   rectMode(CENTER);
   rect(0, 0, 160, 160);
-  
-  // ROTATION: Rotate the radar map relative to ship's yaw
-  rotateZ(-ship.yaw); 
-  
-  // Enemy dots
+
+  rotateZ(-ship.yaw);
+
+  // Infected tile indicators on radar (subtle red glow)
+  fill(180, 0, 0, 80); noStroke();
+  let keys = Object.keys(infectedTiles);
+  for (let k of keys) {
+    let parts = k.split(',');
+    let itx = int(parts[0]) * TILE_SIZE;
+    let itz = int(parts[1]) * TILE_SIZE;
+    let rx = (itx - ship.x) * 0.015;
+    let rz = (itz - ship.z) * 0.015;
+    if (abs(rx) < 75 && abs(rz) < 75) {
+      rect(rx, rz, 3, 3);
+    }
+  }
+
   fill(255, 0, 0); noStroke();
   enemies.forEach(e => {
     let rx = (e.x - ship.x) * 0.015;
@@ -145,32 +235,56 @@ function drawRadar() {
     }
   });
 
-  // Player dot (counter-rotate so the icon stays square)
   rotateZ(ship.yaw);
   fill(255, 255, 0);
   rect(0, 0, 6, 6);
-  
+
+  pop();
+}
+
+function drawScoreHUD() {
+  push();
+  ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
+  resetMatrix();
+
+  // Score display - top left  
+  noStroke();
+  fill(255, 255, 255);
+  textSize(22);
+  textAlign(LEFT, TOP);
+  text('SCORE ' + score, -width / 2 + 20, -height / 2 + 20);
+
+  // Altitude indicator
+  let alt = max(0, floor(SEA_LEVEL - ship.y));
+  fill(0, 255, 0);
+  textSize(18);
+  text('ALT ' + alt, -width / 2 + 20, -height / 2 + 48);
+
+  // Infection counter
+  let infCount = Object.keys(infectedTiles).length;
+  fill(255, 80, 80);
+  textSize(16);
+  text('INFECTED ' + infCount, -width / 2 + 20, -height / 2 + 72);
+
   pop();
 }
 
 function updateParticles() {
-  // Exhaust/Explosion Particles
   for (let i = particles.length - 1; i >= 0; i--) {
-    let p = particles[i]; 
+    let p = particles[i];
     p.x += p.vx; p.y += p.vy; p.z += p.vz;
     p.life -= 10;
-    
-    push(); 
-    translate(p.x, p.y, p.z); 
-    noStroke(); 
-    fill(255, 150, 0, p.life); 
-    sphere(2); 
+
+    push();
+    translate(p.x, p.y, p.z);
+    noStroke();
+    fill(255, 150, 0, p.life);
+    sphere(2);
     pop();
-    
+
     if (p.life <= 0) particles.splice(i, 1);
   }
-  
-  // Bullets
+
   for (let i = bullets.length - 1; i >= 0; i--) {
     let b = bullets[i]; b.x += b.vx; b.y += b.vy; b.z += b.vz; b.life -= 2;
     push(); translate(b.x, b.y, b.z); noStroke(); fill(255, 255, 0); sphere(3); pop();
@@ -178,7 +292,7 @@ function updateParticles() {
   }
 }
 
-// --- WORLD LOGIC (Unchanged but included for completeness) ---
+// --- WORLD LOGIC ---
 
 function checkCollisions() {
   for (let j = enemies.length - 1; j >= 0; j--) {
@@ -187,6 +301,7 @@ function checkCollisions() {
         explosion(enemies[j].x, enemies[j].y, enemies[j].z);
         enemies.splice(j, 1);
         bullets.splice(i, 1);
+        score += 100;
         spawnEnemy();
       }
     });
@@ -199,55 +314,282 @@ function checkCollisions() {
 function getAltitude(x, z) {
   if (x > 0 && x < 800 && z > 0 && z < 800) return LAUNCHPAD_ALTITUDE;
   let xS = x * 0.001, zS = z * 0.001;
-  let y = (2*sin(xS - 2*zS) + 2*sin(4*xS + 3*zS) + 2*sin(3*zS - 5*xS)) * 60;
+  let y = (2 * sin(xS - 2 * zS) + 2 * sin(4 * xS + 3 * zS) + 2 * sin(3 * zS - 5 * xS)) * 60;
   return 250 - y;
 }
 
+// --- LANDSCAPE: Virus-style checkerboard with flat-shaded tiles ---
+// Batched rendering: groups same-colored tiles to reduce draw calls
 function drawLandscape() {
   let gx = Math.floor(ship.x / TILE_SIZE);
   let gz = Math.floor(ship.z / TILE_SIZE);
-  for (let z = gz - VIEW_RANGE; z < gz + VIEW_RANGE; z++) {
-    beginShape(TRIANGLE_STRIP);
-    for (let x = gx - VIEW_RANGE; x <= gx + VIEW_RANGE; x++) {
-      let xP = x * TILE_SIZE, zP = z * TILE_SIZE;
-      let yP = getAltitude(xP, zP);
-      if (yP >= SEA_LEVEL - 1) fill(20, 50, 180); 
-      else if (xP >= 0 && xP < 800 && zP >= 0 && zP < 800) fill(110); 
-      else fill(45, 130 - (yP/3), 45);
-      vertex(xP, yP, zP);
-      vertex(xP, getAltitude(xP, (z + 1) * TILE_SIZE), (z + 1) * TILE_SIZE);
+
+  noStroke();
+
+  // Collect tiles by color category, then batch-draw each category
+  // Categories: 0=launchpad-light, 1=launchpad-dark, 2=green-light, 3=green-dark, 4+=infected(drawn individually due to pulsing)
+  let greenLightVerts = [];
+  let greenDarkVerts = [];
+  let launchLightVerts = [];
+  let launchDarkVerts = [];
+  let infectedVerts = []; // {verts, color}
+
+  for (let tz = gz - VIEW_RANGE; tz < gz + VIEW_RANGE; tz++) {
+    for (let tx = gx - VIEW_RANGE; tx <= gx + VIEW_RANGE; tx++) {
+      let xP = tx * TILE_SIZE;
+      let zP = tz * TILE_SIZE;
+      let xP1 = (tx + 1) * TILE_SIZE;
+      let zP1 = (tz + 1) * TILE_SIZE;
+
+      let y00 = getAltitude(xP, zP);
+      let y10 = getAltitude(xP1, zP);
+      let y01 = getAltitude(xP, zP1);
+      let y11 = getAltitude(xP1, zP1);
+
+      let avgY = (y00 + y10 + y01 + y11) / 4;
+      if (avgY >= SEA_LEVEL - 1) continue;
+
+      let checker = (tx + tz) % 2 === 0;
+      let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
+
+      let tileKey = tx + ',' + tz;
+
+      if (xP >= 0 && xP < 800 && zP >= 0 && zP < 800) {
+        if (checker) launchLightVerts.push(v);
+        else launchDarkVerts.push(v);
+      } else if (infectedTiles[tileKey]) {
+        let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
+        let altFactor = map(avgY, -100, SEA_LEVEL, 1.15, 0.65);
+        let r, g, b;
+        if (checker) {
+          r = lerp(160, 255, pulse) * altFactor;
+          g = lerp(10, 40, pulse) * altFactor;
+          b = lerp(10, 25, pulse) * altFactor;
+        } else {
+          r = lerp(120, 200, pulse) * altFactor;
+          g = lerp(5, 25, pulse) * altFactor;
+          b = lerp(5, 15, pulse) * altFactor;
+        }
+        infectedVerts.push({ v: v, r: r, g: g, b: b });
+      } else {
+        if (checker) greenLightVerts.push(v);
+        else greenDarkVerts.push(v);
+      }
+    }
+  }
+
+  // Batch draw each category in one beginShape call
+  // Green light tiles
+  if (greenLightVerts.length > 0) {
+    fill(62, 170, 62); // average green-light
+    beginShape(TRIANGLES);
+    for (let i = 0; i < greenLightVerts.length; i++) {
+      let v = greenLightVerts[i];
+      vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
+      vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
     }
     endShape();
   }
+
+  // Green dark tiles
+  if (greenDarkVerts.length > 0) {
+    fill(38, 120, 38); // average green-dark
+    beginShape(TRIANGLES);
+    for (let i = 0; i < greenDarkVerts.length; i++) {
+      let v = greenDarkVerts[i];
+      vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
+      vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
+    }
+    endShape();
+  }
+
+  // Launchpad light
+  if (launchLightVerts.length > 0) {
+    fill(125, 125, 120);
+    beginShape(TRIANGLES);
+    for (let i = 0; i < launchLightVerts.length; i++) {
+      let v = launchLightVerts[i];
+      vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
+      vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
+    }
+    endShape();
+  }
+
+  // Launchpad dark
+  if (launchDarkVerts.length > 0) {
+    fill(110, 110, 105);
+    beginShape(TRIANGLES);
+    for (let i = 0; i < launchDarkVerts.length; i++) {
+      let v = launchDarkVerts[i];
+      vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
+      vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
+    }
+    endShape();
+  }
+
+  // Infected tiles - each unique color, but batch nearby similar ones
+  for (let i = 0; i < infectedVerts.length; i++) {
+    let inf = infectedVerts[i];
+    fill(inf.r, inf.g, inf.b);
+    beginShape(TRIANGLES);
+    let v = inf.v;
+    vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
+    vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
+    endShape();
+  }
+}
+
+// --- SEA: single flat plane ---
+function drawSea() {
+  noStroke();
+  let seaPulse = sin(frameCount * 0.03) * 8;
+  fill(15, 45 + seaPulse, 150 + seaPulse);
+  push();
+  translate(ship.x, SEA_LEVEL, ship.z);
+  box(VIEW_RANGE * TILE_SIZE * 2, 2, VIEW_RANGE * TILE_SIZE * 2);
+  pop();
+}
+
+// --- TREES: Virus-style geometric trees ---
+function drawTrees() {
+  let treeCullDist = 2500 * 2500; // squared distance for perf
+  trees.forEach(t => {
+    let dx = ship.x - t.x, dz = ship.z - t.z;
+    if (dx * dx + dz * dz < treeCullDist) {
+      let y = getAltitude(t.x, t.z);
+      if (y >= SEA_LEVEL - 1) return;
+      if (t.x >= 0 && t.x < 800 && t.z >= 0 && t.z < 800) return;
+
+      push();
+      translate(t.x, y, t.z);
+      noStroke();
+
+      let trunkH = t.trunkH;
+      let sc = t.canopyScale;
+
+      // Brown trunk
+      fill(100, 65, 25);
+      push();
+      translate(0, -trunkH / 2, 0);
+      box(5, trunkH, 5);
+      pop();
+
+      // Green canopy - Virus-style variations
+      if (t.variant === 0) {
+        // Tall narrow cypress-like tree
+        fill(25, 130, 20);
+        push();
+        translate(0, -trunkH - 20 * sc, 0);
+        cone(12 * sc, 45 * sc);
+        pop();
+      } else if (t.variant === 1) {
+        // Wide bushy tree - two layered cones
+        fill(30, 145, 25);
+        push();
+        translate(0, -trunkH - 10 * sc, 0);
+        cone(22 * sc, 28 * sc);
+        pop();
+        fill(25, 120, 20);
+        push();
+        translate(0, -trunkH - 28 * sc, 0);
+        cone(15 * sc, 22 * sc);
+        pop();
+      } else {
+        // Very tall narrow spire
+        fill(35, 135, 28);
+        push();
+        translate(0, -trunkH - 28 * sc, 0);
+        cone(9 * sc, 60 * sc);
+        pop();
+      }
+
+      // Draw shadow on ground
+      push();
+      translate(0, -0.5, 8);
+      rotateX(PI / 2);
+      fill(0, 0, 0, 40);
+      ellipse(0, 0, 20 * sc, 12 * sc);
+      pop();
+
+      pop();
+    }
+  });
 }
 
 function shipDisplay() {
   push();
   translate(ship.x, ship.y, ship.z);
   rotateY(ship.yaw); rotateX(ship.pitch);
+
+  // Ship shadow on ground
+  let groundY = getAltitude(ship.x, ship.z);
+
   stroke(0);
   fill(240); beginShape(); vertex(-15, 10, 15); vertex(15, 10, 15); vertex(0, 10, -25); endShape(CLOSE);
   fill(200); beginShape(); vertex(0, -10, 5); vertex(-15, 10, 15); vertex(0, 10, -25); endShape(CLOSE);
   fill(180); beginShape(); vertex(0, -10, 5); vertex(15, 10, 15); vertex(0, 10, -25); endShape(CLOSE);
   fill(150); beginShape(); vertex(0, -10, 5); vertex(-15, 10, 15); vertex(15, 10, 15); endShape(CLOSE);
   pop();
+
+  // Ship shadow on ground
+  if (groundY < SEA_LEVEL - 1) {
+    push();
+    translate(ship.x, groundY - 0.5, ship.z);
+    rotateX(PI / 2);
+    noStroke();
+    fill(0, 0, 0, 50);
+    let shadowDist = max(10, (groundY - ship.y) * 0.3);
+    ellipse(0, 0, 30 + shadowDist, 20 + shadowDist);
+    pop();
+  }
 }
 
-function drawTrees() {
-  trees.forEach(t => {
-    if (dist(ship.x, ship.z, t.x, t.z) < 3000) {
-        let y = getAltitude(t.x, t.z);
-        push(); translate(t.x, y, t.z); fill(20, 100, 20); 
-        t.type ? sphere(14) : cone(14, 35); pop();
-    }
-  });
-}
-
+// --- ENEMIES: Virus-style flat diamond shapes ---
 function drawEnemies() {
   enemies.forEach(e => {
-    push(); translate(e.x, e.y, e.z); fill(255, 0, 0); stroke(255);
-    rotateY(frameCount * 0.1); box(30, 15, 30); translate(0, 10, 0); box(10, 20, 10);
+    push();
+    translate(e.x, e.y, e.z);
+    rotateY(frameCount * 0.15);
+    noStroke();
+
+    // Diamond/saucer shape - top half
+    fill(220, 30, 30);
+    beginShape(TRIANGLES);
+    vertex(0, -10, -25); vertex(-22, 0, 0); vertex(22, 0, 0);
+    vertex(0, -10, 25); vertex(-22, 0, 0); vertex(22, 0, 0);
+    vertex(0, -10, -25); vertex(-22, 0, 0); vertex(0, -10, 25);
+    vertex(0, -10, -25); vertex(22, 0, 0); vertex(0, -10, 25);
+    endShape();
+
+    // Bottom half (darker)
+    fill(170, 15, 15);
+    beginShape(TRIANGLES);
+    vertex(0, 6, -25); vertex(-22, 0, 0); vertex(22, 0, 0);
+    vertex(0, 6, 25); vertex(-22, 0, 0); vertex(22, 0, 0);
+    vertex(0, 6, -25); vertex(-22, 0, 0); vertex(0, 6, 25);
+    vertex(0, 6, -25); vertex(22, 0, 0); vertex(0, 6, 25);
+    endShape();
+
+    // Antenna
+    fill(255, 60, 60);
+    push();
+    translate(0, -14, 0);
+    box(3, 14, 3);
     pop();
+
+    pop();
+
+    // Shadow on ground
+    let groundY = getAltitude(e.x, e.z);
+    if (groundY < SEA_LEVEL - 1) {
+      push();
+      translate(e.x, groundY - 0.5, e.z);
+      rotateX(PI / 2);
+      noStroke();
+      fill(0, 0, 0, 50);
+      ellipse(0, 0, 40, 40);
+      pop();
+    }
   });
 }
 
@@ -260,7 +602,7 @@ function updateEnemies() {
 }
 
 function explosion(x, y, z) {
-  for(let i=0; i<20; i++) particles.push({x: x, y: y, z: z, vx: random(-5,5), vy: random(-5,5), vz: random(-5,5), life: 200});
+  for (let i = 0; i < 20; i++) particles.push({ x: x, y: y, z: z, vx: random(-5, 5), vy: random(-5, 5), vz: random(-5, 5), life: 200 });
 }
 
 function resetGame() {
@@ -269,23 +611,16 @@ function resetGame() {
 }
 
 function mousePressed() {
-  // Check if the sketch is already in fullscreen
   let fs = fullscreen();
   if (!fs) {
     fullscreen(true);
   }
 
-  // Handle Pointer Lock for 3D controls
   if (!document.pointerLockElement) {
     requestPointerLock();
   }
-
 }
 
 function windowResized() {
-  // Resizes the canvas to the new browser dimensions
   resizeCanvas(windowWidth, windowHeight);
-  
-  // Optional: If you want to maintain a specific field of view
-  // perspective(PI / 3.0, width / height, 0.1, 10000);
 }

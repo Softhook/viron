@@ -15,8 +15,8 @@ let gameFont;
 
 // Infection system
 let infectedTiles = {};
-const MAX_INFECTED = 800;
-const INFECTION_SPREAD_RATE = 0.12;
+const MAX_INFECTED = 1600;
+const INFECTION_SPREAD_RATE = 0.08;
 
 function preload() {
   // Load a monospace-style font for WEBGL text rendering
@@ -295,9 +295,10 @@ function updateParticles() {
 // --- WORLD LOGIC ---
 
 function checkCollisions() {
+  // Enemy-bullet and enemy-ship collisions
   for (let j = enemies.length - 1; j >= 0; j--) {
     bullets.forEach((b, i) => {
-      if (dist(b.x, b.y, b.z, enemies[j].x, enemies[j].y, enemies[j].z) < 50) {
+      if (dist(b.x, b.y, b.z, enemies[j].x, enemies[j].y, enemies[j].z) < 80) {
         explosion(enemies[j].x, enemies[j].y, enemies[j].z);
         enemies.splice(j, 1);
         bullets.splice(i, 1);
@@ -305,8 +306,45 @@ function checkCollisions() {
         spawnEnemy();
       }
     });
-    if (enemies[j] && dist(ship.x, ship.y, ship.z, enemies[j].x, enemies[j].y, enemies[j].z) < 40) {
+    if (enemies[j] && dist(ship.x, ship.y, ship.z, enemies[j].x, enemies[j].y, enemies[j].z) < 70) {
       resetGame();
+    }
+  }
+
+  // Bullet-tree collisions
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    let b = bullets[i];
+    for (let j = trees.length - 1; j >= 0; j--) {
+      let t = trees[j];
+      let treeY = getAltitude(t.x, t.z);
+      let totalH = t.trunkH + 30 * t.canopyScale; // approximate tree height
+      // Check xz distance and vertical range
+      let dxz = dist(b.x, b.z, t.x, t.z);
+      if (dxz < 60 && b.y > treeY - totalH - 10 && b.y < treeY + 10) {
+        explosion(t.x, treeY - t.trunkH, t.z);
+        // Check if tree was on infected tile and clear nearby infection
+        let treeTx = Math.floor(t.x / TILE_SIZE);
+        let treeTz = Math.floor(t.z / TILE_SIZE);
+        let tileKey = treeTx + ',' + treeTz;
+        if (infectedTiles[tileKey]) {
+          // Clear infection in a radius around the destroyed tree
+          let clearRadius = 3;
+          for (let dx = -clearRadius; dx <= clearRadius; dx++) {
+            for (let dz = -clearRadius; dz <= clearRadius; dz++) {
+              let ck = (treeTx + dx) + ',' + (treeTz + dz);
+              if (infectedTiles[ck]) {
+                delete infectedTiles[ck];
+              }
+            }
+          }
+          score += 200; // bonus for clearing infection
+        } else {
+          score += 50;
+        }
+        trees.splice(j, 1);
+        bullets.splice(i, 1);
+        break; // bullet consumed, move to next bullet
+      }
     }
   }
 }
@@ -467,36 +505,41 @@ function drawTrees() {
       let trunkH = t.trunkH;
       let sc = t.canopyScale;
 
-      // Brown trunk
-      fill(100, 65, 25);
+      // Check if tree is on an infected tile
+      let treeTx = Math.floor(t.x / TILE_SIZE);
+      let treeTz = Math.floor(t.z / TILE_SIZE);
+      let isInfected = !!infectedTiles[treeTx + ',' + treeTz];
+
+      // Brown trunk (slightly darker if infected)
+      fill(isInfected ? color(80, 40, 20) : color(100, 65, 25));
       push();
       translate(0, -trunkH / 2, 0);
       box(5, trunkH, 5);
       pop();
 
-      // Green canopy - Virus-style variations
+      // Canopy - red if infected, green if healthy
       if (t.variant === 0) {
         // Tall narrow cypress-like tree
-        fill(25, 130, 20);
+        fill(isInfected ? color(180, 30, 20) : color(25, 130, 20));
         push();
         translate(0, -trunkH - 20 * sc, 0);
         cone(12 * sc, 45 * sc);
         pop();
       } else if (t.variant === 1) {
         // Wide bushy tree - two layered cones
-        fill(30, 145, 25);
+        fill(isInfected ? color(190, 35, 25) : color(30, 145, 25));
         push();
         translate(0, -trunkH - 10 * sc, 0);
         cone(22 * sc, 28 * sc);
         pop();
-        fill(25, 120, 20);
+        fill(isInfected ? color(150, 20, 15) : color(25, 120, 20));
         push();
         translate(0, -trunkH - 28 * sc, 0);
         cone(15 * sc, 22 * sc);
         pop();
       } else {
         // Very tall narrow spire
-        fill(35, 135, 28);
+        fill(isInfected ? color(170, 30, 22) : color(35, 135, 28));
         push();
         translate(0, -trunkH - 28 * sc, 0);
         cone(9 * sc, 60 * sc);

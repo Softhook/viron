@@ -4,7 +4,7 @@ const SEA_LEVEL = 200;
 const LAUNCHPAD_ALTITUDE = 100;
 const GRAVITY = 0.06;
 const VIEW_RANGE = 28;
-const MAX_ENEMIES = 2;
+// const MAX_ENEMIES = 2; // Removed in favor of dynamic count
 
 let ship;
 let trees = [];
@@ -18,6 +18,12 @@ let gameFont;
 let infectedTiles = {};
 const MAX_INFECTED = 1600;
 const INFECTION_SPREAD_RATE = 0.01;
+
+let level = 1;
+let currentMaxEnemies = 2;
+let levelComplete = false;
+let infectionStarted = false;
+let levelEndTime = 0;
 
 function preload() {
   // Load a monospace-style font for WEBGL text rendering
@@ -46,10 +52,26 @@ function setup() {
     });
   }
 
+  startLevel(1);
+}
 
-  for (let i = 0; i < MAX_ENEMIES; i++) spawnEnemy();
+function startLevel(lvl) {
+  level = lvl;
+  levelComplete = false;
+  infectionStarted = false;
+  currentMaxEnemies = 2 + (level - 1); // Add 1 enemy per level
 
-  // No initial infection — enemies spread it via bombs
+  // Reset ship
+  ship.x = 400; ship.z = 400; ship.y = LAUNCHPAD_ALTITUDE - 20;
+  ship.vx = 0; ship.vy = 0; ship.vz = 0;
+  ship.pitch = 0; ship.yaw = 0;
+
+  // Clear and spawn enemies
+  enemies = [];
+  for (let i = 0; i < currentMaxEnemies; i++) spawnEnemy();
+
+  // Clear any remaining infection
+  infectedTiles = {};
 }
 
 function spawnEnemy() {
@@ -93,6 +115,21 @@ function draw() {
   // --- HUD LAYER ---
   drawRadar();
   drawScoreHUD();
+
+  // Level Logic
+  let infCount = Object.keys(infectedTiles).length;
+  if (infCount > 0) infectionStarted = true;
+
+  if (infectionStarted && infCount === 0 && !levelComplete) {
+    levelComplete = true;
+    levelEndTime = millis();
+  }
+
+  if (levelComplete) {
+    if (millis() - levelEndTime > 4000) {
+      startLevel(level + 1);
+    }
+  }
 }
 
 // --- INFECTION SYSTEM ---
@@ -239,6 +276,9 @@ function drawScoreHUD() {
   textAlign(LEFT, TOP);
   text('SCORE ' + score, -width / 2 + 20, -height / 2 + 20);
 
+  // Level display
+  text('LEVEL ' + level, -width / 2 + 200, -height / 2 + 20);
+
   // Altitude indicator
   let alt = max(0, floor(SEA_LEVEL - ship.y));
   fill(0, 255, 0);
@@ -250,6 +290,17 @@ function drawScoreHUD() {
   fill(255, 80, 80);
   textSize(16);
   text('INFECTED ' + infCount, -width / 2 + 20, -height / 2 + 72);
+
+  // Enemy counter
+  fill(255, 100, 100);
+  text('ENEMIES ' + enemies.length, -width / 2 + 20, -height / 2 + 96);
+
+  if (levelComplete) {
+    fill(0, 255, 0);
+    textAlign(CENTER, CENTER);
+    textSize(40);
+    text("LEVEL " + level + " COMPLETE", 0, 0);
+  }
 
   pop();
 }

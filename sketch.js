@@ -16,7 +16,7 @@ let gameFont;
 // Infection system
 let infectedTiles = {};
 const MAX_INFECTED = 1600;
-const INFECTION_SPREAD_RATE = 0.08;
+const INFECTION_SPREAD_RATE = 0.01;
 
 function preload() {
   // Load a monospace-style font for WEBGL text rendering

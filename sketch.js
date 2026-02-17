@@ -4,6 +4,7 @@ const SEA_LEVEL = 200;
 const LAUNCHPAD_ALTITUDE = 100;
 const GRAVITY = 0.06;
 const VIEW_RANGE = 28;
+const MAX_ENEMIES = 2;
 
 let ship;
 let trees = [];
@@ -44,7 +45,9 @@ function setup() {
       canopyScale: random(1.0, 1.8)
     });
   }
-  for (let i = 0; i < 15; i++) spawnEnemy();
+
+
+  for (let i = 0; i < MAX_ENEMIES; i++) spawnEnemy();
 
   // No initial infection — enemies spread it via bombs
 }
@@ -192,7 +195,7 @@ function drawRadar() {
   rectMode(CENTER);
   rect(0, 0, 160, 160);
 
-  rotateZ(-ship.yaw);
+  rotateZ(ship.yaw);
 
   // Infected tile indicators on radar (subtle red glow)
   fill(180, 0, 0, 80); noStroke();
@@ -217,7 +220,7 @@ function drawRadar() {
     }
   });
 
-  rotateZ(ship.yaw);
+  rotateZ(-ship.yaw);
   fill(255, 255, 0);
   rect(0, 0, 6, 6);
 
@@ -310,16 +313,20 @@ function clearInfectionAt(wx, wz) {
 function checkCollisions() {
   // Enemy-bullet and enemy-ship collisions
   for (let j = enemies.length - 1; j >= 0; j--) {
-    bullets.forEach((b, i) => {
+    let enemyKilled = false;
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      let b = bullets[i];
       if (dist(b.x, b.y, b.z, enemies[j].x, enemies[j].y, enemies[j].z) < 80) {
         explosion(enemies[j].x, enemies[j].y, enemies[j].z);
         enemies.splice(j, 1);
         bullets.splice(i, 1);
         score += 100;
-        // Don't respawn — player can win by destroying all enemies
+        enemyKilled = true;
+        break; // Enemy dead, stop checking bullets
       }
-    });
-    if (enemies[j] && dist(ship.x, ship.y, ship.z, enemies[j].x, enemies[j].y, enemies[j].z) < 70) {
+    }
+
+    if (!enemyKilled && dist(ship.x, ship.y, ship.z, enemies[j].x, enemies[j].y, enemies[j].z) < 70) {
       resetGame();
     }
   }

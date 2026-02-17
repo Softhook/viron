@@ -46,28 +46,7 @@ function setup() {
   }
   for (let i = 0; i < 15; i++) spawnEnemy();
 
-  // Seed infection closer - visible from launchpad
-  // Multiple infection clusters radiating outward
-  let seeds = [
-    { x: 8, z: 8 }, { x: -5, z: 10 }, { x: 12, z: -3 },
-    { x: -10, z: -8 }, { x: 15, z: 12 }, { x: -15, z: 5 },
-    { x: 20, z: -10 }, { x: -8, z: -15 }, { x: 5, z: -12 }
-  ];
-  for (let s of seeds) {
-    // Cluster of tiles around each seed
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
-        if (random() > 0.6) continue;
-        let tx = s.x + dx;
-        let tz = s.z + dz;
-        let wx = tx * TILE_SIZE;
-        let wz = tz * TILE_SIZE;
-        if (wx >= 0 && wx < 800 && wz >= 0 && wz < 800) continue;
-        let key = tx + ',' + tz;
-        infectedTiles[key] = { tick: floor(random(100)) };
-      }
-    }
-  }
+  // No initial infection — enemies spread it via bombs
 }
 
 function spawnEnemy() {
@@ -114,6 +93,9 @@ function draw() {
 }
 
 // --- INFECTION SYSTEM ---
+// Orthogonal spread only (up/down/left/right)
+const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
 function spreadInfection() {
   if (frameCount % 5 !== 0) return;
   if (Object.keys(infectedTiles).length >= MAX_INFECTED) return;
@@ -127,10 +109,10 @@ function spreadInfection() {
     let tx = int(parts[0]);
     let tz = int(parts[1]);
 
-    let dx = floor(random(-1, 2));
-    let dz = floor(random(-1, 2));
-    let nx = tx + dx;
-    let nz = tz + dz;
+    // Pick one random orthogonal direction
+    let dir = ORTHO_DIRS[floor(random(4))];
+    let nx = tx + dir[0];
+    let nz = tz + dir[1];
     let nKey = nx + ',' + nz;
 
     let wx = nx * TILE_SIZE;
@@ -288,8 +270,39 @@ function updateParticles() {
   for (let i = bullets.length - 1; i >= 0; i--) {
     let b = bullets[i]; b.x += b.vx; b.y += b.vy; b.z += b.vz; b.life -= 2;
     push(); translate(b.x, b.y, b.z); noStroke(); fill(255, 255, 0); sphere(3); pop();
-    if (b.life <= 0 || b.y > getAltitude(b.x, b.z)) bullets.splice(i, 1);
+    if (b.life <= 0) {
+      bullets.splice(i, 1);
+    } else if (b.y > getAltitude(b.x, b.z)) {
+      // Bullet hit ground — check if it landed on an infected tile
+      clearInfectionAt(b.x, b.z);
+      bullets.splice(i, 1);
+    }
   }
+}
+
+// Clear infection in a radius around world coordinates
+function clearInfectionAt(wx, wz) {
+  let tx = Math.floor(wx / TILE_SIZE);
+  let tz = Math.floor(wz / TILE_SIZE);
+  let tileKey = tx + ',' + tz;
+  if (!infectedTiles[tileKey]) return false;
+
+  let clearRadius = 3;
+  let cleared = 0;
+  for (let dx = -clearRadius; dx <= clearRadius; dx++) {
+    for (let dz = -clearRadius; dz <= clearRadius; dz++) {
+      let ck = (tx + dx) + ',' + (tz + dz);
+      if (infectedTiles[ck]) {
+        delete infectedTiles[ck];
+        cleared++;
+      }
+    }
+  }
+  if (cleared > 0) {
+    explosion(wx, getAltitude(wx, wz) - 10, wz);
+    score += 100;
+  }
+  return cleared > 0;
 }
 
 // --- WORLD LOGIC ---
@@ -303,7 +316,7 @@ function checkCollisions() {
         enemies.splice(j, 1);
         bullets.splice(i, 1);
         score += 100;
-        spawnEnemy();
+        // Don't respawn — player can win by destroying all enemies
       }
     });
     if (enemies[j] && dist(ship.x, ship.y, ship.z, enemies[j].x, enemies[j].y, enemies[j].z) < 70) {
@@ -311,23 +324,20 @@ function checkCollisions() {
     }
   }
 
-  // Bullet-tree collisions
+  // Bullet-tree collisions (trees are never destroyed, only cured)
   for (let i = bullets.length - 1; i >= 0; i--) {
     let b = bullets[i];
-    for (let j = trees.length - 1; j >= 0; j--) {
+    for (let j = 0; j < trees.length; j++) {
       let t = trees[j];
       let treeY = getAltitude(t.x, t.z);
-      let totalH = t.trunkH + 30 * t.canopyScale; // approximate tree height
-      // Check xz distance and vertical range
+      let totalH = t.trunkH + 30 * t.canopyScale;
       let dxz = dist(b.x, b.z, t.x, t.z);
       if (dxz < 60 && b.y > treeY - totalH - 10 && b.y < treeY + 10) {
-        explosion(t.x, treeY - t.trunkH, t.z);
-        // Check if tree was on infected tile and clear nearby infection
+        // Only react if tree is infected — cure it and clear nearby infection
         let treeTx = Math.floor(t.x / TILE_SIZE);
         let treeTz = Math.floor(t.z / TILE_SIZE);
         let tileKey = treeTx + ',' + treeTz;
         if (infectedTiles[tileKey]) {
-          // Clear infection in a radius around the destroyed tree
           let clearRadius = 3;
           for (let dx = -clearRadius; dx <= clearRadius; dx++) {
             for (let dz = -clearRadius; dz <= clearRadius; dz++) {
@@ -337,13 +347,12 @@ function checkCollisions() {
               }
             }
           }
-          score += 200; // bonus for clearing infection
-        } else {
-          score += 50;
+          explosion(t.x, treeY - t.trunkH, t.z);
+          score += 200;
+          bullets.splice(i, 1);
+          break;
         }
-        trees.splice(j, 1);
-        bullets.splice(i, 1);
-        break; // bullet consumed, move to next bullet
+        // Healthy trees: bullet passes through (no break)
       }
     }
   }
@@ -641,6 +650,24 @@ function updateEnemies() {
     e.x += e.vx; e.z += e.vz; e.y += sin(frameCount * 0.05 + e.id) * 2;
     if (abs(e.x - ship.x) > 5000) e.vx *= -1;
     if (abs(e.z - ship.z) > 5000) e.vz *= -1;
+
+    // Enemies drop infection bombs periodically
+    if (random() < 0.008) {
+      let groundY = getAltitude(e.x, e.z);
+      if (groundY < SEA_LEVEL - 1) {
+        let tx = Math.floor(e.x / TILE_SIZE);
+        let tz = Math.floor(e.z / TILE_SIZE);
+        // Don't infect launchpad
+        let wx = tx * TILE_SIZE;
+        let wz = tz * TILE_SIZE;
+        if (!(wx >= 0 && wx < 800 && wz >= 0 && wz < 800)) {
+          let key = tx + ',' + tz;
+          if (!infectedTiles[key]) {
+            infectedTiles[key] = { tick: frameCount };
+          }
+        }
+      }
+    }
   });
 }
 

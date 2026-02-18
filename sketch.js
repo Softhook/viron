@@ -1,5 +1,5 @@
 // === CONSTANTS ===
-const TILE = 120, SEA = 200, LAUNCH_ALT = 100, GRAV = 0.06, VIEW = 28;
+const TILE = 120, SEA = 200, LAUNCH_ALT = 100, GRAV = 0.09, VIEW = 28;
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const MAX_INF = 1600, INF_RATE = 0.01, CLEAR_R = 3;
 const LAUNCH_MIN = 0, LAUNCH_MAX = 800;
@@ -46,6 +46,24 @@ function drawShadow(x, groundY, z, w, h) {
   noStroke();
   fill(0, 0, 0, 50);
   ellipse(0, 0, w, h);
+  pop();
+}
+
+function drawShipShadow(x, groundY, z, yaw, alt) {
+  if (aboveSea(groundY)) return;
+  let spread = max(1, (groundY - alt) * 0.012);
+  let alpha = map(groundY - alt, 0, 600, 60, 15, true);
+  push();
+  translate(x, groundY - 0.3, z);
+  rotateY(yaw);
+  noStroke();
+  fill(0, 0, 0, alpha);
+  beginShape();
+  // Project the ship's bottom-face triangle onto the ground
+  vertex(-15 * spread, 0, 15 * spread);   // left rear
+  vertex(15 * spread, 0, 15 * spread);   // right rear
+  vertex(0, 0, -25 * spread);  // nose
+  endShape(CLOSE);
   pop();
 }
 
@@ -210,6 +228,13 @@ function updateShip() {
 
   ship.vx *= 0.985; ship.vy *= 0.985; ship.vz *= 0.985;
   ship.x += ship.vx; ship.y += ship.vy; ship.z += ship.vz;
+
+  // Water crash: ship touching or going below the sea surface
+  if (ship.y > SEA - 12) {
+    explosion(ship.x, SEA, ship.z);
+    resetGame();
+    return;
+  }
 
   let g = getAltitude(ship.x, ship.z);
   if (ship.y > g - 12) {
@@ -420,6 +445,21 @@ function drawLandscape() {
   drawBatch(batches.ll, 125, 125, 120);
   drawBatch(batches.ld, 110, 110, 105);
 
+  // Solid launchpad base — a thick box filling beneath the pad surface
+  push();
+  noStroke();
+  fill(80, 80, 75);
+  let padW = LAUNCH_MAX - LAUNCH_MIN;
+  let padTop = LAUNCH_ALT + 2; // offset below surface tiles to prevent z-fighting
+  let padH = SEA - padTop + 10;
+  translate(
+    (LAUNCH_MIN + LAUNCH_MAX) / 2,
+    padTop + padH / 2,
+    (LAUNCH_MIN + LAUNCH_MAX) / 2
+  );
+  box(padW, padH, padW);
+  pop();
+
   for (let inf of infected) {
     fill(inf.r, inf.g, inf.b);
     beginShape(TRIANGLES);
@@ -490,8 +530,7 @@ function shipDisplay() {
   pop();
 
   let gy = getAltitude(ship.x, ship.z);
-  let sd = max(10, (gy - ship.y) * 0.3);
-  drawShadow(ship.x, gy, ship.z, 30 + sd, 20 + sd);
+  drawShipShadow(ship.x, gy, ship.z, ship.yaw, ship.y);
 }
 
 // === ENEMIES ===

@@ -1,9 +1,9 @@
 // === CONSTANTS ===
 const TILE = 120, SEA = 200, LAUNCH_ALT = 100, GRAV = 0.09;
 // View rings: near = always drawn, outer = frustum culled (all at full tile detail)
-const VIEW_NEAR = 20, VIEW_FAR = 45;
+const VIEW_NEAR = 20, VIEW_FAR = 60;
 // Fog (linear): fades terrain into sky colour
-const FOG_START = 2000, FOG_END = 5000;
+const FOG_START = 1500, FOG_END = 3000;
 const SKY_R = 30, SKY_G = 60, SKY_B = 120;
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const MAX_INF = 1600, INF_RATE = 0.01, CLEAR_R = 3;

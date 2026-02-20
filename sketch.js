@@ -978,10 +978,10 @@ function drawLandscape(s) {
   box(padW, padH, padW);
   pop();
 
-  // Draw Zarch missiles lined up on the launchpad edge
+  // Draw Zarch missiles lined up on the right side of the launchpad
   push();
-  let mZ = LAUNCH_MAX - 100;
-  for (let mX = LAUNCH_MIN + 200; mX <= LAUNCH_MAX - 200; mX += 120) {
+  let mX = LAUNCH_MAX - 100;
+  for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
     let dx = s.x - mX, dz = s.z - mZ;
     let d = sqrt(dx * dx + dz * dz);
     let mCol = [255, 140, 20]; // Orange
@@ -994,7 +994,7 @@ function drawLandscape(s) {
     push(); translate(0, -10, 0); box(30, 20, 30); pop();
     // Missile body
     fill(mr, mg, mb);
-    push(); translate(0, -70, 0); cone(18, 100, 4, 1); pop();
+    push(); translate(0, -70, 0); rotateX(PI); cone(18, 100, 4, 1); pop();
     pop();
   }
   pop();

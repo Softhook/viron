@@ -3,7 +3,7 @@ const TILE = 120, SEA = 200, LAUNCH_ALT = 100, GRAV = 0.09;
 // View rings: near = always drawn, outer = frustum culled (all at full tile detail)
 const VIEW_NEAR = 20, VIEW_FAR = 30;
 // Fog (linear): fades terrain into sky colour
-const FOG_START = 1500, FOG_END = 3000;
+const FOG_START = 2000, FOG_END = 4000;
 const SKY_R = 30, SKY_G = 60, SKY_B = 120;
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const MAX_INF = 2000, INF_RATE = 0.01, CLEAR_R = 3;
@@ -214,7 +214,7 @@ function setup() {
     buildings.push({
       x: random(-4500, 4500), z: random(-4500, 4500),
       w: random(40, 100), h: random(50, 180), d: random(40, 100),
-      type: floor(random(3)),
+      type: floor(random(4)),
       col: [random(80, 200), random(80, 200), random(80, 200)]
     });
   }
@@ -880,7 +880,10 @@ function drawLandscape(s) {
 
     // Launchpad
     if (isLaunchpad(xP, zP)) {
-      let [lr, lg, lb] = fogBlend(chk ? 125 : 110, chk ? 125 : 110, chk ? 120 : 105, d);
+      let padR = chk ? 190 : 140;
+      let padG = chk ? 190 : 140;
+      let padB = chk ? 190 : 140;
+      let [lr, lg, lb] = fogBlend(padR, padG, padB, d);
       fogBatch.push({ v, r: lr, g: lg, b: lb });
       return;
     }
@@ -898,24 +901,37 @@ function drawLandscape(s) {
       return;
     }
 
-    // Height-based colour: green at top, lush green mid, yellow near sea
-    let altFactor = constrain(map(avgY, -150, SEA, 0, 1), 0, 1);
+    // Zarch-style patchwork colors
+    let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
+    rand = rand - Math.floor(rand); // 0.0 to 1.0
+
     let baseR, baseG, baseB;
-    if (altFactor < 0.5) {
-      let f = altFactor * 2.0;
-      baseR = lerp(30, 50, f);
-      baseG = lerp(100, 180, f);
-      baseB = lerp(30, 40, f);
+    if (avgY > SEA - 15) {
+      // Near water: sandy/yellow coastal colors
+      let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
+      let col = colors[Math.floor(rand * colors.length)];
+      baseR = col[0]; baseG = col[1]; baseB = col[2];
     } else {
-      let f = (altFactor - 0.5) * 2.0;
-      baseR = lerp(50, 220, f);
-      baseG = lerp(180, 210, f);
-      baseB = lerp(40, 80, f);
+      // Inland patches
+      let colors = [
+        [60, 180, 60],   // Bright green
+        [30, 120, 40],   // Dark green
+        [180, 200, 50],  // Yellowish green
+        [220, 200, 80],  // Yellow
+        [210, 130, 140], // Pinkish
+        [180, 140, 70]   // Brown/Orange
+      ];
+      // Use noise to cluster similar colors
+      let patch = noise(tx * 0.15, tz * 0.15);
+      let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * colors.length) % colors.length;
+
+      let col = colors[colIdx];
+      baseR = col[0]; baseG = col[1]; baseB = col[2];
     }
 
-    let chkR = chk ? baseR : baseR * 0.8;
-    let chkG = chk ? baseG : baseG * 0.8;
-    let chkB = chk ? baseB : baseB * 0.8;
+    let chkR = chk ? baseR : baseR * 0.85;
+    let chkG = chk ? baseG : baseG * 0.85;
+    let chkB = chk ? baseB : baseB * 0.85;
 
     // Fade checking with distance to prevent shimmering
     let checkerFade = constrain((d - FOG_START * 0.5) / (FOG_END * 0.4), 0, 1);
@@ -962,6 +978,27 @@ function drawLandscape(s) {
   box(padW, padH, padW);
   pop();
 
+  // Draw Zarch missiles lined up on the launchpad edge
+  push();
+  let mZ = LAUNCH_MAX - 100;
+  for (let mX = LAUNCH_MIN + 200; mX <= LAUNCH_MAX - 200; mX += 120) {
+    let dx = s.x - mX, dz = s.z - mZ;
+    let d = sqrt(dx * dx + dz * dz);
+    let mCol = [255, 140, 20]; // Orange
+    let [mr, mg, mb] = fogBlend(mCol[0], mCol[1], mCol[2], d);
+    fill(mr, mg, mb);
+    push();
+    translate(mX, LAUNCH_ALT, mZ);
+    // Base/stand
+    fill(...fogBlend(60, 60, 60, d));
+    push(); translate(0, -10, 0); box(30, 20, 30); pop();
+    // Missile body
+    fill(mr, mg, mb);
+    push(); translate(0, -70, 0); cone(18, 100, 4, 1); pop();
+    pop();
+  }
+  pop();
+
   // Draw infected tiles
   drawTileBatch(infected);
 }
@@ -1000,18 +1037,24 @@ function drawTrees(s) {
 
     // Canopy with fog
     let tv = TREE_VARIANTS[vi];
+    let isUmbrella = (vi === 2); // Make the 3rd variant an umbrella tree!
     let c1 = inf ? tv.infected : tv.healthy;
     let [cr, cg, cb] = fogBlend(c1[0], c1[1], c1[2], d);
     fill(cr, cg, cb);
-    let cn = tv.cones[0];
-    push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc); pop();
 
-    if (tv.cones2) {
-      let c2 = inf ? tv.infected2 : tv.healthy2;
-      let [cr2, cg2, cb2] = fogBlend(c2[0], c2[1], c2[2], d);
-      fill(cr2, cg2, cb2);
-      let cn2 = tv.cones2[0];
-      push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc); pop();
+    if (isUmbrella) {
+      push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
+    } else {
+      let cn = tv.cones[0];
+      push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
+
+      if (tv.cones2) {
+        let c2 = inf ? tv.infected2 : tv.healthy2;
+        let [cr2, cg2, cb2] = fogBlend(c2[0], c2[1], c2[2], d);
+        fill(cr2, cg2, cb2);
+        let cn2 = tv.cones2[0];
+        push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+      }
     }
 
     // Shadow (only close trees)
@@ -1062,7 +1105,7 @@ function drawBuildings(s) {
       fill(tr, tg, tb);
       push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
 
-    } else {
+    } else if (b.type === 2) {
       // Factory complex
       let bCol = inf ? [200, 50, 50] : b.col; // original random color
       let [cr, cg, cb] = fogBlend(bCol[0], bCol[1], bCol[2], d);
@@ -1075,6 +1118,20 @@ function drawBuildings(s) {
       let [sr, sg, sb] = fogBlend(sCol[0], sCol[1], sCol[2], d);
       fill(sr, sg, sb);
       push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
+    } else {
+      // Floating Diamond (Zarch style)
+      let bCol = inf ? [200, 50, 50] : [60, 180, 240]; // cyan diamond
+      let [cr, cg, cb] = fogBlend(bCol[0], bCol[1], bCol[2], d);
+      fill(cr, cg, cb);
+      push();
+      let floatY = y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
+      translate(0, floatY - y, 0);
+      rotateY(frameCount * 0.01 + b.x);
+      rotateZ(frameCount * 0.015 + b.z);
+      cone(b.w, b.h / 2, 4, 1); // bottom
+      rotateX(PI);
+      cone(b.w, b.h / 2, 4, 1); // top
+      pop();
     }
     pop();
 

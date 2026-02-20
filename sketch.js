@@ -139,11 +139,20 @@ function drawShipShadow(x, groundY, z, yaw, alt) {
   pop();
 }
 
-function drawBatch(verts, r, g, b) {
-  if (!verts.length) return;
-  fill(r, g, b);
+function setup2DViewport() {
+  let pxD = pixelDensity();
+  drawingContext.viewport(0, 0, width * pxD, height * pxD);
+  push();
+  ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
+  resetMatrix();
+}
+
+function drawTileBatch(batch) {
+  if (!batch.length) return;
   beginShape(TRIANGLES);
-  for (let v of verts) {
+  for (let t of batch) {
+    fill(t.r, t.g, t.b);
+    let v = t.v;
     vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
     vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
   }
@@ -258,15 +267,8 @@ function spawnEnemy() {
 
 // === MENU ===
 function drawMenu() {
-  let gl = drawingContext;
-  let pxD = pixelDensity();
-  gl.viewport(0, 0, width * pxD, height * pxD);
-
   background(8, 12, 28);
-
-  push();
-  ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
-  resetMatrix();
+  setup2DViewport();
 
   // Animated starfield
   noStroke();
@@ -338,13 +340,7 @@ function drawMenu() {
 }
 
 function drawGameOver() {
-  let gl = drawingContext;
-  let pxD = pixelDensity();
-  gl.viewport(0, 0, width * pxD, height * pxD);
-
-  push();
-  ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
-  resetMatrix();
+  setup2DViewport();
 
   fill(255, 60, 60);
   textAlign(CENTER, CENTER);
@@ -360,21 +356,49 @@ function drawGameOver() {
   }
 }
 
+function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
+  let s = p.ship;
+  let vx = viewX * pxDensity, vw = viewW * pxDensity, vh = viewH * pxDensity;
+
+  gl.viewport(vx, 0, vw, vh);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(vx, 0, vw, vh);
+  gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  push();
+  perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
+  let cd = 550, camY = min(s.y - 120, SEA - 60);
+  camera(s.x + sin(s.yaw) * cd, camY, s.z + cos(s.yaw) * cd, s.x, s.y, s.z, 0, 1, 0);
+  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
+  ambientLight(60, 60, 70);
+
+  drawLandscape(s); drawSea(s); drawTrees(s); drawBuildings(s); drawEnemies(s.x, s.z);
+  
+  for (let player of players) {
+    if (!player.dead) shipDisplay(player.ship, player.labelColor);
+    renderProjectiles(player, s.x, s.z);
+  }
+  renderParticles(s.x, s.z);
+  pop();
+
+  drawPlayerHUD(p, pi, viewW, viewH);
+  gl.disable(gl.SCISSOR_TEST);
+}
+
 function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
 
-  altCache.clear();
+  if (altCache.size > 10000) altCache.clear();
 
   let gl = drawingContext;
 
-  // Shared world updates (once per frame)
   for (let p of players) updateShipInput(p);
   updateEnemies();
   for (let p of players) checkCollisions(p);
   spreadInfection();
 
-  // Update particle physics once (not per-viewport)
   updateParticlePhysics();
   for (let p of players) updateProjectilePhysics(p);
 
@@ -382,85 +406,24 @@ function draw() {
   let pxDensity = pixelDensity();
 
   if (numPlayers === 1) {
-    // === SINGLE PLAYER — full screen ===
-    let p = players[0], s = p.ship;
-    gl.viewport(0, 0, width * pxDensity, h * pxDensity);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(0, 0, width * pxDensity, h * pxDensity);
-    gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    push();
-    perspective(PI / 3, width / h, 50, VIEW_FAR * TILE * 1.5);
-    let cd = 550, camY = min(s.y - 120, SEA - 60);
-    camera(s.x + sin(s.yaw) * cd, camY, s.z + cos(s.yaw) * cd, s.x, s.y, s.z, 0, 1, 0);
-    directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
-    ambientLight(60, 60, 70);
-    drawLandscape(s); drawSea(s); drawTrees(s); drawBuildings(s); drawEnemies(s.x, s.z);
-    if (!p.dead) shipDisplay(s, p.labelColor);
-    renderParticles(s.x, s.z); renderProjectiles(p, s.x, s.z);
-    pop();
-
-    drawPlayerHUD(p, 0, width, h);
-    gl.disable(gl.SCISSOR_TEST);
-
-    // Level complete overlay
-    let pxD = pixelDensity();
-    gl.viewport(0, 0, width * pxD, height * pxD);
-    push();
-    ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
-    resetMatrix();
-    if (levelComplete) {
-      noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
-      text("LEVEL " + level + " COMPLETE", 0, 0);
-    }
-    pop();
-
+    renderPlayerView(gl, players[0], 0, 0, width, h, pxDensity);
   } else {
-    // === TWO PLAYER — split screen ===
     let hw = floor(width / 2);
-
     for (let pi = 0; pi < 2; pi++) {
-      let p = players[pi], s = p.ship;
-      let xOff = pi * hw;
-
-      gl.viewport(xOff * pxDensity, 0, hw * pxDensity, h * pxDensity);
-      gl.enable(gl.SCISSOR_TEST);
-      gl.scissor(xOff * pxDensity, 0, hw * pxDensity, h * pxDensity);
-      gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-      push();
-      perspective(PI / 3, hw / h, 50, VIEW_FAR * TILE * 1.5);
-      let cd = 550, camY = min(s.y - 120, SEA - 60);
-      camera(s.x + sin(s.yaw) * cd, camY, s.z + cos(s.yaw) * cd, s.x, s.y, s.z, 0, 1, 0);
-      directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
-      ambientLight(60, 60, 70);
-      drawLandscape(s); drawSea(s); drawTrees(s); drawBuildings(s); drawEnemies(s.x, s.z);
-      if (!p.dead) shipDisplay(s, p.labelColor);
-      let other = players[1 - pi];
-      if (!other.dead) shipDisplay(other.ship, other.labelColor);
-      renderParticles(s.x, s.z); renderProjectiles(players[0], s.x, s.z); renderProjectiles(players[1], s.x, s.z);
-      pop();
-
-      drawPlayerHUD(p, pi, hw, h);
-      gl.disable(gl.SCISSOR_TEST);
+      renderPlayerView(gl, players[pi], pi, pi * hw, hw, h, pxDensity);
     }
+  }
 
-    // Divider line + level complete
-    let pxD = pixelDensity();
-    gl.viewport(0, 0, width * pxD, height * pxD);
-    push();
-    ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
-    resetMatrix();
+  setup2DViewport();
+  if (numPlayers === 2) {
     stroke(0, 255, 0, 180); strokeWeight(2);
     line(0, -height / 2, 0, height / 2);
-    if (levelComplete) {
-      noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
-      text("LEVEL " + level + " COMPLETE", 0, 0);
-    }
-    pop();
   }
+  if (levelComplete) {
+    noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
+    text("LEVEL " + level + " COMPLETE", 0, 0);
+  }
+  pop();
 
   // Level logic
   let ic = Object.keys(infectedTiles).length;
@@ -856,36 +819,42 @@ function drawControlHints(p, pi, hw, h) {
 
 // === WORLD ===
 // Multi-sine terrain: irrational frequency ratios ensure non-repetition
+function getGridAltitude(tx, tz) {
+  let key = (tx & 0xFFFF) | ((tz & 0xFFFF) << 16);
+  let cached = altCache.get(key);
+  if (cached !== undefined) return cached;
+
+  let x = tx * TILE, z = tz * TILE;
+  let alt;
+  if (isLaunchpad(x, z)) {
+    alt = LAUNCH_ALT;
+  } else {
+    let xs = x * 0.001, zs = z * 0.001;
+    let base = Math.abs(sin(xs * 0.211 + zs * 0.153)) * 4.0;
+    let detail = Math.abs(sin(xs * 0.789 - zs * 0.617)) * 2.0;
+    let erosion = Math.abs(sin(xs * 2.153 + zs * 3.141)) * 0.5;
+    alt = 300 - (base + detail + erosion) * 60;
+  }
+
+  altCache.set(key, alt);
+  return alt;
+}
+
 function getAltitude(x, z) {
   if (isLaunchpad(x, z)) return LAUNCH_ALT;
 
-  let isGrid = (x % TILE === 0 && z % TILE === 0);
-  let key;
-  if (isGrid) {
-    let tx = x / TILE, tz = z / TILE;
-    key = (tx & 0xFFFF) | ((tz & 0xFFFF) << 16);
-    let cached = altCache.get(key);
-    if (cached !== undefined) return cached;
-  }
+  let tx = Math.floor(x / TILE), tz = Math.floor(z / TILE);
+  let fx = (x - tx * TILE) / TILE, fz = (z - tz * TILE) / TILE;
 
-  let xs = x * 0.001, zs = z * 0.001;
+  if (fx === 0 && fz === 0) return getGridAltitude(tx, tz);
 
-  // Large-scale structural "bones" (Non-repeating frequencies)
-  let base = Math.abs(sin(xs * 0.211 + zs * 0.153)) * 4.0;
+  let y00 = getGridAltitude(tx, tz);
+  let y10 = getGridAltitude(tx + 1, tz);
+  let y01 = getGridAltitude(tx, tz + 1);
+  let y11 = getGridAltitude(tx + 1, tz + 1);
 
-  // Medium-scale jaggedness
-  let detail = Math.abs(sin(xs * 0.789 - zs * 0.617)) * 2.0;
-
-  // High-frequency "noise" for texture
-  let erosion = Math.abs(sin(xs * 2.153 + zs * 3.141)) * 0.5;
-
-  // The Result: Sharp, dramatic, and chaotic
-  // (base + detail + erosion) can reach ~6.5. 
-  // 6.5 * 60 = 390 units of vertical drama.
-  let alt = 300 - (base + detail + erosion) * 60;
-
-  if (isGrid) altCache.set(key, alt);
-  return alt;
+  if (fx + fz <= 1) return y00 + (y10 - y00) * fx + (y01 - y00) * fz;
+  return y11 + (y01 - y11) * (1 - fx) + (y10 - y11) * (1 - fz);
 }
 
 function drawLandscape(s) {
@@ -956,16 +925,7 @@ function drawLandscape(s) {
   }
 
   // Draw all fogged terrain tiles
-  if (fogBatch.length > 0) {
-    beginShape(TRIANGLES);
-    for (let t of fogBatch) {
-      fill(t.r, t.g, t.b);
-      let v = t.v;
-      vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
-      vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
-    }
-    endShape();
-  }
+  drawTileBatch(fogBatch);
 
   // Solid launchpad base
   push();
@@ -983,16 +943,7 @@ function drawLandscape(s) {
   pop();
 
   // Draw infected tiles
-  if (infected.length > 0) {
-    beginShape(TRIANGLES);
-    for (let inf of infected) {
-      fill(inf.r, inf.g, inf.b);
-      let v = inf.v;
-      vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
-      vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
-    }
-    endShape();
-  }
+  drawTileBatch(infected);
 }
 
 function drawSea(s) {

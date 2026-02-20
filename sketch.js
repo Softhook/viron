@@ -829,11 +829,10 @@ function getGridAltitude(tx, tz) {
   if (isLaunchpad(x, z)) {
     alt = LAUNCH_ALT;
   } else {
-    let xs = x * 0.001, zs = z * 0.001;
-    let base = Math.abs(sin(xs * 0.211 + zs * 0.153)) * 4.0;
-    let detail = Math.abs(sin(xs * 0.789 - zs * 0.617)) * 2.0;
-    let erosion = Math.abs(sin(xs * 2.153 + zs * 3.141)) * 0.5;
-    alt = 300 - (base + detail + erosion) * 60;
+    let xs = x * 0.0008, zs = z * 0.0008;
+    let elevation = noise(xs, zs) + 0.5 * noise(xs * 2.5, zs * 2.5) + 0.25 * noise(xs * 5, zs * 5);
+    elevation = Math.pow(elevation / 1.75, 2.0); // Flatter valleys, steep hills
+    alt = 300 - elevation * 550;
   }
 
   altCache.set(key, alt);
@@ -899,11 +898,32 @@ function drawLandscape(s) {
       return;
     }
 
-    // Normal terrain with fog — reduce checker contrast with distance to prevent shimmer
+    // Height-based colour: green at top, lush green mid, yellow near sea
+    let altFactor = constrain(map(avgY, -150, SEA, 0, 1), 0, 1);
+    let baseR, baseG, baseB;
+    if (altFactor < 0.5) {
+      let f = altFactor * 2.0;
+      baseR = lerp(30, 50, f);
+      baseG = lerp(100, 180, f);
+      baseB = lerp(30, 40, f);
+    } else {
+      let f = (altFactor - 0.5) * 2.0;
+      baseR = lerp(50, 220, f);
+      baseG = lerp(180, 210, f);
+      baseB = lerp(40, 80, f);
+    }
+
+    let chkR = chk ? baseR : baseR * 0.8;
+    let chkG = chk ? baseG : baseG * 0.8;
+    let chkB = chk ? baseB : baseB * 0.8;
+
+    // Fade checking with distance to prevent shimmering
     let checkerFade = constrain((d - FOG_START * 0.5) / (FOG_END * 0.4), 0, 1);
-    let gL = lerp(62, 50, checkerFade), gD = lerp(38, 50, checkerFade);
-    let gLg = lerp(170, 145, checkerFade), gDg = lerp(120, 145, checkerFade);
-    let [r, g, b] = fogBlend(chk ? gL : gD, chk ? gLg : gDg, chk ? gL : gD, d);
+    let finalR = lerp(chkR, baseR * 0.9, checkerFade);
+    let finalG = lerp(chkG, baseG * 0.9, checkerFade);
+    let finalB = lerp(chkB, baseB * 0.9, checkerFade);
+
+    let [r, g, b] = fogBlend(finalR, finalG, finalB, d);
     fogBatch.push({ v, r, g, b });
   }
 
@@ -1012,22 +1032,53 @@ function drawBuildings(s) {
     let y = getAltitude(b.x, b.z);
     if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
+    let d = sqrt(dx * dx + dz * dz);
     let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
-    let col = inf ? [200, 50, 50] : b.col;
-    let [cr, cg, cb] = fogBlend(col[0], col[1], col[2], sqrt(dx * dx + dz * dz));
 
-    push(); translate(b.x, y, b.z); noStroke(); fill(cr, cg, cb);
+    push(); translate(b.x, y, b.z); noStroke();
+
+    // Lander style buildings
     if (b.type === 0) {
-      translate(0, -b.h / 2, 0); box(b.w, b.h, b.d);
+      // House with red roof
+      let bCol = inf ? [200, 50, 50] : [220, 220, 220]; // white base
+      let [cr, cg, cb] = fogBlend(bCol[0], bCol[1], bCol[2], d);
+      fill(cr, cg, cb);
+      push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
+
+      let rCol = inf ? [150, 30, 30] : [220, 50, 50]; // red roof
+      let [rr, rg, rb] = fogBlend(rCol[0], rCol[1], rCol[2], d);
+      fill(rr, rg, rb);
+      push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
+
     } else if (b.type === 1) {
-      translate(0, -b.h / 2, 0); rotateY(PI / 4); cone(b.w, b.h, 4, 1);
+      // Silo / Tower with round top
+      let bCol = inf ? [200, 50, 50] : [150, 160, 170]; // grey
+      let [cr, cg, cb] = fogBlend(bCol[0], bCol[1], bCol[2], d);
+      fill(cr, cg, cb);
+      push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
+
+      let topCol = inf ? [150, 30, 30] : [80, 180, 220]; // blue dome
+      let [tr, tg, tb] = fogBlend(topCol[0], topCol[1], topCol[2], d);
+      fill(tr, tg, tb);
+      push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
+
     } else {
-      translate(0, -b.h / 4, 0); box(b.w, b.h / 2, b.d * 1.5);
-      translate(0, -b.h / 4 - b.h / 8, 0); box(b.w / 2, b.h / 4, b.d / 2);
+      // Factory complex
+      let bCol = inf ? [200, 50, 50] : b.col; // original random color
+      let [cr, cg, cb] = fogBlend(bCol[0], bCol[1], bCol[2], d);
+      fill(cr, cg, cb);
+      push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
+      push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
+
+      // Smokestack
+      let sCol = inf ? [120, 20, 20] : [80, 80, 80];
+      let [sr, sg, sb] = fogBlend(sCol[0], sCol[1], sCol[2], d);
+      fill(sr, sg, sb);
+      push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
     }
     pop();
 
-    if (sqrt(dx * dx + dz * dz) < 1500) {
+    if (d < 1500) {
       drawShadow(b.x, y, b.z, b.w * 1.5, b.d * 1.5);
     }
   }

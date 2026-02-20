@@ -297,7 +297,7 @@ function drawMenu() {
   // Shadow
   fill(0, 180, 40, 80);
   textSize(110);
-  text('V I R U S', 3, -height * 0.14 + 3);
+  text('V I R U S', 3, -height * 0.14 + 4);
 
   // Main title
   let titlePulse = sin(frameCount * 0.06) * 30;
@@ -308,7 +308,7 @@ function drawMenu() {
   // Subtitle
   textSize(16);
   fill(140, 200, 140, 180);
-  text('A GAME OF INFECTION', 0, -height * 0.14 + 70);
+  text('Christian Nold, 2026', 0, -height * 0.14 + 70);
 
   // Scanline effect
   for (let y = -height / 2; y < height / 2; y += 4) {
@@ -374,7 +374,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   ambientLight(60, 60, 70);
 
   drawLandscape(s); drawSea(s); drawTrees(s); drawBuildings(s); drawEnemies(s.x, s.z);
-  
+
   for (let player of players) {
     if (!player.dead) shipDisplay(player.ship, player.labelColor);
     renderProjectiles(player, s.x, s.z);

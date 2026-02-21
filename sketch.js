@@ -353,12 +353,26 @@ function startLevel(lvl) {
 }
 
 function spawnEnemy(forceSeeder = false) {
-  let isFighter = !forceSeeder && level > 0 && random() < 0.4; // Introduce fighters at higher levels
+  let type = 'seeder';
+  if (!forceSeeder && level > 0) {
+    let r = random();
+    if (r < 0.3) type = 'fighter';
+    else if (r < 0.5) type = 'bomber';
+    else if (r < 0.7) type = 'crab';
+    else if (r < 0.8) type = 'hunter';
+  }
+  let ex = random(-4000, 4000);
+  let ez = random(-4000, 4000);
+  let ey = random(-300, -800);
+  if (type === 'crab') {
+    ey = getAltitude(ex, ez) - 10;
+  }
   enemies.push({
-    x: random(-4000, 4000), y: random(-300, -800), z: random(-4000, 4000),
+    x: ex, y: ey, z: ez,
     vx: random(-2, 2), vz: random(-2, 2), id: random(),
-    type: isFighter ? 'fighter' : 'seeder',
-    fireTimer: 0
+    type: type,
+    fireTimer: 0,
+    bombTimer: 0
   });
 }
 
@@ -921,7 +935,17 @@ function updateParticlePhysics() {
     if (b.y > gy) {
       explosion(b.x, gy, b.z);
       if (!isLaunchpad(b.x, b.z)) {
-        infectedTiles[b.k] = { tick: frameCount };
+        if (b.type === 'mega') {
+          let tx = toTile(b.x), tz = toTile(b.z);
+          for (let r = -2; r <= 2; r++) {
+            for (let c = -2; c <= 2; c++) {
+              let nk = tileKey(tx + r, tz + c);
+              infectedTiles[nk] = { tick: frameCount };
+            }
+          }
+        } else {
+          infectedTiles[b.k] = { tick: frameCount };
+        }
         activePulses.unshift({ x: b.x, z: b.z, start: millis() / 1000.0 });
         if (activePulses.length > 5) activePulses.pop();
       }
@@ -1627,6 +1651,48 @@ function drawEnemies(s) {
       vertex(0, 0, 20); vertex(-15, 0, -15); vertex(0, 10, 0);
       vertex(0, 0, 20); vertex(15, 0, -15); vertex(0, 10, 0);
       endShape();
+    } else if (e.type === 'bomber') {
+      rotateY(frameCount * 0.05);
+      noStroke();
+      let bc = getFogColor([180, 20, 180], depth);
+      fill(bc[0], bc[1], bc[2]);
+      beginShape(TRIANGLES);
+      vertex(0, -40, 0); vertex(-40, 0, -40); vertex(40, 0, -40);
+      vertex(0, -40, 0); vertex(-40, 0, 40); vertex(40, 0, 40);
+      vertex(0, -40, 0); vertex(-40, 0, -40); vertex(-40, 0, 40);
+      vertex(0, -40, 0); vertex(40, 0, -40); vertex(40, 0, 40);
+      vertex(0, 40, 0); vertex(-40, 0, -40); vertex(40, 0, -40);
+      vertex(0, 40, 0); vertex(-40, 0, 40); vertex(40, 0, 40);
+      vertex(0, 40, 0); vertex(-40, 0, -40); vertex(-40, 0, 40);
+      vertex(0, 40, 0); vertex(40, 0, -40); vertex(40, 0, 40);
+      endShape();
+    } else if (e.type === 'crab') {
+      let yaw = atan2(e.vx || 0, e.vz || 0);
+      rotateY(yaw);
+      noStroke();
+      let cc = getFogColor([200, 80, 20], depth);
+      fill(cc[0], cc[1], cc[2]);
+      push(); box(30, 15, 30); pop(); // body
+      let legY = sin(frameCount * 0.3 + e.id) * 10;
+      push(); translate(-15, legY, -15); box(5, 20, 5); pop();
+      push(); translate(15, -legY, -15); box(5, 20, 5); pop();
+      push(); translate(-15, -legY, 15); box(5, 20, 5); pop();
+      push(); translate(15, legY, 15); box(5, 20, 5); pop();
+    } else if (e.type === 'hunter') {
+      let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
+      let d = sqrt(fvX * fvX + fvY * fvY + fvZ * fvZ);
+      if (d > 0) {
+        rotateY(atan2(fvX, fvZ));
+        rotateX(-asin(fvY / d));
+      }
+      noStroke();
+      let hc = getFogColor([40, 255, 40], depth);
+      fill(hc[0], hc[1], hc[2]);
+      beginShape(TRIANGLES);
+      vertex(0, 0, 30); vertex(-8, 0, -20); vertex(8, 0, -20);
+      vertex(0, 0, 30); vertex(-8, 0, -20); vertex(0, -10, 0);
+      vertex(0, 0, 30); vertex(8, 0, -20); vertex(0, -10, 0);
+      endShape();
     } else {
       rotateY(frameCount * 0.15); noStroke();
       for (let [yOff, col] of [[-10, [220, 30, 30]], [6, [170, 15, 15]]]) {
@@ -1645,7 +1711,8 @@ function drawEnemies(s) {
     }
     pop();
 
-    drawShadow(e.x, getAltitude(e.x, e.z), e.z, e.type === 'fighter' ? 25 : 40, e.type === 'fighter' ? 25 : 40);
+    let sSize = e.type === 'bomber' ? 60 : (e.type === 'fighter' || e.type === 'hunter' ? 25 : 40);
+    drawShadow(e.x, getAltitude(e.x, e.z), e.z, sSize, sSize);
   }
 }
 
@@ -1655,8 +1722,89 @@ function updateEnemies() {
 
   for (let e of enemies) {
     if (e.type === 'fighter') updateFighter(e, alivePlayers, refShip);
+    else if (e.type === 'bomber') updateBomber(e, refShip);
+    else if (e.type === 'crab') updateCrab(e, alivePlayers, refShip);
+    else if (e.type === 'hunter') updateHunter(e, alivePlayers, refShip);
     else updateSeeder(e, refShip);
   }
+}
+
+function updateBomber(e, refShip) {
+  e.x += e.vx * 0.5; e.z += e.vz * 0.5; e.y += sin(frameCount * 0.02 + e.id);
+  if (abs(e.x - refShip.x) > 4000) e.vx *= -1;
+  if (abs(e.z - refShip.z) > 4000) e.vz *= -1;
+
+  e.bombTimer++;
+  if (e.bombTimer > 600) {
+    e.bombTimer = 0;
+    let gy = getAltitude(e.x, e.z);
+    if (!aboveSea(gy)) {
+      let tx = toTile(e.x), tz = toTile(e.z);
+      let wx = tx * TILE, wz = tz * TILE;
+      if (!isLaunchpad(wx, wz)) {
+        bombs.push({ x: e.x, y: e.y, z: e.z, k: tileKey(tx, tz), type: 'mega' });
+      }
+    }
+  }
+}
+
+function updateCrab(e, alivePlayers, refShip) {
+  let { target } = findNearest(alivePlayers, e.x, e.y, e.z);
+  let tShip = target || refShip;
+
+  let dx = tShip.x - e.x, dz = tShip.z - e.z;
+  let d = sqrt(dx * dx + dz * dz);
+  if (d > 0) {
+    e.vx = lerp(e.vx || 0, (dx / d) * 3, 0.05);
+    e.vz = lerp(e.vz || 0, (dz / d) * 3, 0.05);
+  }
+
+  e.x += e.vx; e.z += e.vz;
+
+  let gy = getAltitude(e.x, e.z);
+  e.y = gy - 10;
+
+  e.fireTimer++;
+  if (d < 1500 && e.fireTimer > 180) {
+    e.fireTimer = 0;
+    enemyBullets.push({
+      x: e.x, y: e.y - 10, z: e.z,
+      vx: 0, vy: -12, vz: 0, life: 100
+    });
+  }
+
+  if (random() < 0.05) { // 5% chance per frame to drop a virus
+    if (!aboveSea(gy)) {
+      let tx = toTile(e.x), tz = toTile(e.z);
+      let wx = tx * TILE, wz = tz * TILE;
+      if (!isLaunchpad(wx, wz)) {
+        let k = tileKey(tx, tz);
+        if (!infectedTiles[k]) {
+          infectedTiles[k] = { tick: frameCount };
+          activePulses.unshift({ x: e.x, z: e.z, start: millis() / 1000.0 });
+          if (activePulses.length > 5) activePulses.pop();
+        }
+      }
+    }
+  }
+}
+
+function updateHunter(e, alivePlayers, refShip) {
+  let { target } = findNearest(alivePlayers, e.x, e.y, e.z);
+  let tShip = target || refShip;
+
+  let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
+  let d = sqrt(dx * dx + dy * dy + dz * dz);
+  let speed = 5.0;
+  if (d > 0) {
+    e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.1);
+    e.vy = lerp(e.vy || 0, (dy / d) * speed, 0.1);
+    e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.1);
+  }
+  let gy = getAltitude(e.x, e.z);
+  if (e.y > gy - 50) e.vy -= 1.0;
+
+  e.x += e.vx; e.y += e.vy; e.z += e.vz;
 }
 
 function updateFighter(e, alivePlayers, refShip) {

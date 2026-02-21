@@ -60,19 +60,11 @@ let players = [];
 let altCache = new Map();
 
 let isMobile = false;
-
-// Touch state
-let leftTouchId = null;
-let joyCenter = null;
-let joyPos = null;
-let touchBtns = {
-  thrust: { active: false, r: 40, col: [0, 255, 60], label: 'THR' },
-  shoot: { active: false, r: 50, col: [255, 60, 60], label: 'SHT' },
-  missile: { active: false, r: 35, col: [0, 200, 255], label: 'MSL' }
-};
+let isAndroid = false;
 
 function checkMobile() {
-  isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  isAndroid = /Android/i.test(navigator.userAgent);
+  isMobile = isAndroid || /webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 }
 
 // === HELPERS ===
@@ -419,7 +411,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
 
   gl.clear(gl.DEPTH_BUFFER_BIT);
   drawPlayerHUD(p, pi, viewW, viewH);
-  if (isMobile && numPlayers === 1) drawMobileControls();
+  if (isMobile && numPlayers === 1) mobileControls.draw();
   gl.disable(gl.SCISSOR_TEST);
 }
 
@@ -430,6 +422,8 @@ function draw() {
   if (altCache.size > 10000) altCache.clear();
 
   let gl = drawingContext;
+
+  if (isMobile && numPlayers === 1) mobileControls.update();
 
   for (let p of players) updateShipInput(p);
   updateEnemies();
@@ -513,77 +507,80 @@ function clearInfectionAt(wx, wz, p) {
 }
 
 // === MOBILE INPUT ===
-function updateMobileInput() {
-  if (!isMobile || gameState !== 'playing') return;
+const mobileControls = {
+  leftTouchId: null, joyCenter: null, joyPos: null,
+  btns: {
+    thrust: { active: false, r: 40, col: [0, 255, 60], label: 'THR', x: 0, y: 0 },
+    shoot: { active: false, r: 50, col: [255, 60, 60], label: 'SHT', x: 0, y: 0 },
+    missile: { active: false, r: 35, col: [0, 200, 255], label: 'MSL', x: 0, y: 0 }
+  },
 
-  let bw = width, bh = height;
-  touchBtns.thrust.x = bw - 210; touchBtns.thrust.y = bh - 90;
-  touchBtns.shoot.x = bw - 100; touchBtns.shoot.y = bh - 90;
-  touchBtns.missile.x = bw - 100; touchBtns.missile.y = bh - 210;
+  update() {
+    if (!isMobile || gameState !== 'playing') return;
 
-  for (let b in touchBtns) touchBtns[b].active = false;
+    let bw = width, bh = height;
+    this.btns.thrust.x = bw - 180; this.btns.thrust.y = bh - 70;
+    this.btns.shoot.x = bw - 70; this.btns.shoot.y = bh - 70;
+    this.btns.missile.x = bw - 70; this.btns.missile.y = bh - 180;
 
-  let leftFound = false;
-  for (let i = 0; i < touches.length; i++) {
-    let tx = touches[i].x; let ty = touches[i].y; let tid = touches[i].id;
+    for (let b in this.btns) this.btns[b].active = false;
 
-    if (tx > bw / 2) {
-      for (let b in touchBtns) {
-        if (dist(tx, ty, touchBtns[b].x, touchBtns[b].y) < touchBtns[b].r * 1.5) {
-          touchBtns[b].active = true;
+    let leftFound = false;
+    for (let i = 0; i < touches.length; i++) {
+      let t = touches[i];
+      if (t.x > bw / 2) {
+        for (let b in this.btns) {
+          if (dist(t.x, t.y, this.btns[b].x, this.btns[b].y) < this.btns[b].r * 1.5) this.btns[b].active = true;
+        }
+      } else {
+        if (this.leftTouchId === t.id) {
+          this.joyPos = { x: t.x, y: t.y };
+          leftFound = true;
+        } else if (!this.leftTouchId) {
+          this.leftTouchId = t.id;
+          this.joyCenter = { x: t.x, y: t.y };
+          this.joyPos = { x: t.x, y: t.y };
+          leftFound = true;
         }
       }
-    } else {
-      if (leftTouchId === tid) {
-        joyPos = { x: tx, y: ty };
-        leftFound = true;
-      } else if (!leftTouchId) {
-        leftTouchId = tid;
-        joyCenter = { x: tx, y: ty };
-        joyPos = { x: tx, y: ty };
-        leftFound = true;
-      }
     }
+
+    if (!leftFound) {
+      this.leftTouchId = null;
+      this.joyCenter = null;
+      this.joyPos = null;
+    }
+  },
+
+  draw() {
+    setup2DViewport();
+    push();
+    translate(-width / 2, -height / 2, 0);
+
+    if (this.joyCenter && this.joyPos) {
+      noStroke();
+      fill(255, 255, 255, 40);
+      circle(this.joyCenter.x, this.joyCenter.y, 140);
+      fill(255, 255, 255, 120);
+      let d = dist(this.joyCenter.x, this.joyCenter.y, this.joyPos.x, this.joyPos.y);
+      let a = atan2(this.joyPos.y - this.joyCenter.y, this.joyPos.x - this.joyCenter.x);
+      let r = min(d, 70);
+      circle(this.joyCenter.x + cos(a) * r, this.joyCenter.y + sin(a) * r, 50);
+    }
+
+    for (let b in this.btns) {
+      let btn = this.btns[b];
+      stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
+      strokeWeight(2);
+      fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
+      circle(btn.x, btn.y, btn.r * 2);
+      noStroke(); fill(255, btn.active ? 255 : 150);
+      textAlign(CENTER, CENTER); textSize(max(10, btn.r * 0.4));
+      text(btn.label, btn.x, btn.y);
+    }
+    pop();
   }
-
-  if (!leftFound) {
-    leftTouchId = null;
-    joyCenter = null;
-    joyPos = null;
-  }
-}
-
-function drawMobileControls() {
-  setup2DViewport();
-
-  push();
-  translate(-width / 2, -height / 2, 0); // shift drawing context to top left
-
-  if (joyCenter && joyPos) {
-    noStroke();
-    fill(255, 255, 255, 40);
-    circle(joyCenter.x, joyCenter.y, 140);
-    fill(255, 255, 255, 120);
-    let d = dist(joyCenter.x, joyCenter.y, joyPos.x, joyPos.y);
-    let a = atan2(joyPos.y - joyCenter.y, joyPos.x - joyCenter.x);
-    let r = min(d, 70);
-    circle(joyCenter.x + cos(a) * r, joyCenter.y + sin(a) * r, 50);
-  }
-
-  for (let b in touchBtns) {
-    let btn = touchBtns[b];
-    stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-    strokeWeight(2);
-    fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-    circle(btn.x, btn.y, btn.r * 2);
-    noStroke();
-    fill(255, btn.active ? 255 : 150);
-    textAlign(CENTER, CENTER);
-    textSize(max(10, btn.r * 0.4));
-    text(btn.label, btn.x, btn.y);
-  }
-  pop();
-}
+};
 
 // === SHIP INPUT ===
 function updateShipInput(p) {
@@ -597,23 +594,22 @@ function updateShipInput(p) {
   let isShooting = keyIsDown(k.shoot) || (numPlayers === 1 && !isMobile && mouseIsPressed && mouseButton === LEFT && millis() - gameStartTime > 300);
 
   if (isMobile && p.id === 0) {
-    updateMobileInput();
-    if (touchBtns.thrust.active) isThrusting = true;
-    if (touchBtns.shoot.active) isShooting = true;
+    if (mobileControls.btns.thrust.active) isThrusting = true;
+    if (mobileControls.btns.shoot.active) isShooting = true;
 
-    if (touchBtns.missile.active && !p.mobileMissilePressed) {
+    if (mobileControls.btns.missile.active && !p.mobileMissilePressed) {
       if (p.missilesRemaining > 0 && !p.dead) {
         p.missilesRemaining--;
         p.homingMissiles.push(spawnProjectile(p.ship, 8, 300));
       }
       p.mobileMissilePressed = true;
-    } else if (!touchBtns.missile.active) {
+    } else if (!mobileControls.btns.missile.active) {
       p.mobileMissilePressed = false;
     }
 
-    if (joyCenter && joyPos) {
-      let dx = joyPos.x - joyCenter.x;
-      let dy = joyPos.y - joyCenter.y;
+    if (mobileControls.joyCenter && mobileControls.joyPos) {
+      let dx = mobileControls.joyPos.x - mobileControls.joyCenter.x;
+      let dy = mobileControls.joyPos.y - mobileControls.joyCenter.y;
 
       // Calculate normalized direction vector based on touches
       let distSq = dx * dx + dy * dy;
@@ -1466,25 +1462,15 @@ function keyPressed() {
 
 function touchStarted(event) {
   if (gameState === 'menu') {
-    if (!fullscreen()) fullscreen(true);
+    if (isAndroid && !fullscreen()) fullscreen(true);
     setTimeout(() => { startGame(1); }, 50);
+  } else if (gameState === 'playing' && isAndroid) {
+    if (!fullscreen()) fullscreen(true);
   }
   return false;
 }
 
 function touchEnded(event) {
-  if (gameState === 'playing' && isMobile) {
-    // Need to reset touch ids if touches array is empty or this touch was the left joystick
-    let stillGotLeft = false;
-    for (let i = 0; i < touches.length; i++) {
-      if (touches[i].id === leftTouchId) stillGotLeft = true;
-    }
-    if (!stillGotLeft) {
-      leftTouchId = null;
-      joyCenter = null;
-      joyPos = null;
-    }
-  }
   return false;
 }
 

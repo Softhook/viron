@@ -1,0 +1,35 @@
+<html>
+    <head><script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script></head>
+    <body style="background: black; margin: 0;">
+    <script>
+    let myShader;
+    const vert = `
+      precision highp float;
+      attribute vec3 aPosition;
+      uniform mat4 uProjectionMatrix;
+      uniform mat4 uModelViewMatrix;
+      void main() {
+        gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+      }
+    `;
+    const frag = `
+      precision mediump float;
+      uniform vec3 uPulses[5];
+      void main() {
+        float r = length(uPulses[0]) > 0.0 ? 1.0 : 0.0;
+        gl_FragColor = vec4(r, 0.0, 1.0, 1.0);
+      }
+    `;
+    function setup() {
+      createCanvas(400, 400, WEBGL);
+      myShader = createShader(vert, frag);
+    }
+    function draw() {
+      background(0);
+      shader(myShader);
+      myShader.setUniform('uPulses', [1,2,3, 4,5,6, 7,8,9, 10,11,12, 13,14,15]);
+      fill(255);
+      rect(-100,-100,200,200);
+    }
+    </script>
+    </body></html>

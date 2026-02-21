@@ -4,7 +4,7 @@ const SEA = 200, LAUNCH_ALT = 100, GRAV = 0.09;
 // View rings: near = always drawn, outer = frustum culled (all at full tile detail)
 let VIEW_NEAR = 20, VIEW_FAR = 30;
 // Fog (linear): fades terrain into sky colour
-let FOG_START = 2000, FOG_END = 4000;
+let FOG_START = 1200, FOG_END = 3500;
 const SKY_R = 30, SKY_G = 60, SKY_B = 120;
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const MAX_INF = 2000, INF_RATE = 0.01, CLEAR_R = 3;
@@ -59,6 +59,11 @@ let menuStars = []; // animated starfield for menu
 // Each player object holds their own ship + projectiles + score
 let players = [];
 let altCache = new Map();
+
+// Terrain chunking setup
+const CHUNK_SIZE = 16;
+let chunkCache = new Map();
+let terrainShader;
 
 let isMobile = false;
 let isAndroid = false;
@@ -210,6 +215,39 @@ function spawnProjectile(s, power, life) {
   };
 }
 
+const TERRAIN_VERT = `
+precision highp float;
+attribute vec3 aPosition;
+attribute vec4 aVertexColor;
+uniform mat4 uProjectionMatrix;
+uniform mat4 uModelViewMatrix;
+varying vec4 vColor;
+varying float vDist;
+
+void main() {
+  vec4 viewSpace = uModelViewMatrix * vec4(aPosition, 1.0);
+  vDist = length(viewSpace.xyz);
+  gl_Position = uProjectionMatrix * viewSpace;
+  vColor = aVertexColor;
+}
+`;
+
+const TERRAIN_FRAG = `
+precision mediump float;
+varying vec4 vColor;
+varying float vDist;
+
+uniform float uFogStart;
+uniform float uFogEnd;
+uniform vec3 uSkyColor;
+
+void main() {
+  float f = clamp((vDist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
+  vec3 outColor = mix(vColor.rgb, uSkyColor, f);
+  gl_FragColor = vec4(outColor, vColor.a);
+}
+`;
+
 // === P5 LIFECYCLE ===
 function preload() {
   gameFont = loadFont('https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Bold.otf');
@@ -218,6 +256,8 @@ function preload() {
 function setup() {
   checkMobile();
   createCanvas(windowWidth, windowHeight, WEBGL);
+
+  terrainShader = createShader(TERRAIN_VERT, TERRAIN_FRAG);
 
   textFont(gameFont);
 
@@ -440,17 +480,20 @@ function draw() {
       const simpleNoiseCfg = !!window.BENCHMARK.simpleNoise;
       if (simpleNoiseCfg !== window._lastSimpleNoise) {
         altCache.clear();
+        chunkCache.clear();
         window._lastSimpleNoise = simpleNoiseCfg;
       }
 
       const simpleColorsCfg = !!window.BENCHMARK.simpleColors;
       if (simpleColorsCfg !== window._lastSimpleColors) {
         altCache.clear();
+        chunkCache.clear();
         window._lastSimpleColors = simpleColorsCfg;
       }
 
       if (window.BENCHMARK.tileSize !== window._lastTileSize) {
         altCache.clear();
+        chunkCache.clear();
         window._lastTileSize = window.BENCHMARK.tileSize;
       }
       window.BENCHMARK.setup = false;
@@ -471,6 +514,7 @@ function draw() {
   if (gameState === 'gameover') { drawGameOver(); return; }
 
   if (altCache.size > 10000) altCache.clear();
+  if (chunkCache.size > 200) chunkCache.clear();
 
   let gl = drawingContext;
 
@@ -1085,108 +1129,150 @@ function getAltitude(x, z) {
   return y11 + (y01 - y11) * (1 - fx) + (y10 - y11) * (1 - fz);
 }
 
+// === CHUNKS ===
+function getChunkGeometry(cx, cz) {
+  let key = cx + ',' + cz;
+  let cached = chunkCache.get(key);
+  if (cached !== undefined) return cached;
+
+  let geom = buildGeometry(() => {
+    let startX = cx * CHUNK_SIZE;
+    let startZ = cz * CHUNK_SIZE;
+
+    beginShape(TRIANGLES);
+    let isSimpleCol = typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.simpleColors;
+    let isNoCheckers = typeof window.BENCHMARK !== 'undefined' && (window.BENCHMARK.disableCheckerboard || isSimpleCol);
+
+    for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
+      for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
+        let xP = tx * TILE, zP = tz * TILE;
+        let xP1 = xP + TILE, zP1 = zP + TILE;
+        let y00 = getAltitude(xP, zP), y10 = getAltitude(xP1, zP);
+        let y01 = getAltitude(xP, zP1), y11 = getAltitude(xP1, zP1);
+        let avgY = (y00 + y10 + y01 + y11) * 0.25;
+        if (aboveSea(avgY)) continue;
+
+        let chk = (tx + tz) % 2 === 0;
+
+        if (isLaunchpad(xP, zP)) {
+          let pad = chk ? 190 : 140;
+          fill(pad, pad, pad);
+          vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
+          vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+          continue;
+        }
+
+        let baseR, baseG, baseB;
+
+        if (isSimpleCol) {
+          if (avgY > SEA - 15) {
+            baseR = 200; baseG = 180; baseB = 60;
+          } else {
+            baseR = 60; baseG = 180; baseB = 60;
+          }
+        } else {
+          let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
+          rand = rand - Math.floor(rand);
+
+          if (avgY > SEA - 15) {
+            let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
+            let col = colors[Math.floor(rand * 3)];
+            baseR = col[0]; baseG = col[1]; baseB = col[2];
+          } else {
+            let colors = [
+              [60, 180, 60], [30, 120, 40], [180, 200, 50],
+              [220, 200, 80], [210, 130, 140], [180, 140, 70]
+            ];
+            let patch = noise(tx * 0.15, tz * 0.15);
+            let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
+            let col = colors[colIdx];
+            baseR = col[0]; baseG = col[1]; baseB = col[2];
+          }
+        }
+
+        let finalR, finalG, finalB;
+        if (isNoCheckers) {
+          finalR = baseR * 0.9; finalG = baseG * 0.9; finalB = baseB * 0.9;
+        } else {
+          finalR = chk ? baseR : baseR * 0.85;
+          finalG = chk ? baseG : baseG * 0.85;
+          finalB = chk ? baseB : baseB * 0.85;
+        }
+
+        fill(finalR, finalG, finalB);
+        vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
+        vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+      }
+    }
+    endShape();
+  });
+
+  chunkCache.set(key, geom);
+  return geom;
+}
+
 function drawLandscape(s) {
   let gx = toTile(s.x), gz = toTile(s.z);
   noStroke();
 
   let infected = [];
-  let fogBatch = [];
   let fwdX = -sin(s.yaw), fwdZ = -cos(s.yaw);
   let camX = s.x - fwdX * 550, camZ = s.z - fwdZ * 550;
 
-  // Helper: add a single tile to the render lists
-  function addTile(tx, tz) {
-    let xP = tx * TILE, zP = tz * TILE;
-    let xP1 = xP + TILE, zP1 = zP + TILE;
-    let y00 = getAltitude(xP, zP), y10 = getAltitude(xP1, zP);
-    let y01 = getAltitude(xP, zP1), y11 = getAltitude(xP1, zP1);
-    let avgY = (y00 + y10 + y01 + y11) * 0.25;
-    if (aboveSea(avgY)) return;
+  shader(terrainShader);
+  terrainShader.setUniform('uFogStart', FOG_START);
+  terrainShader.setUniform('uFogEnd', FOG_END);
+  terrainShader.setUniform('uSkyColor', [SKY_R / 255.0, SKY_G / 255.0, SKY_B / 255.0]);
 
-    let cx = xP + TILE * 0.5, cz = zP + TILE * 0.5;
-    let dx = s.x - cx, dz = s.z - cz;
-    let d = sqrt(dx * dx + dz * dz);
-    let chk = (tx + tz) % 2 === 0;
+  let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
+  let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
+  let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
+  let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
 
-    let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
+  for (let cz = minCz; cz <= maxCz; cz++) {
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      let chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
+      let chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
 
-    if (isLaunchpad(xP, zP)) {
-      let pad = chk ? 190 : 140;
-      let [lr, lg, lb] = fogBlend(pad, pad, pad, d);
-      fogBatch.push({ v, r: lr, g: lg, b: lb });
-      return;
-    }
+      let dx = chunkWorldX - camX, dz = chunkWorldZ - camZ;
+      let fwdDist = dx * fwdX + dz * fwdZ;
+      // Frustum culling at chunk level roughly
+      if (fwdDist < -CHUNK_SIZE * TILE * 1.5) continue;
 
-    if (infectedTiles[tileKey(tx, tz)]) {
-      let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
-      let af = map(avgY, -100, SEA, 1.15, 0.65);
-      let base = chk ? [160, 255, 10, 40, 10, 25] : [120, 200, 5, 25, 5, 15];
-      let ir = lerp(base[0], base[1], pulse) * af;
-      let ig = lerp(base[2], base[3], pulse) * af;
-      let ib = lerp(base[4], base[5], pulse) * af;
-      let [fr, fg, fb] = fogBlend(ir, ig, ib, d);
-      infected.push({ v, r: fr, g: fg, b: fb });
-      return;
-    }
+      let geom = getChunkGeometry(cx, cz);
+      model(geom);
 
-    let baseR, baseG, baseB;
+      // Collect infected tiles (these update dynamically and pulse per frame)
+      for (let tx = cx * CHUNK_SIZE; tx < (cx + 1) * CHUNK_SIZE; tx++) {
+        for (let tz = cz * CHUNK_SIZE; tz < (cz + 1) * CHUNK_SIZE; tz++) {
+          if (infectedTiles[tileKey(tx, tz)]) {
+            let xP = tx * TILE, zP = tz * TILE;
+            let cxTile = xP + TILE * 0.5, czTile = zP + TILE * 0.5;
+            let dSq = (camX - cxTile) * (camX - cxTile) + (camZ - czTile) * (camZ - czTile);
+            let d = Math.sqrt(dSq);
 
-    if (typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.simpleColors) {
-      // Just use fixed color values - no noise, no math, no random
-      if (avgY > SEA - 15) {
-        baseR = 200; baseG = 180; baseB = 60; // Sand
-      } else {
-        baseR = 60; baseG = 180; baseB = 60; // Grass
-      }
-    } else {
-      let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
-      rand = rand - Math.floor(rand);
+            let xP1 = xP + TILE, zP1 = zP + TILE;
+            let y00 = getAltitude(xP, zP) - 0.5, y10 = getAltitude(xP1, zP) - 0.5;
+            let y01 = getAltitude(xP, zP1) - 0.5, y11 = getAltitude(xP1, zP1) - 0.5;
 
-      if (avgY > SEA - 15) {
-        let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
-        let col = colors[Math.floor(rand * 3)];
-        baseR = col[0]; baseG = col[1]; baseB = col[2];
-      } else {
-        let colors = [
-          [60, 180, 60], [30, 120, 40], [180, 200, 50],
-          [220, 200, 80], [210, 130, 140], [180, 140, 70]
-        ];
-        let patch = noise(tx * 0.15, tz * 0.15);
-        let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
-        let col = colors[colIdx];
-        baseR = col[0]; baseG = col[1]; baseB = col[2];
+            let avgY = (getAltitude(xP, zP) + getAltitude(xP1, zP) + getAltitude(xP, zP1) + getAltitude(xP1, zP1)) * 0.25;
+            let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
+
+            let chk = (tx + tz) % 2 === 0;
+            let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
+            let af = map(avgY, -100, SEA, 1.15, 0.65);
+            let base = chk ? [160, 255, 10, 40, 10, 25] : [120, 200, 5, 25, 5, 15];
+            let ir = lerp(base[0], base[1], pulse) * af;
+            let ig = lerp(base[2], base[3], pulse) * af;
+            let ib = lerp(base[4], base[5], pulse) * af;
+            let [fr, fg, fb] = fogBlend(ir, ig, ib, d);
+
+            infected.push({ v, r: fr, g: fg, b: fb });
+          }
+        }
       }
     }
-
-    let chkR = chk ? baseR : baseR * 0.85;
-    let chkG = chk ? baseG : baseG * 0.85;
-    let chkB = chk ? baseB : baseB * 0.85;
-
-    let checkerFade = constrain((d - FOG_START * 0.5) / (FOG_END * 0.4), 0, 1);
-
-    // Completely disable checkerboard if requested
-    if (typeof window.BENCHMARK !== 'undefined' && (window.BENCHMARK.disableCheckerboard || window.BENCHMARK.simpleColors)) {
-      checkerFade = 1.0;
-    }
-
-    let finalR = lerp(chkR, baseR * 0.9, checkerFade);
-    let finalG = lerp(chkG, baseG * 0.9, checkerFade);
-    let finalB = lerp(chkB, baseB * 0.9, checkerFade);
-
-    let [r, g, b] = fogBlend(finalR, finalG, finalB, d);
-    fogBatch.push({ v, r, g, b });
   }
-
-  // Optimize loops by checking bounds mathematically rather than explicitly testing inner sets
-  for (let tz = gz - VIEW_FAR; tz < gz + VIEW_FAR; tz++) {
-    for (let tx = gx - VIEW_FAR; tx <= gx + VIEW_FAR; tx++) {
-      let cx = tx * TILE + TILE * 0.5, cz = tz * TILE + TILE * 0.5;
-      if (!inFrustum(camX, camZ, cx, cz, fwdX, fwdZ)) continue;
-      addTile(tx, tz);
-    }
-  }
-
-  drawTileBatch(fogBatch);
 
   // Solid launchpad base
   push();
@@ -1224,6 +1310,7 @@ function drawLandscape(s) {
   pop();
 
   drawTileBatch(infected);
+  resetShader();
 }
 
 function drawSea(s) {

@@ -250,11 +250,11 @@ function startGame(np) {
   numPlayers = np;
   gameStartTime = millis();
   if (np === 1) {
-    players = [createPlayer(0, P1_KEYS, 0, [80, 180, 255])];
+    players = [createPlayer(0, P1_KEYS, 400, [80, 180, 255])];
   } else {
     players = [
-      createPlayer(0, P1_KEYS, -100, [80, 180, 255]),
-      createPlayer(1, P2_KEYS, 100, [255, 180, 80])
+      createPlayer(0, P1_KEYS, 300, [80, 180, 255]),
+      createPlayer(1, P2_KEYS, 500, [255, 180, 80])
     ];
   }
   startLevel(1);
@@ -267,7 +267,7 @@ function startLevel(lvl) {
   infectionStarted = false;
   currentMaxEnemies = 1 + level;
   for (let p of players) {
-    resetShip(p, p.id === 0 ? -100 : 100);
+    resetShip(p, numPlayers === 1 ? 400 : (p.id === 0 ? 300 : 500));
     p.homingMissiles = [];
     p.missilesRemaining = 1;
     p.dead = false;
@@ -375,6 +375,7 @@ function drawMenu() {
 
 function drawGameOver() {
   setup2DViewport();
+  drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);
 
   fill(255, 60, 60);
   textAlign(CENTER, CENTER);
@@ -416,6 +417,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   renderParticles(s.x, s.z);
   pop();
 
+  gl.clear(gl.DEPTH_BUFFER_BIT);
   drawPlayerHUD(p, pi, viewW, viewH);
   if (isMobile && numPlayers === 1) drawMobileControls();
   gl.disable(gl.SCISSOR_TEST);
@@ -472,7 +474,7 @@ function draw() {
       p.respawnTimer--;
       if (p.respawnTimer <= 0) {
         p.dead = false;
-        resetShip(p, numPlayers === 1 ? 0 : (p.id === 0 ? -100 : 100));
+        resetShip(p, numPlayers === 1 ? 400 : (p.id === 0 ? 300 : 500));
       }
     }
   }
@@ -515,9 +517,9 @@ function updateMobileInput() {
   if (!isMobile || gameState !== 'playing') return;
 
   let bw = width, bh = height;
-  touchBtns.thrust.x = bw - 190; touchBtns.thrust.y = bh - 70;
-  touchBtns.shoot.x = bw - 80; touchBtns.shoot.y = bh - 70;
-  touchBtns.missile.x = bw - 80; touchBtns.missile.y = bh - 190;
+  touchBtns.thrust.x = bw - 210; touchBtns.thrust.y = bh - 90;
+  touchBtns.shoot.x = bw - 100; touchBtns.shoot.y = bh - 90;
+  touchBtns.missile.x = bw - 100; touchBtns.missile.y = bh - 210;
 
   for (let b in touchBtns) touchBtns[b].active = false;
 
@@ -560,12 +562,12 @@ function drawMobileControls() {
   if (joyCenter && joyPos) {
     noStroke();
     fill(255, 255, 255, 40);
-    circle(joyCenter.x, joyCenter.y, 100);
+    circle(joyCenter.x, joyCenter.y, 140);
     fill(255, 255, 255, 120);
     let d = dist(joyCenter.x, joyCenter.y, joyPos.x, joyPos.y);
     let a = atan2(joyPos.y - joyCenter.y, joyPos.x - joyCenter.x);
-    let r = min(d, 50);
-    circle(joyCenter.x + cos(a) * r, joyCenter.y + sin(a) * r, 40);
+    let r = min(d, 70);
+    circle(joyCenter.x + cos(a) * r, joyCenter.y + sin(a) * r, 50);
   }
 
   for (let b in touchBtns) {
@@ -617,7 +619,7 @@ function updateShipInput(p) {
       let distSq = dx * dx + dy * dy;
       if (distSq > 100) { // Deadzone of 10 pixels squared
         let dist = sqrt(distSq);
-        let speedFactor = min(1, (dist - 10) / 40);
+        let speedFactor = min(1, (dist - 10) / 60);
 
         s.yaw += -(dx / dist) * YAW_RATE * speedFactor;
 
@@ -1466,8 +1468,6 @@ function touchStarted(event) {
   if (gameState === 'menu') {
     if (!fullscreen()) fullscreen(true);
     setTimeout(() => { startGame(1); }, 50);
-  } else if (gameState === 'playing' && isMobile) {
-    if (!fullscreen()) fullscreen(true);
   }
   return false;
 }

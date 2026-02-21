@@ -59,9 +59,6 @@ let menuStars = []; // animated starfield for menu
 // Each player object holds their own ship + projectiles + score
 let players = [];
 let altCache = new Map();
-let terrainChunks = new Map(); // Store p5.Geometry objects for terrain chunks
-const CHUNK_SIZE = 4; // 4x4 tiles per chunk
-
 
 let isMobile = false;
 let isAndroid = false;
@@ -167,79 +164,6 @@ function drawTileBatch(batch) {
     vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
   }
   endShape();
-}
-
-function buildChunkGeometry(chunkX, chunkZ) {
-  return new p5.Geometry(1, 1, function () {
-    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        let tx = chunkX * CHUNK_SIZE + lx;
-        let tz = chunkZ * CHUNK_SIZE + lz;
-
-        let xP = tx * TILE, zP = tz * TILE;
-        let xP1 = xP + TILE, zP1 = zP + TILE;
-        let y00 = getAltitude(xP, zP), y10 = getAltitude(xP1, zP);
-        let y01 = getAltitude(xP, zP1), y11 = getAltitude(xP1, zP1);
-        let avgY = (y00 + y10 + y01 + y11) * 0.25;
-
-        if (aboveSea(avgY)) continue;
-        if (isLaunchpad(xP, zP)) continue;
-        if (infectedTiles[tileKey(tx, tz)]) continue;
-
-        let chk = (tx + tz) % 2 === 0;
-        let baseR, baseG, baseB;
-
-        if (typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.simpleColors) {
-          if (avgY > SEA - 15) { baseR = 200; baseG = 180; baseB = 60; }
-          else { baseR = 60; baseG = 180; baseB = 60; }
-        } else {
-          let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
-          rand = rand - Math.floor(rand);
-          if (avgY > SEA - 15) {
-            let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
-            let col = colors[Math.floor(rand * 3)];
-            baseR = col[0]; baseG = col[1]; baseB = col[2];
-          } else {
-            let colors = [
-              [60, 180, 60], [30, 120, 40], [180, 200, 50],
-              [220, 200, 80], [210, 130, 140], [180, 140, 70]
-            ];
-            let patch = noise(tx * 0.15, tz * 0.15);
-            let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
-            let col = colors[colIdx];
-            baseR = col[0]; baseG = col[1]; baseB = col[2];
-          }
-        }
-
-        let chkR = chk ? baseR : baseR * 0.85;
-        let chkG = chk ? baseG : baseG * 0.85;
-        let chkB = chk ? baseB : baseB * 0.85;
-
-        // Disable checkerboard if requested
-        if (typeof window.BENCHMARK !== 'undefined' && (window.BENCHMARK.disableCheckerboard || window.BENCHMARK.simpleColors)) {
-          chkR = baseR * 0.9; chkG = baseG * 0.9; chkB = baseB * 0.9;
-        }
-
-        let baseV = this.vertices.length;
-
-        this.vertices.push(createVector(xP, y00, zP));
-        this.vertices.push(createVector(xP1, y10, zP));
-        this.vertices.push(createVector(xP, y01, zP1));
-
-        this.vertices.push(createVector(xP1, y10, zP));
-        this.vertices.push(createVector(xP1, y11, zP1));
-        this.vertices.push(createVector(xP, y01, zP1));
-
-        for (let i = 0; i < 6; i++) {
-          this.vertexColors.push(chkR / 255.0, chkG / 255.0, chkB / 255.0, 1);
-        }
-
-        this.faces.push([baseV, baseV + 1, baseV + 2]);
-        this.faces.push([baseV + 3, baseV + 4, baseV + 5]);
-      }
-    }
-    this.computeNormals();
-  });
 }
 
 function clearInfectionRadius(tx, tz) {
@@ -527,7 +451,6 @@ function draw() {
 
       if (window.BENCHMARK.tileSize !== window._lastTileSize) {
         altCache.clear();
-        terrainChunks.clear();
         window._lastTileSize = window.BENCHMARK.tileSize;
       }
       window.BENCHMARK.setup = false;
@@ -633,34 +556,14 @@ function spreadInfection() {
     fresh.push(nk);
   }
   let freshLen = fresh.length;
-  for (let i = 0; i < freshLen; i++) {
-    infectedTiles[fresh[i]] = { tick: frameCount };
-    // Clear the chunk cache so this tile will be rendered as infected logic instead
-    let parts = fresh[i].split(',');
-    let cx = Math.floor(parseInt(parts[0]) / CHUNK_SIZE);
-    let cz = Math.floor(parseInt(parts[1]) / CHUNK_SIZE);
-    terrainChunks.delete(cx + ',' + cz);
-  }
+  for (let i = 0; i < freshLen; i++) infectedTiles[fresh[i]] = { tick: frameCount };
 }
 
 function clearInfectionAt(wx, wz, p) {
   let tx = toTile(wx), tz = toTile(wz);
   if (!infectedTiles[tileKey(tx, tz)]) return false;
   let cleared = clearInfectionRadius(tx, tz);
-  if (cleared > 0) {
-    explosion(wx, getAltitude(wx, wz) - 10, wz);
-    if (p) p.score += 100;
-  }
-
-  // Nuke chunks surrounding the cleared area
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dz = -1; dz <= 1; dz++) {
-      let cx = Math.floor((tx + dx * CLEAR_R) / CHUNK_SIZE);
-      let cz = Math.floor((tz + dz * CLEAR_R) / CHUNK_SIZE);
-      terrainChunks.delete(cx + ',' + cz);
-    }
-  }
-
+  if (cleared > 0) { explosion(wx, getAltitude(wx, wz) - 10, wz); if (p) p.score += 100; }
   return cleared > 0;
 }
 
@@ -1191,72 +1094,95 @@ function drawLandscape(s) {
   let fwdX = -sin(s.yaw), fwdZ = -cos(s.yaw);
   let camX = s.x - fwdX * 550, camZ = s.z - fwdZ * 550;
 
-  let chkCgX = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
-  let chkCgXMax = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
-  let chkCgZ = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
-  let chkCgZMax = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
+  // Helper: add a single tile to the render lists
+  function addTile(tx, tz) {
+    let xP = tx * TILE, zP = tz * TILE;
+    let xP1 = xP + TILE, zP1 = zP + TILE;
+    let y00 = getAltitude(xP, zP), y10 = getAltitude(xP1, zP);
+    let y01 = getAltitude(xP, zP1), y11 = getAltitude(xP1, zP1);
+    let avgY = (y00 + y10 + y01 + y11) * 0.25;
+    if (aboveSea(avgY)) return;
 
-  // Render chunks
-  for (let cz = chkCgZ; cz <= chkCgZMax; cz++) {
-    for (let cx = chkCgX; cx <= chkCgXMax; cx++) {
-      // Chunk center check
-      let centerXP = (cx * CHUNK_SIZE + CHUNK_SIZE * 0.5) * TILE;
-      let centerZP = (cz * CHUNK_SIZE + CHUNK_SIZE * 0.5) * TILE;
-      if (!inFrustum(camX, camZ, centerXP, centerZP, fwdX, fwdZ)) continue;
+    let cx = xP + TILE * 0.5, cz = zP + TILE * 0.5;
+    let dx = s.x - cx, dz = s.z - cz;
+    let d = sqrt(dx * dx + dz * dz);
+    let chk = (tx + tz) % 2 === 0;
 
-      let key = cx + ',' + cz;
-      let geom = terrainChunks.get(key);
-      if (!geom) {
-        geom = buildChunkGeometry(cx, cz);
-        terrainChunks.set(key, geom);
-      }
+    let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
 
-      let d = sqrt((s.x - centerXP) ** 2 + (s.z - centerZP) ** 2);
-      let fogF = constrain((d - FOG_START * 0.5) / (FOG_END * 0.4), 0, 1);
-
-      push();
-      let sr = lerp(255, SKY_R, fogF);
-      let sg = lerp(255, SKY_G, fogF);
-      let sb = lerp(255, SKY_B, fogF);
-      tint(sr, sg, sb);
-      model(geom);
-      pop();
+    if (isLaunchpad(xP, zP)) {
+      let pad = chk ? 190 : 140;
+      let [lr, lg, lb] = fogBlend(pad, pad, pad, d);
+      fogBatch.push({ v, r: lr, g: lg, b: lb });
+      return;
     }
+
+    if (infectedTiles[tileKey(tx, tz)]) {
+      let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
+      let af = map(avgY, -100, SEA, 1.15, 0.65);
+      let base = chk ? [160, 255, 10, 40, 10, 25] : [120, 200, 5, 25, 5, 15];
+      let ir = lerp(base[0], base[1], pulse) * af;
+      let ig = lerp(base[2], base[3], pulse) * af;
+      let ib = lerp(base[4], base[5], pulse) * af;
+      let [fr, fg, fb] = fogBlend(ir, ig, ib, d);
+      infected.push({ v, r: fr, g: fg, b: fb });
+      return;
+    }
+
+    let baseR, baseG, baseB;
+
+    if (typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.simpleColors) {
+      // Just use fixed color values - no noise, no math, no random
+      if (avgY > SEA - 15) {
+        baseR = 200; baseG = 180; baseB = 60; // Sand
+      } else {
+        baseR = 60; baseG = 180; baseB = 60; // Grass
+      }
+    } else {
+      let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
+      rand = rand - Math.floor(rand);
+
+      if (avgY > SEA - 15) {
+        let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
+        let col = colors[Math.floor(rand * 3)];
+        baseR = col[0]; baseG = col[1]; baseB = col[2];
+      } else {
+        let colors = [
+          [60, 180, 60], [30, 120, 40], [180, 200, 50],
+          [220, 200, 80], [210, 130, 140], [180, 140, 70]
+        ];
+        let patch = noise(tx * 0.15, tz * 0.15);
+        let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
+        let col = colors[colIdx];
+        baseR = col[0]; baseG = col[1]; baseB = col[2];
+      }
+    }
+
+    let chkR = chk ? baseR : baseR * 0.85;
+    let chkG = chk ? baseG : baseG * 0.85;
+    let chkB = chk ? baseB : baseB * 0.85;
+
+    let checkerFade = constrain((d - FOG_START * 0.5) / (FOG_END * 0.4), 0, 1);
+
+    // Completely disable checkerboard if requested
+    if (typeof window.BENCHMARK !== 'undefined' && (window.BENCHMARK.disableCheckerboard || window.BENCHMARK.simpleColors)) {
+      checkerFade = 1.0;
+    }
+
+    let finalR = lerp(chkR, baseR * 0.9, checkerFade);
+    let finalG = lerp(chkG, baseG * 0.9, checkerFade);
+    let finalB = lerp(chkB, baseB * 0.9, checkerFade);
+
+    let [r, g, b] = fogBlend(finalR, finalG, finalB, d);
+    fogBatch.push({ v, r, g, b });
   }
 
-  // Single tiles (for dynamic logic: Launchpads and Infection)
+  // Optimize loops by checking bounds mathematically rather than explicitly testing inner sets
   for (let tz = gz - VIEW_FAR; tz < gz + VIEW_FAR; tz++) {
     for (let tx = gx - VIEW_FAR; tx <= gx + VIEW_FAR; tx++) {
-      let xP = tx * TILE, zP = tz * TILE;
-      if (isLaunchpad(xP, zP) || infectedTiles[tileKey(tx, tz)]) {
-        let cx = xP + TILE * 0.5, cz = zP + TILE * 0.5;
-        if (!inFrustum(camX, camZ, cx, cz, fwdX, fwdZ)) continue;
-
-        let xP1 = xP + TILE, zP1 = zP + TILE;
-        let y00 = getAltitude(xP, zP), y10 = getAltitude(xP1, zP);
-        let y01 = getAltitude(xP, zP1), y11 = getAltitude(xP1, zP1);
-        let avgY = (y00 + y10 + y01 + y11) * 0.25;
-        if (aboveSea(avgY)) continue;
-
-        let d = sqrt((s.x - cx) ** 2 + (s.z - cz) ** 2);
-        let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
-        let chk = (tx + tz) % 2 === 0;
-
-        if (isLaunchpad(xP, zP)) {
-          let pad = chk ? 190 : 140;
-          let [lr, lg, lb] = fogBlend(pad, pad, pad, d);
-          fogBatch.push({ v, r: lr, g: lg, b: lb });
-        } else if (infectedTiles[tileKey(tx, tz)]) {
-          let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
-          let af = map(avgY, -100, SEA, 1.15, 0.65);
-          let base = chk ? [160, 255, 10, 40, 10, 25] : [120, 200, 5, 25, 5, 15];
-          let ir = lerp(base[0], base[1], pulse) * af;
-          let ig = lerp(base[2], base[3], pulse) * af;
-          let ib = lerp(base[4], base[5], pulse) * af;
-          let [fr, fg, fb] = fogBlend(ir, ig, ib, d);
-          infected.push({ v, r: fr, g: fg, b: fb });
-        }
-      }
+      let cx = tx * TILE + TILE * 0.5, cz = tz * TILE + TILE * 0.5;
+      if (!inFrustum(camX, camZ, cx, cz, fwdX, fwdZ)) continue;
+      addTile(tx, tz);
     }
   }
 

@@ -348,12 +348,12 @@ function startLevel(lvl) {
   bombs = [];
   enemyBullets = [];
   activePulses = [];
-  for (let i = 0; i < currentMaxEnemies; i++) spawnEnemy();
+  for (let i = 0; i < currentMaxEnemies; i++) spawnEnemy(i === 0);
   infectedTiles = {};
 }
 
-function spawnEnemy() {
-  let isFighter = level > 0 && random() < 0.4; // Introduce fighters at higher levels
+function spawnEnemy(forceSeeder = false) {
+  let isFighter = !forceSeeder && level > 0 && random() < 0.4; // Introduce fighters at higher levels
   enemies.push({
     x: random(-4000, 4000), y: random(-300, -800), z: random(-4000, 4000),
     vx: random(-2, 2), vz: random(-2, 2), id: random(),

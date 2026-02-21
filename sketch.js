@@ -86,11 +86,8 @@ function fogBlend(r, g, b, d) {
 }
 
 function shipUpDir(s) {
-  return {
-    x: sin(s.pitch) * -sin(s.yaw),
-    y: -cos(s.pitch),
-    z: sin(s.pitch) * -cos(s.yaw)
-  };
+  let sp = sin(s.pitch), cp = cos(s.pitch), sy = sin(s.yaw), cy = cos(s.yaw);
+  return { x: sp * -sy, y: -cp, z: sp * -cy };
 }
 
 function resetShip(p, offsetX) {
@@ -193,14 +190,10 @@ function spawnProjectile(s, power, life) {
   let y1 = ly * cp - lz * sp;
   let z1 = ly * sp + lz * cp;
 
-  let nx = z1 * sy;
-  let ny = y1;
-  let nz = z1 * cy;
-
   return {
-    x: s.x + nx,
-    y: s.y + ny,
-    z: s.z + nz,
+    x: s.x + z1 * sy,
+    y: s.y + y1,
+    z: s.z + z1 * cy,
     vx: fx * power + s.vx,
     vy: fy * power + s.vy,
     vz: fz * power + s.vz,
@@ -485,7 +478,8 @@ function draw() {
 function spreadInfection() {
   if (frameCount % 5 !== 0) return;
   let keys = Object.keys(infectedTiles);
-  if (keys.length >= MAX_INF) {
+  let keysLen = keys.length;
+  if (keysLen >= MAX_INF) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       levelEndTime = millis();
@@ -493,16 +487,18 @@ function spreadInfection() {
     return;
   }
   let fresh = [];
-  for (let k of keys) {
+  for (let i = 0; i < keysLen; i++) {
     if (random() > INF_RATE) continue;
-    let [tx, tz] = k.split(',').map(Number);
+    let parts = keys[i].split(',');
+    let tx = +parts[0], tz = +parts[1];
     let d = ORTHO_DIRS[floor(random(4))];
     let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
     if (isLaunchpad(wx, wz) || aboveSea(getAltitude(wx, wz)) || infectedTiles[nk]) continue;
     fresh.push(nk);
   }
-  for (let k of fresh) infectedTiles[k] = { tick: frameCount };
+  let freshLen = fresh.length;
+  for (let i = 0; i < freshLen; i++) infectedTiles[fresh[i]] = { tick: frameCount };
 }
 
 function clearInfectionAt(wx, wz, p) {
@@ -624,7 +620,7 @@ function updateShipInput(p) {
         s.yaw += -(dx / dist) * YAW_RATE * speedFactor;
 
         let pitchChange = (dy / dist) * PITCH_RATE * speedFactor * 0.5; // less vertical sensitive
-        s.pitch = constrain(s.pitch + pitchChange, -PI / 2.2, PI / 2.2);
+        s.pitch = constrain(s.pitch - pitchChange, -PI / 2.2, PI / 2.2);
       }
     }
   }
@@ -634,8 +630,8 @@ function updateShipInput(p) {
   if (keyIsDown(k.right)) s.yaw -= YAW_RATE;
 
   // Pitch (tilt up/down)
-  if (keyIsDown(k.pitchUp)) s.pitch = constrain(s.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
-  if (keyIsDown(k.pitchDown)) s.pitch = constrain(s.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
+  if (keyIsDown(k.pitchUp)) s.pitch = constrain(s.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
+  if (keyIsDown(k.pitchDown)) s.pitch = constrain(s.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
 
   // Gravity
   s.vy += GRAV;
@@ -644,11 +640,13 @@ function updateShipInput(p) {
     let pw = 0.45;
     let dVec = shipUpDir(s);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
-    if (frameCount % 2 === 0)
+    if (frameCount % 2 === 0) {
+      let r1 = random(-1, 1), r2 = random(-1, 1), r3 = random(-1, 1);
       particles.push({
         x: s.x, y: s.y, z: s.z,
-        vx: -dVec.x * 8 + random(-1, 1), vy: -dVec.y * 8 + random(-1, 1), vz: -dVec.z * 8 + random(-1, 1), life: 255
+        vx: -dVec.x * 8 + r1, vy: -dVec.y * 8 + r2, vz: -dVec.z * 8 + r3, life: 255
       });
+    }
   }
 
   // Brake / reverse thrust
@@ -689,49 +687,65 @@ function killPlayer(p) {
 function checkCollisions(p) {
   if (p.dead) return;
   let s = p.ship;
+  let sX = s.x, sY = s.y, sZ = s.z;
 
   // Enemy bullets vs player
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
-    if (dist(enemyBullets[i].x, enemyBullets[i].y, enemyBullets[i].z, s.x, s.y, s.z) < 70) {
-      explosion(s.x, s.y, s.z);
+    let eb = enemyBullets[i];
+    if (dist(eb.x, eb.y, eb.z, sX, sY, sZ) < 70) {
+      explosion(sX, sY, sZ);
       killPlayer(p);
       enemyBullets.splice(i, 1);
       return;
     }
   }
 
-  // Bullets vs enemies
-  for (let j = enemies.length - 1; j >= 0; j--) {
-    let e = enemies[j], killed = false;
-    for (let i = p.bullets.length - 1; i >= 0; i--) {
-      if (dist(p.bullets[i].x, p.bullets[i].y, p.bullets[i].z, e.x, e.y, e.z) < 80) {
-        explosion(e.x, e.y, e.z);
+  let bLen = p.bullets.length;
+  let eLen = enemies.length;
+  for (let j = eLen - 1; j >= 0; j--) {
+    let e = enemies[j], eX = e.x, eY = e.y, eZ = e.z;
+    let killed = false;
+    for (let i = bLen - 1; i >= 0; i--) {
+      let b = p.bullets[i];
+      if (dist(b.x, b.y, b.z, eX, eY, eZ) < 80) {
+        explosion(eX, eY, eZ);
         enemies.splice(j, 1); p.bullets.splice(i, 1);
+        bLen--;
         p.score += 100; killed = true; break;
       }
     }
-    if (!killed && dist(s.x, s.y, s.z, e.x, e.y, e.z) < 70) killPlayer(p);
+    if (!killed && dist(sX, sY, sZ, eX, eY, eZ) < 70) killPlayer(p);
   }
 
   // Bullet-tree: only infected trees absorb bullets
-  for (let i = p.bullets.length - 1; i >= 0; i--) {
-    let b = p.bullets[i];
-    for (let t of trees) {
-      let ty = getAltitude(t.x, t.z);
-      let dxz = dist(b.x, b.z, t.x, t.z);
-      if (dxz < 60 && b.y > ty - t.trunkH - 30 * t.canopyScale - 10 && b.y < ty + 10) {
-        let tx = toTile(t.x), tz = toTile(t.z);
+  let tLen = trees.length;
+  let pBullets = p.bullets;
+  let pBlen = pBullets.length;
+  let pScoreAdd = 0;
+  for (let i = pBlen - 1; i >= 0; i--) {
+    let b = pBullets[i];
+    let bX = b.x, bY = b.y, bZ = b.z;
+
+    for (let t = 0; t < tLen; t++) {
+      let tree = trees[t];
+      let tX = tree.x, tZ = tree.z;
+      let ty = getAltitude(tX, tZ);
+      let dxz = dist(bX, bZ, tX, tZ);
+      if (dxz < 60 && bY > ty - tree.trunkH - 30 * tree.canopyScale - 10 && bY < ty + 10) {
+        let tx = toTile(tX), tz = toTile(tZ);
         if (infectedTiles[tileKey(tx, tz)]) {
           clearInfectionRadius(tx, tz);
-          explosion(t.x, ty - t.trunkH, t.z);
-          p.score += 200;
-          p.bullets.splice(i, 1);
+          explosion(tX, ty - tree.trunkH, tZ);
+          pScoreAdd += 200;
+          pBullets.splice(i, 1);
           break;
         }
       }
     }
   }
+  p.score += pScoreAdd;
 }
+
 
 // === PARTICLES & PROJECTILES ===
 // Physics: run once per frame
@@ -1010,9 +1024,9 @@ function drawLandscape(s) {
   noStroke();
 
   let infected = [];
-  // Fog-aware batch: stores [verts, r, g, b] entries
   let fogBatch = [];
-  let launchBatch = { l: [], d: [] };
+  const VIEW_NEAR_SQ = VIEW_NEAR * VIEW_NEAR;
+  let fwdX = -sin(s.yaw), fwdZ = -cos(s.yaw);
 
   // Helper: add a single tile to the render lists
   function addTile(tx, tz) {
@@ -1020,24 +1034,23 @@ function drawLandscape(s) {
     let xP1 = xP + TILE, zP1 = zP + TILE;
     let y00 = getAltitude(xP, zP), y10 = getAltitude(xP1, zP);
     let y01 = getAltitude(xP, zP1), y11 = getAltitude(xP1, zP1);
-    let avgY = (y00 + y10 + y01 + y11) / 4;
+    let avgY = (y00 + y10 + y01 + y11) * 0.25;
     if (aboveSea(avgY)) return;
 
-    let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
-    let d = dist(s.x, s.z, (xP + xP1) / 2, (zP + zP1) / 2);
+    let cx = xP + TILE * 0.5, cz = zP + TILE * 0.5;
+    let dx = s.x - cx, dz = s.z - cz;
+    let d = sqrt(dx * dx + dz * dz);
     let chk = (tx + tz) % 2 === 0;
 
-    // Launchpad
+    let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
+
     if (isLaunchpad(xP, zP)) {
-      let padR = chk ? 190 : 140;
-      let padG = chk ? 190 : 140;
-      let padB = chk ? 190 : 140;
-      let [lr, lg, lb] = fogBlend(padR, padG, padB, d);
+      let pad = chk ? 190 : 140;
+      let [lr, lg, lb] = fogBlend(pad, pad, pad, d);
       fogBatch.push({ v, r: lr, g: lg, b: lb });
       return;
     }
 
-    // Infection
     if (infectedTiles[tileKey(tx, tz)]) {
       let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
       let af = map(avgY, -100, SEA, 1.15, 0.65);
@@ -1050,30 +1063,21 @@ function drawLandscape(s) {
       return;
     }
 
-    // Zarch-style patchwork colors
     let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
-    rand = rand - Math.floor(rand); // 0.0 to 1.0
+    rand = rand - Math.floor(rand);
 
     let baseR, baseG, baseB;
     if (avgY > SEA - 15) {
-      // Near water: sandy/yellow coastal colors
       let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
-      let col = colors[Math.floor(rand * colors.length)];
+      let col = colors[Math.floor(rand * 3)];
       baseR = col[0]; baseG = col[1]; baseB = col[2];
     } else {
-      // Inland patches
       let colors = [
-        [60, 180, 60],   // Bright green
-        [30, 120, 40],   // Dark green
-        [180, 200, 50],  // Yellowish green
-        [220, 200, 80],  // Yellow
-        [210, 130, 140], // Pinkish
-        [180, 140, 70]   // Brown/Orange
+        [60, 180, 60], [30, 120, 40], [180, 200, 50],
+        [220, 200, 80], [210, 130, 140], [180, 140, 70]
       ];
-      // Use noise to cluster similar colors
       let patch = noise(tx * 0.15, tz * 0.15);
-      let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * colors.length) % colors.length;
-
+      let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
       let col = colors[colIdx];
       baseR = col[0]; baseG = col[1]; baseB = col[2];
     }
@@ -1082,7 +1086,6 @@ function drawLandscape(s) {
     let chkG = chk ? baseG : baseG * 0.85;
     let chkB = chk ? baseB : baseB * 0.85;
 
-    // Fade checking with distance to prevent shimmering
     let checkerFade = constrain((d - FOG_START * 0.5) / (FOG_END * 0.4), 0, 1);
     let finalR = lerp(chkR, baseR * 0.9, checkerFade);
     let finalG = lerp(chkG, baseG * 0.9, checkerFade);
@@ -1092,24 +1095,16 @@ function drawLandscape(s) {
     fogBatch.push({ v, r, g, b });
   }
 
-  // === Near ring: full detail, no frustum cull (always visible) ===
-  for (let tz = gz - VIEW_NEAR; tz < gz + VIEW_NEAR; tz++)
-    for (let tx = gx - VIEW_NEAR; tx <= gx + VIEW_NEAR; tx++)
-      addTile(tx, tz);
-
-  // === Outer ring: full detail, frustum culled ===
-  let fwdX = -sin(s.yaw), fwdZ = -cos(s.yaw);
+  // Optimize loops by checking bounds mathematically rather than explicitly testing inner sets
   for (let tz = gz - VIEW_FAR; tz < gz + VIEW_FAR; tz++) {
     for (let tx = gx - VIEW_FAR; tx <= gx + VIEW_FAR; tx++) {
-      // Skip tiles already drawn in near ring
-      if (tx >= gx - VIEW_NEAR && tx < gx + VIEW_NEAR && tz >= gz - VIEW_NEAR && tz < gz + VIEW_NEAR) continue;
-      let cx = tx * TILE + TILE / 2, cz = tz * TILE + TILE / 2;
-      if (!inFrustum(s.x, s.z, cx, cz, fwdX, fwdZ)) continue;
+      let cx = tx * TILE + TILE * 0.5, cz = tz * TILE + TILE * 0.5;
+      let inNear = tx >= gx - VIEW_NEAR && tx <= gx + VIEW_NEAR && tz >= gz - VIEW_NEAR && tz <= gz + VIEW_NEAR;
+      if (!inNear && !inFrustum(s.x, s.z, cx, cz, fwdX, fwdZ)) continue;
       addTile(tx, tz);
     }
   }
 
-  // Draw all fogged terrain tiles
   drawTileBatch(fogBatch);
 
   // Solid launchpad base
@@ -1120,9 +1115,9 @@ function drawLandscape(s) {
   let padTop = LAUNCH_ALT + 2;
   let padH = SEA - padTop + 10;
   translate(
-    (LAUNCH_MIN + LAUNCH_MAX) / 2,
-    padTop + padH / 2,
-    (LAUNCH_MIN + LAUNCH_MAX) / 2
+    (LAUNCH_MIN + LAUNCH_MAX) * 0.5,
+    padTop + padH * 0.5,
+    (LAUNCH_MIN + LAUNCH_MAX) * 0.5
   );
   box(padW, padH, padW);
   pop();
@@ -1133,8 +1128,7 @@ function drawLandscape(s) {
   for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
     let dx = s.x - mX, dz = s.z - mZ;
     let d = sqrt(dx * dx + dz * dz);
-    let mCol = [255, 140, 20]; // Orange
-    let [mr, mg, mb] = fogBlend(mCol[0], mCol[1], mCol[2], d);
+    let [mr, mg, mb] = fogBlend(255, 140, 20, d);
     fill(mr, mg, mb);
     push();
     translate(mX, LAUNCH_ALT, mZ);
@@ -1143,12 +1137,11 @@ function drawLandscape(s) {
     push(); translate(0, -10, 0); box(30, 20, 30); pop();
     // Missile body
     fill(mr, mg, mb);
-    push(); translate(0, -70, 0); rotateX(PI); cone(18, 100, 4, 1); pop();
+    push(); translate(0, -70, 0); rotateX(Math.PI); cone(18, 100, 4, 1); pop();
     pop();
   }
   pop();
 
-  // Draw infected tiles
   drawTileBatch(infected);
 }
 
@@ -1340,10 +1333,8 @@ function drawEnemies(camX, camZ) {
       vertex(0, 0, 20); vertex(-15, 0, -15); vertex(15, 0, -15);
       vertex(0, 0, 20); vertex(-15, 0, -15); vertex(0, -10, 0);
       vertex(0, 0, 20); vertex(15, 0, -15); vertex(0, -10, 0);
-      vertex(-15, 0, -15); vertex(15, 0, -15); vertex(0, -10, 0);
       vertex(0, 0, 20); vertex(-15, 0, -15); vertex(0, 10, 0);
       vertex(0, 0, 20); vertex(15, 0, -15); vertex(0, 10, 0);
-      vertex(-15, 0, -15); vertex(15, 0, -15); vertex(0, 10, 0);
       endShape();
     } else {
       rotateY(frameCount * 0.15); noStroke();
@@ -1408,10 +1399,9 @@ function updateEnemies() {
       if (e.aggressive && d < 1200 && e.fireTimer > 90) {
         e.fireTimer = 0;
         // Inaccuracy in shooting
-        let inaccuracy = 0.2;
-        let pvx = (dx / d) + random(-inaccuracy, inaccuracy);
-        let pvy = (dy / d) + random(-inaccuracy, inaccuracy);
-        let pvz = (dz / d) + random(-inaccuracy, inaccuracy);
+        let pvx = (dx / d) + random(-0.2, 0.2);
+        let pvy = (dy / d) + random(-0.2, 0.2);
+        let pvz = (dz / d) + random(-0.2, 0.2);
         let pd = sqrt(pvx * pvx + pvy * pvy + pvz * pvz);
         enemyBullets.push({
           x: e.x, y: e.y, z: e.z,
@@ -1495,7 +1485,7 @@ function mouseMoved() {
     // Mouse X controls yaw (turn left/right)
     players[0].ship.yaw -= movedX * 0.003;
     // Mouse Y controls pitch (up/down)
-    players[0].ship.pitch = constrain(players[0].ship.pitch + movedY * 0.003, -PI / 2.2, PI / 2.2);
+    players[0].ship.pitch = constrain(players[0].ship.pitch - movedY * 0.003, -PI / 2.2, PI / 2.2);
   }
 }
 

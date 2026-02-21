@@ -467,7 +467,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
   ambientLight(60, 60, 70);
 
-  drawLandscape(s); drawSea(s);
+  drawLandscape(s);
   if (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.disableTrees) drawTrees(s);
   if (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.disableBuildings) drawBuildings(s);
   if (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.disableEnemies) drawEnemies(s);
@@ -1318,6 +1318,12 @@ function drawLandscape(s) {
 
   drawTileBatch(infected);
 
+  let p = sin(frameCount * 0.03) * 8;
+  let seaC = [15, 45 + p, 150 + p];
+  let seaSize = VIEW_FAR * TILE * 1.5;
+  let seaGeom = getSeaGeometry(seaSize, seaC, s.x, s.z);
+  model(seaGeom);
+
   // Restore lighting for standard objects
   resetShader();
   directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
@@ -1360,13 +1366,23 @@ function drawLandscape(s) {
   pop();
 }
 
-function drawSea(s) {
-  noStroke();
-  let p = sin(frameCount * 0.03) * 8;
-  // Fog-blend the sea colour at the edges
-  fill(15, 45 + p, 150 + p);
-  let seaSize = VIEW_FAR * TILE * 2;
-  push(); translate(s.x, SEA + 3, s.z); box(seaSize, 2, seaSize); pop();
+function getSeaGeometry(seaSize, seaC, sx, sz) {
+  return buildGeometry(() => {
+    fill(seaC[0], seaC[1], seaC[2]);
+    let hSize = seaSize;
+    beginShape(TRIANGLES);
+    // Draw sea as two giant triangles around the ship
+    let y = SEA + 3;
+    let cx = toTile(sx) * TILE, cz = toTile(sz) * TILE;
+    vertex(cx - hSize, y, cz - hSize);
+    vertex(cx + hSize, y, cz - hSize);
+    vertex(cx - hSize, y, cz + hSize);
+
+    vertex(cx + hSize, y, cz - hSize);
+    vertex(cx + hSize, y, cz + hSize);
+    vertex(cx - hSize, y, cz + hSize);
+    endShape();
+  });
 }
 
 function drawTrees(s) {

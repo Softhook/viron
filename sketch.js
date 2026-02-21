@@ -55,6 +55,7 @@ let gameState = 'menu'; // 'menu' or 'playing'
 let gameStartTime = 0;
 let numPlayers = 1;
 let menuStars = []; // animated starfield for menu
+let mouseReleasedSinceStart = true;
 
 // Each player object holds their own ship + projectiles + score
 let players = [];
@@ -283,6 +284,7 @@ function preload() {
 function setup() {
   checkMobile();
   createCanvas(windowWidth, windowHeight, WEBGL);
+  document.addEventListener('contextmenu', event => event.preventDefault());
 
   terrainShader = createShader(TERRAIN_VERT, TERRAIN_FRAG);
 
@@ -317,6 +319,7 @@ function setup() {
 function startGame(np) {
   numPlayers = np;
   gameStartTime = millis();
+  mouseReleasedSinceStart = !mouseIsPressed;
   if (np === 1) {
     players = [createPlayer(0, P1_KEYS, 400, [80, 180, 255])];
   } else {
@@ -435,7 +438,7 @@ function drawMenu() {
   if (isMobile) {
     text('Use virtual joystick and buttons to play', 0, height / 2 - 40);
   } else {
-    text('P1: Mouse/WASD + R/F pitch  Q shoot  E missile', 0, height / 2 - 55);
+    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E missile', 0, height / 2 - 55);
     text('P2: ARROWS + ;/\' pitch  . shoot  / missile', 0, height / 2 - 35);
   }
 
@@ -722,9 +725,10 @@ function updateShipInput(p) {
 
 function gatherShipInput(p) {
   let k = p.keys;
-  let isThrusting = keyIsDown(k.thrust);
+  if (!mouseIsPressed) mouseReleasedSinceStart = true;
+  let isThrusting = keyIsDown(k.thrust) || (numPlayers === 1 && !isMobile && mouseIsPressed && mouseButton === RIGHT);
   let isBraking = keyIsDown(k.brake);
-  let isShooting = keyIsDown(k.shoot) || (numPlayers === 1 && !isMobile && mouseIsPressed && mouseButton === LEFT && millis() - gameStartTime > 300);
+  let isShooting = keyIsDown(k.shoot) || (numPlayers === 1 && !isMobile && mouseIsPressed && mouseButton === LEFT && mouseReleasedSinceStart);
 
   if (isMobile && p.id === 0) {
     isThrusting = isThrusting || mobileControls.btns.thrust.active;
@@ -1122,7 +1126,7 @@ function drawControlHints(p, pi, hw, h) {
   fill(255, 255, 255, 120);
   let hints = '';
   if (numPlayers === 1) {
-    hints = 'W thrust  Mouse pitch/yaw  Q/LMB shoot  E missile  S brake  (Click to lock mouse)';
+    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E missile  S brake  (Click to lock mouse)';
   } else {
     hints = pi === 0
       ? 'W thrust  A/D turn  R/F pitch  Q shoot  E missile  S brake'
@@ -1752,6 +1756,10 @@ function mousePressed() {
       requestPointerLock();
     }
   }
+}
+
+function mouseDragged() {
+  mouseMoved();
 }
 
 function mouseMoved() {

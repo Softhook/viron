@@ -2,8 +2,8 @@
 let TILE = 120;
 const SEA = 200, LAUNCH_ALT = 100, GRAV = 0.09;
 // View rings: near = always drawn, outer = frustum culled (all at full tile detail)
-let VIEW_NEAR = 20, VIEW_FAR = 30;
-let CULL_DIST = 3500;
+let VIEW_NEAR = 35, VIEW_FAR = 50;
+let CULL_DIST = 6000;
 const SKY_R = 30, SKY_G = 60, SKY_B = 120;
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const MAX_INF = 2000, INF_RATE = 0.01, CLEAR_R = 3;

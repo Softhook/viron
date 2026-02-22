@@ -7,7 +7,7 @@ let CULL_DIST = 6000;
 const SKY_R = 30, SKY_G = 60, SKY_B = 120;
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const MAX_INF = 2000, INF_RATE = 0.01, CLEAR_R = 3;
-const LAUNCH_MIN = 0, LAUNCH_MAX = 800;
+const LAUNCH_MIN = 0, LAUNCH_MAX = 840;
 const TREE_VARIANTS = [
   { infected: [180, 30, 20], healthy: [25, 130, 20], cones: [[12, 45, 20]] },
   {
@@ -110,7 +110,7 @@ function shipUpDir(s) {
 }
 
 function resetShip(p, offsetX) {
-  p.ship = { x: offsetX, y: LAUNCH_ALT, z: 400, vx: 0, vy: 0, vz: 0, pitch: 0, yaw: 0 };
+  p.ship = { x: offsetX, y: LAUNCH_ALT, z: 420, vx: 0, vy: 0, vz: 0, pitch: 0, yaw: 0 };
 }
 
 function createPlayer(id, keys, offsetX, labelColor) {
@@ -328,7 +328,7 @@ function startGame(np) {
   gameStartTime = millis();
   mouseReleasedSinceStart = !mouseIsPressed;
   if (np === 1) {
-    players = [createPlayer(0, P1_KEYS, 400, [80, 180, 255])];
+    players = [createPlayer(0, P1_KEYS, 420, [80, 180, 255])];
   } else {
     players = [
       createPlayer(0, P1_KEYS, 300, [80, 180, 255]),
@@ -345,7 +345,7 @@ function startLevel(lvl) {
   infectionStarted = false;
   currentMaxEnemies = 1 + level;
   for (let p of players) {
-    resetShip(p, numPlayers === 1 ? 400 : (p.id === 0 ? 300 : 500));
+    resetShip(p, numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520));
     p.homingMissiles = [];
     p.missilesRemaining = 1;
     p.dead = false;
@@ -633,7 +633,7 @@ function draw() {
       p.respawnTimer--;
       if (p.respawnTimer <= 0) {
         p.dead = false;
-        resetShip(p, numPlayers === 1 ? 400 : (p.id === 0 ? 300 : 500));
+        resetShip(p, numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520));
       }
     }
   }
@@ -1137,7 +1137,7 @@ function drawRadarForPlayer(p, hw, h) {
   }
 
   // Launchpad
-  let lx = (400 - s.x) * 0.012, lz = (400 - s.z) * 0.012;
+  let lx = (420 - s.x) * 0.012, lz = (420 - s.z) * 0.012;
   if (abs(lx) < 50 && abs(lz) < 50) { fill(255, 255, 0, 150); noStroke(); rect(lx, lz, 4, 4); }
 
   // Enemies
@@ -1256,11 +1256,7 @@ function getChunkGeometry(cx, cz) {
 
         let chk = (tx + tz) % 2 === 0;
 
-        if (isLaunchpad(xP, zP)) {
-          let pad = chk ? 190 : 140;
-          fill(pad, pad, pad);
-          vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
-          vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+        if (xP >= LAUNCH_MIN && xP < LAUNCH_MAX && zP >= LAUNCH_MIN && zP < LAUNCH_MAX) {
           continue;
         }
 
@@ -1413,19 +1409,62 @@ function drawLandscape(s) {
   // Solid launchpad base
   push();
   noStroke();
-  let padDepth = (400 - cam.x) * cam.fwdX + (400 - cam.z) * cam.fwdZ;
-  let padCol = getFogColor([80, 80, 75], padDepth);
-  fill(padCol[0], padCol[1], padCol[2]);
-  let padW = LAUNCH_MAX - LAUNCH_MIN;
-  let padTop = LAUNCH_ALT + 2;
-  let padH = SEA - padTop + 10;
-  translate(
-    (LAUNCH_MIN + LAUNCH_MAX) * 0.5,
-    padTop + padH * 0.5,
-    (LAUNCH_MIN + LAUNCH_MAX) * 0.5
-  );
-  box(padW, padH, padW);
+  // Draw base as simple quads directly corresponding to tiles (to ensure static mapping free of camera float precision jitter/animation)
+  noLights();
+  beginShape(QUADS);
+  for (let px = LAUNCH_MIN; px < LAUNCH_MAX; px += TILE) {
+    for (let pz = LAUNCH_MIN; pz < LAUNCH_MAX; pz += TILE) {
+      let isChk = ((px / TILE) + (pz / TILE)) % 2 === 0;
+      let col = isChk ? [255, 255, 255] : [220, 220, 220];
+      let cx = px + TILE * 0.5;
+      let cz = pz + TILE * 0.5;
+      let tileDepth = (cx - cam.x) * cam.fwdX + (cz - cam.z) * cam.fwdZ;
+      let fc = getFogColor(col, tileDepth);
+      fill(fc[0], fc[1], fc[2]);
+      vertex(px, LAUNCH_ALT, pz);
+      vertex(px + TILE, LAUNCH_ALT, pz);
+      vertex(px + TILE, LAUNCH_ALT, pz + TILE);
+      vertex(px, LAUNCH_ALT, pz + TILE);
+    }
+  }
+  endShape();
+
+  // Draw sides straight down to SEA to hide underlying terrain gap if exposed from low angle
+  let padDepth = (LAUNCH_MAX * 0.5 - cam.x) * cam.fwdX + (LAUNCH_MAX * 0.5 - cam.z) * cam.fwdZ;
+  let sideCol = getFogColor([180, 180, 180], padDepth);
+  fill(sideCol[0], sideCol[1], sideCol[2]);
+
+  beginShape(QUADS);
+  // Front side
+  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MAX);
+  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MAX);
+  vertex(LAUNCH_MAX, SEA, LAUNCH_MAX);
+  vertex(LAUNCH_MIN, SEA, LAUNCH_MAX);
+
+  // Back side
+  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MIN);
+  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MIN);
+  vertex(LAUNCH_MIN, SEA, LAUNCH_MIN);
+  vertex(LAUNCH_MAX, SEA, LAUNCH_MIN);
+
+  // Left side
+  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MIN);
+  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MAX);
+  vertex(LAUNCH_MIN, SEA, LAUNCH_MAX);
+  vertex(LAUNCH_MIN, SEA, LAUNCH_MIN);
+
+  // Right side
+  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MAX);
+  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MIN);
+  vertex(LAUNCH_MAX, SEA, LAUNCH_MIN);
+  vertex(LAUNCH_MAX, SEA, LAUNCH_MAX);
+  endShape();
+
   pop();
+
+  // Re-enable lighting for 3D structures on top of the pad
+  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
+  ambientLight(60, 60, 70);
 
   // Draw Zarch missiles lined up on the right side of the launchpad
   push();

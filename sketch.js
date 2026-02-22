@@ -234,7 +234,7 @@ precision mediump float;
 varying vec4 vColor;
 varying vec4 vWorldPos;
 uniform float uTime;
-uniform vec3 uPulses[5];
+uniform vec4 uPulses[5];
 uniform vec2 uFogDist;
 
 void main() {  
@@ -244,16 +244,18 @@ void main() {
   for (int i = 0; i < 5; i++) {
     float age = uTime - uPulses[i].z;
     if (age >= 0.0 && age < 3.0) { // Lasts for 3 seconds
+      float type = uPulses[i].w;
       // Scale differences by 0.01 before taking length to avoid fp16 overflow on mobile
       vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
       float distToPulse = length(diff) * 100.0;
       
-      float radius = age * 800.0; // Expands fast
-      float ringThickness = 80.0;
+      float radius = type == 1.0 ? age * 300.0 : age * 800.0; // Smaller crab pulse
+      float ringThickness = type == 1.0 ? 30.0 : 80.0;
       float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
       
       float fade = 1.0 - (age / 3.0);
-      cyberColor += vec3(1.0, 0.1, 0.1) * ring * fade * 2.0; // Glowing neon red ring
+      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : vec3(1.0, 0.1, 0.1); // Blue crab, red otherwise
+      cyberColor += pulseColor * ring * fade * 2.0; 
     }
   }
   
@@ -1250,9 +1252,9 @@ function drawLandscape(s) {
   let pulseArr = [];
   for (let i = 0; i < 5; i++) {
     if (i < activePulses.length) {
-      pulseArr.push(activePulses[i].x, activePulses[i].z, activePulses[i].start);
+      pulseArr.push(activePulses[i].x, activePulses[i].z, activePulses[i].start, activePulses[i].type || 0.0);
     } else {
-      pulseArr.push(0.0, 0.0, -9999.0);
+      pulseArr.push(0.0, 0.0, -9999.0, 0.0);
     }
   }
   terrainShader.setUniform('uPulses', pulseArr);
@@ -1636,10 +1638,7 @@ function updateBomber(e, refShip) {
     let gy = getAltitude(e.x, e.z);
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
-      let wx = tx * TILE, wz = tz * TILE;
-      if (!isLaunchpad(wx, wz)) {
-        bombs.push({ x: e.x, y: e.y, z: e.z, k: tileKey(tx, tz), type: 'mega' });
-      }
+      bombs.push({ x: e.x, y: e.y, z: e.z, k: tileKey(tx, tz), type: 'mega' });
     }
   }
 }
@@ -1672,13 +1671,10 @@ function updateCrab(e, alivePlayers, refShip) {
   if (random() < 0.05) { // 5% chance per frame to drop a virus
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
-      let wx = tx * TILE, wz = tz * TILE;
-      if (!isLaunchpad(wx, wz)) {
-        let k = tileKey(tx, tz);
-        if (!infectedTiles[k]) {
-          infectedTiles[k] = { tick: frameCount };
-          activePulses = [{ x: e.x, z: e.z, start: millis() / 1000.0 }, ...activePulses].slice(0, 5);
-        }
+      let k = tileKey(tx, tz);
+      if (!infectedTiles[k]) {
+        infectedTiles[k] = { tick: frameCount };
+        activePulses = [{ x: e.x, z: e.z, start: millis() / 1000.0, type: 1.0 }, ...activePulses].slice(0, 5);
       }
     }
   }
@@ -1760,11 +1756,8 @@ function updateSeeder(e, refShip) {
     let gy = getAltitude(e.x, e.z);
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
-      let wx = tx * TILE, wz = tz * TILE;
-      if (!isLaunchpad(wx, wz)) {
-        let k = tileKey(tx, tz);
-        if (!infectedTiles[k]) bombs.push({ x: e.x, y: e.y, z: e.z, k: k });
-      }
+      let k = tileKey(tx, tz);
+      if (!infectedTiles[k]) bombs.push({ x: e.x, y: e.y, z: e.z, k: k });
     }
   }
 }

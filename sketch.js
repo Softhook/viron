@@ -710,9 +710,9 @@ function updateShipInput(p) {
   if (p.dead) return;
   let k = p.keys;
   if (!leftMouseDown) mouseReleasedSinceStart = true;
-  let isThrusting = keyIsDown(k.thrust) || (numPlayers === 1 && !isMobile && rightMouseDown);
+  let isThrusting = keyIsDown(k.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
   let isBraking = keyIsDown(k.brake);
-  let isShooting = keyIsDown(k.shoot) || (numPlayers === 1 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
+  let isShooting = keyIsDown(k.shoot) || (p.id === 0 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
 
   if (isMobile && p.id === 0) {
     isThrusting = isThrusting || mobileControls.btns.thrust.active;
@@ -1116,7 +1116,7 @@ function drawControlHints(p, pi, hw, h) {
     hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E missile  S brake  (Click to lock mouse)';
   } else {
     hints = pi === 0
-      ? 'W thrust  A/D turn  R/F pitch  Q shoot  E missile  S brake'
+      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E missile  S brake  (Click lock)'
       : '↑ thrust  ←/→ turn  ;/\' pitch  . shoot  / missile  ↓ brake';
   }
   text(hints, 0, h / 2 - 8);
@@ -1872,7 +1872,7 @@ function mousePressed() {
 
     if (gameState === 'menu') {
       startGame(1);
-    } else if (gameState === 'playing' && numPlayers === 1) {
+    } else if (gameState === 'playing') {
       requestPointerLock();
     }
   }
@@ -1881,7 +1881,7 @@ function mousePressed() {
 function mouseDragged() { mouseMoved(); }
 
 function mouseMoved() {
-  if (gameState === 'playing' && numPlayers === 1 && !players[0].dead && !isMobile) {
+  if (gameState === 'playing' && !players[0].dead && !isMobile) {
     // Mouse X controls yaw (turn left/right)
     players[0].ship.yaw -= movedX * 0.003;
     // Mouse Y controls pitch (up/down)

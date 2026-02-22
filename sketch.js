@@ -1354,36 +1354,6 @@ function drawLandscape(s) {
   }
   endShape();
 
-  // Draw sides straight down to SEA to hide underlying terrain gap if exposed from low angle
-  let padDepth = (LAUNCH_MAX * 0.5 - cam.x) * cam.fwdX + (LAUNCH_MAX * 0.5 - cam.z) * cam.fwdZ;
-  let sideCol = getFogColor([180, 180, 180], padDepth);
-  fill(sideCol[0], sideCol[1], sideCol[2]);
-
-  beginShape(QUADS);
-  // Front side
-  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MAX);
-  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MAX);
-  vertex(LAUNCH_MAX, SEA, LAUNCH_MAX);
-  vertex(LAUNCH_MIN, SEA, LAUNCH_MAX);
-
-  // Back side
-  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MIN);
-  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MIN);
-  vertex(LAUNCH_MIN, SEA, LAUNCH_MIN);
-  vertex(LAUNCH_MAX, SEA, LAUNCH_MIN);
-
-  // Left side
-  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MIN);
-  vertex(LAUNCH_MIN, LAUNCH_ALT, LAUNCH_MAX);
-  vertex(LAUNCH_MIN, SEA, LAUNCH_MAX);
-  vertex(LAUNCH_MIN, SEA, LAUNCH_MIN);
-
-  // Right side
-  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MAX);
-  vertex(LAUNCH_MAX, LAUNCH_ALT, LAUNCH_MIN);
-  vertex(LAUNCH_MAX, SEA, LAUNCH_MIN);
-  vertex(LAUNCH_MAX, SEA, LAUNCH_MAX);
-  endShape();
 
   pop();
 

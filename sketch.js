@@ -1,5 +1,5 @@
 // === CONSTANTS ===
-let TILE = 120;
+const TILE = 120;
 const SEA = 200, LAUNCH_ALT = 100, GRAV = 0.09;
 // View rings: near = always drawn, outer = frustum culled (all at full tile detail)
 let VIEW_NEAR = 35, VIEW_FAR = 50;
@@ -81,6 +81,16 @@ const tileKey = (tx, tz) => tx + ',' + tz;
 const toTile = v => Math.floor(v / TILE);
 const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_MIN && z <= LAUNCH_MAX;
 const aboveSea = y => y >= SEA - 1;
+const getSpawnX = p => numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520);
+
+function setSceneLighting() {
+  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
+  ambientLight(60, 60, 70);
+}
+
+function addPulse(x, z, type = 0.0) {
+  activePulses = [{ x, z, start: millis() / 1000.0, type }, ...activePulses].slice(0, 5);
+}
 
 // Frustum cull: is tile roughly in front of camera?
 function inFrustum(cam, tx, tz) {
@@ -341,7 +351,7 @@ function startLevel(lvl) {
   infectionStarted = false;
   currentMaxEnemies = 1 + level;
   for (let p of players) {
-    resetShip(p, numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520));
+    resetShip(p, getSpawnX(p));
     p.homingMissiles = [];
     p.missilesRemaining = 1;
     p.dead = false;
@@ -494,8 +504,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
   let cd = 550, camY = min(s.y - 120, SEA - 60);
   camera(s.x + sin(s.yaw) * cd, camY, s.z + cos(s.yaw) * cd, s.x, s.y, s.z, 0, 1, 0);
-  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
-  ambientLight(60, 60, 70);
+  setSceneLighting();
 
   drawLandscape(s);
   drawTrees(s);
@@ -589,7 +598,7 @@ function draw() {
       p.respawnTimer--;
       if (p.respawnTimer <= 0) {
         p.dead = false;
-        resetShip(p, numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520));
+        resetShip(p, getSpawnX(p));
       }
     }
   }
@@ -793,7 +802,7 @@ function updateShipInput(p) {
 
 function killPlayer(p) {
   explosion(p.ship.x, p.ship.y, p.ship.z);
-  activePulses = [{ x: p.ship.x, z: p.ship.z, start: millis() / 1000.0, type: 2.0 }, ...activePulses].slice(0, 5);
+  addPulse(p.ship.x, p.ship.z, 2.0);
   p.dead = true;
   p.respawnTimer = 120; // ~2 seconds at 60fps
   p.bullets = [];
@@ -899,7 +908,7 @@ function updateParticlePhysics() {
       } else {
         infectedTiles[b.k] = { tick: frameCount };
       }
-      activePulses = [{ x: b.x, z: b.z, start: millis() / 1000.0 }, ...activePulses].slice(0, 5);
+      addPulse(b.x, b.z, 0.0);
       bombs.splice(i, 1);
     }
   }
@@ -1406,12 +1415,7 @@ function drawLandscape(s) {
 
   // Restore lighting for standard objects
   resetShader();
-  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
-  ambientLight(60, 60, 70);
-
-  // Re-enable lighting for 3D structures on top of the pad
-  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
-  ambientLight(60, 60, 70);
+  setSceneLighting();
 
   // Draw Zarch missiles lined up on the right side of the launchpad
   push();
@@ -1603,8 +1607,7 @@ function shipDisplay(s, tintColor) {
   }
 
   resetShader();
-  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
-  ambientLight(60, 60, 70);
+  setSceneLighting();
 
   let gy = getAltitude(s.x, s.z);
   drawShipShadow(s.x, gy, s.z, s.yaw, s.y);
@@ -1766,7 +1769,7 @@ function updateCrab(e, alivePlayers, refShip) {
       let k = tileKey(tx, tz);
       if (!infectedTiles[k]) {
         infectedTiles[k] = { tick: frameCount };
-        activePulses = [{ x: e.x, z: e.z, start: millis() / 1000.0, type: 1.0 }, ...activePulses].slice(0, 5);
+        addPulse(e.x, e.z, 1.0);
       }
     }
   }

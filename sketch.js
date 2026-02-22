@@ -102,8 +102,6 @@ function getCameraParams(s) {
   };
 }
 
-// Removed distance fog
-
 function shipUpDir(s) {
   let sp = sin(s.pitch), cp = cos(s.pitch), sy = sin(s.yaw), cy = cos(s.yaw);
   return { x: sp * -sy, y: -cp, z: sp * -cy };
@@ -130,7 +128,6 @@ function fireMissile(p) {
 }
 
 function drawShadow(x, groundY, z, w, h) {
-  if (typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.disableShadows) return;
   if (aboveSea(groundY)) return;
   push();
   translate(x, groundY - 0.5, z);
@@ -141,7 +138,6 @@ function drawShadow(x, groundY, z, w, h) {
 }
 
 function drawShipShadow(x, groundY, z, yaw, alt) {
-  if (typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.disableShadows) return;
   if (aboveSea(groundY)) return;
   let spread = max(1, (groundY - alt) * 0.012);
   let alpha = map(groundY - alt, 0, 600, 60, 15, true);
@@ -166,18 +162,6 @@ function setup2DViewport() {
   resetMatrix();
 }
 
-function drawTileBatch(batch) {
-  if (!batch.length) return;
-  beginShape(TRIANGLES);
-  for (let t of batch) {
-    fill(t.r, t.g, t.b);
-    let v = t.v;
-    vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
-    vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
-  }
-  endShape();
-}
-
 function clearInfectionRadius(tx, tz) {
   let cleared = 0;
   for (let dx = -CLEAR_R; dx <= CLEAR_R; dx++)
@@ -194,7 +178,7 @@ function findNearest(arr, x, y, z) {
     let d = dist(x, y, z, e.x, e.y, e.z);
     if (d < bestD) { bestD = d; best = e; }
   }
-  return { target: best, dist: bestD };
+  return best;
 }
 
 function spawnProjectile(s, power, life) {
@@ -502,9 +486,9 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   ambientLight(60, 60, 70);
 
   drawLandscape(s);
-  if (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.disableTrees) drawTrees(s);
-  if (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.disableBuildings) drawBuildings(s);
-  if (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.disableEnemies) drawEnemies(s);
+  drawTrees(s);
+  drawBuildings(s);
+  drawEnemies(s);
 
   for (let player of players) {
     if (!player.dead) shipDisplay(player.ship, player.labelColor);
@@ -520,51 +504,11 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
 }
 
 function draw() {
-  if (typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.active) {
-    window.BENCHMARK.t0 = performance.now();
-    if (window.BENCHMARK.setup) {
-      if (window.BENCHMARK.viewNear) VIEW_NEAR = window.BENCHMARK.viewNear;
-      if (window.BENCHMARK.viewFar) VIEW_FAR = window.BENCHMARK.viewFar;
-      if (window.BENCHMARK.tileSize) TILE = window.BENCHMARK.tileSize;
-
-      const simpleNoiseCfg = !!window.BENCHMARK.simpleNoise;
-      if (simpleNoiseCfg !== window._lastSimpleNoise) {
-        altCache.clear();
-        chunkCache.clear();
-        window._lastSimpleNoise = simpleNoiseCfg;
-      }
-
-      const simpleColorsCfg = !!window.BENCHMARK.simpleColors;
-      if (simpleColorsCfg !== window._lastSimpleColors) {
-        altCache.clear();
-        chunkCache.clear();
-        window._lastSimpleColors = simpleColorsCfg;
-      }
-
-      if (window.BENCHMARK.tileSize !== window._lastTileSize) {
-        altCache.clear();
-        chunkCache.clear();
-        window._lastTileSize = window.BENCHMARK.tileSize;
-      }
-      window.BENCHMARK.setup = false;
-    }
-    if (gameState === 'menu') {
-      startGame(1);
-    }
-    if (gameState === 'playing' && !window.BENCHMARK.done) {
-      window.BENCHMARK.frames = (window.BENCHMARK.frames || 0) + 1;
-      if (window.BENCHMARK.frames === 130) {
-        console.log("BENCHMARK_DONE:" + (window.BENCHMARK.sumDraw / 100).toFixed(2));
-        window.BENCHMARK.done = true;
-      }
-    }
-  }
-
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
 
   // --- Dynamic Performance Scaling ---
-  if (frameCount > 60 && frameCount % 120 === 0 && (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.active)) {
+  if (frameCount > 60 && frameCount % 120 === 0) {
     let fps = frameRate();
     if (!window.maxObservedFPS) window.maxObservedFPS = 60;
     if (fps > window.maxObservedFPS + 2) window.maxObservedFPS = fps;
@@ -635,13 +579,6 @@ function draw() {
         p.dead = false;
         resetShip(p, numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520));
       }
-    }
-  }
-
-  if (typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.active) {
-    if (gameState === 'playing' && !window.BENCHMARK.done && window.BENCHMARK.frames > 30) {
-      let t1 = performance.now();
-      window.BENCHMARK.sumDraw = (window.BENCHMARK.sumDraw || 0) + (t1 - window.BENCHMARK.t0);
     }
   }
 }
@@ -760,11 +697,6 @@ const mobileControls = {
 // === SHIP INPUT & PHYSICS ===
 function updateShipInput(p) {
   if (p.dead) return;
-  let { isThrusting, isBraking, isShooting } = gatherShipInput(p);
-  applyShipPhysics(p, p.ship, isThrusting, isBraking, isShooting);
-}
-
-function gatherShipInput(p) {
   let k = p.keys;
   if (!mouseIsPressed) mouseReleasedSinceStart = true;
   let isThrusting = keyIsDown(k.thrust) || (numPlayers === 1 && !isMobile && mouseIsPressed && mouseButton === RIGHT);
@@ -802,10 +734,7 @@ function gatherShipInput(p) {
   if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
   if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
 
-  return { isThrusting, isBraking, isShooting };
-}
-
-function applyShipPhysics(p, s, isThrusting, isBraking, isShooting) {
+  let s = p.ship;
   s.vy += GRAV;
 
   if (isThrusting) {
@@ -986,7 +915,7 @@ function updateProjectilePhysics(p) {
     let m = p.homingMissiles[i];
     const maxSpd = 10;
 
-    let { target } = findNearest(enemies, m.x, m.y, m.z);
+    let target = findNearest(enemies, m.x, m.y, m.z);
     if (target) {
       let dx = target.x - m.x, dy = target.y - m.y, dz = target.z - m.z;
       let mg = sqrt(dx * dx + dy * dy + dz * dz);
@@ -1201,12 +1130,8 @@ function getGridAltitude(tx, tz) {
   } else {
     let xs = x * 0.0008, zs = z * 0.0008;
     let elevation = noise(xs, zs);
-
-    if (typeof window.BENCHMARK === 'undefined' || !window.BENCHMARK.simpleNoise) {
-      elevation += 0.5 * noise(xs * 2.5, zs * 2.5) + 0.25 * noise(xs * 5, zs * 5);
-      elevation = Math.pow(elevation / 1.75, 2.0); // Flatter valleys, steep hills
-    }
-
+    elevation += 0.5 * noise(xs * 2.5, zs * 2.5) + 0.25 * noise(xs * 5, zs * 5);
+    elevation = Math.pow(elevation / 1.75, 2.0);
     alt = 300 - elevation * 550;
   }
 
@@ -1242,8 +1167,6 @@ function getChunkGeometry(cx, cz) {
     let startZ = cz * CHUNK_SIZE;
 
     beginShape(TRIANGLES);
-    let isSimpleCol = typeof window.BENCHMARK !== 'undefined' && window.BENCHMARK.simpleColors;
-    let isNoCheckers = typeof window.BENCHMARK !== 'undefined' && (window.BENCHMARK.disableCheckerboard || isSimpleCol);
 
     for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
       for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
@@ -1262,40 +1185,27 @@ function getChunkGeometry(cx, cz) {
 
         let baseR, baseG, baseB;
 
-        if (isSimpleCol) {
-          if (avgY > SEA - 15) {
-            baseR = 200; baseG = 180; baseB = 60;
-          } else {
-            baseR = 60; baseG = 180; baseB = 60;
-          }
-        } else {
-          let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
-          rand = rand - Math.floor(rand);
+        let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
+        rand = rand - Math.floor(rand);
 
-          if (avgY > SEA - 15) {
-            let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
-            let col = colors[Math.floor(rand * 3)];
-            baseR = col[0]; baseG = col[1]; baseB = col[2];
-          } else {
-            let colors = [
-              [60, 180, 60], [30, 120, 40], [180, 200, 50],
-              [220, 200, 80], [210, 130, 140], [180, 140, 70]
-            ];
-            let patch = noise(tx * 0.15, tz * 0.15);
-            let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
-            let col = colors[colIdx];
-            baseR = col[0]; baseG = col[1]; baseB = col[2];
-          }
+        if (avgY > SEA - 15) {
+          let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
+          let col = colors[Math.floor(rand * 3)];
+          baseR = col[0]; baseG = col[1]; baseB = col[2];
+        } else {
+          let colors = [
+            [60, 180, 60], [30, 120, 40], [180, 200, 50],
+            [220, 200, 80], [210, 130, 140], [180, 140, 70]
+          ];
+          let patch = noise(tx * 0.15, tz * 0.15);
+          let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
+          let col = colors[colIdx];
+          baseR = col[0]; baseG = col[1]; baseB = col[2];
         }
 
-        let finalR, finalG, finalB;
-        if (isNoCheckers) {
-          finalR = baseR * 0.9; finalG = baseG * 0.9; finalB = baseB * 0.9;
-        } else {
-          finalR = chk ? baseR : baseR * 0.85;
-          finalG = chk ? baseG : baseG * 0.85;
-          finalB = chk ? baseB : baseB * 0.85;
-        }
+        let finalR = chk ? baseR : baseR * 0.85;
+        let finalG = chk ? baseG : baseG * 0.85;
+        let finalB = chk ? baseB : baseB * 0.85;
 
         fill(finalR, finalG, finalB);
         vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
@@ -1393,7 +1303,17 @@ function drawLandscape(s) {
     }
   }
 
-  drawTileBatch(infected);
+  // Draw infected tiles
+  if (infected.length) {
+    beginShape(TRIANGLES);
+    for (let t of infected) {
+      fill(t.r, t.g, t.b);
+      let v = t.v;
+      vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
+      vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
+    }
+    endShape();
+  }
 
   let p = sin(frameCount * 0.03) * 8;
   let seaC = [15, 45 + p, 150 + p];
@@ -1489,18 +1409,15 @@ function drawLandscape(s) {
 function getSeaGeometry(seaSize, seaC, sx, sz) {
   return buildGeometry(() => {
     fill(seaC[0], seaC[1], seaC[2]);
-    let hSize = seaSize;
     beginShape(TRIANGLES);
-    // Draw sea as two giant triangles around the ship
     let y = SEA + 3;
     let cx = toTile(sx) * TILE, cz = toTile(sz) * TILE;
-    vertex(cx - hSize, y, cz - hSize);
-    vertex(cx + hSize, y, cz - hSize);
-    vertex(cx - hSize, y, cz + hSize);
-
-    vertex(cx + hSize, y, cz - hSize);
-    vertex(cx + hSize, y, cz + hSize);
-    vertex(cx - hSize, y, cz + hSize);
+    vertex(cx - seaSize, y, cz - seaSize);
+    vertex(cx + seaSize, y, cz - seaSize);
+    vertex(cx - seaSize, y, cz + seaSize);
+    vertex(cx + seaSize, y, cz - seaSize);
+    vertex(cx + seaSize, y, cz + seaSize);
+    vertex(cx - seaSize, y, cz + seaSize);
     endShape();
   });
 }
@@ -1519,7 +1436,6 @@ function drawTrees(s) {
     let y = getAltitude(t.x, t.z);
     if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
 
-    let d = sqrt(dSq);
     push(); translate(t.x, y, t.z); noStroke();
     let { trunkH: h, canopyScale: sc, variant: vi } = t;
     let inf = !!infectedTiles[tileKey(toTile(t.x), toTile(t.z))];
@@ -1532,12 +1448,11 @@ function drawTrees(s) {
 
     // Canopy
     let tv = TREE_VARIANTS[vi];
-    let isUmbrella = (vi === 2); // Make the 3rd variant an umbrella tree!
     let c1Orig = inf ? tv.infected : tv.healthy;
     let c1Col = getFogColor(c1Orig, depth);
     fill(c1Col[0], c1Col[1], c1Col[2]);
 
-    if (isUmbrella) {
+    if (vi === 2) {
       push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
     } else {
       let cn = tv.cones[0];
@@ -1553,7 +1468,7 @@ function drawTrees(s) {
     }
 
     // Shadow (only close trees)
-    if (d < 1500) {
+    if (dSq < 2250000) {
       push(); translate(0, -0.5, 8); rotateX(PI / 2); fill(0, 0, 0, 40); ellipse(0, 0, 20 * sc, 12 * sc); pop();
     }
     pop();
@@ -1566,58 +1481,52 @@ function drawBuildings(s) {
 
   for (let b of buildings) {
     let dx = s.x - b.x, dz = s.z - b.z;
-    if (dx * dx + dz * dz >= cullSq) continue;
+    let dSq = dx * dx + dz * dz;
+    if (dSq >= cullSq) continue;
     if (!inFrustum(cam, b.x, b.z)) continue;
     let y = getAltitude(b.x, b.z);
     if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
-    let d = sqrt(dx * dx + dz * dz);
     let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
 
     let depth = (b.x - cam.x) * cam.fwdX + (b.z - cam.z) * cam.fwdZ;
     push(); translate(b.x, y, b.z); noStroke();
 
-    // Lander style buildings
     if (b.type === 0) {
-      // House with red roof
-      let bCol = inf ? [200, 50, 50] : [220, 220, 220]; // white base
+      let bCol = inf ? [200, 50, 50] : [220, 220, 220];
       let bc = getFogColor(bCol, depth);
       fill(bc[0], bc[1], bc[2]);
       push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
 
-      let rCol = inf ? [150, 30, 30] : [220, 50, 50]; // red roof
+      let rCol = inf ? [150, 30, 30] : [220, 50, 50];
       let rc = getFogColor(rCol, depth);
       fill(rc[0], rc[1], rc[2]);
       push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
 
     } else if (b.type === 1) {
-      // Silo / Tower with round top
-      let bCol = inf ? [200, 50, 50] : [150, 160, 170]; // grey
+      let bCol = inf ? [200, 50, 50] : [150, 160, 170];
       let bc = getFogColor(bCol, depth);
       fill(bc[0], bc[1], bc[2]);
       push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
 
-      let topCol = inf ? [150, 30, 30] : [80, 180, 220]; // blue dome
+      let topCol = inf ? [150, 30, 30] : [80, 180, 220];
       let tc = getFogColor(topCol, depth);
       fill(tc[0], tc[1], tc[2]);
       push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
 
     } else if (b.type === 2) {
-      // Factory complex
-      let bCol = inf ? [200, 50, 50] : b.col; // original random color
+      let bCol = inf ? [200, 50, 50] : b.col;
       let bc = getFogColor(bCol, depth);
       fill(bc[0], bc[1], bc[2]);
       push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
       push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
 
-      // Smokestack
       let sCol = inf ? [120, 20, 20] : [80, 80, 80];
       let sc = getFogColor(sCol, depth);
       fill(sc[0], sc[1], sc[2]);
       push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
     } else {
-      // Floating Diamond (Zarch style)
-      let bCol = inf ? [200, 50, 50] : [60, 180, 240]; // cyan diamond
+      let bCol = inf ? [200, 50, 50] : [60, 180, 240];
       let bc = getFogColor(bCol, depth);
       fill(bc[0], bc[1], bc[2]);
       push();
@@ -1625,14 +1534,14 @@ function drawBuildings(s) {
       translate(0, floatY - y, 0);
       rotateY(frameCount * 0.01 + b.x);
       rotateZ(frameCount * 0.015 + b.z);
-      cone(b.w, b.h / 2, 4, 1); // bottom
+      cone(b.w, b.h / 2, 4, 1);
       rotateX(PI);
-      cone(b.w, b.h / 2, 4, 1); // top
+      cone(b.w, b.h / 2, 4, 1);
       pop();
     }
     pop();
 
-    if (d < 1500) {
+    if (dSq < 2250000) {
       drawShadow(b.x, y, b.z, b.w * 1.5, b.d * 1.5);
     }
   }
@@ -1795,7 +1704,7 @@ function updateBomber(e, refShip) {
 }
 
 function updateCrab(e, alivePlayers, refShip) {
-  let { target } = findNearest(alivePlayers, e.x, e.y, e.z);
+  let target = findNearest(alivePlayers, e.x, e.y, e.z);
   let tShip = target || refShip;
 
   let dx = tShip.x - e.x, dz = tShip.z - e.z;
@@ -1836,7 +1745,7 @@ function updateCrab(e, alivePlayers, refShip) {
 }
 
 function updateHunter(e, alivePlayers, refShip) {
-  let { target } = findNearest(alivePlayers, e.x, e.y, e.z);
+  let target = findNearest(alivePlayers, e.x, e.y, e.z);
   let tShip = target || refShip;
 
   let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
@@ -1854,7 +1763,7 @@ function updateHunter(e, alivePlayers, refShip) {
 }
 
 function updateFighter(e, alivePlayers, refShip) {
-  let { target } = findNearest(alivePlayers, e.x, e.y, e.z);
+  let target = findNearest(alivePlayers, e.x, e.y, e.z);
   let tShip = target || refShip;
 
   e.stateTimer = (e.stateTimer || 0) + 1;
@@ -1972,9 +1881,7 @@ function mousePressed() {
   }
 }
 
-function mouseDragged() {
-  mouseMoved();
-}
+function mouseDragged() { mouseMoved(); }
 
 function mouseMoved() {
   if (gameState === 'playing' && numPlayers === 1 && !players[0].dead && !isMobile) {

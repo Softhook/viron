@@ -404,20 +404,20 @@ function drawMenu() {
   fill(0, 255, 60, 10 * glowPulse);
   ellipse(0, -height * 0.14, 700 * glowPulse, 200 * glowPulse);
 
-  // Title — "VIRUS"
+  // Title — "VIRON"
   textAlign(CENTER, CENTER);
   noStroke();
 
   // Shadow
   fill(0, 180, 40, 80);
   textSize(110);
-  text('V I R U S', 3, -height * 0.14 + 4);
+  text('V I R O N', 3, -height * 0.14 + 4);
 
   // Main title
   let titlePulse = sin(frameCount * 0.06) * 30;
   fill(30 + titlePulse, 255, 60 + titlePulse);
   textSize(110);
-  text('V I R U S', 0, -height * 0.14);
+  text('V I R O N', 0, -height * 0.14);
 
   // Subtitle
   textSize(16);
@@ -1760,7 +1760,7 @@ function updateCrab(e, alivePlayers, refShip) {
     });
   }
 
-  if (random() < 0.05) { // 5% chance per frame to drop a virus
+  if (random() < 0.03) { // 3% chance per frame to drop a virus
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
       let k = tileKey(tx, tz);

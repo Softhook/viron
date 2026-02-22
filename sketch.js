@@ -373,8 +373,11 @@ function spawnEnemy(forceSeeder = false) {
   let type = 'seeder';
   if (!forceSeeder && level > 0) {
     let r = random();
-    // Debugging: only squid and seeder
-    if (r < 0.5) type = 'squid';
+    if (r < 0.3) type = 'fighter';
+    else if (r < 0.5) type = 'bomber';
+    else if (r < 0.7) type = 'crab';
+    else if (r < 0.8) type = 'hunter';
+    else if (r < 0.9) type = 'squid';
   }
   let ex = random(-4000, 4000);
   let ez = random(-4000, 4000);

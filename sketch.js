@@ -935,7 +935,9 @@ function updateParticlePhysics() {
         for (let r = -4; r <= 4; r++) {
           for (let c = -4; c <= 4; c++) {
             if (r * r + c * c <= 16) {
-              let nk = tileKey(tx + r, tz + c);
+              let nx = tx + r, nz = tz + c;
+              if (aboveSea(getAltitude(nx * TILE, nz * TILE))) continue;
+              let nk = tileKey(nx, nz);
               infectedTiles[nk] = { tick: frameCount };
             }
           }

@@ -353,7 +353,11 @@ function startLevel(lvl) {
   for (let p of players) {
     resetShip(p, getSpawnX(p));
     p.homingMissiles = [];
-    p.missilesRemaining = 1;
+    if (lvl > 1) {
+      p.missilesRemaining++;
+    } else {
+      p.missilesRemaining = 1; // Reset to 1 on game start
+    }
     p.dead = false;
     p.respawnTimer = 0;
   }
@@ -369,10 +373,8 @@ function spawnEnemy(forceSeeder = false) {
   let type = 'seeder';
   if (!forceSeeder && level > 0) {
     let r = random();
-    if (r < 0.3) type = 'fighter';
-    else if (r < 0.5) type = 'bomber';
-    else if (r < 0.7) type = 'crab';
-    else if (r < 0.8) type = 'hunter';
+    // Debugging: only squid and seeder
+    if (r < 0.5) type = 'squid';
   }
   let ex = random(-4000, 4000);
   let ez = random(-4000, 4000);
@@ -927,10 +929,12 @@ function updateParticlePhysics() {
     if (b.y > gy) {
       if (b.type === 'mega') {
         let tx = toTile(b.x), tz = toTile(b.z);
-        for (let r = -2; r <= 2; r++) {
-          for (let c = -2; c <= 2; c++) {
-            let nk = tileKey(tx + r, tz + c);
-            infectedTiles[nk] = { tick: frameCount };
+        for (let r = -4; r <= 4; r++) {
+          for (let c = -4; c <= 4; c++) {
+            if (r * r + c * c <= 16) {
+              let nk = tileKey(tx + r, tz + c);
+              infectedTiles[nk] = { tick: frameCount };
+            }
           }
         }
       } else {
@@ -1031,6 +1035,7 @@ function renderParticles(camX, camZ) {
 
       let r, g, b;
       let alpha = (lifeNorm < 0.4) ? (lifeNorm / 0.4) * 255 : 255;
+      if (p.isFog) alpha = alpha * 0.9;
 
       if (p.isExplosion) {
         let d = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
@@ -1806,6 +1811,33 @@ function drawEnemies(s) {
       vertex(0, 0, 30); vertex(-8, 0, -20); vertex(0, -10, 0);
       vertex(0, 0, 30); vertex(8, 0, -20); vertex(0, -10, 0);
       endShape();
+    } else if (e.type === 'squid') {
+      let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
+      let d = Math.hypot(fvX, fvY, fvZ);
+      if (d > 0) {
+        rotateY(atan2(fvX, fvZ));
+        rotateX(-asin(fvY / d));
+      }
+      noStroke();
+      let sqc = getFogColor([30, 30, 35], depth);
+      fill(sqc[0], sqc[1], sqc[2]);
+
+      push();
+      rotateX(PI / 2);
+      cylinder(12, 40, 8, 1);
+
+      let tentaclePhase = frameCount * 0.1 + e.id;
+      for (let i = 0; i < 8; i++) {
+        push();
+        let a = (i / 8) * TWO_PI;
+        translate(sin(a) * 8, 20, cos(a) * 8);
+        rotateX(sin(tentaclePhase + a) * 0.4);
+        rotateZ(cos(tentaclePhase + a) * 0.4);
+        translate(0, 15, 0);
+        cylinder(2, 30, 4, 1);
+        pop();
+      }
+      pop();
     } else {
       rotateY(frameCount * 0.15); noStroke();
       for (let [yOff, col] of [[-10, [220, 30, 30]], [6, [170, 15, 15]]]) {
@@ -1838,12 +1870,13 @@ function updateEnemies() {
     else if (e.type === 'bomber') updateBomber(e, refShip);
     else if (e.type === 'crab') updateCrab(e, alivePlayers, refShip);
     else if (e.type === 'hunter') updateHunter(e, alivePlayers, refShip);
+    else if (e.type === 'squid') updateSquid(e, alivePlayers, refShip);
     else updateSeeder(e, refShip);
   }
 }
 
 function updateBomber(e, refShip) {
-  e.x += e.vx * 0.5; e.z += e.vz * 0.5; e.y += sin(frameCount * 0.02 + e.id);
+  e.x += e.vx * 1.5; e.z += e.vz * 1.5; e.y += sin(frameCount * 0.02 + e.id);
   if (abs(e.x - refShip.x) > 4000) e.vx *= -1;
   if (abs(e.z - refShip.z) > 4000) e.vz *= -1;
 
@@ -1883,7 +1916,7 @@ function updateCrab(e, alivePlayers, refShip) {
     });
   }
 
-  if (random() < 0.03) { // 3% chance per frame to drop a virus
+  if (random() < 0.02) { // 2% chance per frame to drop a virus
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
       let k = tileKey(tx, tz);
@@ -1974,6 +2007,41 @@ function updateSeeder(e, refShip) {
       let k = tileKey(tx, tz);
       if (!infectedTiles[k]) bombs.push({ x: e.x, y: e.y, z: e.z, k: k });
     }
+  }
+}
+
+function updateSquid(e, alivePlayers, refShip) {
+  let target = findNearest(alivePlayers, e.x, e.y, e.z);
+  let tShip = target || refShip;
+
+  let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
+  let d = Math.hypot(dx, dy, dz);
+  let speed = 3.5;
+  if (d > 0) {
+    e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.05);
+    e.vy = lerp(e.vy || 0, (dy / d) * speed, 0.05);
+    e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.05);
+  }
+  let gy = getAltitude(e.x, e.z);
+  if (e.y > gy - 150) e.vy -= 1.0;
+
+  e.x += e.vx; e.y += e.vy; e.z += e.vz;
+
+  // Release cloud of fog
+  if (frameCount % 5 === 0) {
+    particles.push({
+      x: e.x + random(-10, 10),
+      y: e.y + random(-10, 10),
+      z: e.z + random(-10, 10),
+      isFog: true,
+      vx: e.vx * 0.2 + random(-0.5, 0.5),
+      vy: e.vy * 0.2 + random(-0.5, 0.5),
+      vz: e.vz * 0.2 + random(-0.5, 0.5),
+      life: 255,
+      decay: 3,
+      size: random(30, 80),
+      color: [10, 10, 12]
+    });
   }
 }
 

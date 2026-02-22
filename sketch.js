@@ -249,12 +249,12 @@ void main() {
       vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
       float distToPulse = length(diff) * 100.0;
       
-      float radius = type == 1.0 ? age * 300.0 : age * 800.0; // Smaller crab pulse
-      float ringThickness = type == 1.0 ? 30.0 : 80.0;
+      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0); // type 2 is ship explosion
+      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
       float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
       
       float fade = 1.0 - (age / 3.0);
-      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : vec3(1.0, 0.1, 0.1); // Blue crab, red otherwise
+      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1)); // Blue crab, yellow ship, red bomb
       cyberColor += pulseColor * ring * fade * 2.0; 
     }
   }
@@ -273,7 +273,7 @@ void main() {
 
 // === P5 LIFECYCLE ===
 function preload() {
-  gameFont = loadFont('https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Bold.otf');
+  gameFont = loadFont('Impact.ttf');
 }
 
 function setup() {
@@ -788,6 +788,8 @@ function updateShipInput(p) {
 }
 
 function killPlayer(p) {
+  explosion(p.ship.x, p.ship.y, p.ship.z);
+  activePulses = [{ x: p.ship.x, z: p.ship.z, start: millis() / 1000.0, type: 2.0 }, ...activePulses].slice(0, 5);
   p.dead = true;
   p.respawnTimer = 120; // ~2 seconds at 60fps
   p.bullets = [];
@@ -1235,16 +1237,7 @@ function getFogColor(col, depth) {
   ];
 }
 
-function drawLandscape(s) {
-  let gx = toTile(s.x), gz = toTile(s.z);
-  noStroke();
-
-  let infected = [];
-  let cam = getCameraParams(s);
-
-  // Disable p5 lighting because it silently overrides custom shaders that don't declare lighting uniforms
-  noLights();
-
+function applyTerrainShader() {
   shader(terrainShader);
   terrainShader.setUniform('uTime', millis() / 1000.0);
   terrainShader.setUniform('uFogDist', [VIEW_FAR * TILE - 800, VIEW_FAR * TILE + 400]);
@@ -1258,6 +1251,19 @@ function drawLandscape(s) {
     }
   }
   terrainShader.setUniform('uPulses', pulseArr);
+}
+
+function drawLandscape(s) {
+  let gx = toTile(s.x), gz = toTile(s.z);
+  noStroke();
+
+  let infected = [];
+  let cam = getCameraParams(s);
+
+  // Disable p5 lighting because it silently overrides custom shaders that don't declare lighting uniforms
+  noLights();
+
+  applyTerrainShader();
 
   let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
   let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
@@ -1493,10 +1499,21 @@ function drawBuildings(s) {
 
 // === SHIP DISPLAY ===
 function shipDisplay(s, tintColor) {
-  push();
-  translate(s.x, s.y, s.z);
-  rotateY(s.yaw); rotateX(s.pitch);
-  stroke(0);
+  applyTerrainShader();
+  noStroke();
+
+  let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+  let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
+
+  let transform = (pt) => {
+    let x = pt[0], y = pt[1], z = pt[2];
+    let y1 = y * cx - z * sx;
+    let z1 = y * sx + z * cx;
+    let x2 = x * cy + z1 * sy;
+    let z2 = -x * sy + z1 * cy;
+    return [x2 + s.x, y1 + s.y, z2 + s.z];
+  };
+
   // Tint the ship slightly per-player
   let r = tintColor[0], g = tintColor[1], b = tintColor[2];
   let faces = [
@@ -1510,9 +1527,12 @@ function shipDisplay(s, tintColor) {
     [0, -10, 5], [-15, 10, 15], [15, 10, 15]]
   ];
   for (let [cr, cg, cb, a, bf, d] of faces) {
-    fill(cr, cg, cb); beginShape(); vertex(...a); vertex(...bf); vertex(...d); endShape(CLOSE);
+    fill(cr, cg, cb); beginShape(); vertex(...transform(a)); vertex(...transform(bf)); vertex(...transform(d)); endShape(CLOSE);
   }
-  pop();
+
+  resetShader();
+  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
+  ambientLight(60, 60, 70);
 
   let gy = getAltitude(s.x, s.z);
   drawShipShadow(s.x, gy, s.z, s.yaw, s.y);

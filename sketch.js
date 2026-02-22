@@ -864,6 +864,34 @@ function checkCollisions(p) {
     }
   }
 
+  // Powerup (Type 3 Building) vs Player
+  for (let i = buildings.length - 1; i >= 0; i--) {
+    let b = buildings[i];
+    if (b.type === 3) {
+      let bGnd = getAltitude(b.x, b.z);
+      let floatY = bGnd - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
+      let dx = s.x - b.x;
+      let dy = s.y - floatY;
+      let dz = s.z - b.z;
+      let radiusSq = (b.w + 15) ** 2;
+
+      if (dx * dx + dy * dy + dz * dz < radiusSq) {
+        p.missilesRemaining++;
+        p.score += 500;
+        buildings.splice(i, 1);
+
+        for (let j = 0; j < 20; j++) {
+          particles.push({
+            x: b.x, y: floatY, z: b.z,
+            vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
+            life: 255, decay: 12, size: random(4, 9),
+            color: [60, 180, 240]
+          });
+        }
+      }
+    }
+  }
+
   // Bullet-tree: only infected trees absorb bullets
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];

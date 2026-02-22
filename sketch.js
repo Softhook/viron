@@ -73,7 +73,7 @@ let isAndroid = false;
 
 function checkMobile() {
   isAndroid = /Android/i.test(navigator.userAgent);
-  isMobile = isAndroid || /webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  isMobile = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
 }
 
 // === HELPERS ===
@@ -177,8 +177,8 @@ function clearInfectionRadius(tx, tz) {
 function findNearest(arr, x, y, z) {
   let best = null, bestD = Infinity;
   for (let e of arr) {
-    let d = dist(x, y, z, e.x, e.y, e.z);
-    if (d < bestD) { bestD = d; best = e; }
+    let dSq = (x - e.x) ** 2 + (y - e.y) ** 2 + (z - e.z) ** 2;
+    if (dSq < bestD) { bestD = dSq; best = e; }
   }
   return best;
 }
@@ -623,9 +623,10 @@ function spreadInfection() {
 function clearInfectionAt(wx, wz, p) {
   let tx = toTile(wx), tz = toTile(wz);
   if (!infectedTiles[tileKey(tx, tz)]) return false;
-  let cleared = clearInfectionRadius(tx, tz);
-  if (cleared > 0) { explosion(wx, getAltitude(wx, wz) - 10, wz); if (p) p.score += 100; }
-  return cleared > 0;
+  clearInfectionRadius(tx, tz);
+  explosion(wx, getAltitude(wx, wz) - 10, wz);
+  if (p) p.score += 100;
+  return true;
 }
 
 // === MOBILE INPUT ===
@@ -652,7 +653,7 @@ const mobileControls = {
       let t = touches[i];
       if (t.x > bw / 2) {
         for (let b in this.btns) {
-          if (dist(t.x, t.y, this.btns[b].x, this.btns[b].y) < this.btns[b].r * 1.5) this.btns[b].active = true;
+          if (Math.hypot(t.x - this.btns[b].x, t.y - this.btns[b].y) < this.btns[b].r * 1.5) this.btns[b].active = true;
         }
       } else {
         if (this.leftTouchId === t.id) {
@@ -684,7 +685,7 @@ const mobileControls = {
       fill(255, 255, 255, 40);
       circle(this.joyCenter.x, this.joyCenter.y, 140);
       fill(255, 255, 255, 120);
-      let d = dist(this.joyCenter.x, this.joyCenter.y, this.joyPos.x, this.joyPos.y);
+      let d = Math.hypot(this.joyPos.x - this.joyCenter.x, this.joyPos.y - this.joyCenter.y);
       let a = atan2(this.joyPos.y - this.joyCenter.y, this.joyPos.x - this.joyCenter.x);
       let r = min(d, 70);
       circle(this.joyCenter.x + cos(a) * r, this.joyCenter.y + sin(a) * r, 50);
@@ -798,7 +799,7 @@ function checkCollisions(p) {
   // Enemy bullets vs player
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     let eb = enemyBullets[i];
-    if (dist(eb.x, eb.y, eb.z, s.x, s.y, s.z) < 70) {
+    if ((eb.x - s.x) ** 2 + (eb.y - s.y) ** 2 + (eb.z - s.z) ** 2 < 4900) {
       explosion(s.x, s.y, s.z);
       killPlayer(p);
       enemyBullets.splice(i, 1);
@@ -814,7 +815,7 @@ function checkCollisions(p) {
     // Player Bullets vs Enemy
     for (let i = p.bullets.length - 1; i >= 0; i--) {
       let b = p.bullets[i];
-      if (dist(b.x, b.y, b.z, e.x, e.y, e.z) < 80) {
+      if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < 6400) {
         explosion(e.x, e.y, e.z);
         enemies.splice(j, 1);
         p.bullets.splice(i, 1);
@@ -828,7 +829,7 @@ function checkCollisions(p) {
     if (!killed) {
       for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
         let m = p.homingMissiles[i];
-        if (dist(m.x, m.y, m.z, e.x, e.y, e.z) < 100) {
+        if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < 10000) {
           explosion(e.x, e.y, e.z);
           enemies.splice(j, 1);
           p.homingMissiles.splice(i, 1);
@@ -840,7 +841,7 @@ function checkCollisions(p) {
     }
 
     // Enemy body vs Player body
-    if (!killed && dist(s.x, s.y, s.z, e.x, e.y, e.z) < 70) {
+    if (!killed && ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < 4900)) {
       killPlayer(p);
       return;
     }
@@ -851,7 +852,7 @@ function checkCollisions(p) {
     let b = p.bullets[i];
     for (let t of trees) {
       let ty = getAltitude(t.x, t.z);
-      if (dist(b.x, b.z, t.x, t.z) < 60 && b.y > ty - t.trunkH - 30 * t.canopyScale - 10 && b.y < ty + 10) {
+      if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 < 3600 && b.y > ty - t.trunkH - 30 * t.canopyScale - 10 && b.y < ty + 10) {
         let tx = toTile(t.x), tz = toTile(t.z);
         if (infectedTiles[tileKey(tx, tz)]) {
           clearInfectionRadius(tx, tz);
@@ -892,8 +893,7 @@ function updateParticlePhysics() {
         } else {
           infectedTiles[b.k] = { tick: frameCount };
         }
-        activePulses.unshift({ x: b.x, z: b.z, start: millis() / 1000.0 });
-        if (activePulses.length > 5) activePulses.pop();
+        activePulses = [{ x: b.x, z: b.z, start: millis() / 1000.0 }, ...activePulses].slice(0, 5);
       }
       bombs.splice(i, 1);
     }
@@ -928,7 +928,7 @@ function updateProjectilePhysics(p) {
     let target = findNearest(enemies, m.x, m.y, m.z);
     if (target) {
       let dx = target.x - m.x, dy = target.y - m.y, dz = target.z - m.z;
-      let mg = sqrt(dx * dx + dy * dy + dz * dz);
+      let mg = Math.hypot(dx, dy, dz);
       if (mg > 0) {
         let bl = 0.12;
         m.vx = lerp(m.vx, (dx / mg) * maxSpd, bl);
@@ -937,7 +937,7 @@ function updateProjectilePhysics(p) {
       }
     }
 
-    let sp = sqrt(m.vx * m.vx + m.vy * m.vy + m.vz * m.vz);
+    let sp = Math.hypot(m.vx, m.vy, m.vz);
     if (sp > 0) {
       m.vx = (m.vx / sp) * maxSpd;
       m.vy = (m.vy / sp) * maxSpd;
@@ -969,8 +969,7 @@ function updateProjectilePhysics(p) {
 function renderParticles(camX, camZ) {
   let cullSq = (CULL_DIST * 0.6) * (CULL_DIST * 0.6);
   for (let p of particles) {
-    let dx = p.x - camX, dz = p.z - camZ;
-    if (dx * dx + dz * dz > cullSq) continue;
+    if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
     push(); translate(p.x, p.y, p.z); noStroke(); fill(255, 150, 0, p.life); box(4); pop();
   }
   for (let b of bombs) {
@@ -985,8 +984,7 @@ function renderProjectiles(p, camX, camZ) {
   let cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
   // Bullets
   for (let b of p.bullets) {
-    let dx = b.x - camX, dz = b.z - camZ;
-    if (dx * dx + dz * dz > cullSq) continue;
+    if ((b.x - camX) ** 2 + (b.z - camZ) ** 2 > cullSq) continue;
     push(); translate(b.x, b.y, b.z); noStroke();
     fill(p.labelColor[0], p.labelColor[1], p.labelColor[2]);
     box(6); pop();
@@ -994,8 +992,7 @@ function renderProjectiles(p, camX, camZ) {
 
   // Homing missiles
   for (let m of p.homingMissiles) {
-    let dx = m.x - camX, dz = m.z - camZ;
-    if (dx * dx + dz * dz > cullSq) continue;
+    if ((m.x - camX) ** 2 + (m.z - camZ) ** 2 > cullSq) continue;
     push(); translate(m.x, m.y, m.z); noStroke(); fill(0, 200, 255); box(10); pop();
   }
 }
@@ -1139,10 +1136,8 @@ function getGridAltitude(tx, tz) {
     alt = LAUNCH_ALT;
   } else {
     let xs = x * 0.0008, zs = z * 0.0008;
-    let elevation = noise(xs, zs);
-    elevation += 0.5 * noise(xs * 2.5, zs * 2.5) + 0.25 * noise(xs * 5, zs * 5);
-    elevation = Math.pow(elevation / 1.75, 2.0);
-    alt = 300 - elevation * 550;
+    let elevation = noise(xs, zs) + 0.5 * noise(xs * 2.5, zs * 2.5) + 0.25 * noise(xs * 5, zs * 5);
+    alt = 300 - Math.pow(elevation / 1.75, 2.0) * 550;
   }
 
   altCache.set(key, alt);
@@ -1195,8 +1190,7 @@ function getChunkGeometry(cx, cz) {
 
         let baseR, baseG, baseB;
 
-        let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453;
-        rand = rand - Math.floor(rand);
+        let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453 % 1;
 
         if (avgY > SEA - 15) {
           let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
@@ -1438,11 +1432,8 @@ function drawTrees(s) {
   let cam = getCameraParams(s);
 
   for (let t of trees) {
-    let dx = s.x - t.x, dz = s.z - t.z;
-    let dSq = dx * dx + dz * dz;
-    if (dSq >= cullSq) continue;
-    // Frustum cull trees
-    if (!inFrustum(cam, t.x, t.z)) continue;
+    let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
+    if (dSq >= cullSq || !inFrustum(cam, t.x, t.z)) continue;
     let y = getAltitude(t.x, t.z);
     if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
 
@@ -1490,10 +1481,8 @@ function drawBuildings(s) {
   let cam = getCameraParams(s);
 
   for (let b of buildings) {
-    let dx = s.x - b.x, dz = s.z - b.z;
-    let dSq = dx * dx + dz * dz;
-    if (dSq >= cullSq) continue;
-    if (!inFrustum(cam, b.x, b.z)) continue;
+    let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
+    if (dSq >= cullSq || !inFrustum(cam, b.x, b.z)) continue;
     let y = getAltitude(b.x, b.z);
     if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
@@ -1589,8 +1578,7 @@ function drawEnemies(s) {
   let cullSq = CULL_DIST * CULL_DIST;
 
   for (let e of enemies) {
-    let dx = e.x - s.x, dz = e.z - s.z;
-    if (dx * dx + dz * dz > cullSq) continue;
+    if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > cullSq) continue;
 
     let depth = (e.x - cam.x) * cam.fwdX + (e.z - cam.z) * cam.fwdZ;
 
@@ -1599,7 +1587,7 @@ function drawEnemies(s) {
 
     if (e.type === 'fighter') {
       let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-      let d = sqrt(fvX * fvX + fvY * fvY + fvZ * fvZ);
+      let d = Math.hypot(fvX, fvY, fvZ);
       if (d > 0) {
         let yaw = atan2(fvX, fvZ);
         rotateY(yaw);
@@ -1645,7 +1633,7 @@ function drawEnemies(s) {
       push(); translate(15, legY, 15); box(5, 20, 5); pop();
     } else if (e.type === 'hunter') {
       let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-      let d = sqrt(fvX * fvX + fvY * fvY + fvZ * fvZ);
+      let d = Math.hypot(fvX, fvY, fvZ);
       if (d > 0) {
         rotateY(atan2(fvX, fvZ));
         rotateX(-asin(fvY / d));
@@ -1718,7 +1706,7 @@ function updateCrab(e, alivePlayers, refShip) {
   let tShip = target || refShip;
 
   let dx = tShip.x - e.x, dz = tShip.z - e.z;
-  let d = sqrt(dx * dx + dz * dz);
+  let d = Math.hypot(dx, dz);
   if (d > 0) {
     e.vx = lerp(e.vx || 0, (dx / d) * 3, 0.05);
     e.vz = lerp(e.vz || 0, (dz / d) * 3, 0.05);
@@ -1746,8 +1734,7 @@ function updateCrab(e, alivePlayers, refShip) {
         let k = tileKey(tx, tz);
         if (!infectedTiles[k]) {
           infectedTiles[k] = { tick: frameCount };
-          activePulses.unshift({ x: e.x, z: e.z, start: millis() / 1000.0 });
-          if (activePulses.length > 5) activePulses.pop();
+          activePulses = [{ x: e.x, z: e.z, start: millis() / 1000.0 }, ...activePulses].slice(0, 5);
         }
       }
     }
@@ -1759,7 +1746,7 @@ function updateHunter(e, alivePlayers, refShip) {
   let tShip = target || refShip;
 
   let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
-  let d = sqrt(dx * dx + dy * dy + dz * dz);
+  let d = Math.hypot(dx, dy, dz);
   let speed = 5.0;
   if (d > 0) {
     e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.1);
@@ -1791,7 +1778,7 @@ function updateFighter(e, alivePlayers, refShip) {
   let ty = e.aggressive ? tShip.y : -600;
 
   let dx = tx - e.x, dy = ty - e.y, dz = tz - e.z;
-  let d = sqrt(dx * dx + dy * dy + dz * dz);
+  let d = Math.hypot(dx, dy, dz);
 
   let speed = 2.5;
   if (d > 0) {
@@ -1813,7 +1800,7 @@ function updateFighter(e, alivePlayers, refShip) {
     let pvx = (dx / d) + random(-0.2, 0.2);
     let pvy = (dy / d) + random(-0.2, 0.2);
     let pvz = (dz / d) + random(-0.2, 0.2);
-    let pd = sqrt(pvx * pvx + pvy * pvy + pvz * pvz);
+    let pd = Math.hypot(pvx, pvy, pvz);
     enemyBullets.push({
       x: e.x, y: e.y, z: e.z,
       vx: (pvx / pd) * 10, vy: (pvy / pd) * 10, vz: (pvz / pd) * 10, life: 120

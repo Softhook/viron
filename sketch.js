@@ -1653,6 +1653,13 @@ function drawEnemies(s) {
 
     push(); translate(e.x, e.y, e.z);
 
+    // adjust visually for scaled ground enemies to prevent ground clipping
+    if (e.type === 'crab') {
+      translate(0, -10, 0);
+    }
+
+    scale(2);
+
     if (e.type === 'fighter') {
       let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
       let d = Math.hypot(fvX, fvY, fvZ);
@@ -1692,13 +1699,98 @@ function drawEnemies(s) {
       rotateY(yaw);
       noStroke();
       let cc = getFogColor([200, 80, 20], depth);
+      let ccDark = getFogColor([150, 40, 10], depth);
+
+      // Carapace (body)
       fill(cc[0], cc[1], cc[2]);
-      push(); box(30, 15, 30); pop(); // body
-      let legY = sin(frameCount * 0.3 + e.id) * 10;
-      push(); translate(-15, legY, -15); box(5, 20, 5); pop();
-      push(); translate(15, -legY, -15); box(5, 20, 5); pop();
-      push(); translate(-15, -legY, 15); box(5, 20, 5); pop();
-      push(); translate(15, legY, 15); box(5, 20, 5); pop();
+      push(); box(36, 16, 30); pop(); // Main body
+      push(); translate(0, -8, 0); box(24, 8, 20); pop(); // Top bump
+
+      // Eyes
+      push();
+      fill(10, 10, 10);
+      translate(-8, -10, 15);
+      box(4, 8, 4);
+      translate(16, 0, 0);
+      box(4, 8, 4);
+      pop();
+
+      // Legs
+      fill(ccDark[0], ccDark[1], ccDark[2]);
+      let walkPhase = frameCount * 0.3 + e.id;
+      for (let side = -1; side <= 1; side += 2) {
+        for (let i = -1; i <= 1; i++) {
+          let legPhase = walkPhase + i * PI / 3 * side;
+          let lift = max(0, sin(legPhase));
+          let stride = cos(legPhase);
+
+          push();
+          translate(side * 16, 0, i * 10);
+
+          rotateZ(side * (-0.2 - lift * 0.4));
+          rotateY(stride * 0.3);
+
+          // Thigh
+          translate(side * 10, -3, 0);
+          box(20, 6, 6);
+
+          // Calf
+          translate(side * 8, 0, 0);
+          rotateZ(side * 0.8);
+          translate(side * 10, 0, 0);
+          box(22, 4, 4);
+
+          pop();
+        }
+      }
+
+      // Pincers (Claws)
+      fill(cc[0], cc[1], cc[2]);
+      for (let side = -1; side <= 1; side += 2) {
+        let pincerLift = sin(frameCount * 0.1 + e.id) * 0.1;
+        push();
+        translate(side * 16, 0, 14);
+
+        rotateY(side * -0.6);
+        rotateZ(side * (-0.3 + pincerLift));
+
+        // Upper arm
+        translate(side * 10, 0, 0);
+        box(20, 6, 8);
+
+        // Elbow
+        translate(side * 10, 0, 0);
+        rotateY(side * -1.2);
+
+        // Forearm
+        translate(side * 8, 0, 0);
+        box(16, 8, 10);
+
+        // Claw base
+        translate(side * 10, 0, 0);
+        box(12, 10, 12);
+
+        // Pinchers
+        let nip = abs(sin(frameCount * 0.2 + e.id * 3)) * 0.5;
+
+        // Inner pincher
+        push();
+        translate(side * 6, 0, -4);
+        rotateY(side * -nip);
+        translate(side * 8, 0, 0);
+        box(16, 5, 4);
+        pop();
+
+        // Outer pincher
+        push();
+        translate(side * 6, 0, 4);
+        rotateY(side * nip);
+        translate(side * 8, 0, 0);
+        box(16, 5, 4);
+        pop();
+
+        pop();
+      }
     } else if (e.type === 'hunter') {
       let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
       let d = Math.hypot(fvX, fvY, fvZ);
@@ -1733,7 +1825,7 @@ function drawEnemies(s) {
     pop();
 
     let sSize = e.type === 'bomber' ? 60 : (e.type === 'fighter' || e.type === 'hunter' ? 25 : 40);
-    drawShadow(e.x, getAltitude(e.x, e.z), e.z, sSize, sSize);
+    drawShadow(e.x, getAltitude(e.x, e.z), e.z, sSize * 2, sSize * 2);
   }
 }
 
@@ -1773,8 +1865,8 @@ function updateCrab(e, alivePlayers, refShip) {
   let dx = tShip.x - e.x, dz = tShip.z - e.z;
   let d = Math.hypot(dx, dz);
   if (d > 0) {
-    e.vx = lerp(e.vx || 0, (dx / d) * 3, 0.05);
-    e.vz = lerp(e.vz || 0, (dz / d) * 3, 0.05);
+    e.vx = lerp(e.vx || 0, (dx / d) * 1.2, 0.05);
+    e.vz = lerp(e.vz || 0, (dz / d) * 1.2, 0.05);
   }
 
   e.x += e.vx; e.z += e.vz;

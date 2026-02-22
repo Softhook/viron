@@ -56,6 +56,8 @@ let gameStartTime = 0;
 let numPlayers = 1;
 let menuStars = []; // animated starfield for menu
 let mouseReleasedSinceStart = true;
+let leftMouseDown = false;
+let rightMouseDown = false;
 
 // Each player object holds their own ship + projectiles + score
 let players = [];
@@ -276,6 +278,14 @@ function setup() {
   checkMobile();
   createCanvas(windowWidth, windowHeight, WEBGL);
   document.addEventListener('contextmenu', event => event.preventDefault());
+  document.addEventListener('mousedown', e => {
+    if (e.button === 0) leftMouseDown = true;
+    if (e.button === 2) rightMouseDown = true;
+  });
+  document.addEventListener('mouseup', e => {
+    if (e.button === 0) leftMouseDown = false;
+    if (e.button === 2) rightMouseDown = false;
+  });
 
   terrainShader = createShader(TERRAIN_VERT, TERRAIN_FRAG);
 
@@ -310,7 +320,7 @@ function setup() {
 function startGame(np) {
   numPlayers = np;
   gameStartTime = millis();
-  mouseReleasedSinceStart = !mouseIsPressed;
+  mouseReleasedSinceStart = !leftMouseDown;
   if (np === 1) {
     players = [createPlayer(0, P1_KEYS, 420, [80, 180, 255])];
   } else {
@@ -698,10 +708,10 @@ const mobileControls = {
 function updateShipInput(p) {
   if (p.dead) return;
   let k = p.keys;
-  if (!mouseIsPressed) mouseReleasedSinceStart = true;
-  let isThrusting = keyIsDown(k.thrust) || (numPlayers === 1 && !isMobile && mouseIsPressed && mouseButton === RIGHT);
+  if (!leftMouseDown) mouseReleasedSinceStart = true;
+  let isThrusting = keyIsDown(k.thrust) || (numPlayers === 1 && !isMobile && rightMouseDown);
   let isBraking = keyIsDown(k.brake);
-  let isShooting = keyIsDown(k.shoot) || (numPlayers === 1 && !isMobile && mouseIsPressed && mouseButton === LEFT && mouseReleasedSinceStart);
+  let isShooting = keyIsDown(k.shoot) || (numPlayers === 1 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
 
   if (isMobile && p.id === 0) {
     isThrusting = isThrusting || mobileControls.btns.thrust.active;

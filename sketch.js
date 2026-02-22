@@ -19,7 +19,7 @@ const TREE_VARIANTS = [
 
 // Turn/pitch rates for keyboard steering
 const YAW_RATE = 0.04;
-const PITCH_RATE = 0.03;
+const PITCH_RATE = 0.04;
 
 // === KEY BINDINGS ===
 // Player 1: WASD + Q/E/R/F

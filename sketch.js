@@ -626,7 +626,6 @@ function clearInfectionAt(wx, wz, p) {
   let tx = toTile(wx), tz = toTile(wz);
   if (!infectedTiles[tileKey(tx, tz)]) return false;
   clearInfectionRadius(tx, tz);
-  explosion(wx, getAltitude(wx, wz) - 10, wz);
   if (p) p.score += 100;
   return true;
 }
@@ -757,7 +756,12 @@ function updateShipInput(p) {
     if (frameCount % 2 === 0) {
       particles.push({
         x: s.x, y: s.y, z: s.z,
-        vx: -dVec.x * 8 + random(-1, 1), vy: -dVec.y * 8 + random(-1, 1), vz: -dVec.z * 8 + random(-1, 1), life: 255
+        vx: -dVec.x * 8 + random(-1, 1), vy: -dVec.y * 8 + random(-1, 1), vz: -dVec.z * 8 + random(-1, 1),
+        life: 255,
+        decay: 10,
+        seed: random(1.0),
+        size: random(2, 6),
+        color: [180, 140, 100]
       });
     }
   }
@@ -860,7 +864,6 @@ function checkCollisions(p) {
         let tx = toTile(t.x), tz = toTile(t.z);
         if (infectedTiles[tileKey(tx, tz)]) {
           clearInfectionRadius(tx, tz);
-          explosion(t.x, ty - t.trunkH, t.z);
           p.score += 200;
           p.bullets.splice(i, 1);
           break;
@@ -876,7 +879,8 @@ function checkCollisions(p) {
 function updateParticlePhysics() {
   for (let i = particles.length - 1; i >= 0; i--) {
     let p = particles[i];
-    p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life -= 10;
+    p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life -= (p.decay || 10);
+    p.vx *= 0.98; p.vy *= 0.98; p.vz *= 0.98; // Add drag to particles
     if (p.life <= 0) particles.splice(i, 1);
   }
   for (let i = bombs.length - 1; i >= 0; i--) {
@@ -884,7 +888,6 @@ function updateParticlePhysics() {
     b.y += 8;
     let gy = getAltitude(b.x, b.z);
     if (b.y > gy) {
-      explosion(b.x, gy, b.z);
       if (b.type === 'mega') {
         let tx = toTile(b.x), tz = toTile(b.z);
         for (let r = -2; r <= 2; r++) {
@@ -952,7 +955,10 @@ function updateProjectilePhysics(p) {
       particles.push({
         x: m.x, y: m.y, z: m.z,
         vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),
-        life: 120
+        life: 120,
+        decay: 5,
+        seed: random(1.0),
+        size: random(2, 5)
       });
     }
 
@@ -970,10 +976,50 @@ function updateProjectilePhysics(p) {
 // Rendering: run once per viewport (with distance culling)
 function renderParticles(camX, camZ) {
   let cullSq = (CULL_DIST * 0.6) * (CULL_DIST * 0.6);
-  for (let p of particles) {
-    if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
-    push(); translate(p.x, p.y, p.z); noStroke(); fill(255, 150, 0, p.life); box(4); pop();
+  if (particles.length > 0) {
+    noStroke();
+    for (let p of particles) {
+      if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
+
+      let seed = p.seed || 1.0;
+      let lifeNorm = p.life / 255.0;
+      let t = 1.0 - lifeNorm;
+
+      let kr = (5 + seed * 6) % 6;
+      let kg = (3 + seed * 6) % 6;
+      let kb = (1 + seed * 6) % 6;
+      let vr = 255 * (1 - Math.max(Math.min(kr, 4 - kr, 1), 0));
+      let vg = 255 * (1 - Math.max(Math.min(kg, 4 - kg, 1), 0));
+      let vb = 255 * (1 - Math.max(Math.min(kb, 4 - kb, 1), 0));
+
+      let r, g, b;
+      if (p.color) {
+        let f = Math.min(t * 1.5, 1.0);
+        r = lerp(p.color[0], 30, f);
+        g = lerp(p.color[1], 30, f);
+        b = lerp(p.color[2], 30, f);
+      } else {
+        if (t < 0.15) {
+          let f = t / 0.15;
+          r = lerp(255, vr, f); g = lerp(255, vg, f); b = lerp(255, vb, f);
+        } else if (t < 0.6) {
+          let f = (t - 0.15) / 0.45;
+          r = lerp(vr, vr * 0.4, f); g = lerp(vg, vg * 0.4, f); b = lerp(vb, vb * 0.4, f);
+        } else {
+          let f = (t - 0.6) / 0.4;
+          r = lerp(vr * 0.4, 15, f); g = lerp(vg * 0.4, 15, f); b = lerp(vb * 0.4, 15, f);
+        }
+      }
+
+      let alpha = (lifeNorm < 0.4) ? (lifeNorm / 0.4) * 255 : 255;
+
+      push(); translate(p.x, p.y, p.z);
+      fill(r, g, b, alpha);
+      box(p.size || 8);
+      pop();
+    }
   }
+
   for (let b of bombs) {
     push(); translate(b.x, b.y, b.z); noStroke(); fill(200, 50, 50); box(8, 20, 8); pop();
   }
@@ -1784,8 +1830,21 @@ function updateSeeder(e, refShip) {
 
 // === EFFECTS & INPUT ===
 function explosion(x, y, z) {
-  for (let i = 0; i < 40; i++)
-    particles.push({ x, y, z, vx: random(-8, 8), vy: random(-8, 8), vz: random(-8, 8), life: 255 });
+  for (let i = 0; i < 80; i++) {
+    let speed = random(2, 25);
+    let a1 = random(TWO_PI);
+    let a2 = random(TWO_PI);
+    particles.push({
+      x, y, z,
+      vx: speed * sin(a1) * cos(a2),
+      vy: speed * sin(a1) * sin(a2),
+      vz: speed * cos(a1),
+      life: 255,
+      decay: random(3, 8),
+      seed: random(1.0),
+      size: random(10, 24)
+    });
+  }
 }
 
 function keyPressed() {

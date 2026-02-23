@@ -681,9 +681,11 @@ function spreadInfection() {
   for (let i = 0; i < freshLen; i++) {
     let nk = fresh[i];
     infectedTiles[nk] = { tick: frameCount };
-    // Alarm if new infection is on launchpad
     let parts = nk.split(',');
-    if (isLaunchpad(+parts[0] * TILE, +parts[1] * TILE)) {
+    let ptx = +parts[0], ptz = +parts[1];
+    if (typeof gameSFX !== 'undefined') gameSFX.playInfectionSpread(ptx * TILE, getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
+    // Alarm if new infection is on launchpad
+    if (isLaunchpad(ptx * TILE, ptz * TILE)) {
       if (millis() - lastAlarmTime > 1000) {
         if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
         lastAlarmTime = millis();

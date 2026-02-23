@@ -844,7 +844,7 @@ function checkCollisions(p) {
     for (let i = p.bullets.length - 1; i >= 0; i--) {
       let b = p.bullets[i];
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < 6400) {
-        explosion(e.x, e.y, e.z, getEnemyColor(e.type));
+        explosion(e.x, e.y, e.z, getEnemyColor(e.type), e.type);
         enemies.splice(j, 1);
         p.bullets.splice(i, 1);
         p.score += 100;
@@ -858,7 +858,7 @@ function checkCollisions(p) {
       for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
         let m = p.homingMissiles[i];
         if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < 10000) {
-          explosion(e.x, e.y, e.z, getEnemyColor(e.type));
+          explosion(e.x, e.y, e.z, getEnemyColor(e.type), e.type);
           enemies.splice(j, 1);
           p.homingMissiles.splice(i, 1);
           p.score += 250;
@@ -962,6 +962,7 @@ function updateParticlePhysics() {
         infectedTiles[b.k] = { tick: frameCount };
       }
       addPulse(b.x, b.z, 0.0);
+      if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal');
       bombs.splice(i, 1);
     }
   }
@@ -1914,6 +1915,7 @@ function updateBomber(e, refShip) {
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
       bombs.push({ x: e.x, y: e.y, z: e.z, k: tileKey(tx, tz), type: 'mega' });
+      if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('mega');
     }
   }
 }
@@ -1941,6 +1943,7 @@ function updateCrab(e, alivePlayers, refShip) {
       x: e.x, y: e.y - 10, z: e.z,
       vx: 0, vy: -12, vz: 0, life: 100
     });
+    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab');
   }
 
   if (random() < 0.02) { // 2% chance per frame to drop a virus
@@ -2019,6 +2022,7 @@ function updateFighter(e, alivePlayers, refShip) {
       x: e.x, y: e.y, z: e.z,
       vx: (pvx / pd) * 10, vy: (pvy / pd) * 10, vz: (pvz / pd) * 10, life: 120
     });
+    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter');
   }
 }
 
@@ -2032,7 +2036,10 @@ function updateSeeder(e, refShip) {
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
       let k = tileKey(tx, tz);
-      if (!infectedTiles[k]) bombs.push({ x: e.x, y: e.y, z: e.z, k: k });
+      if (!infectedTiles[k]) {
+        bombs.push({ x: e.x, y: e.y, z: e.z, k: k });
+        if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal');
+      }
     }
   }
 }
@@ -2082,8 +2089,11 @@ function getEnemyColor(type) {
   return [220, 30, 30]; // seeder or default
 }
 
-function explosion(x, y, z, baseColor) {
-  if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(baseColor === undefined || baseColor === null);
+function explosion(x, y, z, baseColor, type) {
+  if (typeof gameSFX !== 'undefined') {
+    if (type) gameSFX.playExplosion(type === 'bomber' || type === 'mega', type);
+    else gameSFX.playExplosion(baseColor === undefined || baseColor === null);
+  }
   let isCustom = baseColor !== undefined && baseColor !== null;
   // Increase particle count significantly, adjust size, speed, and decay for massive blasts
   for (let i = 0; i < 350; i++) {

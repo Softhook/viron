@@ -9,12 +9,11 @@ class GameSFX {
         try { if (typeof userStartAudio !== 'undefined') userStartAudio(); } catch (e) { }
         if (typeof getAudioContext !== 'undefined') {
             this.ctx = getAudioContext();
-            this.distCurve = this.createDistortionCurve(400); // Precompute curve for heavy crunch
+            this.distCurve = this.createDistortionCurve(400);
         }
         this.initialized = true;
     }
 
-    // Generates a wave-shaping curve for crunch/distortion
     createDistortionCurve(amount = 50) {
         let k = typeof amount === 'number' ? amount : 50,
             n_samples = 44100,
@@ -46,7 +45,6 @@ class GameSFX {
         filter.connect(gainNode);
         gainNode.connect(this.ctx.destination);
 
-        // 3 Detuned Sawtooths for a FAT laser impact
         [-18, 0, 18].forEach(det => {
             let osc = this.ctx.createOscillator();
             osc.type = 'sawtooth';
@@ -59,11 +57,53 @@ class GameSFX {
         });
     }
 
+    playEnemyShot(type = 'fighter') {
+        this.init();
+        if (!this.ctx) return;
+        let t = this.ctx.currentTime;
+        let gainNode = this.ctx.createGain();
+        let filter = this.ctx.createBiquadFilter();
+
+        if (type === 'crab') {
+            // Crab shoots a quick harsh electrical zap
+            gainNode.gain.setValueAtTime(0.3, t);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+            filter.type = 'highpass';
+            filter.frequency.setValueAtTime(3000, t);
+
+            let osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(800, t);
+            osc.frequency.exponentialRampToValueAtTime(4000, t + 0.1); // Sweeps up!
+            osc.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(this.ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.2);
+        } else {
+            // Fighter shoots a standard rapid laser
+            gainNode.gain.setValueAtTime(0.25, t);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(4000, t);
+            filter.frequency.exponentialRampToValueAtTime(100, t + 0.15);
+
+            let osc = this.ctx.createOscillator();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(1200, t);
+            osc.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+            osc.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(this.ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.15);
+        }
+    }
+
     playMissileFire() {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
-
         let gainNode = this.ctx.createGain();
         gainNode.gain.setValueAtTime(0.5, t);
         gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
@@ -71,32 +111,30 @@ class GameSFX {
         let filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(400, t);
-        filter.frequency.linearRampToValueAtTime(3500, t + 0.2); // Woosh open
-        filter.frequency.exponentialRampToValueAtTime(100, t + 0.6); // Woosh close
+        filter.frequency.linearRampToValueAtTime(3500, t + 0.2);
+        filter.frequency.exponentialRampToValueAtTime(100, t + 0.6);
 
         filter.connect(gainNode);
         gainNode.connect(this.ctx.destination);
 
-        // Fat rocket thrust engines
         [-25, 0, 25].forEach(det => {
             let osc = this.ctx.createOscillator();
             osc.type = 'square';
             osc.detune.value = det;
-            osc.frequency.setValueAtTime(150, t); // lower pitch initially
+            osc.frequency.setValueAtTime(150, t);
             osc.frequency.exponentialRampToValueAtTime(40, t + 0.6);
             osc.connect(filter);
             osc.start(t);
             osc.stop(t + 0.6);
         });
 
-        // Plume noise for missile
         let bufferSize = this.ctx.sampleRate * 0.6;
         let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         let data = buffer.getChannelData(0);
         let lastOut = 0;
         for (let i = 0; i < bufferSize; i++) {
             let white = Math.random() * 2 - 1;
-            data[i] = (lastOut + (0.05 * white)) / 1.05; // Brownish noise
+            data[i] = (lastOut + (0.05 * white)) / 1.05;
             lastOut = data[i];
         }
         let noise = this.ctx.createBufferSource();
@@ -105,54 +143,93 @@ class GameSFX {
         noise.start(t);
     }
 
-    playExplosion(isLarge = false) {
+    playBombDrop(type = 'normal') {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
-        let dur = isLarge ? 2.2 : 0.9;
+        let isMega = type === 'mega';
+        let dur = isMega ? 0.8 : 0.4;
 
-        // Hard Distortion
+        let gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(isMega ? 0.6 : 0.3, t);
+        gain.gain.linearRampToValueAtTime(isMega ? 0.8 : 0.4, t + dur * 0.5);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + dur);
+
+        let osc = this.ctx.createOscillator();
+        osc.type = isMega ? 'sawtooth' : 'sine';
+
+        // Classic falling bomb whistle
+        osc.frequency.setValueAtTime(isMega ? 800 : 1200, t);
+        osc.frequency.exponentialRampToValueAtTime(isMega ? 150 : 300, t + dur);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(t);
+        osc.stop(t + dur);
+    }
+
+    playExplosion(isLarge = false, type = '') {
+        this.init();
+        if (!this.ctx) return;
+        let t = this.ctx.currentTime;
+
+        // Type modifications
+        let isBomber = type === 'bomber';
+        let isSquid = type === 'squid';
+        let isCrab = type === 'crab';
+
+        let dur = isLarge || isBomber ? 2.2 : (isSquid ? 1.5 : 0.9);
+
         let distortion = this.ctx.createWaveShaper();
         distortion.curve = this.distCurve;
         distortion.oversample = '4x';
 
-        // Noise buffer (Deep brown noise for massive crunch)
         let bufferSize = this.ctx.sampleRate * dur;
         let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         let data = buffer.getChannelData(0);
         let lastOut = 0;
         for (let i = 0; i < bufferSize; i++) {
             let white = Math.random() * 2 - 1;
-            data[i] = (lastOut + (0.02 * white)) / 1.02; // Heavy rolloff
+            data[i] = (lastOut + (0.02 * white)) / 1.02;
             lastOut = data[i];
-            data[i] *= 3.5; // Gain comp
+            data[i] *= 3.5;
         }
 
         let noise = this.ctx.createBufferSource();
         noise.buffer = buffer;
 
         let noiseFilter = this.ctx.createBiquadFilter();
-        noiseFilter.type = 'lowpass';
-        noiseFilter.frequency.setValueAtTime(isLarge ? 3000 : 5000, t);
-        noiseFilter.frequency.exponentialRampToValueAtTime(80, t + dur);
+        noiseFilter.type = isCrab ? 'bandpass' : 'lowpass'; // crabs sound tighter
+        if (isCrab) {
+            noiseFilter.frequency.setValueAtTime(2000, t);
+            noiseFilter.frequency.exponentialRampToValueAtTime(500, t + dur);
+        } else {
+            noiseFilter.frequency.setValueAtTime(isLarge || isBomber ? 3000 : 5000, t);
+            noiseFilter.frequency.exponentialRampToValueAtTime(80, t + dur);
+        }
 
         let noiseGain = this.ctx.createGain();
-        noiseGain.gain.setValueAtTime(isLarge ? 1.5 : 1.0, t);
+        let initVol = isLarge ? 1.5 : (isBomber ? 1.4 : 1.0);
+        noiseGain.gain.setValueAtTime(initVol, t);
         noiseGain.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
         noise.connect(noiseFilter);
         noiseFilter.connect(distortion);
 
-        // Sub-bass thump (3 Detuned Oscillators dropping into the sub-20Hz range)
-        let freqs = isLarge ? [110, 114, 106] : [150, 155, 145];
+        // Sub-bass thump
+        let freqs = isLarge || isBomber ? [110, 114, 106] : (isSquid ? [130, 135, 125] : [150, 155, 145]);
         freqs.forEach((freq, idx) => {
             let osc = this.ctx.createOscillator();
             let oscGain = this.ctx.createGain();
-            osc.type = (idx === 0) ? 'triangle' : 'sine'; // One triangle for bite, two sines for sheer weight
-            osc.frequency.setValueAtTime(freq, t);
-            osc.frequency.exponentialRampToValueAtTime(isLarge ? 10 : 20, t + dur * 0.8); // Deep dive
 
-            oscGain.gain.setValueAtTime(isLarge ? 1.0 : 0.6, t);
+            if (isSquid) osc.type = 'sawtooth'; // Squid sounds weirder, ripply
+            else osc.type = (idx === 0) ? 'triangle' : 'sine';
+
+            osc.frequency.setValueAtTime(freq, t);
+            osc.frequency.exponentialRampToValueAtTime(isLarge || isBomber ? 10 : (isSquid ? 5 : 20), t + dur * 0.8);
+
+            let baseGain = isLarge || isBomber ? 1.0 : (isSquid ? 0.8 : 0.6);
+            oscGain.gain.setValueAtTime(baseGain, t);
             oscGain.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
             osc.connect(oscGain);
@@ -170,12 +247,10 @@ class GameSFX {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
-        let freqs = [261.63, 329.63, 392.00, 523.25]; // C E G C
+        let freqs = [261.63, 329.63, 392.00, 523.25];
 
         freqs.forEach((freq, i) => {
             let noteT = t + i * 0.15;
-
-            // Detuned chorus per note
             [-12, 12].forEach(det => {
                 let osc = this.ctx.createOscillator();
                 let gain = this.ctx.createGain();
@@ -206,7 +281,7 @@ class GameSFX {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
-        let freqs = [329.63, 293.66, 261.63, 164.81]; // Decreasing notes
+        let freqs = [329.63, 293.66, 261.63, 164.81];
 
         let distortion = this.ctx.createWaveShaper();
         distortion.curve = this.createDistortionCurve(60);
@@ -214,15 +289,13 @@ class GameSFX {
 
         freqs.forEach((freq, i) => {
             let noteT = t + i * 0.45;
-
-            // Huge detuned drone cluster
             [-20, 0, 20].forEach(det => {
                 let osc = this.ctx.createOscillator();
                 let filter = this.ctx.createBiquadFilter();
                 let gain = this.ctx.createGain();
 
                 osc.type = 'sawtooth';
-                osc.frequency.value = freq / 2; // Dropped an octave for doom
+                osc.frequency.value = freq / 2;
                 osc.detune.value = det;
 
                 filter.type = 'lowpass';
@@ -247,7 +320,6 @@ class GameSFX {
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
 
-        // Arpeggios (Good = A Maj up, Bad = diminished down)
         let freqs = isGood ? [440, 554.37, 659.25, 880] : [220, 207.65, 196.00, 110];
 
         let masterGain = this.ctx.createGain();
@@ -257,8 +329,6 @@ class GameSFX {
 
         freqs.forEach((freq, i) => {
             let noteT = t + i * 0.1;
-
-            // Thicc Detuned Sync
             [-15, 15].forEach(det => {
                 let osc = this.ctx.createOscillator();
                 let gain = this.ctx.createGain();
@@ -284,9 +354,8 @@ class GameSFX {
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
 
-        let freqs = [523.25, 659.25, 1046.50]; // C5, E5, C6 - big shiny chord
+        let freqs = [523.25, 659.25, 1046.50];
 
-        // Huge detuned FM-like chime
         freqs.forEach((freq, i) => {
             [-15, 0, 15].forEach(det => {
                 let osc = this.ctx.createOscillator();
@@ -298,7 +367,7 @@ class GameSFX {
 
                 gain.gain.setValueAtTime(0.0, t);
                 gain.gain.linearRampToValueAtTime(0.2, t + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.01, t + 1.2); // long shiny ring
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
 
                 osc.connect(gain);
                 gain.connect(this.ctx.destination);
@@ -307,7 +376,6 @@ class GameSFX {
             });
         });
 
-        // Spritz of high noise 
         let bufferSize = this.ctx.sampleRate * 0.4;
         let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         let data = buffer.getChannelData(0);

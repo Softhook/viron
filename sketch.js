@@ -275,6 +275,17 @@ float noise(vec2 p) {
     mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
+float fbm(vec2 p) {
+  float f = 0.0;
+  float amp = 0.5;
+  for(int i = 0; i < 3; i++) {
+    f += amp * noise(p);
+    p *= 2.0;
+    amp *= 0.5;
+  }
+  return f;
+}
+
 void main() {  
   vec3 cyberColor = vec3(0.0);
   
@@ -320,9 +331,12 @@ void main() {
     // Combine layers to get "thin" lines (caustics)
     ripple = pow(minDist1, 0.5) * minDist2; 
     
-    // Water colors now based on passed vColor but slightly adjusted for "depth"
-    vec3 shallow = baseColor; 
-    vec3 deep = baseColor * 0.85; // Slightly darker for depth
+    // Toon-shading style thresholds for highlights
+    float highlight = smoothstep(0.3, 0.35, ripple);
+    
+    // Much more subtle water colors, based on the reference turquoise palette
+    vec3 shallow = vec3(0.15, 0.7, 0.75); // Toned down
+    vec3 deep = vec3(0.12, 0.65, 0.7);   // Very close to shallow
     
     texColor = mix(shallow, deep, ripple);
     

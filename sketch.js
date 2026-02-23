@@ -137,7 +137,7 @@ function fireMissile(p) {
   if (p.missilesRemaining > 0 && !p.dead) {
     p.missilesRemaining--;
     p.homingMissiles.push(spawnProjectile(p.ship, 8, 300));
-    if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire();
+    if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
   }
 }
 
@@ -511,7 +511,11 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   push();
   perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
   let cd = 550, camY = min(s.y - 120, SEA - 60);
-  camera(s.x + sin(s.yaw) * cd, camY, s.z + cos(s.yaw) * cd, s.x, s.y, s.z, 0, 1, 0);
+  let cx = s.x + sin(s.yaw) * cd;
+  let cy = camY;
+  let cz = s.z + cos(s.yaw) * cd;
+  camera(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
+  if (typeof gameSFX !== 'undefined') gameSFX.updateListener(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
   setSceneLighting();
 
   drawLandscape(s);
@@ -645,7 +649,7 @@ function clearInfectionAt(wx, wz, p) {
   if (!infectedTiles[tileKey(tx, tz)]) return false;
   clearInfectionRadius(tx, tz);
   if (p) p.score += 100;
-  if (typeof gameSFX !== 'undefined') gameSFX.playClearInfection();
+  if (typeof gameSFX !== 'undefined') gameSFX.playClearInfection(wx, getAltitude(wx, wz), wz);
   return true;
 }
 
@@ -791,7 +795,7 @@ function updateShipInput(p) {
 
   if (isShooting && frameCount % 6 === 0) {
     p.bullets.push(spawnProjectile(s, 25, 300));
-    if (typeof gameSFX !== 'undefined') gameSFX.playShot();
+    if (typeof gameSFX !== 'undefined') gameSFX.playShot(s.x, s.y, s.z);
   }
 
   s.vx *= 0.985; s.vy *= 0.985; s.vz *= 0.985;
@@ -890,11 +894,11 @@ function checkCollisions(p) {
         let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
         if (inf) {
           if (p.missilesRemaining > 0) p.missilesRemaining--;
-          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false);
+          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);
         } else {
           p.missilesRemaining++;
           p.score += 500;
-          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true);
+          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true, b.x, floatY, b.z);
         }
         buildings.splice(i, 1);
 
@@ -962,7 +966,7 @@ function updateParticlePhysics() {
         infectedTiles[b.k] = { tick: frameCount };
       }
       addPulse(b.x, b.z, 0.0);
-      if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal');
+      if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal', b.x, b.y, b.z);
       bombs.splice(i, 1);
     }
   }
@@ -1915,7 +1919,7 @@ function updateBomber(e, refShip) {
     if (!aboveSea(gy)) {
       let tx = toTile(e.x), tz = toTile(e.z);
       bombs.push({ x: e.x, y: e.y, z: e.z, k: tileKey(tx, tz), type: 'mega' });
-      if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('mega');
+      if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('mega', e.x, e.y, e.z);
     }
   }
 }
@@ -1943,7 +1947,7 @@ function updateCrab(e, alivePlayers, refShip) {
       x: e.x, y: e.y - 10, z: e.z,
       vx: 0, vy: -12, vz: 0, life: 100
     });
-    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab');
+    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab', e.x, e.y - 10, e.z);
   }
 
   if (random() < 0.02) { // 2% chance per frame to drop a virus
@@ -2022,7 +2026,7 @@ function updateFighter(e, alivePlayers, refShip) {
       x: e.x, y: e.y, z: e.z,
       vx: (pvx / pd) * 10, vy: (pvy / pd) * 10, vz: (pvz / pd) * 10, life: 120
     });
-    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter');
+    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y, e.z);
   }
 }
 
@@ -2038,7 +2042,7 @@ function updateSeeder(e, refShip) {
       let k = tileKey(tx, tz);
       if (!infectedTiles[k]) {
         bombs.push({ x: e.x, y: e.y, z: e.z, k: k });
-        if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal');
+        if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal', e.x, e.y, e.z);
       }
     }
   }
@@ -2091,8 +2095,8 @@ function getEnemyColor(type) {
 
 function explosion(x, y, z, baseColor, type) {
   if (typeof gameSFX !== 'undefined') {
-    if (type) gameSFX.playExplosion(type === 'bomber' || type === 'mega', type);
-    else gameSFX.playExplosion(baseColor === undefined || baseColor === null);
+    if (type) gameSFX.playExplosion(type === 'bomber' || type === 'mega', type, x, y, z);
+    else gameSFX.playExplosion(baseColor === undefined || baseColor === null, '', x, y, z);
   }
   let isCustom = baseColor !== undefined && baseColor !== null;
   // Increase particle count significantly, adjust size, speed, and decay for massive blasts

@@ -14,6 +14,51 @@ class GameSFX {
         this.initialized = true;
     }
 
+    updateListener(cx, cy, cz, lx, ly, lz, ux, uy, uz) {
+        if (!this.ctx || !this.ctx.listener) return;
+        const listener = this.ctx.listener;
+
+        let fx = lx - cx, fy = ly - cy, fz = lz - cz;
+        let flen = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+        fx /= flen; fy /= flen; fz /= flen;
+
+        let t = this.ctx.currentTime;
+        if (listener.positionX) {
+            listener.positionX.setTargetAtTime(cx, t, 0.05);
+            listener.positionY.setTargetAtTime(cy, t, 0.05);
+            listener.positionZ.setTargetAtTime(cz, t, 0.05);
+            listener.forwardX.setTargetAtTime(fx, t, 0.05);
+            listener.forwardY.setTargetAtTime(fy, t, 0.05);
+            listener.forwardZ.setTargetAtTime(fz, t, 0.05);
+            listener.upX.setTargetAtTime(ux, t, 0.05);
+            listener.upY.setTargetAtTime(uy, t, 0.05);
+            listener.upZ.setTargetAtTime(uz, t, 0.05);
+        } else {
+            listener.setPosition(cx, cy, cz);
+            listener.setOrientation(fx, fy, fz, ux, uy, uz);
+        }
+    }
+
+    createSpatializer(x, y, z) {
+        if (!this.ctx || x === undefined || y === undefined || z === undefined) return null;
+        let panner = this.ctx.createPanner();
+        panner.panningModel = 'HRTF';
+        panner.distanceModel = 'exponential';
+        panner.refDistance = 150;
+        panner.maxDistance = 10000;
+        panner.rolloffFactor = 1.0;
+
+        let t = this.ctx.currentTime;
+        if (panner.positionX) {
+            panner.positionX.setValueAtTime(x, t);
+            panner.positionY.setValueAtTime(y, t);
+            panner.positionZ.setValueAtTime(z, t);
+        } else {
+            panner.setPosition(x, y, z);
+        }
+        return panner;
+    }
+
     createDistortionCurve(amount = 50) {
         let k = typeof amount === 'number' ? amount : 50,
             n_samples = 44100,
@@ -28,10 +73,14 @@ class GameSFX {
         return curve;
     }
 
-    playShot() {
+    playShot(x, y, z) {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
+
+        let panner = this.createSpatializer(x, y, z);
+        let targetNode = panner ? panner : this.ctx.destination;
+        if (panner) panner.connect(this.ctx.destination);
 
         let gainNode = this.ctx.createGain();
         gainNode.gain.setValueAtTime(0.35, t);
@@ -43,7 +92,7 @@ class GameSFX {
         filter.frequency.exponentialRampToValueAtTime(200, t + 0.15);
 
         filter.connect(gainNode);
-        gainNode.connect(this.ctx.destination);
+        gainNode.connect(targetNode);
 
         [-18, 0, 18].forEach(det => {
             let osc = this.ctx.createOscillator();
@@ -57,10 +106,15 @@ class GameSFX {
         });
     }
 
-    playEnemyShot(type = 'fighter') {
+    playEnemyShot(type = 'fighter', x, y, z) {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
+
+        let panner = this.createSpatializer(x, y, z);
+        let targetNode = panner ? panner : this.ctx.destination;
+        if (panner) panner.connect(this.ctx.destination);
+
         let gainNode = this.ctx.createGain();
         let filter = this.ctx.createBiquadFilter();
 
@@ -77,7 +131,7 @@ class GameSFX {
             osc.frequency.exponentialRampToValueAtTime(4000, t + 0.1); // Sweeps up!
             osc.connect(filter);
             filter.connect(gainNode);
-            gainNode.connect(this.ctx.destination);
+            gainNode.connect(targetNode);
             osc.start(t);
             osc.stop(t + 0.2);
         } else {
@@ -94,16 +148,21 @@ class GameSFX {
             osc.frequency.exponentialRampToValueAtTime(200, t + 0.15);
             osc.connect(filter);
             filter.connect(gainNode);
-            gainNode.connect(this.ctx.destination);
+            gainNode.connect(targetNode);
             osc.start(t);
             osc.stop(t + 0.15);
         }
     }
 
-    playMissileFire() {
+    playMissileFire(x, y, z) {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
+
+        let panner = this.createSpatializer(x, y, z);
+        let targetNode = panner ? panner : this.ctx.destination;
+        if (panner) panner.connect(this.ctx.destination);
+
         let gainNode = this.ctx.createGain();
         gainNode.gain.setValueAtTime(0.5, t);
         gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
@@ -115,7 +174,7 @@ class GameSFX {
         filter.frequency.exponentialRampToValueAtTime(100, t + 0.6);
 
         filter.connect(gainNode);
-        gainNode.connect(this.ctx.destination);
+        gainNode.connect(targetNode);
 
         [-25, 0, 25].forEach(det => {
             let osc = this.ctx.createOscillator();
@@ -143,12 +202,16 @@ class GameSFX {
         noise.start(t);
     }
 
-    playBombDrop(type = 'normal') {
+    playBombDrop(type = 'normal', x, y, z) {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
         let isMega = type === 'mega';
         let dur = isMega ? 0.8 : 0.4;
+
+        let panner = this.createSpatializer(x, y, z);
+        let targetNode = panner ? panner : this.ctx.destination;
+        if (panner) panner.connect(this.ctx.destination);
 
         let gain = this.ctx.createGain();
         gain.gain.setValueAtTime(isMega ? 0.6 : 0.3, t);
@@ -163,15 +226,19 @@ class GameSFX {
         osc.frequency.exponentialRampToValueAtTime(isMega ? 150 : 300, t + dur);
 
         osc.connect(gain);
-        gain.connect(this.ctx.destination);
+        gain.connect(targetNode);
         osc.start(t);
         osc.stop(t + dur);
     }
 
-    playExplosion(isLarge = false, type = '') {
+    playExplosion(isLarge = false, type = '', x, y, z) {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
+
+        let panner = this.createSpatializer(x, y, z);
+        let targetNode = panner ? panner : this.ctx.destination;
+        if (panner) panner.connect(this.ctx.destination);
 
         // Type modifications
         let isBomber = type === 'bomber';
@@ -239,7 +306,7 @@ class GameSFX {
         });
 
         distortion.connect(noiseGain);
-        noiseGain.connect(this.ctx.destination);
+        noiseGain.connect(targetNode);
         noise.start(t);
     }
 
@@ -315,17 +382,21 @@ class GameSFX {
         });
     }
 
-    playPowerup(isGood = true) {
+    playPowerup(isGood = true, x, y, z) {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
+
+        let panner = this.createSpatializer(x, y, z);
+        let targetNode = panner ? panner : this.ctx.destination;
+        if (panner) panner.connect(this.ctx.destination);
 
         let freqs = isGood ? [440, 554.37, 659.25, 880] : [220, 207.65, 196.00, 110];
 
         let masterGain = this.ctx.createGain();
         masterGain.gain.setValueAtTime(0.35, t);
         masterGain.gain.linearRampToValueAtTime(0.01, t + (isGood ? 0.6 : 0.8));
-        masterGain.connect(this.ctx.destination);
+        masterGain.connect(targetNode);
 
         freqs.forEach((freq, i) => {
             let noteT = t + i * 0.1;
@@ -349,10 +420,14 @@ class GameSFX {
         });
     }
 
-    playClearInfection() {
+    playClearInfection(x, y, z) {
         this.init();
         if (!this.ctx) return;
         let t = this.ctx.currentTime;
+
+        let panner = this.createSpatializer(x, y, z);
+        let targetNode = panner ? panner : this.ctx.destination;
+        if (panner) panner.connect(this.ctx.destination);
 
         let freqs = [523.25, 659.25, 1046.50];
 
@@ -370,7 +445,7 @@ class GameSFX {
                 gain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
 
                 osc.connect(gain);
-                gain.connect(this.ctx.destination);
+                gain.connect(targetNode);
                 osc.start(t);
                 osc.stop(t + 1.3);
             });
@@ -394,7 +469,7 @@ class GameSFX {
 
         noise.connect(filter);
         filter.connect(noiseGain);
-        noiseGain.connect(this.ctx.destination);
+        noiseGain.connect(targetNode);
         noise.start(t);
     }
 }

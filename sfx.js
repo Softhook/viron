@@ -14,6 +14,37 @@ class GameSFX {
         this.initialized = true;
     }
 
+    _setup(x, y, z) {
+        this.init();
+        if (!this.ctx) return null;
+        let t = this.ctx.currentTime;
+        let targetNode = this.ctx.destination;
+
+        if (x !== undefined && y !== undefined && z !== undefined) {
+            let panner = this.createSpatializer(x, y, z);
+            if (panner) {
+                panner.connect(targetNode);
+                targetNode = panner;
+            }
+        }
+        return { ctx: this.ctx, t, targetNode };
+    }
+
+    _createNoise(dur, filterCoeff = 0, mul = 1) {
+        let bufferSize = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+        let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        let data = buffer.getChannelData(0);
+        let lastOut = 0;
+        for (let i = 0; i < bufferSize; i++) {
+            let white = Math.random() * 2 - 1;
+            lastOut = filterCoeff > 0 ? (lastOut + filterCoeff * white) / (1 + filterCoeff) : white;
+            data[i] = lastOut * mul;
+        }
+        let noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        return noise;
+    }
+
     updateListener(cx, cy, cz, lx, ly, lz, ux, uy, uz) {
         if (!this.ctx || !this.ctx.listener) return;
         const listener = this.ctx.listener;
@@ -74,19 +105,15 @@ class GameSFX {
     }
 
     playShot(x, y, z) {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
 
-        let panner = this.createSpatializer(x, y, z);
-        let targetNode = panner ? panner : this.ctx.destination;
-        if (panner) panner.connect(this.ctx.destination);
-
-        let gainNode = this.ctx.createGain();
+        let gainNode = ctx.createGain();
         gainNode.gain.setValueAtTime(0.35, t);
         gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
 
-        let filter = this.ctx.createBiquadFilter();
+        let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(6000, t);
         filter.frequency.exponentialRampToValueAtTime(200, t + 0.15);
@@ -95,7 +122,7 @@ class GameSFX {
         gainNode.connect(targetNode);
 
         [-18, 0, 18].forEach(det => {
-            let osc = this.ctx.createOscillator();
+            let osc = ctx.createOscillator();
             osc.type = 'sawtooth';
             osc.detune.value = det;
             osc.frequency.setValueAtTime(880, t);
@@ -107,42 +134,36 @@ class GameSFX {
     }
 
     playEnemyShot(type = 'fighter', x, y, z) {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
 
-        let panner = this.createSpatializer(x, y, z);
-        let targetNode = panner ? panner : this.ctx.destination;
-        if (panner) panner.connect(this.ctx.destination);
-
-        let gainNode = this.ctx.createGain();
-        let filter = this.ctx.createBiquadFilter();
+        let gainNode = ctx.createGain();
+        let filter = ctx.createBiquadFilter();
 
         if (type === 'crab') {
-            // Crab shoots a quick harsh electrical zap
             gainNode.gain.setValueAtTime(0.3, t);
             gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
             filter.type = 'highpass';
             filter.frequency.setValueAtTime(3000, t);
 
-            let osc = this.ctx.createOscillator();
+            let osc = ctx.createOscillator();
             osc.type = 'sawtooth';
             osc.frequency.setValueAtTime(800, t);
-            osc.frequency.exponentialRampToValueAtTime(4000, t + 0.1); // Sweeps up!
+            osc.frequency.exponentialRampToValueAtTime(4000, t + 0.1);
             osc.connect(filter);
             filter.connect(gainNode);
             gainNode.connect(targetNode);
             osc.start(t);
             osc.stop(t + 0.2);
         } else {
-            // Fighter shoots a standard rapid laser
             gainNode.gain.setValueAtTime(0.25, t);
             gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
             filter.type = 'lowpass';
             filter.frequency.setValueAtTime(4000, t);
             filter.frequency.exponentialRampToValueAtTime(100, t + 0.15);
 
-            let osc = this.ctx.createOscillator();
+            let osc = ctx.createOscillator();
             osc.type = 'square';
             osc.frequency.setValueAtTime(1200, t);
             osc.frequency.exponentialRampToValueAtTime(200, t + 0.15);
@@ -155,19 +176,15 @@ class GameSFX {
     }
 
     playMissileFire(x, y, z) {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
 
-        let panner = this.createSpatializer(x, y, z);
-        let targetNode = panner ? panner : this.ctx.destination;
-        if (panner) panner.connect(this.ctx.destination);
-
-        let gainNode = this.ctx.createGain();
+        let gainNode = ctx.createGain();
         gainNode.gain.setValueAtTime(0.5, t);
         gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
 
-        let filter = this.ctx.createBiquadFilter();
+        let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(400, t);
         filter.frequency.linearRampToValueAtTime(3500, t + 0.2);
@@ -177,7 +194,7 @@ class GameSFX {
         gainNode.connect(targetNode);
 
         [-25, 0, 25].forEach(det => {
-            let osc = this.ctx.createOscillator();
+            let osc = ctx.createOscillator();
             osc.type = 'square';
             osc.detune.value = det;
             osc.frequency.setValueAtTime(150, t);
@@ -187,41 +204,25 @@ class GameSFX {
             osc.stop(t + 0.6);
         });
 
-        let bufferSize = this.ctx.sampleRate * 0.6;
-        let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        let data = buffer.getChannelData(0);
-        let lastOut = 0;
-        for (let i = 0; i < bufferSize; i++) {
-            let white = Math.random() * 2 - 1;
-            data[i] = (lastOut + (0.05 * white)) / 1.05;
-            lastOut = data[i];
-        }
-        let noise = this.ctx.createBufferSource();
-        noise.buffer = buffer;
+        let noise = this._createNoise(0.6, 0.05);
         noise.connect(filter);
         noise.start(t);
     }
 
     playBombDrop(type = 'normal', x, y, z) {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
         let isMega = type === 'mega';
         let dur = isMega ? 0.8 : 0.4;
 
-        let panner = this.createSpatializer(x, y, z);
-        let targetNode = panner ? panner : this.ctx.destination;
-        if (panner) panner.connect(this.ctx.destination);
-
-        let gain = this.ctx.createGain();
+        let gain = ctx.createGain();
         gain.gain.setValueAtTime(isMega ? 0.6 : 0.3, t);
         gain.gain.linearRampToValueAtTime(isMega ? 0.8 : 0.4, t + dur * 0.5);
         gain.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
-        let osc = this.ctx.createOscillator();
+        let osc = ctx.createOscillator();
         osc.type = isMega ? 'sawtooth' : 'sine';
-
-        // Classic falling bomb whistle
         osc.frequency.setValueAtTime(isMega ? 800 : 1200, t);
         osc.frequency.exponentialRampToValueAtTime(isMega ? 150 : 300, t + dur);
 
@@ -232,41 +233,23 @@ class GameSFX {
     }
 
     playExplosion(isLarge = false, type = '', x, y, z) {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
 
-        let panner = this.createSpatializer(x, y, z);
-        let targetNode = panner ? panner : this.ctx.destination;
-        if (panner) panner.connect(this.ctx.destination);
-
-        // Type modifications
         let isBomber = type === 'bomber';
         let isSquid = type === 'squid';
         let isCrab = type === 'crab';
-
         let dur = isLarge || isBomber ? 2.2 : (isSquid ? 1.5 : 0.9);
 
-        let distortion = this.ctx.createWaveShaper();
+        let distortion = ctx.createWaveShaper();
         distortion.curve = this.distCurve;
         distortion.oversample = '4x';
 
-        let bufferSize = this.ctx.sampleRate * dur;
-        let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        let data = buffer.getChannelData(0);
-        let lastOut = 0;
-        for (let i = 0; i < bufferSize; i++) {
-            let white = Math.random() * 2 - 1;
-            data[i] = (lastOut + (0.02 * white)) / 1.02;
-            lastOut = data[i];
-            data[i] *= 3.5;
-        }
+        let noise = this._createNoise(dur, 0.02, 3.5);
 
-        let noise = this.ctx.createBufferSource();
-        noise.buffer = buffer;
-
-        let noiseFilter = this.ctx.createBiquadFilter();
-        noiseFilter.type = isCrab ? 'bandpass' : 'lowpass'; // crabs sound tighter
+        let noiseFilter = ctx.createBiquadFilter();
+        noiseFilter.type = isCrab ? 'bandpass' : 'lowpass';
         if (isCrab) {
             noiseFilter.frequency.setValueAtTime(2000, t);
             noiseFilter.frequency.exponentialRampToValueAtTime(500, t + dur);
@@ -275,7 +258,7 @@ class GameSFX {
             noiseFilter.frequency.exponentialRampToValueAtTime(80, t + dur);
         }
 
-        let noiseGain = this.ctx.createGain();
+        let noiseGain = ctx.createGain();
         let initVol = isLarge ? 1.5 : (isBomber ? 1.4 : 1.0);
         noiseGain.gain.setValueAtTime(initVol, t);
         noiseGain.gain.exponentialRampToValueAtTime(0.01, t + dur);
@@ -283,15 +266,12 @@ class GameSFX {
         noise.connect(noiseFilter);
         noiseFilter.connect(distortion);
 
-        // Sub-bass thump
         let freqs = isLarge || isBomber ? [110, 114, 106] : (isSquid ? [130, 135, 125] : [150, 155, 145]);
         freqs.forEach((freq, idx) => {
-            let osc = this.ctx.createOscillator();
-            let oscGain = this.ctx.createGain();
+            let osc = ctx.createOscillator();
+            let oscGain = ctx.createGain();
 
-            if (isSquid) osc.type = 'sawtooth'; // Squid sounds weirder, ripply
-            else osc.type = (idx === 0) ? 'triangle' : 'sine';
-
+            osc.type = isSquid ? 'sawtooth' : (idx === 0 ? 'triangle' : 'sine');
             osc.frequency.setValueAtTime(freq, t);
             osc.frequency.exponentialRampToValueAtTime(isLarge || isBomber ? 10 : (isSquid ? 5 : 20), t + dur * 0.8);
 
@@ -311,17 +291,17 @@ class GameSFX {
     }
 
     playNewLevel() {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
+        let s = this._setup();
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
         let freqs = [261.63, 329.63, 392.00, 523.25];
 
         freqs.forEach((freq, i) => {
             let noteT = t + i * 0.15;
             [-12, 12].forEach(det => {
-                let osc = this.ctx.createOscillator();
-                let gain = this.ctx.createGain();
-                let filter = this.ctx.createBiquadFilter();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                let filter = ctx.createBiquadFilter();
 
                 osc.type = 'sawtooth';
                 osc.frequency.value = freq;
@@ -337,7 +317,7 @@ class GameSFX {
 
                 osc.connect(filter);
                 filter.connect(gain);
-                gain.connect(this.ctx.destination);
+                gain.connect(targetNode);
                 osc.start(noteT);
                 osc.stop(noteT + 0.9);
             });
@@ -345,21 +325,21 @@ class GameSFX {
     }
 
     playGameOver() {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
+        let s = this._setup();
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
         let freqs = [329.63, 293.66, 261.63, 164.81];
 
-        let distortion = this.ctx.createWaveShaper();
+        let distortion = ctx.createWaveShaper();
         distortion.curve = this.createDistortionCurve(60);
-        distortion.connect(this.ctx.destination);
+        distortion.connect(targetNode);
 
         freqs.forEach((freq, i) => {
             let noteT = t + i * 0.45;
             [-20, 0, 20].forEach(det => {
-                let osc = this.ctx.createOscillator();
-                let filter = this.ctx.createBiquadFilter();
-                let gain = this.ctx.createGain();
+                let osc = ctx.createOscillator();
+                let filter = ctx.createBiquadFilter();
+                let gain = ctx.createGain();
 
                 osc.type = 'sawtooth';
                 osc.frequency.value = freq / 2;
@@ -383,17 +363,13 @@ class GameSFX {
     }
 
     playPowerup(isGood = true, x, y, z) {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
-
-        let panner = this.createSpatializer(x, y, z);
-        let targetNode = panner ? panner : this.ctx.destination;
-        if (panner) panner.connect(this.ctx.destination);
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
 
         let freqs = isGood ? [440, 554.37, 659.25, 880] : [220, 207.65, 196.00, 110];
 
-        let masterGain = this.ctx.createGain();
+        let masterGain = ctx.createGain();
         masterGain.gain.setValueAtTime(0.35, t);
         masterGain.gain.linearRampToValueAtTime(0.01, t + (isGood ? 0.6 : 0.8));
         masterGain.connect(targetNode);
@@ -401,8 +377,8 @@ class GameSFX {
         freqs.forEach((freq, i) => {
             let noteT = t + i * 0.1;
             [-15, 15].forEach(det => {
-                let osc = this.ctx.createOscillator();
-                let gain = this.ctx.createGain();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
 
                 osc.type = isGood ? 'square' : 'sawtooth';
                 osc.frequency.value = freq;
@@ -421,20 +397,16 @@ class GameSFX {
     }
 
     playClearInfection(x, y, z) {
-        this.init();
-        if (!this.ctx) return;
-        let t = this.ctx.currentTime;
-
-        let panner = this.createSpatializer(x, y, z);
-        let targetNode = panner ? panner : this.ctx.destination;
-        if (panner) panner.connect(this.ctx.destination);
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
 
         let freqs = [523.25, 659.25, 1046.50];
 
         freqs.forEach((freq, i) => {
             [-15, 0, 15].forEach(det => {
-                let osc = this.ctx.createOscillator();
-                let gain = this.ctx.createGain();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
 
                 osc.type = 'sine';
                 osc.frequency.value = freq;
@@ -451,19 +423,12 @@ class GameSFX {
             });
         });
 
-        let bufferSize = this.ctx.sampleRate * 0.4;
-        let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        let data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-
-        let noise = this.ctx.createBufferSource();
-        noise.buffer = buffer;
-
-        let filter = this.ctx.createBiquadFilter();
+        let noise = this._createNoise(0.4);
+        let filter = ctx.createBiquadFilter();
         filter.type = 'highpass';
         filter.frequency.value = 4000;
 
-        let noiseGain = this.ctx.createGain();
+        let noiseGain = ctx.createGain();
         noiseGain.gain.setValueAtTime(0.2, t);
         noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
 

@@ -21,6 +21,10 @@ const TREE_VARIANTS = [
 const YAW_RATE = 0.04;
 const PITCH_RATE = 0.04;
 
+// Mouse controls
+const MOUSE_SENSITIVITY = 0.003;
+const MOUSE_SMOOTHING = 0.25; // Lower is smoother (0.0 to 1.0)
+
 // === KEY BINDINGS ===
 // Player 1: WASD + Q/E/R/F
 const P1_KEYS = {
@@ -63,6 +67,7 @@ let rightMouseDown = false;
 // Each player object holds their own ship + projectiles + score
 let players = [];
 let altCache = new Map();
+let smoothedMX = 0, smoothedMY = 0;
 
 // Terrain chunking setup
 const CHUNK_SIZE = 16;
@@ -299,6 +304,7 @@ function setup() {
   document.addEventListener('contextmenu', event => event.preventDefault());
   document.addEventListener('mousedown', e => {
     if (e.button === 0) leftMouseDown = true;
+    if (e.button === 1) e.preventDefault(); // Prevent autoscroll
     if (e.button === 2) rightMouseDown = true;
   });
   document.addEventListener('mouseup', e => {
@@ -481,7 +487,7 @@ function drawMenu() {
   if (isMobile) {
     text('Use virtual joystick and buttons to play', 0, height / 2 - 40);
   } else {
-    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E missile', 0, height / 2 - 55);
+    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB missile', 0, height / 2 - 55);
     text('P2: ARROWS + ;/\' pitch  . shoot  / missile', 0, height / 2 - 35);
   }
 
@@ -740,6 +746,14 @@ const mobileControls = {
 // === SHIP INPUT & PHYSICS ===
 function updateShipInput(p) {
   if (p.dead) return;
+
+  // Mouse movement (only for player 1 on non-mobile)
+  if (p.id === 0 && !isMobile && document.pointerLockElement) {
+    smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
+    smoothedMY = lerp(smoothedMY, movedY, MOUSE_SMOOTHING);
+    p.ship.yaw -= smoothedMX * MOUSE_SENSITIVITY;
+    p.ship.pitch = constrain(p.ship.pitch - smoothedMY * MOUSE_SENSITIVITY, -PI / 2.2, PI / 2.2);
+  }
   let k = p.keys;
   if (!leftMouseDown) mouseReleasedSinceStart = true;
   let isThrusting = keyIsDown(k.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
@@ -1263,16 +1277,17 @@ function drawRadarForPlayer(p, hw, h) {
 }
 
 function drawControlHints(p, pi, hw, h) {
+  if (isMobile) return;
   push();
   textAlign(CENTER, BOTTOM);
   textSize(11);
   fill(255, 255, 255, 120);
   let hints = '';
   if (numPlayers === 1) {
-    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E missile  S brake  (Click to lock mouse)';
+    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB missile  S brake  (Click to lock mouse)';
   } else {
     hints = pi === 0
-      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E missile  S brake  (Click lock)'
+      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB missile  S brake  (Click lock)'
       : '↑ thrust  ←/→ turn  ;/\' pitch  . shoot  / missile  ↓ brake';
   }
   text(hints, 0, h / 2 - 8);
@@ -2198,6 +2213,11 @@ function mousePressed() {
     if (gameState === 'menu') {
       startGame(1);
     } else if (gameState === 'playing') {
+      if (mouseButton === CENTER) {
+        if (players.length > 0 && !players[0].dead) {
+          fireMissile(players[0]);
+        }
+      }
       requestPointerLock();
     }
   }
@@ -2206,12 +2226,6 @@ function mousePressed() {
 function mouseDragged() { mouseMoved(); }
 
 function mouseMoved() {
-  if (gameState === 'playing' && !players[0].dead && !isMobile) {
-    // Mouse X controls yaw (turn left/right)
-    players[0].ship.yaw -= movedX * 0.003;
-    // Mouse Y controls pitch (up/down)
-    players[0].ship.pitch = constrain(players[0].ship.pitch - movedY * 0.003, -PI / 2.2, PI / 2.2);
-  }
 }
 
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }

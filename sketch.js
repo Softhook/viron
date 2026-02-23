@@ -56,7 +56,9 @@ let infectedTiles = {}, level = 1, currentMaxEnemies = 2;
 let levelComplete = false, infectionStarted = false, levelEndTime = 0;
 let activePulses = [];
 let gameFont;
-let gameState = 'menu'; // 'menu' or 'playing'
+let gameState = 'menu'; // 'menu' or 'playing', 'gameover'
+let gameOverReason = '';
+let lastAlarmTime = 0;
 let gameStartTime = 0;
 let numPlayers = 1;
 let menuStars = []; // animated starfield for menu
@@ -504,7 +506,7 @@ function drawGameOver() {
   text('GAME OVER', 0, -50);
   textSize(24);
   fill(180, 200, 180);
-  text('INFECTION REACHED CRITICAL MASS', 0, 40);
+  text(gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
   pop();
 
   if (millis() - levelEndTime > 5000) {
@@ -635,14 +637,35 @@ function spreadInfection() {
   if (frameCount % 5 !== 0) return;
   let keys = Object.keys(infectedTiles);
   let keysLen = keys.length;
+
   if (keysLen >= MAX_INF) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
+      gameOverReason = 'INFECTION REACHED CRITICAL MASS';
       levelEndTime = millis();
       if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
     }
     return;
   }
+
+  // Check launchpad infection
+  let lpInfected = 0, lpTotal = 0;
+  for (let tx = 0; tx < 7; tx++) {
+    for (let tz = 0; tz < 7; tz++) {
+      lpTotal++;
+      if (infectedTiles[tileKey(tx, tz)]) lpInfected++;
+    }
+  }
+  if (lpInfected >= lpTotal) {
+    if (gameState !== 'gameover') {
+      gameState = 'gameover';
+      gameOverReason = 'LAUNCH PAD INFECTED';
+      levelEndTime = millis();
+      if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
+    }
+    return;
+  }
+
   let fresh = [];
   for (let i = 0; i < keysLen; i++) {
     if (random() > INF_RATE) continue;
@@ -655,7 +678,18 @@ function spreadInfection() {
     fresh.push(nk);
   }
   let freshLen = fresh.length;
-  for (let i = 0; i < freshLen; i++) infectedTiles[fresh[i]] = { tick: frameCount };
+  for (let i = 0; i < freshLen; i++) {
+    let nk = fresh[i];
+    infectedTiles[nk] = { tick: frameCount };
+    // Alarm if new infection is on launchpad
+    let parts = nk.split(',');
+    if (isLaunchpad(+parts[0] * TILE, +parts[1] * TILE)) {
+      if (millis() - lastAlarmTime > 1000) {
+        if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+        lastAlarmTime = millis();
+      }
+    }
+  }
 }
 
 function clearInfectionAt(wx, wz, p) {
@@ -974,18 +1008,34 @@ function updateParticlePhysics() {
     if (b.y > gy) {
       if (b.type === 'mega') {
         let tx = toTile(b.x), tz = toTile(b.z);
+        let hitLP = false;
         for (let r = -4; r <= 4; r++) {
           for (let c = -4; c <= 4; c++) {
             if (r * r + c * c <= 16) {
               let nx = tx + r, nz = tz + c;
               if (aboveSea(getAltitude(nx * TILE, nz * TILE))) continue;
               let nk = tileKey(nx, nz);
-              infectedTiles[nk] = { tick: frameCount };
+              if (!infectedTiles[nk]) {
+                infectedTiles[nk] = { tick: frameCount };
+                if (isLaunchpad(nx * TILE, nz * TILE)) hitLP = true;
+              }
             }
           }
         }
+        if (hitLP && millis() - lastAlarmTime > 1000) {
+          if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+          lastAlarmTime = millis();
+        }
       } else {
-        infectedTiles[b.k] = { tick: frameCount };
+        if (!infectedTiles[b.k]) {
+          infectedTiles[b.k] = { tick: frameCount };
+          if (isLaunchpad(b.x, b.z)) {
+            if (millis() - lastAlarmTime > 1000) {
+              if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+              lastAlarmTime = millis();
+            }
+          }
+        }
       }
       addPulse(b.x, b.z, 0.0);
       if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal', b.x, b.y, b.z);
@@ -1979,6 +2029,12 @@ function updateCrab(e, alivePlayers, refShip) {
       let k = tileKey(tx, tz);
       if (!infectedTiles[k]) {
         infectedTiles[k] = { tick: frameCount };
+        if (isLaunchpad(e.x, e.z)) {
+          if (millis() - lastAlarmTime > 1000) {
+            if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+            lastAlarmTime = millis();
+          }
+        }
         addPulse(e.x, e.z, 1.0);
       }
     }

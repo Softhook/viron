@@ -436,6 +436,27 @@ class GameSFX {
         filter.connect(noiseGain);
         noiseGain.connect(targetNode);
         noise.start(t);
+        noise.stop(t + 0.4);
+    }
+
+    playAlarm() {
+        let s = this._setup();
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
+
+        let gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.25, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+
+        let osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.linearRampToValueAtTime(440, t + 0.4);
+
+        osc.connect(gain);
+        gain.connect(targetNode);
+        osc.start(t);
+        osc.stop(t + 0.5);
     }
 }
 

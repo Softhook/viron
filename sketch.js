@@ -290,6 +290,11 @@ function preload() {
 
 function setup() {
   checkMobile();
+  if (isMobile) {
+    VIEW_NEAR = 20;
+    VIEW_FAR = 30;
+    CULL_DIST = 3500;
+  }
   createCanvas(windowWidth, windowHeight, WEBGL);
   document.addEventListener('contextmenu', event => event.preventDefault());
   document.addEventListener('mousedown', e => {
@@ -307,19 +312,22 @@ function setup() {
 
   // Generate trees once (reused across games)
   randomSeed(42);
-  for (let i = 0; i < 250; i++)
+  let numTrees = isMobile ? 80 : 250;
+  for (let i = 0; i < numTrees; i++)
     trees.push({
       x: random(-5000, 5000), z: random(-5000, 5000),
       variant: floor(random(3)), trunkH: random(25, 50), canopyScale: random(1.0, 1.8)
     });
 
   // Generate starfield for menu background
-  for (let i = 0; i < 120; i++)
+  let numStars = isMobile ? 50 : 120;
+  for (let i = 0; i < numStars; i++)
     menuStars.push({ x: random(-1, 1), y: random(-1, 1), s: random(1, 3), spd: random(0.3, 1.2) });
 
   // Generate Zarch style buildings
   randomSeed(123);
-  for (let i = 0; i < 40; i++) {
+  let numBldgs = isMobile ? 15 : 40;
+  for (let i = 0; i < numBldgs; i++) {
     buildings.push({
       x: random(-4500, 4500), z: random(-4500, 4500),
       w: random(40, 100), h: random(50, 180), d: random(40, 100),

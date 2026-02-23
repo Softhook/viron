@@ -838,7 +838,7 @@ function checkCollisions(p) {
     for (let i = p.bullets.length - 1; i >= 0; i--) {
       let b = p.bullets[i];
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < 6400) {
-        explosion(e.x, e.y, e.z);
+        explosion(e.x, e.y, e.z, getEnemyColor(e.type));
         enemies.splice(j, 1);
         p.bullets.splice(i, 1);
         p.score += 100;
@@ -852,7 +852,7 @@ function checkCollisions(p) {
       for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
         let m = p.homingMissiles[i];
         if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < 10000) {
-          explosion(e.x, e.y, e.z);
+          explosion(e.x, e.y, e.z, getEnemyColor(e.type));
           enemies.splice(j, 1);
           p.homingMissiles.splice(i, 1);
           p.score += 250;
@@ -923,7 +923,10 @@ function updateParticlePhysics() {
     let p = particles[i];
     p.x += p.vx; p.y += p.vy; p.z += p.vz; p.life -= (p.decay || 10);
     p.vx *= 0.98; p.vy *= 0.98; p.vz *= 0.98; // Add drag to particles
-    if (p.life <= 0) particles.splice(i, 1);
+    if (p.life <= 0) {
+      let last = particles.pop();
+      if (i < particles.length) particles[i] = last;
+    }
   }
   for (let i = bombs.length - 1; i >= 0; i--) {
     let b = bombs[i];
@@ -1054,18 +1057,24 @@ function renderParticles(camX, camZ) {
         } else if (diff < 40) {
           // Leading edge -> white/yellow hot
           let f = (diff + 50) / 90;
-          r = lerp(255, 255, f); g = lerp(255, 200, f); b = lerp(200, 50, f);
+          r = lerp(255, p.br, f);
+          g = lerp(255, p.bg, f);
+          b = lerp(255, p.bb, f);
         } else if (diff < 150) {
-          // Fire band -> orange/red
+          // Fire band -> main color
           let f = (diff - 40) / 110;
-          r = lerp(255, 200, f); g = lerp(200, 30, f); b = lerp(50, 10, f);
+          r = lerp(p.br, p.er, f);
+          g = lerp(p.bg, p.eg, f);
+          b = lerp(p.bb, p.eb, f);
         } else if (diff < 350) {
-          // Trailing band -> dark red/smoke
+          // Trailing band -> dark color/smoke
           let f = (diff - 150) / 200;
-          r = lerp(200, 40, f); g = lerp(30, 20, f); b = lerp(10, 20, f);
+          r = lerp(p.er, p.sr, f);
+          g = lerp(p.eg, p.sg, f);
+          b = lerp(p.eb, p.sb, f);
         } else {
           // Lingering smoke in core
-          r = 40; g = 20; b = 20;
+          r = p.sr; g = p.sg; b = p.sb;
         }
       } else if (p.color) {
         let f = Math.min(t * 1.5, 1.0);
@@ -2051,21 +2060,63 @@ function updateSquid(e, alivePlayers, refShip) {
 }
 
 // === EFFECTS & INPUT ===
-function explosion(x, y, z) {
-  for (let i = 0; i < 220; i++) {
-    let speed = random(2.0, 32.0);
+function getEnemyColor(type) {
+  if (type === 'fighter') return [255, 150, 0];
+  if (type === 'bomber') return [180, 20, 180];
+  if (type === 'crab') return [200, 80, 20];
+  if (type === 'hunter') return [40, 255, 40];
+  if (type === 'squid') return [100, 100, 150];
+  return [220, 30, 30]; // seeder or default
+}
+
+function explosion(x, y, z, baseColor) {
+  let isCustom = baseColor !== undefined && baseColor !== null;
+  // Increase particle count significantly, adjust size, speed, and decay for massive blasts
+  for (let i = 0; i < 350; i++) {
+    let speed = random(5.0, 45.0);
     let a1 = random(TWO_PI);
     let a2 = random(TWO_PI);
+
+    let br = 255, bg = 200, bb = 50;
+    let er = 200, eg = 30, eb = 10;
+    let sr = 40, sg = 20, sb = 20;
+
+    if (isCustom) {
+      // Base variation stays close to pure enemy color to prevent grey muddying
+      let rV = baseColor[0] + random(-15, 15);
+      let gV = baseColor[1] + random(-15, 15);
+      let bV = baseColor[2] + random(-15, 15);
+
+      if (random() > 0.6) {
+        // High core heat: Add intense white/core color
+        rV = lerp(rV, 255, 0.8);
+        gV = lerp(gV, 255, 0.8);
+        bV = lerp(bV, 255, 0.4);
+      }
+
+      br = constrain(rV, 0, 255); bg = constrain(gV, 0, 255); bb = constrain(bV, 0, 255);
+
+      // Keep fire band deeply saturated (only dim a bit, not 50%)
+      er = br * 0.8; eg = bg * 0.8; eb = bb * 0.8;
+
+      // Transition to a tinted dark shadow instead of grey smoke
+      sr = br * 0.3 + 10; sg = bg * 0.3 + 10; sb = bb * 0.3 + 10;
+    }
+
     particles.push({
       x, y, z,
       cx: x, cy: y, cz: z,
       isExplosion: true,
+      hasExpColor: isCustom,
+      br, bg, bb,
+      er, eg, eb,
+      sr, sg, sb,
       vx: speed * sin(a1) * cos(a2),
       vy: speed * sin(a1) * sin(a2),
       vz: speed * cos(a1),
       life: 255,
-      decay: random(1.5, 4.5),
-      size: random(3, 9)
+      decay: random(2.0, 6.0),
+      size: random(8, 26)
     });
   }
 }

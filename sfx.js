@@ -10,95 +10,25 @@ class GameSFX {
         if (typeof getAudioContext !== 'undefined') {
             this.ctx = getAudioContext();
             this.distCurve = this.createDistortionCurve(400);
-            this._buildGlobalReverb();
+            this.distCurveGameOver = this.createDistortionCurve(60);
         }
         this.initialized = true;
     }
 
-    _buildGlobalReverb() {
-        let length = this.ctx.sampleRate * 1.5; // Slightly shorter tail for less mud
-        let impulse = this.ctx.createBuffer(2, length, this.ctx.sampleRate);
-        let left = impulse.getChannelData(0);
-        let right = impulse.getChannelData(1);
-
-        // Create a more natural sounding room response
-        // Using noise that is low-pass filtered natively over time gives less of a "metallic" ringing
-        for (let i = 0; i < length; i++) {
-            // Decay curve
-            let t = i / this.ctx.sampleRate;
-            let decay = Math.exp(-t * 3.5);
-
-            // Time-dependent lowpass effect (high frequencies die faster)
-            let freqScale = Math.exp(-t * 5.0);
-
-            // Generate sparse noise and smooth it
-            let n1 = (Math.random() * 2 - 1) * decay * freqScale;
-            let n2 = (Math.random() * 2 - 1) * decay * freqScale;
-
-            // Simple 1-pole lowpass to remove harsh digital highs from the noise
-            left[i] = (i > 0) ? left[i - 1] * 0.5 + n1 * 0.5 : n1;
-            right[i] = (i > 0) ? right[i - 1] * 0.5 + n2 * 0.5 : n2;
-        }
-
-        this.globalReverb = this.ctx.createConvolver();
-        this.globalReverb.buffer = impulse;
-
-        let revFilter = this.ctx.createBiquadFilter();
-        revFilter.type = 'lowpass';
-        revFilter.frequency.value = 800; // Lower further to remove metallic zing
-
-        this.globalReverb.connect(revFilter);
-        revFilter.connect(this.ctx.destination);
-    }
-
-    _setup(x, y, z, options = {}) {
+    _setup(x, y, z) {
         this.init();
         if (!this.ctx) return null;
         let t = this.ctx.currentTime;
-        let rootDestination = this.ctx.destination;
-
-        let inNode = this.ctx.createGain();
-        let panner = null;
+        let targetNode = this.ctx.destination;
 
         if (x !== undefined && y !== undefined && z !== undefined) {
-            panner = this.createSpatializer(x, y, z);
+            let panner = this.createSpatializer(x, y, z);
             if (panner) {
-                inNode.connect(panner);
-                panner.connect(rootDestination);
-
-                // Distance-based Reverb Send
-                if (this.globalReverb && this.ctx.listener && this.ctx.listener.positionX) {
-                    // Extract listener coords (fallback to 0,0,0 if not using new API)
-                    let lx = this.ctx.listener.positionX.value || 0;
-                    let ly = this.ctx.listener.positionY.value || 0;
-                    let lz = this.ctx.listener.positionZ.value || 0;
-
-                    let dx = x - lx, dy = y - ly, dz = z - lz;
-                    let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-                    // Reverb logic:
-                    // Sounds close by (< 500 units) have almost no reverb (e.g. your own guns)
-                    // Sounds far away have more reverb to imply they are echoing across the landscape
-                    let revAmount = 0.0;
-                    if (options.forceReverb !== undefined) {
-                        revAmount = options.forceReverb;
-                    } else if (dist > 500) {
-                        // Map distance 500 -> 4000 to reverb amount 0.0 -> 0.6
-                        revAmount = Math.min((dist - 500) / 3500, 1.0) * 0.6;
-                    }
-
-                    if (revAmount > 0) {
-                        let sendGain = this.ctx.createGain();
-                        sendGain.gain.value = revAmount;
-                        panner.connect(sendGain); // Send panned signal
-                        sendGain.connect(this.globalReverb); // Into the reverb
-                    }
-                }
+                panner.connect(targetNode);
+                targetNode = panner;
             }
-        } else {
-            inNode.connect(rootDestination);
         }
-        return { ctx: this.ctx, t, targetNode: inNode, panner };
+        return { ctx: this.ctx, t, targetNode };
     }
 
     _createNoise(dur, filterCoeff = 0, mul = 1) {
@@ -126,15 +56,15 @@ class GameSFX {
 
         let t = this.ctx.currentTime;
         if (listener.positionX) {
-            listener.positionX.setTargetAtTime(cx, t, 0.05);
-            listener.positionY.setTargetAtTime(cy, t, 0.05);
-            listener.positionZ.setTargetAtTime(cz, t, 0.05);
-            listener.forwardX.setTargetAtTime(fx, t, 0.05);
-            listener.forwardY.setTargetAtTime(fy, t, 0.05);
-            listener.forwardZ.setTargetAtTime(fz, t, 0.05);
-            listener.upX.setTargetAtTime(ux, t, 0.05);
-            listener.upY.setTargetAtTime(uy, t, 0.05);
-            listener.upZ.setTargetAtTime(uz, t, 0.05);
+            listener.positionX.value = cx;
+            listener.positionY.value = cy;
+            listener.positionZ.value = cz;
+            listener.forwardX.value = fx;
+            listener.forwardY.value = fy;
+            listener.forwardZ.value = fz;
+            listener.upX.value = ux;
+            listener.upY.value = uy;
+            listener.upZ.value = uz;
         } else {
             listener.setPosition(cx, cy, cz);
             listener.setOrientation(fx, fy, fz, ux, uy, uz);
@@ -144,9 +74,9 @@ class GameSFX {
     createSpatializer(x, y, z) {
         if (!this.ctx || x === undefined || y === undefined || z === undefined) return null;
         let panner = this.ctx.createPanner();
-        panner.panningModel = 'HRTF'; // Best 3D spatialization
+        panner.panningModel = 'HRTF';
         panner.distanceModel = 'exponential';
-        panner.refDistance = 200; // Increased base volume radius so sounds carry a bit better
+        panner.refDistance = 150;
         panner.maxDistance = 10000;
         panner.rolloffFactor = 1.0;
 
@@ -176,8 +106,7 @@ class GameSFX {
     }
 
     playShot(x, y, z) {
-        // Force no reverb for player shots by passing { forceReverb: 0 }
-        let s = this._setup(x, y, z, { forceReverb: 0 });
+        let s = this._setup(x, y, z);
         if (!s) return;
         let { ctx, t, targetNode } = s;
 
@@ -279,6 +208,7 @@ class GameSFX {
         let noise = this._createNoise(0.6, 0.05);
         noise.connect(filter);
         noise.start(t);
+        noise.stop(t + 0.6);
     }
 
     playBombDrop(type = 'normal', x, y, z) {
@@ -360,6 +290,7 @@ class GameSFX {
         distortion.connect(noiseGain);
         noiseGain.connect(targetNode);
         noise.start(t);
+        noise.stop(t + dur);
     }
 
     playNewLevel() {
@@ -403,7 +334,7 @@ class GameSFX {
         let freqs = [329.63, 293.66, 261.63, 164.81];
 
         let distortion = ctx.createWaveShaper();
-        distortion.curve = this.createDistortionCurve(60);
+        distortion.curve = this.distCurveGameOver;
         distortion.connect(targetNode);
 
         freqs.forEach((freq, i) => {
@@ -514,7 +445,7 @@ class GameSFX {
     playInfectionSpread(x, y, z) {
         let s = this._setup(x, y, z);
         if (!s) return;
-        let { ctx, t, targetNode, panner } = s;
+        let { ctx, t, targetNode } = s;
 
         let gainNode = ctx.createGain();
         // --- VOLUME SETTING ---
@@ -530,10 +461,11 @@ class GameSFX {
 
         // --- SPATIAL EXTENT ---
         // These settings control how the sound drops off with distance.
-        if (panner) {
-            panner.refDistance = 300;     // Distance where volume begins to drop (default 150)
-            panner.maxDistance = 15000;   // Maximum distance the sound can be heard
-            panner.rolloffFactor = 1.5;   // How fast it gets quiet (higher = faster drop-off)
+        // We override the default _setup panner if it exists.
+        if (targetNode instanceof PannerNode) {
+            targetNode.refDistance = 300;     // Distance where volume begins to drop (default 150)
+            targetNode.maxDistance = 15000;   // Maximum distance the sound can be heard
+            targetNode.rolloffFactor = 1.5;   // How fast it gets quiet (higher = faster drop-off)
         }
 
         let osc = ctx.createOscillator();

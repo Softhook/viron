@@ -45,6 +45,7 @@ const P2_KEYS = {
   missile: 191    // / (slash)
 };
 
+
 // === STATE ===
 let trees = [], particles = [], enemies = [], buildings = [], bombs = [], enemyBullets = [];
 let infectedTiles = {}, level = 1, currentMaxEnemies = 2;
@@ -136,6 +137,7 @@ function fireMissile(p) {
   if (p.missilesRemaining > 0 && !p.dead) {
     p.missilesRemaining--;
     p.homingMissiles.push(spawnProjectile(p.ship, 8, 300));
+    if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire();
   }
 }
 
@@ -346,6 +348,7 @@ function startGame(np) {
 }
 
 function startLevel(lvl) {
+  if (typeof gameSFX !== 'undefined') gameSFX.playNewLevel();
   level = lvl;
   levelComplete = false;
   infectionStarted = false;
@@ -618,6 +621,7 @@ function spreadInfection() {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       levelEndTime = millis();
+      if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
     }
     return;
   }
@@ -641,6 +645,7 @@ function clearInfectionAt(wx, wz, p) {
   if (!infectedTiles[tileKey(tx, tz)]) return false;
   clearInfectionRadius(tx, tz);
   if (p) p.score += 100;
+  if (typeof gameSFX !== 'undefined') gameSFX.playClearInfection();
   return true;
 }
 
@@ -786,6 +791,7 @@ function updateShipInput(p) {
 
   if (isShooting && frameCount % 6 === 0) {
     p.bullets.push(spawnProjectile(s, 25, 300));
+    if (typeof gameSFX !== 'undefined') gameSFX.playShot();
   }
 
   s.vx *= 0.985; s.vy *= 0.985; s.vz *= 0.985;
@@ -884,9 +890,11 @@ function checkCollisions(p) {
         let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
         if (inf) {
           if (p.missilesRemaining > 0) p.missilesRemaining--;
+          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false);
         } else {
           p.missilesRemaining++;
           p.score += 500;
+          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true);
         }
         buildings.splice(i, 1);
 
@@ -2075,6 +2083,7 @@ function getEnemyColor(type) {
 }
 
 function explosion(x, y, z, baseColor) {
+  if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(baseColor === undefined || baseColor === null);
   let isCustom = baseColor !== undefined && baseColor !== null;
   // Increase particle count significantly, adjust size, speed, and decay for massive blasts
   for (let i = 0; i < 350; i++) {

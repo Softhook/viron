@@ -548,7 +548,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
 
   gl.clear(gl.DEPTH_BUFFER_BIT);
   drawPlayerHUD(p, pi, viewW, viewH);
-  if (isMobile && numPlayers === 1) mobileControls.draw();
+  if (isMobile && numPlayers === 1 && typeof mobileController !== 'undefined') mobileController.draw(width, height);
   gl.disable(gl.SCISSOR_TEST);
 }
 
@@ -581,7 +581,7 @@ function draw() {
 
   let gl = drawingContext;
 
-  if (isMobile && numPlayers === 1) mobileControls.update();
+  if (isMobile && numPlayers === 1 && typeof mobileController !== 'undefined') mobileController.update(touches, width, height);
 
   for (let p of players) updateShipInput(p);
   updateEnemies();
@@ -704,80 +704,7 @@ function clearInfectionAt(wx, wz, p) {
 }
 
 // === MOBILE INPUT ===
-const mobileControls = {
-  leftTouchId: null, joyCenter: null, joyPos: null,
-  btns: {
-    thrust: { active: false, r: 40, col: [0, 255, 60], label: 'THR', x: 0, y: 0 },
-    shoot: { active: false, r: 50, col: [255, 60, 60], label: 'SHT', x: 0, y: 0 },
-    missile: { active: false, r: 35, col: [0, 200, 255], label: 'MSL', x: 0, y: 0 }
-  },
 
-  update() {
-    if (!isMobile || gameState !== 'playing') return;
-
-    let bw = width, bh = height;
-    this.btns.thrust.x = bw - 180; this.btns.thrust.y = bh - 70;
-    this.btns.shoot.x = bw - 70; this.btns.shoot.y = bh - 70;
-    this.btns.missile.x = bw - 70; this.btns.missile.y = bh - 180;
-
-    for (let b in this.btns) this.btns[b].active = false;
-
-    let leftFound = false;
-    for (let i = 0; i < touches.length; i++) {
-      let t = touches[i];
-      if (t.x > bw / 2) {
-        for (let b in this.btns) {
-          if (Math.hypot(t.x - this.btns[b].x, t.y - this.btns[b].y) < this.btns[b].r * 1.5) this.btns[b].active = true;
-        }
-      } else {
-        if (this.leftTouchId === t.id) {
-          this.joyPos = { x: t.x, y: t.y };
-          leftFound = true;
-        } else if (!this.leftTouchId) {
-          this.leftTouchId = t.id;
-          this.joyCenter = { x: t.x, y: t.y };
-          this.joyPos = { x: t.x, y: t.y };
-          leftFound = true;
-        }
-      }
-    }
-
-    if (!leftFound) {
-      this.leftTouchId = null;
-      this.joyCenter = null;
-      this.joyPos = null;
-    }
-  },
-
-  draw() {
-    setup2DViewport();
-    push();
-    translate(-width / 2, -height / 2, 0);
-
-    if (this.joyCenter && this.joyPos) {
-      noStroke();
-      fill(255, 255, 255, 40);
-      circle(this.joyCenter.x, this.joyCenter.y, 140);
-      fill(255, 255, 255, 120);
-      let d = Math.hypot(this.joyPos.x - this.joyCenter.x, this.joyPos.y - this.joyCenter.y);
-      let a = atan2(this.joyPos.y - this.joyCenter.y, this.joyPos.x - this.joyCenter.x);
-      let r = min(d, 70);
-      circle(this.joyCenter.x + cos(a) * r, this.joyCenter.y + sin(a) * r, 50);
-    }
-
-    for (let b in this.btns) {
-      let btn = this.btns[b];
-      stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-      strokeWeight(2);
-      fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-      circle(btn.x, btn.y, btn.r * 2);
-      noStroke(); fill(255, btn.active ? 255 : 150);
-      textAlign(CENTER, CENTER); textSize(max(10, btn.r * 0.4));
-      text(btn.label, btn.x, btn.y);
-    }
-    pop();
-  }
-};
 
 // === SHIP INPUT & PHYSICS ===
 function updateShipInput(p) {
@@ -796,30 +723,21 @@ function updateShipInput(p) {
   let isBraking = keyIsDown(k.brake);
   let isShooting = keyIsDown(k.shoot) || (p.id === 0 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
 
-  if (isMobile && p.id === 0) {
-    isThrusting = isThrusting || mobileControls.btns.thrust.active;
-    isShooting = isShooting || mobileControls.btns.shoot.active;
+  if (isMobile && p.id === 0 && typeof mobileController !== 'undefined') {
+    let inputs = mobileController.getInputs(p.ship, enemies, YAW_RATE, PITCH_RATE);
 
-    if (mobileControls.btns.missile.active && !p.mobileMissilePressed) {
+    isThrusting = isThrusting || inputs.thrust;
+    isShooting = isShooting || inputs.shoot;
+
+    if (inputs.missile && !p.mobileMissilePressed) {
       fireMissile(p);
       p.mobileMissilePressed = true;
-    } else if (!mobileControls.btns.missile.active) {
+    } else if (!inputs.missile) {
       p.mobileMissilePressed = false;
     }
 
-    if (mobileControls.joyCenter && mobileControls.joyPos) {
-      let dx = mobileControls.joyPos.x - mobileControls.joyCenter.x;
-      let dy = mobileControls.joyPos.y - mobileControls.joyCenter.y;
-      let distSq = dx * dx + dy * dy;
-
-      if (distSq > 100) { // Deadzone
-        let d = sqrt(distSq);
-        let speedFactor = min(1, (d - 10) / 60);
-        p.ship.yaw -= (dx / d) * YAW_RATE * speedFactor;
-        let pitchChange = (dy / d) * PITCH_RATE * speedFactor * 0.5;
-        p.ship.pitch = constrain(p.ship.pitch - pitchChange, -PI / 2.2, PI / 2.2);
-      }
-    }
+    p.ship.yaw += inputs.yawDelta;
+    p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta, -PI / 2.2, PI / 2.2);
   }
 
   if (keyIsDown(k.left)) p.ship.yaw += YAW_RATE;
@@ -2247,11 +2165,8 @@ function keyPressed() {
 }
 
 function touchStarted(event) {
-  if (gameState === 'menu') {
-    if (isAndroid && !fullscreen()) fullscreen(true);
-    setTimeout(() => { startGame(1); }, 50);
-  } else if (gameState === 'playing' && isAndroid) {
-    if (!fullscreen()) fullscreen(true);
+  if (typeof handleTouchStarted === 'function') {
+    return handleTouchStarted();
   }
   return false;
 }

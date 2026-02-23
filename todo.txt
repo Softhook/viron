@@ -1,0 +1,19 @@
+
+make sure we have recent p5 min
+
+update. the package.json
+
+install jest create tests
+
+more sound effects
+
+background hum
+
+use open typeface
+
+make sure we use viron throughout instead of virus
+
+75 large virus area creates a hive building which spaws new random enemies at intervals
+
+the hive should look red and rounded organic building
+

@@ -881,8 +881,13 @@ function checkCollisions(p) {
       let radiusSq = (b.w + 15) ** 2;
 
       if (dx * dx + dy * dy + dz * dz < radiusSq) {
-        p.missilesRemaining++;
-        p.score += 500;
+        let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+        if (inf) {
+          if (p.missilesRemaining > 0) p.missilesRemaining--;
+        } else {
+          p.missilesRemaining++;
+          p.score += 500;
+        }
         buildings.splice(i, 1);
 
         for (let j = 0; j < 20; j++) {
@@ -890,7 +895,7 @@ function checkCollisions(p) {
             x: b.x, y: floatY, z: b.z,
             vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
             life: 255, decay: 12, size: random(4, 9),
-            color: [60, 180, 240]
+            color: inf ? [200, 50, 50] : [60, 180, 240]
           });
         }
       }

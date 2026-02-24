@@ -91,15 +91,18 @@ class MobileController {
             }
         }
 
+        // Pre-calculate ship orientation once per frame
+        const shipForward = this._getShipForward(ship);
+
         // Apply soft lock-on aim assist — always active on mobile, not just when joysticking
         if (ship && enemies) {
-            let assist = this.calculateAimAssist(ship, enemies, isSwipingHard);
+            let assist = this.calculateAimAssist(ship, enemies, isSwipingHard, shipForward);
             if (assist) {
                 ship.yaw += assist.yawDelta;
                 ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + assist.pitchDelta));
             } else {
                 // Try virus assist if no enemy is targeted
-                let vAssist = this.calculateVirusAssist(ship);
+                let vAssist = this.calculateVirusAssist(ship, shipForward);
                 if (vAssist) {
                     ship.yaw += vAssist.yawDelta;
                     ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + vAssist.pitchDelta));
@@ -110,57 +113,21 @@ class MobileController {
         return inputs;
     }
 
-    calculateAimAssist(ship, enemies, isSwipingHard) {
-        let bestTarget = null;
-        let bestDot = -1;
-
-        // Correct forward vector based on player.js (Forward = -sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
+    _getShipForward(ship) {
         let cp = Math.cos(ship.pitch);
-        let forwardX = -Math.sin(ship.yaw) * cp;
-        let forwardY = Math.sin(ship.pitch);
-        let forwardZ = -Math.cos(ship.yaw) * cp;
+        return {
+            x: -Math.sin(ship.yaw) * cp,
+            y: Math.sin(ship.pitch),
+            z: -Math.cos(ship.yaw) * cp
+        };
+    }
 
-        for (let i = 0; i < enemies.length; i++) {
-            let e = enemies[i];
-            let ex = e.x - ship.x;
-            let ey = e.y - ship.y;
-            let ez = e.z - ship.z;
-            let distSqToEnemy = ex * ex + ey * ey + ez * ez;
-
-            // distance checks
-            if (distSqToEnemy < this.MAX_LOCK_DIST_SQ && distSqToEnemy > 100) {
-                let dist = Math.sqrt(distSqToEnemy);
-                let dirX = ex / dist;
-                let dirY = ey / dist;
-                let dirZ = ez / dist;
-
-                let dotProduct = forwardX * dirX + forwardY * dirY + forwardZ * dirZ;
-
-                // angle cone check
-                if (dotProduct > this.CONE_ANGLE && dotProduct > bestDot) {
-                    bestDot = dotProduct;
-                    bestTarget = e;
-                }
-            }
-        }
-
-        // Reset tracking if no target
-        if (!bestTarget) {
-            this.lastTracking.target = null;
-            // Don't reset dot here, virus might use it
-            return null;
-        }
-
-        let assistStrength = isSwipingHard ? this.ASSIST_STRENGTH_WEAK : this.ASSIST_STRENGTH_NORMAL;
-
-        let ex = bestTarget.x - ship.x;
-        let ey = bestTarget.y - ship.y;
-        let ez = bestTarget.z - ship.z;
+    _calculateNudge(ship, targetPos, strength) {
+        let ex = targetPos.x - ship.x;
+        let ey = targetPos.y - ship.y;
+        let ez = targetPos.z - ship.z;
         let distH = Math.hypot(ex, ez);
 
-        // Correct target angles for p5 coordinate system
-        // Yaw: atan2(-x, -z) since forward faces -Z
-        // Pitch: atan2(y, distH) since +Y is up
         let targetYaw = Math.atan2(-ex, -ez);
         let targetPitch = Math.atan2(ey, distH);
 
@@ -168,14 +135,48 @@ class MobileController {
         while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
         while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
 
-        let res = {
-            yawDelta: yawDiff * assistStrength,
-            pitchDelta: (targetPitch - ship.pitch) * assistStrength
+        return {
+            yawDelta: yawDiff * strength,
+            pitchDelta: (targetPitch - ship.pitch) * strength
         };
+    }
 
-        // Store for debug display
+    calculateAimAssist(ship, enemies, isSwipingHard, forward) {
+        let bestTarget = null;
+        let bestDot = -1;
+
+        // Use provided forward or calculate if missing
+        const f = forward || this._getShipForward(ship);
+
+        for (let i = 0; i < enemies.length; i++) {
+            let e = enemies[i];
+            let ex = e.x - ship.x;
+            let ey = e.y - ship.y;
+            let ez = e.z - ship.z;
+            let distSq = ex * ex + ey * ey + ez * ez;
+
+            if (distSq < this.MAX_LOCK_DIST_SQ && distSq > 100) {
+                let dist = Math.sqrt(distSq);
+                let dot = (ex / dist) * f.x + (ey / dist) * f.y + (ez / dist) * f.z;
+
+                if (dot > this.CONE_ANGLE && dot > bestDot) {
+                    bestDot = dot;
+                    bestTarget = e;
+                }
+            }
+        }
+
+        if (!bestTarget) {
+            this.lastTracking.target = null;
+            return null;
+        }
+
+        let strength = isSwipingHard ? this.ASSIST_STRENGTH_WEAK : this.ASSIST_STRENGTH_NORMAL;
+        let res = this._calculateNudge(ship, bestTarget, strength);
+
+        // Store for debug
         this.lastTracking.target = bestTarget;
-        this.lastTracking.virusTarget = null; // Clear virus target if enemy is locked
+        this.lastTracking.virusTarget = null;
         this.lastTracking.dot = bestDot;
         this.lastTracking.yawDelta = res.yawDelta;
         this.lastTracking.pitchDelta = res.pitchDelta;
@@ -184,81 +185,59 @@ class MobileController {
         return res;
     }
 
-    calculateVirusAssist(ship) {
-        // Correct forward vector
-        let cp = Math.cos(ship.pitch);
-        let forwardX = -Math.sin(ship.yaw) * cp;
-        let forwardY = Math.sin(ship.pitch);
-        let forwardZ = -Math.cos(ship.yaw) * cp;
+    calculateVirusAssist(ship, forward) {
+        const f = forward || this._getShipForward(ship);
 
-        // Performant local search: project look-at point to sea level (y=200)
-        // If ship is above sea level and looking down
-        if (forwardY > 0) {
-            let distToSea = (200 - ship.y) / forwardY;
-            if (distToSea < 0) distToSea = 1000; // Fallback if behind or weird
+        // Performance: Center scan on ship's current tile index
+        let shipTx = Math.floor(ship.x / 120);
+        let shipTz = Math.floor(ship.z / 120);
 
-            let lookX = ship.x + forwardX * distToSea;
-            let lookZ = ship.z + forwardZ * distToSea;
+        let bestTileK = null;
+        let bestDot = 0.94; // Strict cone (~20 deg half-angle)
+        let maxDistSq = 6250000; // 2500 units distance cap
 
-            let centerTx = Math.floor(lookX / 120); // TILE = 120
-            let centerTz = Math.floor(lookZ / 120);
+        // Scan a 22x22 window around the ship (~1300 units radius)
+        // This is extremely performant as it mostly does key lookups and basic math
+        for (let tz = shipTz - 11; tz <= shipTz + 11; tz++) {
+            for (let tx = shipTx - 11; tx <= shipTx + 11; tx++) {
+                let k = tx + ',' + tz;
+                if (infectedTiles[k]) {
+                    // Vector to tile center (rough y=300 for fast rejection)
+                    let vx = tx * 120 + 60 - ship.x;
+                    let vy = 300 - ship.y;
+                    let vz = tz * 120 + 60 - ship.z;
 
-            let bestTile = null;
-            let bestDot = 0.92; // More relaxed threshold (was 0.95)
+                    let distSq = vx * vx + vy * vy + vz * vz;
+                    if (distSq < maxDistSq) {
+                        let dist = Math.sqrt(distSq);
+                        let dot = (vx / dist) * f.x + (vy / dist) * f.y + (vz / dist) * f.z;
 
-            // Scan a 15x15 window around the projected intersection
-            for (let tz = centerTz - 7; tz <= centerTz + 7; tz++) {
-                for (let tx = centerTx - 7; tx <= centerTx + 7; tx++) {
-                    let k = tx + ',' + tz; // tileKey format
-                    if (infectedTiles[k]) {
-                        // Calculate vector to tile center
-                        let txPos = tx * 120 + 60;
-                        let tzPos = tz * 120 + 60;
-                        let tyPos = terrain.getAltitude(txPos, tzPos);
-
-                        let vx = txPos - ship.x;
-                        let vy = tyPos - ship.y;
-                        let vz = tzPos - ship.z;
-                        let d = Math.hypot(vx, vy, vz);
-                        if (d > 0) {
-                            let dot = (vx / d) * forwardX + (vy / d) * forwardY + (vz / d) * forwardZ;
-                            if (dot > bestDot) {
-                                bestDot = dot;
-                                bestTile = { x: txPos, y: tyPos, z: tzPos };
-                            }
+                        if (dot > bestDot) {
+                            bestDot = dot;
+                            bestTileK = k;
                         }
                     }
                 }
             }
-
-            if (bestTile) {
-                let ex = bestTile.x - ship.x;
-                let ey = bestTile.y - ship.y;
-                let ez = bestTile.z - ship.z;
-                let distH = Math.hypot(ex, ez);
-
-                let targetYaw = Math.atan2(-ex, -ez);
-                let targetPitch = Math.atan2(ey, distH);
-
-                let yawDiff = targetYaw - ship.yaw;
-                while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
-                while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
-
-                let res = {
-                    yawDelta: yawDiff * this.VIRUS_ASSIST_STRENGTH,
-                    pitchDelta: (targetPitch - ship.pitch) * this.VIRUS_ASSIST_STRENGTH
-                };
-
-                // Store for debug
-                this.lastTracking.virusTarget = bestTile;
-                this.lastTracking.dot = bestDot;
-                this.lastTracking.yawDelta = res.yawDelta;
-                this.lastTracking.pitchDelta = res.pitchDelta;
-
-                return res;
-            }
         }
-        this.lastTracking.virusTarget = null; // Clear virus target if no assist
+
+        if (bestTileK) {
+            let [tx, tz] = bestTileK.split(',').map(Number);
+            let txPos = tx * 120 + 60;
+            let tzPos = tz * 120 + 60;
+            let tyPos = terrain.getAltitude(txPos, tzPos); // Expensive call: Only Once!
+
+            let bestTile = { x: txPos, y: tyPos, z: tzPos };
+            let res = this._calculateNudge(ship, bestTile, this.VIRUS_ASSIST_STRENGTH);
+
+            this.lastTracking.virusTarget = bestTile;
+            this.lastTracking.dot = bestDot;
+            this.lastTracking.yawDelta = res.yawDelta;
+            this.lastTracking.pitchDelta = res.pitchDelta;
+            return res;
+        }
+
+        this.lastTracking.virusTarget = null;
         return null;
     }
 

@@ -265,24 +265,28 @@ function updateShipInput(p) {
   if (p.id === 0 && !isMobile && document.pointerLockElement) {
     smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
     smoothedMY = lerp(smoothedMY, movedY, MOUSE_SMOOTHING);
-    p.ship.yaw -= smoothedMX * MOUSE_SENSITIVITY;
-    p.ship.pitch = constrain(p.ship.pitch - smoothedMY * MOUSE_SENSITIVITY, -PI / 2.2, PI / 2.2);
+
+    let newYaw = p.ship.yaw - smoothedMX * MOUSE_SENSITIVITY;
+    let newPitch = p.ship.pitch - smoothedMY * MOUSE_SENSITIVITY;
 
     // Apply Desktop Aim Assist if enabled
     if (typeof mobileController !== 'undefined' && mobileController.desktopAssist) {
-      let assist = mobileController.calculateAimAssist(p.ship, enemyManager.enemies, false);
+      const shipForward = mobileController._getShipForward(p.ship);
+      let assist = mobileController.calculateAimAssist(p.ship, enemyManager.enemies, false, shipForward);
       if (assist) {
-        p.ship.yaw += assist.yawDelta;
-        p.ship.pitch = constrain(p.ship.pitch + assist.pitchDelta, -PI / 2.2, PI / 2.2);
+        newYaw += assist.yawDelta;
+        newPitch += assist.pitchDelta;
       } else {
         // Try virus assist if no enemy targeted
-        let vAssist = mobileController.calculateVirusAssist(p.ship);
+        let vAssist = mobileController.calculateVirusAssist(p.ship, shipForward);
         if (vAssist) {
-          p.ship.yaw += vAssist.yawDelta;
-          p.ship.pitch = constrain(p.ship.pitch + vAssist.pitchDelta, -PI / 2.2, PI / 2.2);
+          newYaw += vAssist.yawDelta;
+          newPitch += vAssist.pitchDelta;
         }
       }
     }
+    p.ship.yaw = newYaw;
+    p.ship.pitch = constrain(newPitch, -PI / 2.2, PI / 2.2);
   }
 
   let k = p.keys;

@@ -274,6 +274,13 @@ function updateShipInput(p) {
       if (assist) {
         p.ship.yaw += assist.yawDelta;
         p.ship.pitch = constrain(p.ship.pitch + assist.pitchDelta, -PI / 2.2, PI / 2.2);
+      } else {
+        // Try virus assist if no enemy targeted
+        let vAssist = mobileController.calculateVirusAssist(p.ship);
+        if (vAssist) {
+          p.ship.yaw += vAssist.yawDelta;
+          p.ship.pitch = constrain(p.ship.pitch + vAssist.pitchDelta, -PI / 2.2, PI / 2.2);
+        }
       }
     }
   }

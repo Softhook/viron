@@ -15,12 +15,14 @@ class MobileController {
         this.MAX_LOCK_DIST_SQ = 3000000; // ~1732 units (was 1800000 / ~1342)
         this.ASSIST_STRENGTH_NORMAL = 0.05;  // Subtler (was 0.12)
         this.ASSIST_STRENGTH_WEAK = 0.02;    // Subtler (was 0.04)
+        this.VIRUS_ASSIST_STRENGTH = 0.025;  // Slightly stronger (was 0.015)
 
         // Debug & Testing
         this.debug = false;
         this.desktopAssist = false;
         this.lastTracking = {
             target: null,
+            virusTarget: null,
             dot: 0,
             yawDelta: 0,
             pitchDelta: 0,
@@ -95,6 +97,13 @@ class MobileController {
             if (assist) {
                 ship.yaw += assist.yawDelta;
                 ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + assist.pitchDelta));
+            } else {
+                // Try virus assist if no enemy is targeted
+                let vAssist = this.calculateVirusAssist(ship);
+                if (vAssist) {
+                    ship.yaw += vAssist.yawDelta;
+                    ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + vAssist.pitchDelta));
+                }
             }
         }
 
@@ -138,7 +147,7 @@ class MobileController {
         // Reset tracking if no target
         if (!bestTarget) {
             this.lastTracking.target = null;
-            this.lastTracking.dot = 0;
+            // Don't reset dot here, virus might use it
             return null;
         }
 
@@ -166,12 +175,91 @@ class MobileController {
 
         // Store for debug display
         this.lastTracking.target = bestTarget;
+        this.lastTracking.virusTarget = null; // Clear virus target if enemy is locked
         this.lastTracking.dot = bestDot;
         this.lastTracking.yawDelta = res.yawDelta;
         this.lastTracking.pitchDelta = res.pitchDelta;
         this.lastTracking.isSwipingHard = isSwipingHard;
 
         return res;
+    }
+
+    calculateVirusAssist(ship) {
+        // Correct forward vector
+        let cp = Math.cos(ship.pitch);
+        let forwardX = -Math.sin(ship.yaw) * cp;
+        let forwardY = Math.sin(ship.pitch);
+        let forwardZ = -Math.cos(ship.yaw) * cp;
+
+        // Performant local search: project look-at point to sea level (y=200)
+        // If ship is above sea level and looking down
+        if (forwardY > 0) {
+            let distToSea = (200 - ship.y) / forwardY;
+            if (distToSea < 0) distToSea = 1000; // Fallback if behind or weird
+
+            let lookX = ship.x + forwardX * distToSea;
+            let lookZ = ship.z + forwardZ * distToSea;
+
+            let centerTx = Math.floor(lookX / 120); // TILE = 120
+            let centerTz = Math.floor(lookZ / 120);
+
+            let bestTile = null;
+            let bestDot = 0.92; // More relaxed threshold (was 0.95)
+
+            // Scan a 15x15 window around the projected intersection
+            for (let tz = centerTz - 7; tz <= centerTz + 7; tz++) {
+                for (let tx = centerTx - 7; tx <= centerTx + 7; tx++) {
+                    let k = tx + ',' + tz; // tileKey format
+                    if (infectedTiles[k]) {
+                        // Calculate vector to tile center
+                        let txPos = tx * 120 + 60;
+                        let tzPos = tz * 120 + 60;
+                        let tyPos = terrain.getAltitude(txPos, tzPos);
+
+                        let vx = txPos - ship.x;
+                        let vy = tyPos - ship.y;
+                        let vz = tzPos - ship.z;
+                        let d = Math.hypot(vx, vy, vz);
+                        if (d > 0) {
+                            let dot = (vx / d) * forwardX + (vy / d) * forwardY + (vz / d) * forwardZ;
+                            if (dot > bestDot) {
+                                bestDot = dot;
+                                bestTile = { x: txPos, y: tyPos, z: tzPos };
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (bestTile) {
+                let ex = bestTile.x - ship.x;
+                let ey = bestTile.y - ship.y;
+                let ez = bestTile.z - ship.z;
+                let distH = Math.hypot(ex, ez);
+
+                let targetYaw = Math.atan2(-ex, -ez);
+                let targetPitch = Math.atan2(ey, distH);
+
+                let yawDiff = targetYaw - ship.yaw;
+                while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
+                while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
+
+                let res = {
+                    yawDelta: yawDiff * this.VIRUS_ASSIST_STRENGTH,
+                    pitchDelta: (targetPitch - ship.pitch) * this.VIRUS_ASSIST_STRENGTH
+                };
+
+                // Store for debug
+                this.lastTracking.virusTarget = bestTile;
+                this.lastTracking.dot = bestDot;
+                this.lastTracking.yawDelta = res.yawDelta;
+                this.lastTracking.pitchDelta = res.pitchDelta;
+
+                return res;
+            }
+        }
+        this.lastTracking.virusTarget = null; // Clear virus target if no assist
+        return null;
     }
 
     draw(w, h) {
@@ -211,7 +299,7 @@ class MobileController {
             let info = [
                 `DEBUG MODE (P to toggle)`,
                 `Desktop Assist: ${this.desktopAssist ? "ON" : "OFF"}`,
-                `Target: ${this.lastTracking.target ? "LOCKED" : "NONE"}`,
+                `Target: ${this.lastTracking.target ? "ENEMY LOCKED" : (this.lastTracking.virusTarget ? "VIRUS LOCKED" : "NONE")}`,
                 `Dot Product: ${this.lastTracking.dot.toFixed(3)}`,
                 `Yaw Delta: ${this.lastTracking.yawDelta.toFixed(4)}`,
                 `Pitch Delta: ${this.lastTracking.pitchDelta.toFixed(4)}`,
@@ -247,6 +335,20 @@ class MobileController {
             beginShape();
             vertex(0, 0, -s); vertex(0, -s, 0); vertex(0, 0, s); vertex(0, s, 0);
             endShape(CLOSE);
+            pop();
+        }
+
+        // Draw Virus Target (Green Box on Ground)
+        if (this.lastTracking.virusTarget) {
+            let vt = this.lastTracking.virusTarget;
+            push();
+            translate(vt.x, vt.y - 2, vt.z);
+            noFill();
+            stroke(0, 255, 0, 180);
+            strokeWeight(2);
+            rotateX(PI / 2);
+            rectMode(CENTER);
+            rect(0, 0, 120, 120); // Tile size
             pop();
         }
     }

@@ -498,3 +498,5 @@ function mouseDragged() { mouseMoved(); }
 
 function mouseMoved() {
 }
+
+function windowResized() { resizeCanvas(windowWidth, windowHeight); }

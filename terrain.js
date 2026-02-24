@@ -200,7 +200,7 @@ class Terrain {
       // Three-octave Perlin noise.  Each octave uses a distinct offset so the
       // noise field is asymmetric across the x=z diagonal (breaking the mirroring
       // symmetry that arises when both axes share the same frequency).
-      // The offset values are arbitrary large primes chosen to shift each octave
+      // The offset values are arbitrary large constants chosen to shift each octave
       // into a visually unrelated region of the noise space.
       let xs = x * 0.0008, zs = z * 0.0008;
       let elevation = noise(xs, zs) +

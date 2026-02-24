@@ -564,8 +564,10 @@ function spreadInfection() {
     return;
   }
 
-  // Probabilistic spread to one random orthogonal neighbour per infected tile
-  let fresh = [];
+  // Probabilistic spread to one random orthogonal neighbour per infected tile.
+  // A Set is used so that duplicate keys from the normal spread loop and the
+  // sentinel acceleration loop below cannot both process the same tile.
+  let freshSet = new Set();
   for (let i = 0; i < keysLen; i++) {
     if (random() > INF_RATE) continue;
     let parts = keys[i].split(',');
@@ -574,7 +576,7 @@ function spreadInfection() {
     let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
     if (aboveSea(terrain.getAltitude(wx, wz)) || infectedTiles[nk]) continue;
-    fresh.push(nk);
+    freshSet.add(nk);
   }
 
   // Commit all new infections after the loop (avoid modifying while iterating)
@@ -592,14 +594,13 @@ function spreadInfection() {
         let nk = tileKey(nx, nz);
         let wx = nx * TILE, wz = nz * TILE;
         if (!aboveSea(terrain.getAltitude(wx, wz)) && !infectedTiles[nk]) {
-          fresh.push(nk);
+          freshSet.add(nk);
         }
       }
     }
   }
 
-  for (let i = 0; i < fresh.length; i++) {
-    let nk = fresh[i];
+  for (let nk of freshSet) {
     infectedTiles[nk] = { tick: frameCount };
     let parts = nk.split(',');
     let ptx = +parts[0], ptz = +parts[1];

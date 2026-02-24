@@ -671,7 +671,7 @@ function checkCollisions(p) {
     // Other enemies: one bullet kills
     for (let i = p.bullets.length - 1; i >= 0; i--) {
       let b = p.bullets[i];
-      let hitRadSq = e.type === 'colossus' ? 40000 : 6400;  // 200 vs 80 unit radius
+      let hitRadSq = e.type === 'colossus' ? 90000 : 6400;  // 300 vs 80 unit radius
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < hitRadSq) {
         if (e.type === 'colossus') {
           // Damage the Colossus — bullets don't pass through the body, consume bullet
@@ -700,7 +700,7 @@ function checkCollisions(p) {
     if (!killed) {
       for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
         let m = p.homingMissiles[i];
-        let hitRadSq = e.type === 'colossus' ? 90000 : 10000;
+        let hitRadSq = e.type === 'colossus' ? 160000 : 10000;
         if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < hitRadSq) {
           if (e.type === 'colossus') {
             // Missiles deal 5 HP to the Colossus
@@ -728,7 +728,7 @@ function checkCollisions(p) {
 
     // Enemy body vs player ship — kills the player on contact
     // Colossus has a larger body collision radius
-    let bodyRadSq = e.type === 'colossus' ? 40000 : 4900;
+    let bodyRadSq = e.type === 'colossus' ? 90000 : 4900;
     if (!killed && ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < bodyRadSq)) {
       killPlayer(p);
       return;

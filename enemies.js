@@ -114,8 +114,8 @@ class EnemyManager {
 
     // Colossus gets a large HP pool — it takes many hits
     if (type === 'colossus') {
-      entry.hp = 40;   // 40 hits to kill
-      entry.maxHp = 40;
+      entry.hp = 80;   // 80 hits to kill
+      entry.maxHp = 80;
       entry.hitFlash = 0; // frames of bright flash after being hit
     }
 
@@ -494,18 +494,18 @@ class EnemyManager {
         e.burstCooldown = 0;
         e.burstCount--;
         // Re-calculate direction each burst shot (target may have moved)
-        let bdx = tShip.x - e.x, bdy = tShip.y - (e.y - 160), bdz = tShip.z - e.z;
+        let bdx = tShip.x - e.x, bdy = tShip.y - (e.y - 240), bdz = tShip.z - e.z;
         let bd = Math.hypot(bdx, bdy, bdz);
         if (bd > 0) {
           let spread = 0.12;
           particleSystem.enemyBullets.push({
-            x: e.x, y: e.y - 160, z: e.z,
+            x: e.x, y: e.y - 240, z: e.z,
             vx: (bdx / bd) * 14 + random(-spread, spread) * 14,
             vy: (bdy / bd) * 14,
             vz: (bdz / bd) * 14 + random(-spread, spread) * 14,
             life: 160
           });
-          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - 160, e.z);
+          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - 240, e.z);
         }
       }
     }
@@ -848,83 +848,83 @@ class EnemyManager {
           let legPhase = walkCycle * side;
           let thighSwing = sin(legPhase) * 0.4;
           let shinBend = max(0, -cos(legPhase)) * 0.5;
-          let footLift = max(0, sin(legPhase)) * 30;
+          let footLift = max(0, sin(legPhase)) * 40;
 
           push();
-          // Hip attachment point
-          translate(side * 35, -30, 0);
+          // Hip attachment point — shifted up for longer legs
+          translate(side * 50, -40, 0);
 
-          // Thigh
+          // Thigh — lengthened to 120
           fill(fc[0], fc[1], fc[2]);
           rotateX(thighSwing);
-          push(); translate(0, 30, 0); box(36, 60, 36); pop();
+          push(); translate(0, 60, 0); box(50, 120, 50); pop();
 
-          // Shin
-          translate(0, 60, 0);
+          // Shin — lengthened to 120
+          translate(0, 120, 0);
           rotateX(-shinBend);
-          push(); translate(0, 30, 0); box(28, 60, 28); pop();
+          push(); translate(0, 60, 0); box(40, 120, 40); pop();
 
           // Foot — wide flat block
           fill(darkC[0], darkC[1], darkC[2]);
-          translate(0, 60, 0);
-          push(); translate(0, 8, side * -4); box(40, 16, 50); pop();
+          translate(0, 120, 0);
+          push(); translate(0, 12, side * -6); box(60, 24, 75); pop();
           pop();
         }
 
         // ---- PELVIS / WAIST ----
         fill(darkC[0], darkC[1], darkC[2]);
-        push(); translate(0, -32, 0); box(90, 24, 60); pop();
+        push(); translate(0, -45, 0); box(130, 36, 90); pop();
 
-        // ---- TORSO — large imposing chest block ----
+        // ---- TORSO — massive imposing chest block ----
         fill(fc[0], fc[1], fc[2]);
-        push(); translate(0, -110, 0); box(110, 130, 75); pop();
+        push(); translate(0, -160, 0); box(160, 200, 110); pop();
 
         // ---- SHOULDERS ----
         fill(darkC[0], darkC[1], darkC[2]);
-        push(); translate(-72, -145, 0); box(32, 32, 42); pop();
-        push(); translate(72, -145, 0); box(32, 32, 42); pop();
+        push(); translate(-105, -210, 0); box(50, 50, 65); pop();
+        push(); translate(105, -210, 0); box(50, 50, 65); pop();
 
-        // ---- ARMS — hanging at sides, swing slightly with walk ----
+        // ---- ARMS — large swinging limbs ----
         for (let side = -1; side <= 1; side += 2) {
           let armSwing = sin(walkCycle * side + PI) * 0.15;
           push();
-          translate(side * 72, -145, 0);
+          translate(side * 105, -210, 0);
           rotateX(armSwing);
 
           // Upper arm
           fill(fc[0], fc[1], fc[2]);
-          push(); translate(0, 45, 0); box(30, 80, 30); pop();
+          push(); translate(0, 65, 0); box(45, 120, 45); pop();
 
           // Elbow joint
           fill(darkC[0], darkC[1], darkC[2]);
-          push(); translate(0, 85, 0); box(26, 20, 26); pop();
+          push(); translate(0, 125, 0); box(40, 30, 40); pop();
 
           // Forearm
           fill(fc[0], fc[1], fc[2]);
-          push(); translate(0, 125, 0); box(26, 70, 26); pop();
+          push(); translate(0, 185, 0); box(40, 100, 40); pop();
 
-          // Fist — wide brutal block
+          // Fist — massive brutality
           fill(ac[0], ac[1], ac[2]);
-          push(); translate(0, 168, 0); box(34, 34, 34); pop();
+          push(); translate(0, 245, 0); box(55, 55, 55); pop();
           pop();
         }
 
         // ---- NECK ----
         fill(darkC[0], darkC[1], darkC[2]);
-        push(); translate(0, -182, 0); box(44, 28, 40); pop();
+        push(); translate(0, -270, 0); box(65, 40, 60); pop();
 
-        // ---- HEAD — large boxy skull ----
+        // ---- HEAD — massive boxy skull ----
         fill(fc[0], fc[1], fc[2]);
-        push(); translate(0, -215, 0); box(70, 60, 66); pop();
+        push(); translate(0, -320, 0); box(100, 90, 100); pop();
 
         // Eye slots — glowing orange
         fill(glowC[0], glowC[1], glowC[2]);
-        push(); translate(-18, -220, 34); box(18, 12, 6); pop();
-        push(); translate(18, -220, 34); box(18, 12, 6); pop();
+        push(); translate(-25, -330, 51); box(25, 18, 8); pop();
+        push(); translate(25, -330, 51); box(25, 18, 8); pop();
 
         // Head armour brow ridge
         fill(darkC[0], darkC[1], darkC[2]);
-        push(); translate(0, -232, 34); box(72, 10, 6); pop();
+        push(); translate(0, -348, 51); box(104, 15, 8); pop();
 
 
 
@@ -948,7 +948,7 @@ class EnemyManager {
       pop();
 
       // Ground shadow — size varies by enemy type
-      let sSize = e.type === 'colossus' ? 120
+      let sSize = e.type === 'colossus' ? 200
         : e.type === 'bomber' ? 60
           : (e.type === 'fighter' || e.type === 'hunter') ? 25 : 40;
       if (e.type !== 'crab' && e.type !== 'scorpion') {  // Ground-huggers already touch the surface

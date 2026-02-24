@@ -1,3 +1,14 @@
+/**
+ * MobileController - Handles touch inputs and Aim Assist logic.
+ * 
+ * AIM ASSIST DUAL-LOGIC:
+ * 1. Enemies: Selection uses CAMERA view. Since enemies are aerial, the player naturally
+ *    tracks them through the screen center. Camera-relative selection is most intuitive here.
+ * 2. Virus: Selection uses SHIP nose. For ground sweeping, the ship's physical orientation
+ *    is a more reliable indicator of intent than the slightly tilted-up camera view.
+ * 
+ * BOTH logics eventually nudge the SHIP NOSE toward the target for firing alignment.
+ */
 class MobileController {
     constructor() {
         this.leftTouchId = null;

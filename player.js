@@ -408,57 +408,62 @@ function updateProjectilePhysics(p) {
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
 
-    // Subtle seeking toward enemies and virus
-    let bestTarget = null;
-    let bestDot = 0.985; // Very narrow cone for bullets
-    let speed = Math.hypot(b.vx, b.vy, b.vz);
+    // PERFORMANCE: Only seeking for "fresh" bullets (first 30 frames)
+    // and only if Aim Assist is enabled (for P1 or via 'P' toggle)
+    let assistEnabled = (typeof mobileController !== 'undefined' && (mobileController.desktopAssist || isMobile));
 
-    if (speed > 0) {
-      let bDirX = b.vx / speed, bDirY = b.vy / speed, bDirZ = b.vz / speed;
+    if (assistEnabled && b.life > 240) { // Bullets start at 300 life
+      let bestTarget = null;
+      let bestDot = 0.985;
+      let speed = Math.hypot(b.vx, b.vy, b.vz);
 
-      // 1. Check Enemies
-      for (let e of enemyManager.enemies) {
-        let dx = e.x - b.x, dy = e.y - b.y, dz = e.z - b.z;
-        let d = Math.hypot(dx, dy, dz);
-        if (d < 1200 && d > 20) {
-          let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
-          if (dot > bestDot) {
-            bestDot = dot;
-            bestTarget = { x: e.x, y: e.y, z: e.z };
+      if (speed > 0) {
+        let bDirX = b.vx / speed, bDirY = b.vy / speed, bDirZ = b.vz / speed;
+
+        // 1. Enemies (Highest priority)
+        for (let e of enemyManager.enemies) {
+          let dx = e.x - b.x, dy = e.y - b.y, dz = e.z - b.z;
+          let d = Math.hypot(dx, dy, dz);
+          if (d < 1200 && d > 20) {
+            let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
+            if (dot > bestDot) {
+              bestDot = dot;
+              bestTarget = { x: e.x, y: e.y, z: e.z };
+            }
           }
         }
-      }
 
-      // 2. Check nearby infected tiles (if no enemy found or if closer)
-      if (bestDot < 0.999) { // Only search virus if not perfectly locked on enemy
-        let bTx = Math.floor(b.x / 120), bTz = Math.floor(b.z / 120);
-        for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
-          for (let tx = bTx - 2; tx <= bTx + 2; tx++) {
-            let k = tx + ',' + tz;
-            if (infectedTiles[k]) {
-              let txPos = tx * 120 + 60, tzPos = tz * 120 + 60;
-              let tyPos = terrain.getAltitude(txPos, tzPos);
-              let dx = txPos - b.x, dy = tyPos - b.y, dz = tzPos - b.z;
-              let d = Math.hypot(dx, dy, dz);
-              if (d < 600) {
-                let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
-                if (dot > bestDot) {
-                  bestDot = dot;
-                  bestTarget = { x: txPos, y: tyPos, z: tzPos };
+        // 2. Virus (Halved frequency: check only on even frames to save CPU)
+        if (!bestTarget && frameCount % 2 === 0) {
+          let bTx = Math.floor(b.x / 120), bTz = Math.floor(b.z / 120);
+          for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
+            for (let tx = bTx - 2; tx <= bTx + 2; tx++) {
+              let k = tx + ',' + tz;
+              if (infectedTiles[k]) {
+                let txPos = tx * 120 + 60, tzPos = tz * 120 + 60;
+                let tyPos = terrain.getAltitude(txPos, tzPos);
+                let dx = txPos - b.x, dy = tyPos - b.y, dz = tzPos - b.z;
+                let d = Math.hypot(dx, dy, dz);
+                if (d < 600) {
+                  let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
+                  if (dot > bestDot) {
+                    bestDot = dot;
+                    bestTarget = { x: txPos, y: tyPos, z: tzPos };
+                  }
                 }
               }
             }
           }
         }
-      }
 
-      if (bestTarget) {
-        let dx = bestTarget.x - b.x, dy = bestTarget.y - b.y, dz = bestTarget.z - b.z;
-        let d = Math.hypot(dx, dy, dz);
-        let steer = 0.04; // Very subtle leaning
-        b.vx = lerp(b.vx, (dx / d) * speed, steer);
-        b.vy = lerp(b.vy, (dy / d) * speed, steer);
-        b.vz = lerp(b.vz, (dz / d) * speed, steer);
+        if (bestTarget) {
+          let dx = bestTarget.x - b.x, dy = bestTarget.y - b.y, dz = bestTarget.z - b.z;
+          let d = Math.hypot(dx, dy, dz);
+          let steer = 0.04;
+          b.vx = lerp(b.vx, (dx / d) * speed, steer);
+          b.vy = lerp(b.vy, (dy / d) * speed, steer);
+          b.vz = lerp(b.vz, (dz / d) * speed, steer);
+        }
       }
     }
 

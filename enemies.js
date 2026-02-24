@@ -348,22 +348,33 @@ class EnemyManager {
    * @param {object} refShip  Fallback target for boundary checks.
    */
   updateScorpion(e, refShip) {
-    // Locate the nearest healthy (uninfected) sentinel building
-    let targetX = null, targetZ = null;
-    let bestDist = Infinity;
-    for (let b of buildings) {
-      if (b.type !== 4) continue;
-      let sk = tileKey(toTile(b.x), toTile(b.z));
-      if (infectedTiles[sk]) continue;  // Already infected — skip
-      let distSq = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
-      if (distSq < bestDist) { bestDist = distSq; targetX = b.x; targetZ = b.z; }
-    }
-
-    // Fall back to the launchpad centre if no healthy sentinel is reachable
     const LP_CENTER = (LAUNCH_MIN + LAUNCH_MAX) / 2;  // ≈ 420
-    if (targetX === null) {
-      targetX = LP_CENTER;
-      targetZ = LP_CENTER;
+
+    let alivePlayers = players.filter(p => !p.dead).map(p => p.ship);
+
+    let targetX, targetZ;
+
+    if (isLaunchpad(e.x, e.z)) {
+      // --- Mode 3: On the launchpad — hunt the nearest player like a crab ---
+      let tShip = findNearest(alivePlayers, e.x, e.y, e.z) || refShip;
+      targetX = tShip.x;
+      targetZ = tShip.z;
+    } else {
+      // --- Mode 1: Hunt nearest healthy (uninfected) sentinel ---
+      let bestDist = Infinity;
+      targetX = null; targetZ = null;
+      for (let b of buildings) {
+        if (b.type !== 4) continue;
+        let sk = tileKey(toTile(b.x), toTile(b.z));
+        if (infectedTiles[sk]) continue;  // Already infected — skip
+        let distSq = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
+        if (distSq < bestDist) { bestDist = distSq; targetX = b.x; targetZ = b.z; }
+      }
+      // --- Mode 2: No healthy sentinels left — march toward the launchpad ---
+      if (targetX === null) {
+        targetX = LP_CENTER;
+        targetZ = LP_CENTER;
+      }
     }
 
     let dx = targetX - e.x, dz = targetZ - e.z;
@@ -377,7 +388,7 @@ class EnemyManager {
     // Snap to ground surface
     e.y = terrain.getAltitude(e.x, e.z) - 10;
 
-    // Infect tiles below — higher rate near launchpad, moderate elsewhere
+    // Infect tiles below — triggers launchpad alarm when relevant
     if (random() < 0.025) {
       let gy = terrain.getAltitude(e.x, e.z);
       if (!aboveSea(gy)) {
@@ -398,7 +409,6 @@ class EnemyManager {
 
     // Fire upward bullet at nearby players every 150 frames
     e.fireTimer = (e.fireTimer || 0) + 1;
-    let alivePlayers = players.filter(p => !p.dead).map(p => p.ship);
     let target = findNearest(alivePlayers, e.x, e.y, e.z);
     if (target) {
       let pd = Math.hypot(target.x - e.x, target.z - e.z);

@@ -53,9 +53,9 @@ const SENTINEL_PULSE_INTERVAL = 300;  // Frames between each sentinel pulse (~5 
 for (let peak of MOUNTAIN_PEAKS) {
   const sig = peak.sigma !== undefined ? peak.sigma : SENTINEL_PEAK_SIGMA;
   peak._s2 = 2 * sig * sig;
-  // Skip Math.exp when contribution < 0.5 world units (exp(-threshold) < 0.5/strength).
-  // Guard: if strength <= 0.5 the peak is negligible everywhere so always skip it.
-  peak._skipDistSq = peak.strength > 0.5 ? peak._s2 * Math.log(peak.strength / 0.5) : 0;
+  // Guard: if strength <= 0.5 the peak is negligible everywhere, so encode "always skip"
+  // by setting a negative sentinel that makes the render-side dSq > _skipDistSq test always true.
+  peak._skipDistSq = peak.strength > 0.5 ? peak._s2 * Math.log(peak.strength / 0.5) : -1;
 }
 // Infection parameters for an infected sentinel (much faster than normal INF_RATE)
 const SENTINEL_INFECTION_RADIUS = 5;     // Tile radius of accelerated spread around an infected sentinel

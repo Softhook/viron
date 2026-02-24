@@ -35,7 +35,7 @@ let lastAlarmTime = 0;         // millis() of the last launchpad alarm SFX (rate
 let gameStartTime = 0;         // millis() when the current game started
 
 let numPlayers = 1;         // 1 or 2 — set by startGame()
-let menuStars = [];        // Animated star positions for the title screen
+let menuCam = { x: 1500, z: 1500, yaw: 0 }; // Title-screen camera state
 
 // Mouse state tracked via raw DOM events so they work before pointer-lock
 let mouseReleasedSinceStart = true;
@@ -147,7 +147,7 @@ function preload() {
 
 /**
  * p5 setup — creates the WEBGL canvas, initialises subsystems and populates
- * the static world objects (trees, buildings, menu stars).
+ * the static world objects (trees, buildings).
  *
  * Mobile devices receive reduced object counts and draw distances to stay at
  * a playable frame rate.
@@ -187,10 +187,7 @@ function setup() {
       variant: floor(random(3)), trunkH: random(25, 50), canopyScale: random(1.0, 1.8)
     });
 
-  // Title-screen star field
-  let numStars = isMobile ? 50 : 120;
-  for (let i = 0; i < numStars; i++)
-    menuStars.push({ x: random(-1, 1), y: random(-1, 1), s: random(1, 3), spd: random(0.3, 1.2) });
+  // menuCam starts over open terrain away from the launchpad
 
   // Buildings — different seed from trees so positions don't correlate
   randomSeed(123);

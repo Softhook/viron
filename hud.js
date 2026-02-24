@@ -17,57 +17,83 @@
  * Renders the animated title / start screen.
  *
  * Layers (back to front):
- *   1. Dark space background
- *   2. Drifting star field (menuStars[])
- *   3. Soft green glow behind the title
- *   4. Drop-shadow + pulsing title text "V I R O N"
- *   5. Author credit
- *   6. CRT scanline overlay
- *   7. Blinking start prompt (desktop: "PRESS 1/2", mobile: "TAP TO START")
- *   8. Control hint line at the bottom
+ *   1. Live 3D landscape rendered with a slow-panning camera (menuCam)
+ *   2. Soft green glow behind the title (2D overlay)
+ *   3. Drop-shadow + pulsing title text "V I R O N"
+ *   4. Author credit
+ *   5. CRT scanline overlay
+ *   6. Blinking start prompt (desktop: "PRESS 1/2", mobile: "TAP TO START")
+ *   7. Control hint line at the bottom
  */
 function drawMenu() {
-  background(8, 12, 28);
-  setup2DViewport();
+  // --- 3D Landscape background ---
+  let gl = drawingContext;
+  let pxD = pixelDensity();
+  gl.viewport(0, 0, width * pxD, height * pxD);
+  gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);   // sky colour
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  // --- Animated star field ---
-  noStroke();
-  for (let st of menuStars) {
-    st.y += st.spd * 0.002;   // Drift downward (parallax scroll)
-    if (st.y > 1) st.y -= 2;  // Wrap around
-    let sx = st.x * width / 2;
-    let sy = st.y * height / 2;
-    let twinkle = 150 + sin(frameCount * 0.05 + st.x * 100) * 105;
-    fill(twinkle, twinkle, twinkle + 30, twinkle);
-    ellipse(sx, sy, st.s, st.s);
-  }
+  push();
+  perspective(PI / 3, width / height, 50, VIEW_FAR * TILE * 1.5);
+
+  // Slowly pan the camera yaw around the landscape
+  menuCam.yaw += 0.0006;
+
+  // Camera sits 550 units "behind" the look-at point, low to the ground
+  let cx = menuCam.x + sin(menuCam.yaw) * 550;
+  let cz = menuCam.z + cos(menuCam.yaw) * 550;
+  let cy = -90;   // below horizon for dramatic low-angle view
+  camera(cx, cy, cz, menuCam.x, -10, menuCam.z, 0, 1, 0);
+
+  // Fake ship object used by terrain culling helpers
+  let fakeShip = {
+    x: menuCam.x, y: cy, z: menuCam.z,
+    yaw: menuCam.yaw, pitch: 0
+  };
+
+  setSceneLighting();
+  terrain.drawLandscape(fakeShip);
+  terrain.drawTrees(fakeShip);
+  terrain.drawBuildings(fakeShip);
+
+  pop();
+
+  // Clear depth so 2D overlays always appear on top
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+
+  // --- 2D Overlays ---
+  setup2DViewport();
 
   // --- Glow halo behind the title ---
   let glowPulse = sin(frameCount * 0.04) * 0.3 + 0.7;
   noStroke();
-  fill(0, 255, 60, 18 * glowPulse);
-  ellipse(0, -height * 0.14, 500 * glowPulse, 140 * glowPulse);
-  fill(0, 255, 60, 10 * glowPulse);
-  ellipse(0, -height * 0.14, 700 * glowPulse, 200 * glowPulse);
+  fill(160, 255, 10, 32 * glowPulse);
+  ellipse(0, -height * 0.14, 580 * glowPulse, 170 * glowPulse);
+  fill(120, 200, 5, 20 * glowPulse);
+  ellipse(0, -height * 0.14, 820 * glowPulse, 240 * glowPulse);
 
   textAlign(CENTER, CENTER);
   noStroke();
 
   // Drop shadow layer
-  fill(0, 180, 40, 80);
+  fill(40, 80, 0, 100);
   textSize(110);
   text('V I R O N', 3, -height * 0.14 + 4);
 
-  // Pulsing title (green hue oscillates with a slight colour shift)
-  let titlePulse = sin(frameCount * 0.06) * 30;
-  fill(30 + titlePulse, 255, 60 + titlePulse);
+  // Pulsing title — oscillates between the two infection tile greens
+  let titlePulse = sin(frameCount * 0.06) * 0.5 + 0.5;  // 0..1
+  fill(
+    lerp(120, 160, titlePulse),
+    lerp(200, 255, titlePulse),
+    lerp(5, 10, titlePulse)
+  );
   textSize(110);
   text('V I R O N', 0, -height * 0.14);
 
   // Author credit
-  textSize(16);
-  fill(140, 200, 140, 180);
-  text('Christian Nold, 2026', 0, -height * 0.14 + 70);
+  textSize(22);
+  fill(140, 200, 140, 210);
+  text('Christian Nold, 2026', 0, -height * 0.14 + 78);
 
   // CRT scanline overlay — subtle dark horizontal lines for retro feel
   for (let y = -height / 2; y < height / 2; y += 4) {
@@ -77,8 +103,8 @@ function drawMenu() {
   noStroke();
 
   // --- Start prompt (alternating blink phases for 1P / 2P options) ---
-  let optY  = height * 0.08;
-  let blink1 = sin(frameCount * 0.08)       * 0.3 + 0.7;
+  let optY = height * 0.08;
+  let blink1 = sin(frameCount * 0.08) * 0.3 + 0.7;
   let blink2 = sin(frameCount * 0.08 + 1.5) * 0.3 + 0.7;
 
   textSize(28);
@@ -160,8 +186,8 @@ function drawPlayerHUD(p, pi, hw, h) {
   noStroke();
   textAlign(LEFT, TOP);
 
-  let lx  = -hw / 2 + 14;
-  let ly  = -h  / 2;
+  let lx = -hw / 2 + 14;
+  let ly = -h / 2;
   let col = p.labelColor;
 
   // Player number in label colour
@@ -171,11 +197,11 @@ function drawPlayerHUD(p, pi, hw, h) {
 
   // Stat lines: [size, [r,g,b], text, x, y]
   let lines = [
-    [20, [255, 255, 255], 'SCORE '    + p.score,                        lx, ly + 26],
-    [16, [0, 255, 0],     'ALT '      + max(0, floor(SEA - s.y)),        lx, ly + 50],
-    [14, [255, 80, 80],   'INF '      + Object.keys(infectedTiles).length, lx, ly + 72],
-    [14, [255, 100, 100], 'ENEMIES '  + enemyManager.enemies.length,    lx, ly + 90],
-    [14, [0, 200, 255],   'MISSILES ' + p.missilesRemaining,             lx, ly + 108]
+    [20, [255, 255, 255], 'SCORE ' + p.score, lx, ly + 26],
+    [16, [0, 255, 0], 'ALT ' + max(0, floor(SEA - s.y)), lx, ly + 50],
+    [14, [255, 80, 80], 'INF ' + Object.keys(infectedTiles).length, lx, ly + 72],
+    [14, [255, 100, 100], 'ENEMIES ' + enemyManager.enemies.length, lx, ly + 90],
+    [14, [0, 200, 255], 'MISSILES ' + p.missilesRemaining, lx, ly + 108]
   ];
   for (let [sz, c, txt, x, y] of lines) {
     textSize(sz); fill(c[0], c[1], c[2]); text(txt, x, y);

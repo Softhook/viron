@@ -3,13 +3,14 @@
 //
 // Owns the active enemy list and all AI update + rendering logic.
 //
-// Six enemy types are implemented:
-//   seeder  — slow drifter; randomly drops normal infection bombs below itself
-//   bomber  — fast drifter; drops large 'mega' bombs every 600 frames (~10 s)
-//   crab    — ground-hugging unit that tracks the nearest player and infects tiles
-//   hunter  — fast aggressive airborne pursuer; no weapons, kills by collision
-//   fighter — switching between aggressive pursuit and wandering; shoots bullets
-//   squid   — medium-speed pursuer; emits a dark ink-cloud smoke trail
+// Seven enemy types are implemented:
+//   seeder   — slow drifter; randomly drops normal infection bombs below itself
+//   bomber   — fast drifter; drops large 'mega' bombs every 600 frames (~10 s)
+//   crab     — ground-hugging unit that tracks the nearest player and infects tiles
+//   hunter   — fast aggressive airborne pursuer; no weapons, kills by collision
+//   fighter  — switching between aggressive pursuit and wandering; shoots + drops bombs
+//   squid    — medium-speed pursuer; emits a dark ink-cloud smoke trail
+//   scorpion — ground-hugging; targets sentinel buildings to infect them, then launchpad
 // =============================================================================
 
 class EnemyManager {
@@ -39,11 +40,12 @@ class EnemyManager {
    */
   getColor(type) {
     const ENEMY_COLORS = {
-      fighter: [255, 150,   0],
-      bomber:  [180,  20, 180],
-      crab:    [200,  80,  20],
-      hunter:  [ 40, 255,  40],
-      squid:   [100, 100, 150]
+      fighter: [255, 150, 0],
+      bomber: [180, 20, 180],
+      crab: [200, 80, 20],
+      hunter: [40, 255, 40],
+      squid: [100, 100, 150],
+      scorpion: [20, 180, 120]
     };
     return ENEMY_COLORS[type] || [220, 30, 30];  // Default: seeder red
   }
@@ -58,7 +60,7 @@ class EnemyManager {
    * begins immediately.  Subsequent enemies are weighted randomly.
    *
    * Spawn probability weights (when not forced):
-   *   fighter 30%  |  bomber 20%  |  crab 20%  |  hunter 10%  |  squid 10%  |  seeder 10%
+   *   fighter 25%  |  bomber 15%  |  crab 15%  |  hunter 10%  |  squid 10%  |  scorpion 15%  |  seeder 10%
    *
    * @param {boolean} [forceSeeder=false]  If true, always spawns a seeder regardless of level.
    */
@@ -66,18 +68,19 @@ class EnemyManager {
     let type = 'seeder';
     if (!forceSeeder && level > 0) {
       let r = random();
-      if      (r < 0.3)  type = 'fighter';
-      else if (r < 0.5)  type = 'bomber';
-      else if (r < 0.7)  type = 'crab';
-      else if (r < 0.8)  type = 'hunter';
-      else if (r < 0.9)  type = 'squid';
+      if (r < 0.25) type = 'fighter';
+      else if (r < 0.40) type = 'bomber';
+      else if (r < 0.55) type = 'crab';
+      else if (r < 0.65) type = 'hunter';
+      else if (r < 0.75) type = 'squid';
+      else if (r < 0.90) type = 'scorpion';
     }
 
     let ex = random(-4000, 4000);
     let ez = random(-4000, 4000);
     let ey = random(-300, -800);
-    if (type === 'crab') {
-      // Crabs spawn ON the ground surface rather than at altitude
+    if (type === 'crab' || type === 'scorpion') {
+      // Ground-hugging enemies spawn ON the ground surface rather than at altitude
       ey = terrain.getAltitude(ex, ez) - 10;
     }
 
@@ -87,7 +90,7 @@ class EnemyManager {
       id: random(),        // Unique random seed used for per-enemy animation phase offsets
       type,
       fireTimer: 0,        // Counts frames since last bullet fired
-      bombTimer: 0         // Counts frames since last bomb dropped (bomber only)
+      bombTimer: 0         // Counts frames since last bomb dropped (bomber/fighter/scorpion)
     });
   }
 
@@ -105,12 +108,13 @@ class EnemyManager {
     let refShip = alivePlayers[0] || players[0].ship;  // Fallback to P1 even if dead
 
     for (let e of this.enemies) {
-      if      (e.type === 'fighter') this.updateFighter(e, alivePlayers, refShip);
-      else if (e.type === 'bomber')  this.updateBomber(e, refShip);
-      else if (e.type === 'crab')    this.updateCrab(e, alivePlayers, refShip);
-      else if (e.type === 'hunter')  this.updateHunter(e, alivePlayers, refShip);
-      else if (e.type === 'squid')   this.updateSquid(e, alivePlayers, refShip);
-      else                           this.updateSeeder(e, refShip);
+      if (e.type === 'fighter') this.updateFighter(e, alivePlayers, refShip);
+      else if (e.type === 'bomber') this.updateBomber(e, refShip);
+      else if (e.type === 'crab') this.updateCrab(e, alivePlayers, refShip);
+      else if (e.type === 'hunter') this.updateHunter(e, alivePlayers, refShip);
+      else if (e.type === 'squid') this.updateSquid(e, alivePlayers, refShip);
+      else if (e.type === 'scorpion') this.updateScorpion(e, refShip);
+      else this.updateSeeder(e, refShip);
     }
   }
 
@@ -285,6 +289,23 @@ class EnemyManager {
       });
       if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y, e.z);
     }
+
+    // While wandering, occasionally drop an infection bomb (less frequent than seeder)
+    if (!e.aggressive) {
+      e.bombTimer = (e.bombTimer || 0) + 1;
+      if (e.bombTimer > 300 && random() < 0.002) {
+        e.bombTimer = 0;
+        let gy = terrain.getAltitude(e.x, e.z);
+        if (!aboveSea(gy)) {
+          let tx = toTile(e.x), tz = toTile(e.z);
+          let k = tileKey(tx, tz);
+          if (!infectedTiles[k]) {
+            particleSystem.bombs.push({ x: e.x, y: e.y, z: e.z, k });
+            if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal', e.x, e.y, e.z);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -310,6 +331,81 @@ class EnemyManager {
           particleSystem.bombs.push({ x: e.x, y: e.y, z: e.z, k });
           if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal', e.x, e.y, e.z);
         }
+      }
+    }
+  }
+
+  /**
+   * Scorpion AI: a ground-hugging enemy with two modes.
+   * Mode 1 — Sentinel hunt: steers toward the nearest uninfected sentinel building
+   *           and infects the tile beneath it on contact.  Prioritises infecting
+   *           sentinels because an infected sentinel spreads virus rapidly.
+   * Mode 2 — Launchpad assault: if no healthy sentinels remain (or all are out of
+   *           range), it crawls toward the launchpad centre and randomly infects
+   *           tiles below itself, triggering the launchpad alarm.
+   * The scorpion fires an upward bullet at any player within 1200 units.
+   * @param {object} e        Enemy state.
+   * @param {object} refShip  Fallback target for boundary checks.
+   */
+  updateScorpion(e, refShip) {
+    // Locate the nearest healthy (uninfected) sentinel building
+    let targetX = null, targetZ = null;
+    let bestDist = Infinity;
+    for (let b of buildings) {
+      if (b.type !== 4) continue;
+      let sk = tileKey(toTile(b.x), toTile(b.z));
+      if (infectedTiles[sk]) continue;  // Already infected — skip
+      let distSq = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
+      if (distSq < bestDist) { bestDist = distSq; targetX = b.x; targetZ = b.z; }
+    }
+
+    // Fall back to the launchpad centre if no healthy sentinel is reachable
+    const LP_CENTER = (LAUNCH_MIN + LAUNCH_MAX) / 2;  // ≈ 420
+    if (targetX === null) {
+      targetX = LP_CENTER;
+      targetZ = LP_CENTER;
+    }
+
+    let dx = targetX - e.x, dz = targetZ - e.z;
+    let d = Math.hypot(dx, dz);
+    if (d > 0) {
+      e.vx = lerp(e.vx || 0, (dx / d) * 1.5, 0.04);
+      e.vz = lerp(e.vz || 0, (dz / d) * 1.5, 0.04);
+    }
+
+    e.x += e.vx; e.z += e.vz;
+    // Snap to ground surface
+    e.y = terrain.getAltitude(e.x, e.z) - 10;
+
+    // Infect tiles below — higher rate near launchpad, moderate elsewhere
+    if (random() < 0.025) {
+      let gy = terrain.getAltitude(e.x, e.z);
+      if (!aboveSea(gy)) {
+        let tx = toTile(e.x), tz = toTile(e.z);
+        let k = tileKey(tx, tz);
+        if (!infectedTiles[k]) {
+          infectedTiles[k] = { tick: frameCount };
+          if (isLaunchpad(e.x, e.z)) {
+            if (millis() - lastAlarmTime > 1000) {
+              if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+              lastAlarmTime = millis();
+            }
+          }
+          terrain.addPulse(e.x, e.z, 1.0);
+        }
+      }
+    }
+
+    // Fire upward bullet at nearby players every 150 frames
+    e.fireTimer = (e.fireTimer || 0) + 1;
+    let alivePlayers = players.filter(p => !p.dead).map(p => p.ship);
+    let target = findNearest(alivePlayers, e.x, e.y, e.z);
+    if (target) {
+      let pd = Math.hypot(target.x - e.x, target.z - e.z);
+      if (pd < 1200 && e.fireTimer > 150) {
+        e.fireTimer = 0;
+        particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -10, vz: 0, life: 120 });
+        if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab', e.x, e.y - 10, e.z);
       }
     }
   }
@@ -403,11 +499,11 @@ class EnemyManager {
         fill(ec[0], ec[1], ec[2]);
         beginShape(TRIANGLES);
         // Nose → left rear, nose → right rear (top and bottom faces)
-        vertex(0, 0, 20);  vertex(-15, 0, -15); vertex(15, 0, -15);
-        vertex(0, 0, 20);  vertex(-15, 0, -15); vertex(0, -10, 0);
-        vertex(0, 0, 20);  vertex(15, 0, -15);  vertex(0, -10, 0);
-        vertex(0, 0, 20);  vertex(-15, 0, -15); vertex(0, 10, 0);
-        vertex(0, 0, 20);  vertex(15, 0, -15);  vertex(0, 10, 0);
+        vertex(0, 0, 20); vertex(-15, 0, -15); vertex(15, 0, -15);
+        vertex(0, 0, 20); vertex(-15, 0, -15); vertex(0, -10, 0);
+        vertex(0, 0, 20); vertex(15, 0, -15); vertex(0, -10, 0);
+        vertex(0, 0, 20); vertex(-15, 0, -15); vertex(0, 10, 0);
+        vertex(0, 0, 20); vertex(15, 0, -15); vertex(0, 10, 0);
         endShape();
 
       } else if (e.type === 'bomber') {
@@ -417,14 +513,14 @@ class EnemyManager {
         fill(bc[0], bc[1], bc[2]);
         beginShape(TRIANGLES);
         // Two mirrored pyramids sharing a square equator — upper and lower halves
-        vertex(0, -40, 0); vertex(-40, 0, -40); vertex( 40, 0, -40);
-        vertex(0, -40, 0); vertex(-40, 0,  40); vertex( 40, 0,  40);
-        vertex(0, -40, 0); vertex(-40, 0, -40); vertex(-40, 0,  40);
-        vertex(0, -40, 0); vertex( 40, 0, -40); vertex( 40, 0,  40);
-        vertex(0,  40, 0); vertex(-40, 0, -40); vertex( 40, 0, -40);
-        vertex(0,  40, 0); vertex(-40, 0,  40); vertex( 40, 0,  40);
-        vertex(0,  40, 0); vertex(-40, 0, -40); vertex(-40, 0,  40);
-        vertex(0,  40, 0); vertex( 40, 0, -40); vertex( 40, 0,  40);
+        vertex(0, -40, 0); vertex(-40, 0, -40); vertex(40, 0, -40);
+        vertex(0, -40, 0); vertex(-40, 0, 40); vertex(40, 0, 40);
+        vertex(0, -40, 0); vertex(-40, 0, -40); vertex(-40, 0, 40);
+        vertex(0, -40, 0); vertex(40, 0, -40); vertex(40, 0, 40);
+        vertex(0, 40, 0); vertex(-40, 0, -40); vertex(40, 0, -40);
+        vertex(0, 40, 0); vertex(-40, 0, 40); vertex(40, 0, 40);
+        vertex(0, 40, 0); vertex(-40, 0, -40); vertex(-40, 0, 40);
+        vertex(0, 40, 0); vertex(40, 0, -40); vertex(40, 0, 40);
         endShape();
 
       } else if (e.type === 'crab') {
@@ -432,8 +528,8 @@ class EnemyManager {
         let yaw = atan2(e.vx || 0, e.vz || 0);
         rotateY(yaw);
         noStroke();
-        let cc     = terrain.getFogColor([200, 80, 20],  depth);
-        let ccDark = terrain.getFogColor([150, 40, 10],  depth);
+        let cc = terrain.getFogColor([200, 80, 20], depth);
+        let ccDark = terrain.getFogColor([150, 40, 10], depth);
 
         // Main shell and raised carapace
         fill(cc[0], cc[1], cc[2]);
@@ -444,7 +540,7 @@ class EnemyManager {
         push();
         fill(10, 10, 10);
         translate(-8, -10, 15); box(4, 8, 4);
-        translate(16, 0, 0);    box(4, 8, 4);
+        translate(16, 0, 0); box(4, 8, 4);
         pop();
 
         // Animated walking legs (3 per side, alternating stride)
@@ -453,16 +549,16 @@ class EnemyManager {
         for (let side = -1; side <= 1; side += 2) {
           for (let i = -1; i <= 1; i++) {
             let legPhase = walkPhase + i * PI / 3 * side;
-            let lift   = max(0, sin(legPhase));
+            let lift = max(0, sin(legPhase));
             let stride = cos(legPhase);
             push();
             translate(side * 16, 0, i * 10);
             rotateZ(side * (-0.2 - lift * 0.4));
             rotateY(stride * 0.3);
-            translate(side * 10, -3, 0);  box(20, 6, 6);  // Upper segment
+            translate(side * 10, -3, 0); box(20, 6, 6);  // Upper segment
             translate(side * 8, 0, 0);
             rotateZ(side * 0.8);
-            translate(side * 10, 0, 0);   box(22, 4, 4);  // Lower segment
+            translate(side * 10, 0, 0); box(22, 4, 4);  // Lower segment
             pop();
           }
         }
@@ -478,13 +574,13 @@ class EnemyManager {
           translate(side * 10, 0, 0); box(20, 6, 8);   // Arm segment
           translate(side * 10, 0, 0);
           rotateY(side * -1.2);
-          translate(side * 8, 0, 0);  box(16, 8, 10);  // Claw body
+          translate(side * 8, 0, 0); box(16, 8, 10);  // Claw body
           translate(side * 10, 0, 0); box(12, 10, 12); // Claw tip
 
           // Upper and lower nippers rotating apart
           let nip = abs(sin(frameCount * 0.2 + e.id * 3)) * 0.5;
           push(); translate(side * 6, 0, -4); rotateY(side * -nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
-          push(); translate(side * 6, 0,  4); rotateY(side *  nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
+          push(); translate(side * 6, 0, 4); rotateY(side * nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
           pop();
         }
 
@@ -499,7 +595,7 @@ class EnemyManager {
         beginShape(TRIANGLES);
         vertex(0, 0, 30); vertex(-8, 0, -20); vertex(8, 0, -20);
         vertex(0, 0, 30); vertex(-8, 0, -20); vertex(0, -10, 0);
-        vertex(0, 0, 30); vertex( 8, 0, -20); vertex(0, -10, 0);
+        vertex(0, 0, 30); vertex(8, 0, -20); vertex(0, -10, 0);
         endShape();
 
       } else if (e.type === 'squid') {
@@ -528,6 +624,60 @@ class EnemyManager {
         }
         pop();
 
+      } else if (e.type === 'scorpion') {
+        // ---- Scorpion: armoured ground-crawler with raised segmented tail ----
+        let yaw = atan2(e.vx || 0, e.vz || 0);
+        rotateY(yaw);
+        noStroke();
+
+        let sc = terrain.getFogColor([20, 180, 120], depth);  // Main teal-green
+        let scD = terrain.getFogColor([5, 100, 60], depth);  // Dark underside
+        let scG = terrain.getFogColor([80, 255, 160], depth);  // Bright sting glow
+
+        // Main carapace — low flattened body
+        fill(sc[0], sc[1], sc[2]);
+        push(); box(30, 8, 26); pop();                   // Central hull
+        push(); translate(0, -2, -18); box(18, 6, 12); pop();  // Rear abdomen
+        push(); translate(0, -1, 14); box(14, 5, 10); pop();  // Forward head plate
+
+        // Eye nubs
+        fill(80, 255, 80);
+        push(); translate(-6, -5, 18); box(3, 3, 3); pop();
+        push(); translate(6, -5, 18); box(3, 3, 3); pop();
+
+        // Animated scuttling legs (3 per side)
+        fill(scD[0], scD[1], scD[2]);
+        let walkPhase = frameCount * 0.35 + e.id;
+        for (let side = -1; side <= 1; side += 2) {
+          for (let i = -1; i <= 1; i++) {
+            let lp = walkPhase + i * PI / 3 * side;
+            let lift = max(0, sin(lp)) * 0.5;
+            let stride = cos(lp);
+            push();
+            translate(side * 15, 2, i * 8);
+            rotateZ(side * (-0.15 - lift * 0.35));
+            rotateY(stride * 0.25);
+            translate(side * 8, 0, 0); box(16, 4, 4);
+            pop();
+          }
+        }
+
+        // Segmented raised tail (4 segments curving up and over the body)
+        fill(sc[0], sc[1], sc[2]);
+        push();
+        translate(0, -5, -20);
+        for (let i = 0; i < 4; i++) {
+          let wave = sin(frameCount * 0.08 + e.id + i * 0.6) * 0.06;
+          rotateX(-0.45 + wave);
+          translate(0, -7, -3);
+          box(10 - i * 1.5, 7 - i, 6 - i);
+        }
+        // Sting tip — bright glowing point
+        fill(scG[0], scG[1], scG[2]);
+        translate(0, -5, -3);
+        box(4, 10, 4);
+        pop();
+
       } else {
         // ---- Seeder: rotating double diamond with central antenna ----
         rotateY(frameCount * 0.15); noStroke();
@@ -535,10 +685,10 @@ class EnemyManager {
           let oc = terrain.getFogColor(col, depth);
           fill(oc[0], oc[1], oc[2]);
           beginShape(TRIANGLES);
-          vertex(0, yOff, -25); vertex(-22, 0, 0); vertex( 22, 0, 0);
-          vertex(0, yOff,  25); vertex(-22, 0, 0); vertex( 22, 0, 0);
+          vertex(0, yOff, -25); vertex(-22, 0, 0); vertex(22, 0, 0);
+          vertex(0, yOff, 25); vertex(-22, 0, 0); vertex(22, 0, 0);
           vertex(0, yOff, -25); vertex(-22, 0, 0); vertex(0, yOff, 25);
-          vertex(0, yOff, -25); vertex( 22, 0, 0); vertex(0, yOff, 25);
+          vertex(0, yOff, -25); vertex(22, 0, 0); vertex(0, yOff, 25);
           endShape();
         }
         let cc = terrain.getFogColor([255, 60, 60], depth);
@@ -549,7 +699,9 @@ class EnemyManager {
 
       // Ground shadow — size varies by enemy type
       let sSize = e.type === 'bomber' ? 60 : (e.type === 'fighter' || e.type === 'hunter' ? 25 : 40);
-      drawShadow(e.x, terrain.getAltitude(e.x, e.z), e.z, sSize * 2, sSize * 2);
+      if (e.type !== 'crab' && e.type !== 'scorpion') {  // Ground-huggers already touch the surface
+        drawShadow(e.x, terrain.getAltitude(e.x, e.z), e.z, sSize * 2, sSize * 2);
+      }
     }
   }
 }

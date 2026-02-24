@@ -606,7 +606,8 @@ class EnemyManager {
    * @param {{x,y,z,yaw}} s  Ship state used as the view origin for depth and culling.
    */
   draw(s) {
-    let cam = terrain.getCameraParams(s);
+    // Reuse the camera params already computed in terrain.drawLandscape this frame.
+    let cam = terrain._cam || terrain.getCameraParams(s);
     // Colossus is massive — always render it even near the edge of cull distance
     let cullSq = CULL_DIST * CULL_DIST;
 

@@ -53,6 +53,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
     bullets: [],
     homingMissiles: [],
     missilesRemaining: 1,
+    aimTarget: null,              // Per-player locked aim target (used for missile homing)
     mobileMissilePressed: false   // Tracks the mobile missile button edge so it fires once per tap
   };
   resetShip(p, offsetX);
@@ -286,6 +287,7 @@ function updateShipInput(p) {
           newPitch += vAssist.pitchDelta;
         }
       }
+      p.aimTarget = mobileController.lastTracking && (mobileController.lastTracking.target || mobileController.lastTracking.virusTarget) || null;
     }
     p.ship.yaw = newYaw;
     p.ship.pitch = constrain(newPitch, -PI / 2.2, PI / 2.2);
@@ -316,8 +318,9 @@ function updateShipInput(p) {
       p.mobileMissilePressed = false;
     }
 
-    p.ship.yaw += inputs.yawDelta;
-    p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta, -PI / 2.2, PI / 2.2);
+    p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
+    p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
+    p.aimTarget = mobileController.lastTracking && (mobileController.lastTracking.target || mobileController.lastTracking.virusTarget) || null;
   }
 
   // --- Keyboard steering ---
@@ -325,6 +328,26 @@ function updateShipInput(p) {
   if (keyIsDown(k.right)) p.ship.yaw -= YAW_RATE;
   if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
   if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
+
+  // Aim assist for keyboard players (P2 always; P1 when not using mouse pointer-lock).
+  // Skipped for the mouse-look path (already handled above).
+  const isKeyboardPlayer = !(p.id === 0 && document.pointerLockElement);
+  if (!isMobile && typeof mobileController !== 'undefined' && mobileController.desktopAssist && isKeyboardPlayer) {
+    const kShipFwd = mobileController._getShipForward(p.ship);
+    const kCamFwd  = mobileController._getCameraForward(p.ship);
+    let kAssist = mobileController.calculateAimAssist(p.ship, enemyManager.enemies, false, kCamFwd);
+    if (kAssist) {
+      p.ship.yaw += kAssist.yawDelta;
+      p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);
+    } else {
+      kAssist = mobileController.calculateVirusAssist(p.ship, kShipFwd);
+      if (kAssist) {
+        p.ship.yaw += kAssist.yawDelta;
+        p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);
+      }
+    }
+    p.aimTarget = mobileController.lastTracking && (mobileController.lastTracking.target || mobileController.lastTracking.virusTarget) || null;
+  }
 
   let s = p.ship;
 
@@ -488,16 +511,13 @@ function updateProjectilePhysics(p) {
     let m = p.homingMissiles[i];
     const maxSpd = 10;
 
-    // Steer toward the locked target if it exists, otherwise find nearest
-    const tracking = (typeof mobileController !== 'undefined') ? mobileController.lastTracking : null;
-    let locked = tracking ? (tracking.target || tracking.virusTarget) : null;
-    let target = locked || findNearest(enemyManager.enemies, m.x, m.y, m.z);
+    // Use this player's locked aim target; fall back to nearest enemy
+    let target = p.aimTarget || findNearest(enemyManager.enemies, m.x, m.y, m.z);
 
     if (target) {
       // PREDICTIVE: Seek future position (maxSpd 10)
       let predicted = (typeof mobileController !== 'undefined') ?
         mobileController._getPredictedPos(m, target, maxSpd) : target;
-
       let dx = predicted.x - m.x, dy = predicted.y - m.y, dz = predicted.z - m.z;
       let dSq = dx * dx + dy * dy + dz * dz;
       if (dSq > 0) {

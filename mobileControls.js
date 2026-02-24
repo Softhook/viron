@@ -106,19 +106,21 @@ class MobileController {
         const shipForward = this._getShipForward(ship);
         const cameraForward = this._getCameraForward(ship);
 
-        // Apply soft lock-on aim assist — always active on mobile, not just when joysticking
+        // Compute soft lock-on aim assist — return deltas for the caller to apply
+        inputs.assistYaw = 0;
+        inputs.assistPitch = 0;
         if (ship && enemies) {
             // Use camera view for selection, but ship nose for alignment
             let assist = this.calculateAimAssist(ship, enemies, isSwipingHard, cameraForward);
             if (assist) {
-                ship.yaw += assist.yawDelta;
-                ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + assist.pitchDelta));
+                inputs.assistYaw = assist.yawDelta;
+                inputs.assistPitch = assist.pitchDelta;
             } else {
                 // Try virus assist if no enemy is targeted - USE SHIP NOSE for virus
                 let vAssist = this.calculateVirusAssist(ship, shipForward);
                 if (vAssist) {
-                    ship.yaw += vAssist.yawDelta;
-                    ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + vAssist.pitchDelta));
+                    inputs.assistYaw = vAssist.yawDelta;
+                    inputs.assistPitch = vAssist.pitchDelta;
                 }
             }
         }

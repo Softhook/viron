@@ -567,6 +567,39 @@ function renderProjectiles(p, camX, camZ) {
 
   for (let m of p.homingMissiles) {
     if ((m.x - camX) ** 2 + (m.z - camZ) ** 2 > cullSq) continue;
-    push(); translate(m.x, m.y, m.z); noStroke(); fill(0, 200, 255); box(10); pop();
+
+    push();
+    translate(m.x, m.y, m.z);
+
+    // Direct orientation toward velocity vector
+    let h = Math.sqrt(m.vx * m.vx + m.vz * m.vz);
+    rotateY(Math.atan2(m.vx, m.vz));
+    rotateX(Math.atan2(-m.vy, h));
+
+    noStroke();
+
+    // Body (Main Fuselage)
+    fill(0, 180, 255);
+    box(3, 3, 14);
+
+    // Nose Cone (Pointed Tip)
+    push();
+    translate(0, 0, 10);
+    rotateX(PI / 2);
+    fill(255);
+    cone(2, 6, 4); // Low-poly pyramid-like nose
+    pop();
+
+    // Faint Glow / Core
+    fill(255, 255, 255, 100);
+    box(1, 1, 16);
+
+    // Fins (Tail stabilizers)
+    fill(0, 100, 255);
+    translate(0, 0, -6);
+    box(10, 1, 4); // Horizontal fins
+    box(1, 10, 4); // Vertical fins
+
+    pop();
   }
 }

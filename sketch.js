@@ -572,15 +572,14 @@ function spreadInfection() {
     return;
   }
 
-  // Game over — launchpad fully overrun
-  let lpInfected = 0, lpTotal = 0;
+  // Game over — launchpad fully overrun (7×7 = 49 tiles)
+  let lpInfected = 0;
   for (let tx = 0; tx < 7; tx++) {
     for (let tz = 0; tz < 7; tz++) {
-      lpTotal++;
       if (infectedTiles[tileKey(tx, tz)]) lpInfected++;
     }
   }
-  if (lpInfected >= lpTotal) {
+  if (lpInfected >= 49) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       gameOverReason = 'LAUNCH PAD INFECTED';
@@ -626,11 +625,16 @@ function spreadInfection() {
     }
   }
 
+  let soundCount = 0;
   for (let nk of freshSet) {
     infectedTiles[nk] = 1;
     let comma = nk.indexOf(',');
     let ptx = +nk.slice(0, comma), ptz = +nk.slice(comma + 1);
-    if (typeof gameSFX !== 'undefined') gameSFX.playInfectionSpread(ptx * TILE, terrain.getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
+    // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
+    if (typeof gameSFX !== 'undefined' && soundCount < 3) {
+      gameSFX.playInfectionSpread(ptx * TILE, terrain.getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
+      soundCount++;
+    }
     if (isLaunchpad(ptx * TILE, ptz * TILE)) {
       if (millis() - lastAlarmTime > 1000) {
         if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();

@@ -427,7 +427,7 @@ class Terrain {
    * Draw order:
    *   1. Terrain chunks (via cached geometry + terrain shader)
    *   2. Infected tile overlays (pulsing green quads drawn on top)
-   *   3. Sea plane (flat quad at SEA+3)
+   *   3. Static sea plane (flat quad at SEA+3)
    *   4. Launchpad missile decorations (standard lighting restored first)
    *
    * @param {{x,y,z,yaw,pitch}} s  The ship whose viewport is being rendered.
@@ -506,33 +506,18 @@ class Terrain {
       endShape();
     }
 
-    // Animated sea — vertex Y positions oscillate with a two-component sine wave so the
-    // surface visibly undulates.  A 3×3 grid of quads (18 triangles) gives enough vertices
-    // for smooth-looking waves without significant CPU cost.
-    // Colour also oscillates slightly for a secondary water shimmer.
-    let seaP = sin(frameCount * 0.03) * 8;
+    // Static sea plane — a single flat quad at SEA + 3 covering the visible area.
+    // No per-vertex sine calculations; all four corners share the same Y so there
+    // is no per-frame geometry work beyond issuing the two-triangle draw call.
     let seaSize = VIEW_FAR * TILE * 1.5;
     let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
-    let wt = frameCount * 0.04;                // Wave phase advances each frame
-    const waveAmp = 6, waveFreq = 0.0006;      // Amplitude (world units) and spatial frequency
-
-    // Helper: animated Y at a world-space point
-    const seaY = (wx, wz) =>
-      SEA + 3 + sin(wx * waveFreq + wt) * waveAmp + sin(wz * waveFreq * 1.3 + wt * 0.75) * (waveAmp * 0.5);
-
-    const SEGS = 3;  // Subdivisions per axis
-    let segSize = seaSize * 2 / SEGS;
-    fill(15, 45 + seaP, 150 + seaP);
+    let sx0 = seaCx - seaSize, sx1 = seaCx + seaSize;
+    let sz0 = seaCz - seaSize, sz1 = seaCz + seaSize;
+    let sy = SEA + 3;
+    fill(15, 45, 150);
     beginShape(TRIANGLES);
-    for (let zi = 0; zi < SEGS; zi++) {
-      for (let xi = 0; xi < SEGS; xi++) {
-        let x0 = seaCx - seaSize + xi * segSize,       x1 = x0 + segSize;
-        let z0 = seaCz - seaSize + zi * segSize,       z1 = z0 + segSize;
-        let y00 = seaY(x0, z0), y10 = seaY(x1, z0), y01 = seaY(x0, z1), y11 = seaY(x1, z1);
-        vertex(x0, y00, z0); vertex(x1, y10, z0); vertex(x0, y01, z1);
-        vertex(x1, y10, z0); vertex(x1, y11, z1); vertex(x0, y01, z1);
-      }
-    }
+    vertex(sx0, sy, sz0); vertex(sx1, sy, sz0); vertex(sx0, sy, sz1);
+    vertex(sx1, sy, sz0); vertex(sx1, sy, sz1); vertex(sx0, sy, sz1);
     endShape();
 
     // Restore standard lighting for subsequent non-terrain objects

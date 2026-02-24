@@ -59,12 +59,13 @@ void main() {
       vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
       float distToPulse = length(diff) * 100.0;
       
-      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0); // type 2 is ship explosion
-      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
+      // type 3 = sentinel (small localised cyan ring)
+      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : (type == 3.0 ? age * 150.0 : age * 800.0));
+      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : (type == 3.0 ? 18.0 : 80.0));
       float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
       
       float fade = 1.0 - (age / 3.0);
-      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1)); // Blue crab, yellow ship, red bomb
+      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : (type == 3.0 ? vec3(0.0, 0.9, 0.8) : vec3(1.0, 0.1, 0.1))); // Blue crab, yellow ship, cyan sentinel, red bomb
       cyberColor += pulseColor * ring * fade * 2.0; 
     }
   }
@@ -196,10 +197,24 @@ class Terrain {
     if (isLaunchpad(x, z)) {
       alt = LAUNCH_ALT;
     } else {
-      // Three-octave Perlin noise; irrational frequency ratios prevent visible tiling.
+      // Three-octave Perlin noise.  Each octave uses a distinct offset so the
+      // noise field is asymmetric across the x=z diagonal (breaking the mirroring
+      // symmetry that arises when both axes share the same frequency).
+      // The offset values are arbitrary large constants chosen to shift each octave
+      // into a visually unrelated region of the noise space.
       let xs = x * 0.0008, zs = z * 0.0008;
-      let elevation = noise(xs, zs) + 0.5 * noise(xs * 2.5, zs * 2.5) + 0.25 * noise(xs * 5, zs * 5);
+      let elevation = noise(xs, zs) +
+                      0.5  * noise(xs * 2.5 + 31.7, zs * 2.5 + 83.3) +
+                      0.25 * noise(xs * 5   + 67.1, zs * 5  + 124.9);
       alt = 300 - Math.pow(elevation / 1.75, 2.0) * 550;
+
+      // Blend in Gaussian bumps for the forced mountain peaks
+      let s2 = 2 * SENTINEL_PEAK_SIGMA * SENTINEL_PEAK_SIGMA;
+      for (let peak of MOUNTAIN_PEAKS) {
+        let dx = x - peak.x, dz = z - peak.z;
+        let falloff = Math.exp(-(dx * dx + dz * dz) / s2);
+        alt -= peak.strength * falloff;
+      }
     }
 
     this.altCache.set(key, alt);
@@ -617,7 +632,7 @@ class Terrain {
         fill(sc[0], sc[1], sc[2]);
         push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
 
-      } else {
+      } else if (b.type === 3) {
         // Type 3 — floating UFO power-up: double-cone orbiting above the ground
         let bc = this.getFogColor(inf ? [200, 50, 50] : [60, 180, 240], depth);
         fill(bc[0], bc[1], bc[2]);
@@ -629,6 +644,42 @@ class Terrain {
         cone(b.w, b.h / 2, 4, 1);
         rotateX(PI);
         cone(b.w, b.h / 2, 4, 1);
+        pop();
+
+      } else if (b.type === 4) {
+        // Sentinel: tall narrow tower on a mountain peak with a rotating emitter dish.
+        // Healthy = dark steel body + cyan emitter; infected = red body + orange emitter.
+        let towerR = b.w / 5;
+
+        // Main tower shaft
+        let tc = this.getFogColor(inf ? [180, 40, 40] : [55, 70, 90], depth);
+        fill(tc[0], tc[1], tc[2]);
+        push(); translate(0, -b.h / 2, 0); cylinder(towerR, b.h, 8, 1); pop();
+
+        // Four angled support struts at the base
+        let stc = this.getFogColor(inf ? [140, 30, 30] : [45, 60, 75], depth);
+        fill(stc[0], stc[1], stc[2]);
+        for (let i = 0; i < 4; i++) {
+          let a = (i / 4) * TWO_PI + PI / 4;
+          push();
+          translate(sin(a) * b.w * 0.55, -b.h * 0.15, cos(a) * b.w * 0.55);
+          rotateZ(sin(a) * 0.45); rotateX(cos(a) * 0.45);
+          translate(0, -b.h * 0.1, 0);
+          cylinder(towerR * 0.6, b.h * 0.22, 4, 1);
+          pop();
+        }
+
+        // Rotating emitter ring + inner cone at the tower tip
+        let ec = this.getFogColor(inf ? [255, 90, 20] : [0, 220, 200], depth);
+        fill(ec[0], ec[1], ec[2]);
+        push();
+        translate(0, -b.h - b.w * 0.4, 0);
+        rotateY(frameCount * 0.025 + b.x * 0.001);
+        torus(b.w * 0.4, b.w * 0.1, 12, 6);
+        pop();
+        push();
+        translate(0, -b.h - b.w * 0.55, 0);
+        cone(b.w * 0.25, b.w * 0.5, 6, 1);
         pop();
       }
       pop();

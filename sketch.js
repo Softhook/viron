@@ -201,6 +201,18 @@ function setup() {
     });
   }
 
+  // Sentinels — one per mountain peak, staggered pulse timers so they don't all fire together
+  for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
+    let peak = MOUNTAIN_PEAKS[i];
+    buildings.push({
+      x: peak.x, z: peak.z,
+      w: 40, h: 200, d: 40,
+      type: 4,
+      col: [0, 220, 200],
+      pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / MOUNTAIN_PEAKS.length)
+    });
+  }
+
   gameState = 'menu';
 }
 
@@ -443,6 +455,21 @@ function draw() {
   particleSystem.updatePhysics();
   for (let p of players) updateProjectilePhysics(p);
 
+  // --- Sentinel pulse emission ---
+  // Each sentinel building periodically emits a localised shader pulse.
+  // Infected sentinels use the infection-blue (type 1) pulse so the player
+  // can spot a compromised sentinel from a distance; healthy ones use the
+  // dedicated cyan sentinel pulse (type 3).
+  for (let b of buildings) {
+    if (b.type !== 4) continue;
+    b.pulseTimer = (b.pulseTimer || 0) + 1;
+    if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
+      b.pulseTimer = 0;
+      let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+      terrain.addPulse(b.x, b.z, inf ? 1.0 : 3.0);
+    }
+  }
+
   // --- Render ---
   let h = height;
   let pxDensity = pixelDensity();
@@ -537,8 +564,10 @@ function spreadInfection() {
     return;
   }
 
-  // Probabilistic spread to one random orthogonal neighbour per infected tile
-  let fresh = [];
+  // Probabilistic spread to one random orthogonal neighbour per infected tile.
+  // A Set is used so that duplicate keys from the normal spread loop and the
+  // sentinel acceleration loop below cannot both process the same tile.
+  let freshSet = new Set();
   for (let i = 0; i < keysLen; i++) {
     if (random() > INF_RATE) continue;
     let parts = keys[i].split(',');
@@ -547,12 +576,31 @@ function spreadInfection() {
     let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
     if (aboveSea(terrain.getAltitude(wx, wz)) || infectedTiles[nk]) continue;
-    fresh.push(nk);
+    freshSet.add(nk);
   }
 
   // Commit all new infections after the loop (avoid modifying while iterating)
-  for (let i = 0; i < fresh.length; i++) {
-    let nk = fresh[i];
+  // Accelerated spread from infected sentinels — virus grows very fast around them
+  for (let b of buildings) {
+    if (b.type !== 4) continue;
+    let stx = toTile(b.x), stz = toTile(b.z);
+    if (!infectedTiles[tileKey(stx, stz)]) continue;  // Only when this sentinel is infected
+    // Blast outward in a ~5-tile radius circle with high per-tile probability
+    for (let ddx = -SENTINEL_INFECTION_RADIUS; ddx <= SENTINEL_INFECTION_RADIUS; ddx++) {
+      for (let ddz = -SENTINEL_INFECTION_RADIUS; ddz <= SENTINEL_INFECTION_RADIUS; ddz++) {
+        if (ddx * ddx + ddz * ddz > SENTINEL_INFECTION_RADIUS * SENTINEL_INFECTION_RADIUS) continue;  // Circle shape
+        if (random() > SENTINEL_INFECTION_PROBABILITY) continue;
+        let nx = stx + ddx, nz = stz + ddz;
+        let nk = tileKey(nx, nz);
+        let wx = nx * TILE, wz = nz * TILE;
+        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infectedTiles[nk]) {
+          freshSet.add(nk);
+        }
+      }
+    }
+  }
+
+  for (let nk of freshSet) {
     infectedTiles[nk] = { tick: frameCount };
     let parts = nk.split(',');
     let ptx = +parts[0], ptz = +parts[1];

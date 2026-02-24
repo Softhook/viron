@@ -313,7 +313,13 @@ function startLevel(lvl) {
   // Guarantee at least one infection tile is visible from the very start
   seedInitialInfection();
 
-  for (let i = 0; i < currentMaxEnemies; i++) enemyManager.spawn(i === 0);
+  // Every 3rd level (3, 6, 9 ...) guarantees a Colossus boss alongside normal enemies
+  let hasColossus = (lvl >= 3 && lvl % 3 === 0);
+  for (let i = 0; i < currentMaxEnemies; i++) {
+    let forceSeeder = (i === 0);
+    let forceColossus = (!forceSeeder && hasColossus && i === 1);
+    enemyManager.spawn(forceSeeder, forceColossus);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -660,36 +666,70 @@ function checkCollisions(p) {
     let e = enemyManager.enemies[j];
     let killed = false;
 
-    // Player bullets vs enemy (hit radius 80 px)
+    // Player bullets vs enemy
+    // Colossus: bullets do 1 HP damage and survive (they pass through), large hit radius
+    // Other enemies: one bullet kills
     for (let i = p.bullets.length - 1; i >= 0; i--) {
       let b = p.bullets[i];
-      if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < 6400) {
-        particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-        enemyManager.enemies.splice(j, 1);
-        p.bullets.splice(i, 1);
-        p.score += 100;
-        killed = true;
+      let hitRadSq = e.type === 'colossus' ? 40000 : 6400;  // 200 vs 80 unit radius
+      if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < hitRadSq) {
+        if (e.type === 'colossus') {
+          // Damage the Colossus — bullets don't pass through the body, consume bullet
+          e.hp = (e.hp || 0) - 1;
+          e.hitFlash = 12;
+          p.bullets.splice(i, 1);
+          p.score += 10;  // Small score per hit
+          if (e.hp <= 0) {
+            particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
+            enemyManager.enemies.splice(j, 1);
+            p.score += 2000;  // Big bonus for killing the boss
+            killed = true;
+          }
+        } else {
+          particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+          enemyManager.enemies.splice(j, 1);
+          p.bullets.splice(i, 1);
+          p.score += 100;
+          killed = true;
+        }
         break;
       }
     }
 
-    // Player missiles vs enemy (hit radius 100 px) — checked only if not yet killed
+    // Player missiles vs enemy (hit radius 200 px for colossus, 100 px otherwise)
     if (!killed) {
       for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
         let m = p.homingMissiles[i];
-        if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < 10000) {
-          particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-          enemyManager.enemies.splice(j, 1);
-          p.homingMissiles.splice(i, 1);
-          p.score += 250;
-          killed = true;
+        let hitRadSq = e.type === 'colossus' ? 90000 : 10000;
+        if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < hitRadSq) {
+          if (e.type === 'colossus') {
+            // Missiles deal 5 HP to the Colossus
+            e.hp = (e.hp || 0) - 5;
+            e.hitFlash = 20;
+            p.homingMissiles.splice(i, 1);
+            p.score += 50;
+            if (e.hp <= 0) {
+              particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
+              enemyManager.enemies.splice(j, 1);
+              p.score += 2000;
+              killed = true;
+            }
+          } else {
+            particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+            enemyManager.enemies.splice(j, 1);
+            p.homingMissiles.splice(i, 1);
+            p.score += 250;
+            killed = true;
+          }
           break;
         }
       }
     }
 
     // Enemy body vs player ship — kills the player on contact
-    if (!killed && ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < 4900)) {
+    // Colossus has a larger body collision radius
+    let bodyRadSq = e.type === 'colossus' ? 40000 : 4900;
+    if (!killed && ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < bodyRadSq)) {
       killPlayer(p);
       return;
     }

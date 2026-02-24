@@ -3,7 +3,7 @@
 //
 // Owns the active enemy list and all AI update + rendering logic.
 //
-// Seven enemy types are implemented:
+// Eight enemy types are implemented:
 //   seeder   — slow drifter; randomly drops normal infection bombs below itself
 //   bomber   — fast drifter; drops large 'mega' bombs every 600 frames (~10 s)
 //   crab     — ground-hugging unit that tracks the nearest player and infects tiles
@@ -11,6 +11,8 @@
 //   fighter  — switching between aggressive pursuit and wandering; shoots + drops bombs
 //   squid    — medium-speed pursuer; emits a dark ink-cloud smoke trail
 //   scorpion — ground-hugging; targets sentinel buildings to infect them, then launchpad
+//   colossus — BOSS: giant block-humanoid ground walker; massive HP, shoots burst salvos,
+//              walks on two animated legs, leaves a virus trail behind it
 // =============================================================================
 
 class EnemyManager {
@@ -45,7 +47,8 @@ class EnemyManager {
       crab: [200, 80, 20],
       hunter: [40, 255, 40],
       squid: [100, 100, 150],
-      scorpion: [20, 180, 120]
+      scorpion: [20, 180, 120],
+      colossus: [255, 60, 20]
     };
     return ENEMY_COLORS[type] || [220, 30, 30];  // Default: seeder red
   }
@@ -60,38 +63,63 @@ class EnemyManager {
    * begins immediately.  Subsequent enemies are weighted randomly.
    *
    * Spawn probability weights (when not forced):
-   *   fighter 25%  |  bomber 15%  |  crab 15%  |  hunter 10%  |  squid 10%  |  scorpion 15%  |  seeder 10%
+   *   fighter 22%  |  bomber 13%  |  crab 13%  |  hunter 10%  |  squid 10%  |  scorpion 12%  |  colossus 5% (boss)  |  seeder 15%
+   * The Colossus is also guaranteed to appear once every 3 levels.
    *
    * @param {boolean} [forceSeeder=false]  If true, always spawns a seeder regardless of level.
+   * @param {boolean} [forceColossus=false] If true, forces a Colossus boss spawn.
    */
-  spawn(forceSeeder = false) {
+  spawn(forceSeeder = false, forceColossus = false) {
     let type = 'seeder';
-    if (!forceSeeder && level > 0) {
+    if (forceColossus) {
+      type = 'colossus';
+    } else if (!forceSeeder && level > 0) {
       let r = random();
-      if (r < 0.25) type = 'fighter';
-      else if (r < 0.40) type = 'bomber';
-      else if (r < 0.55) type = 'crab';
-      else if (r < 0.65) type = 'hunter';
-      else if (r < 0.75) type = 'squid';
-      else if (r < 0.90) type = 'scorpion';
+      if (r < 0.22) type = 'fighter';
+      else if (r < 0.35) type = 'bomber';
+      else if (r < 0.48) type = 'crab';
+      else if (r < 0.58) type = 'hunter';
+      else if (r < 0.68) type = 'squid';
+      else if (r < 0.80) type = 'scorpion';
+      else if (r < 0.85) type = 'colossus';
+      // else seeder
     }
 
-    let ex = random(-4000, 4000);
-    let ez = random(-4000, 4000);
-    let ey = random(-300, -800);
-    if (type === 'crab' || type === 'scorpion') {
-      // Ground-hugging enemies spawn ON the ground surface rather than at altitude
-      ey = terrain.getAltitude(ex, ez) - 10;
+    // Colossus spawns must be far enough from the centre so the player has time to react
+    let ex, ez, ey;
+    if (type === 'colossus') {
+      let angle = random(TWO_PI);
+      let dist = random(2500, 4000);
+      ex = cos(angle) * dist;
+      ez = sin(angle) * dist;
+      ey = terrain.getAltitude(ex, ez);  // On the ground — will be adjusted each frame
+    } else {
+      ex = random(-4000, 4000);
+      ez = random(-4000, 4000);
+      ey = random(-300, -800);
+      if (type === 'crab' || type === 'scorpion') {
+        // Ground-hugging enemies spawn ON the ground surface rather than at altitude
+        ey = terrain.getAltitude(ex, ez) - 10;
+      }
     }
 
-    this.enemies.push({
+    let entry = {
       x: ex, y: ey, z: ez,
       vx: random(-2, 2), vz: random(-2, 2),
       id: random(),        // Unique random seed used for per-enemy animation phase offsets
       type,
       fireTimer: 0,        // Counts frames since last bullet fired
       bombTimer: 0         // Counts frames since last bomb dropped (bomber/fighter/scorpion)
-    });
+    };
+
+    // Colossus gets a large HP pool — it takes many hits
+    if (type === 'colossus') {
+      entry.hp = 40;   // 40 hits to kill
+      entry.maxHp = 40;
+      entry.hitFlash = 0; // frames of bright flash after being hit
+    }
+
+    this.enemies.push(entry);
   }
 
   // ---------------------------------------------------------------------------
@@ -114,6 +142,7 @@ class EnemyManager {
       else if (e.type === 'hunter') this.updateHunter(e, alivePlayers, refShip);
       else if (e.type === 'squid') this.updateSquid(e, alivePlayers, refShip);
       else if (e.type === 'scorpion') this.updateScorpion(e, refShip);
+      else if (e.type === 'colossus') this.updateColossus(e, alivePlayers, refShip);
       else this.updateSeeder(e, refShip);
     }
   }
@@ -421,6 +450,100 @@ class EnemyManager {
   }
 
   /**
+   * Colossus BOSS AI: A massive ground-walking block-humanoid.
+   * - Walks slowly but relentlessly toward the nearest player on two legs.
+   * - Fires burst salvos of 3 aimed bullets every 120 frames when in range.
+   * - Leaves virus infection in its footsteps as it marches.
+   * - Has 40 HP; bullets/missiles reduce .hp rather than destroying it outright.
+   * @param {object}   e            Enemy state (carries hp, maxHp, hitFlash).
+   * @param {object[]} alivePlayers Alive ship states.
+   * @param {object}   refShip      Fallback target.
+   */
+  updateColossus(e, alivePlayers, refShip) {
+    let target = findNearest(alivePlayers, e.x, e.y, e.z);
+    let tShip = target || refShip;
+
+    // Slow, deliberate movement toward the player
+    let dx = tShip.x - e.x, dz = tShip.z - e.z;
+    let d = Math.hypot(dx, dz);
+    let speed = 1.2;  // Slower than most enemies — weight of a giant
+    if (d > 0) {
+      e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.025);
+      e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.025);
+    }
+    e.x += e.vx; e.z += e.vz;
+
+    // Snap to ground surface — the Colossus always walks on land
+    e.y = terrain.getAltitude(e.x, e.z);
+
+    // Tick down the hit-flash timer
+    if (e.hitFlash > 0) e.hitFlash--;
+
+    // --- Burst fire: 3 bullets spaced 8 frames apart every 120 frames ---
+    e.fireTimer = (e.fireTimer || 0) + 1;
+    if (d < 2500 && e.fireTimer >= 120) {
+      // Queue a burst of 3 shots (stagger them via burstCount)
+      if (!e.burstCount) e.burstCount = 0;
+      e.burstCount = 3;
+      e.burstCooldown = 0;
+      e.fireTimer = 0;
+    }
+    if (e.burstCount > 0) {
+      e.burstCooldown = (e.burstCooldown || 0) + 1;
+      if (e.burstCooldown >= 8) {
+        e.burstCooldown = 0;
+        e.burstCount--;
+        // Re-calculate direction each burst shot (target may have moved)
+        let bdx = tShip.x - e.x, bdy = tShip.y - (e.y - 160), bdz = tShip.z - e.z;
+        let bd = Math.hypot(bdx, bdy, bdz);
+        if (bd > 0) {
+          let spread = 0.12;
+          particleSystem.enemyBullets.push({
+            x: e.x, y: e.y - 160, z: e.z,
+            vx: (bdx / bd) * 14 + random(-spread, spread) * 14,
+            vy: (bdy / bd) * 14,
+            vz: (bdz / bd) * 14 + random(-spread, spread) * 14,
+            life: 160
+          });
+          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - 160, e.z);
+        }
+      }
+    }
+
+    // --- Virus trail: infect tiles below the Colossus as it lumbers along ---
+    if (random() < 0.06) {
+      let gy = terrain.getAltitude(e.x, e.z);
+      if (!aboveSea(gy)) {
+        let tx = toTile(e.x), tz = toTile(e.z);
+        let k = tileKey(tx, tz);
+        if (!infectedTiles[k]) {
+          infectedTiles[k] = { tick: frameCount };
+          if (isLaunchpad(e.x, e.z)) {
+            if (millis() - lastAlarmTime > 1000) {
+              if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+              lastAlarmTime = millis();
+            }
+          }
+          terrain.addPulse(e.x, e.z, 1.0);
+        }
+        // Infect a few neighbouring tiles as well for a wide footprint
+        for (let di = -1; di <= 1; di++) {
+          for (let dj = -1; dj <= 1; dj++) {
+            if (random() < 0.25) {
+              let nk = tileKey(tx + di, tz + dj);
+              if (!infectedTiles[nk]) {
+                let nx = (tx + di) * TILE, nz = (tz + dj) * TILE;
+                if (!aboveSea(terrain.getAltitude(nx, nz)))
+                  infectedTiles[nk] = { tick: frameCount };
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Squid AI: medium-speed 3D pursuer that emits a dark fog-particle ink trail.
    * The trail provides visual cover and makes the squid harder to track.
    * Terrain avoidance prevents ground clipping.
@@ -485,10 +608,13 @@ class EnemyManager {
    */
   draw(s) {
     let cam = terrain.getCameraParams(s);
+    // Colossus is massive — always render it even near the edge of cull distance
     let cullSq = CULL_DIST * CULL_DIST;
 
     for (let e of this.enemies) {
-      if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > cullSq) continue;
+      // Colossus gets an extra-generous cull distance so it's always visible
+      let localCullSq = (e.type === 'colossus') ? (CULL_DIST * 1.5) ** 2 : cullSq;
+      if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > localCullSq) continue;
 
       let depth = (e.x - cam.x) * cam.fwdX + (e.z - cam.z) * cam.fwdZ;
 
@@ -688,6 +814,120 @@ class EnemyManager {
         box(4, 10, 4);
         pop();
 
+      } else if (e.type === 'colossus') {
+        // ---- COLOSSUS BOSS: towering humanoid built from imposing blocks ----
+        let yaw = atan2(e.vx || 0, e.vz || 0);
+        rotateY(yaw);
+        noStroke();
+
+        // Colour scheme: dark charcoal body with lava-orange accents, flashes white when hit
+        let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
+        let bodyBase = [40, 40, 55];
+        let bodyHit = [255, 255, 255];
+        let accentBase = [255, 60, 20];
+        let accentHit = [255, 255, 0];
+
+        let bodyR = lerp(bodyBase[0], bodyHit[0], hitT);
+        let bodyG = lerp(bodyBase[1], bodyHit[1], hitT);
+        let bodyB = lerp(bodyBase[2], bodyHit[2], hitT);
+
+        let accR = lerp(accentBase[0], accentHit[0], hitT);
+        let accG = lerp(accentBase[1], accentHit[1], hitT);
+        let accB = lerp(accentBase[2], accentHit[2], hitT);
+
+
+        let fc = terrain.getFogColor([bodyR, bodyG, bodyB], depth);
+        let ac = terrain.getFogColor([accR, accG, accB], depth);
+        let darkC = terrain.getFogColor([20, 20, 30], depth);
+        let glowC = terrain.getFogColor([255, 120, 0], depth);
+
+        // ---- LEGS (animated — alternating stride) ----
+        let walkSpeed = Math.hypot(e.vx || 0, e.vz || 0);
+        let walkCycle = frameCount * 0.08 * (walkSpeed > 0.1 ? 1 : 0) + (e.id || 0);
+        for (let side = -1; side <= 1; side += 2) {
+          let legPhase = walkCycle * side;
+          let thighSwing = sin(legPhase) * 0.4;
+          let shinBend = max(0, -cos(legPhase)) * 0.5;
+          let footLift = max(0, sin(legPhase)) * 30;
+
+          push();
+          // Hip attachment point
+          translate(side * 35, -30, 0);
+
+          // Thigh
+          fill(fc[0], fc[1], fc[2]);
+          rotateX(thighSwing);
+          push(); translate(0, 30, 0); box(36, 60, 36); pop();
+
+          // Shin
+          translate(0, 60, 0);
+          rotateX(-shinBend);
+          push(); translate(0, 30, 0); box(28, 60, 28); pop();
+
+          // Foot — wide flat block
+          fill(darkC[0], darkC[1], darkC[2]);
+          translate(0, 60, 0);
+          push(); translate(0, 8, side * -4); box(40, 16, 50); pop();
+          pop();
+        }
+
+        // ---- PELVIS / WAIST ----
+        fill(darkC[0], darkC[1], darkC[2]);
+        push(); translate(0, -32, 0); box(90, 24, 60); pop();
+
+        // ---- TORSO — large imposing chest block ----
+        fill(fc[0], fc[1], fc[2]);
+        push(); translate(0, -110, 0); box(110, 130, 75); pop();
+
+        // ---- SHOULDERS ----
+        fill(darkC[0], darkC[1], darkC[2]);
+        push(); translate(-72, -145, 0); box(32, 32, 42); pop();
+        push(); translate(72, -145, 0); box(32, 32, 42); pop();
+
+        // ---- ARMS — hanging at sides, swing slightly with walk ----
+        for (let side = -1; side <= 1; side += 2) {
+          let armSwing = sin(walkCycle * side + PI) * 0.15;
+          push();
+          translate(side * 72, -145, 0);
+          rotateX(armSwing);
+
+          // Upper arm
+          fill(fc[0], fc[1], fc[2]);
+          push(); translate(0, 45, 0); box(30, 80, 30); pop();
+
+          // Elbow joint
+          fill(darkC[0], darkC[1], darkC[2]);
+          push(); translate(0, 85, 0); box(26, 20, 26); pop();
+
+          // Forearm
+          fill(fc[0], fc[1], fc[2]);
+          push(); translate(0, 125, 0); box(26, 70, 26); pop();
+
+          // Fist — wide brutal block
+          fill(ac[0], ac[1], ac[2]);
+          push(); translate(0, 168, 0); box(34, 34, 34); pop();
+          pop();
+        }
+
+        // ---- NECK ----
+        fill(darkC[0], darkC[1], darkC[2]);
+        push(); translate(0, -182, 0); box(44, 28, 40); pop();
+
+        // ---- HEAD — large boxy skull ----
+        fill(fc[0], fc[1], fc[2]);
+        push(); translate(0, -215, 0); box(70, 60, 66); pop();
+
+        // Eye slots — glowing orange
+        fill(glowC[0], glowC[1], glowC[2]);
+        push(); translate(-18, -220, 34); box(18, 12, 6); pop();
+        push(); translate(18, -220, 34); box(18, 12, 6); pop();
+
+        // Head armour brow ridge
+        fill(darkC[0], darkC[1], darkC[2]);
+        push(); translate(0, -232, 34); box(72, 10, 6); pop();
+
+
+
       } else {
         // ---- Seeder: rotating double diamond with central antenna ----
         rotateY(frameCount * 0.15); noStroke();
@@ -708,7 +948,9 @@ class EnemyManager {
       pop();
 
       // Ground shadow — size varies by enemy type
-      let sSize = e.type === 'bomber' ? 60 : (e.type === 'fighter' || e.type === 'hunter' ? 25 : 40);
+      let sSize = e.type === 'colossus' ? 120
+        : e.type === 'bomber' ? 60
+          : (e.type === 'fighter' || e.type === 'hunter') ? 25 : 40;
       if (e.type !== 'crab' && e.type !== 'scorpion') {  // Ground-huggers already touch the surface
         drawShadow(e.x, terrain.getAltitude(e.x, e.z), e.z, sSize * 2, sSize * 2);
       }

@@ -13,17 +13,17 @@ class MobileController {
         this.joyPos = null;
 
         this.btns = {
-            thrust:  { active: false, r: 65, col: [0, 255, 60],   label: 'THR', x: 0, y: 0 },
-            shoot:   { active: false, r: 65, col: [255, 60, 60],   label: 'SHT', x: 0, y: 0 },
-            missile: { active: false, r: 40, col: [0, 200, 255],   label: 'MSL', x: 0, y: 0 }
+            thrust: { active: false, r: 65, col: [0, 255, 60], label: 'THR', x: 0, y: 0 },
+            shoot: { active: false, r: 65, col: [255, 60, 60], label: 'SHT', x: 0, y: 0 },
+            missile: { active: false, r: 40, col: [0, 200, 255], label: 'MSL', x: 0, y: 0 }
         };
 
         this.debug = false; // Controls the 2D debug overlay and syncs aimAssist.enabled
     }
 
     update(touches, w, h) {
-        this.btns.thrust.x  = w - 250; this.btns.thrust.y  = h - 100;
-        this.btns.shoot.x   = w - 105; this.btns.shoot.y   = h - 100;
+        this.btns.thrust.x = w - 250; this.btns.thrust.y = h - 100;
+        this.btns.shoot.x = w - 105; this.btns.shoot.y = h - 100;
         this.btns.missile.x = w - 105; this.btns.missile.y = h - 240;
 
         for (let b in this.btns) this.btns[b].active = false;
@@ -42,7 +42,7 @@ class MobileController {
                 } else if (!this.leftTouchId) {
                     this.leftTouchId = t.id;
                     this.joyCenter = { x: t.x, y: t.y };
-                    this.joyPos    = { x: t.x, y: t.y };
+                    this.joyPos = { x: t.x, y: t.y };
                     leftFound = true;
                 }
             }
@@ -50,19 +50,19 @@ class MobileController {
 
         if (!leftFound) {
             this.leftTouchId = null;
-            this.joyCenter   = null;
-            this.joyPos      = null;
+            this.joyCenter = null;
+            this.joyPos = null;
         }
     }
 
     getInputs(ship, enemies, yawRate, pitchRate) {
         let inputs = {
-            thrust:      this.btns.thrust.active,
-            shoot:       this.btns.shoot.active,
-            missile:     this.btns.missile.active,
-            yawDelta:    0,
-            pitchDelta:  0,
-            assistYaw:   0,
+            thrust: this.btns.thrust.active,
+            shoot: this.btns.shoot.active,
+            missile: this.btns.missile.active,
+            yawDelta: 0,
+            pitchDelta: 0,
+            assistYaw: 0,
             assistPitch: 0
         };
 
@@ -76,16 +76,16 @@ class MobileController {
             if (distSq > 100) {
                 let d = Math.sqrt(distSq);
                 let speedFactor = Math.min(1, (d - 10) / 60);
-                inputs.yawDelta   = -(dx / d) * yawRate   * speedFactor;
+                inputs.yawDelta = -(dx / d) * yawRate * speedFactor;
                 inputs.pitchDelta = -(dy / d) * pitchRate * speedFactor * 0.5;
                 if (distSq > 4000) isSwipingHard = true;
             }
         }
 
         // Compute soft lock-on aim assist via the shared aimAssist singleton
-        if (ship && enemies) {
+        if (aimAssist.enabled && ship && enemies) {
             let assist = aimAssist.getAssistDeltas(ship, enemies, isSwipingHard);
-            inputs.assistYaw   = assist.yawDelta;
+            inputs.assistYaw = assist.yawDelta;
             inputs.assistPitch = assist.pitchDelta;
         }
 

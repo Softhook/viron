@@ -440,7 +440,7 @@ function updateProjectilePhysics(p) {
 
     // PERFORMANCE: Only seeking for "fresh" bullets (first 30 frames)
     // and only if Aim Assist is enabled (for P1 or via 'P' toggle)
-    let assistEnabled = aimAssist.enabled || isMobile;
+    let assistEnabled = aimAssist.enabled;
 
     if (assistEnabled && b.life > 240) { // Bullets start at 300 life
       let bestTarget = null;

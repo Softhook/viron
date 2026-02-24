@@ -57,8 +57,16 @@ let isAndroid = false;             // True on Android (affects some edge-case be
  * isMobile and isAndroid flags accordingly.
  */
 function checkMobile() {
-  isAndroid = /Android/i.test(navigator.userAgent);
-  isMobile = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+  const ua = navigator.userAgent;
+  isAndroid = /Android/i.test(ua);
+  // Prioritise UA strings to avoid false positives on touch-enabled desktops/laptops
+  isMobile = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+
+  // Fallback: if it's a touch device but NOT a desktop OS, then it's mobile
+  if (!isMobile && ('ontouchstart' in window)) {
+    const isDesktopOS = /Macintosh|Windows|Linux/i.test(ua);
+    if (!isDesktopOS) isMobile = true;
+  }
 }
 
 /**

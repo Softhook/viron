@@ -20,24 +20,24 @@
 class AimAssist {
     constructor() {
         // --- Tuning ---
-        this.CONE_ANGLE           = 0.82;    // ~35° half-angle for enemy lock-on
-        this.MAX_LOCK_DIST_SQ     = 3000000; // ~1732 units range cap
+        this.CONE_ANGLE = 0.82;    // ~35° half-angle for enemy lock-on
+        this.MAX_LOCK_DIST_SQ = 3000000; // ~1732 units range cap
         this.ASSIST_STRENGTH_NORMAL = 0.03;  // Normal nudge strength
-        this.ASSIST_STRENGTH_WEAK   = 0.01;  // Weak nudge when swiping hard
-        this.VIRUS_ASSIST_STRENGTH  = 0.012; // Virus-tile steering strength
+        this.ASSIST_STRENGTH_WEAK = 0.01;  // Weak nudge when swiping hard
+        this.VIRUS_ASSIST_STRENGTH = 0.012; // Virus-tile steering strength
 
         // --- Runtime state ---
-        this.enabled = false;  // Toggled by 'P' key; always on for mobile (set in getAssistDeltas)
-        this.debug   = false;  // Debug overlay + 3D reticle
+        this.enabled = false;  // Toggled by 'P' key
+        this.debug = false;  // Debug overlay + 3D reticle
 
         // Last-frame tracking info (used by debug rendering and p.aimTarget writes)
         this.lastTracking = {
-            target:       null,   // Locked enemy (or null)
-            virusTarget:  null,   // Locked virus tile position (or null)
+            target: null,   // Locked enemy (or null)
+            virusTarget: null,   // Locked virus tile position (or null)
             predictedPos: null,   // Predicted lead position for the locked enemy
-            dot:          0,
-            yawDelta:     0,
-            pitchDelta:   0,
+            dot: 0,
+            yawDelta: 0,
+            pitchDelta: 0,
             isSwipingHard: false
         };
     }
@@ -51,7 +51,7 @@ class AimAssist {
         let cp = Math.cos(ship.pitch);
         return {
             x: -Math.sin(ship.yaw) * cp,
-            y:  Math.sin(ship.pitch),
+            y: Math.sin(ship.pitch),
             z: -Math.cos(ship.yaw) * cp
         };
     }
@@ -83,16 +83,16 @@ class AimAssist {
         let ez = targetPos.z - ship.z;
         let distH = Math.sqrt(ex * ex + ez * ez);
 
-        let targetYaw   = Math.atan2(-ex, -ez);
+        let targetYaw = Math.atan2(-ex, -ez);
         let targetPitch = Math.atan2(ey, distH);
 
         let yawDiff = targetYaw - ship.yaw;
         while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
-        while (yawDiff >  Math.PI) yawDiff -= 2 * Math.PI;
+        while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
 
         return {
-            yawDelta:   yawDiff                        * strength,
-            pitchDelta: (targetPitch - ship.pitch)     * strength
+            yawDelta: yawDiff * strength,
+            pitchDelta: (targetPitch - ship.pitch) * strength
         };
     }
 
@@ -137,8 +137,8 @@ class AimAssist {
      */
     calculateAimAssist(ship, enemies, isSwipingHard, forward) {
         let bestTarget = null;
-        let bestDot    = -1;
-        let bestDist   = 0;
+        let bestDot = -1;
+        let bestDist = 0;
 
         const f = forward || this._getShipForward(ship);
 
@@ -149,33 +149,33 @@ class AimAssist {
 
             if (distSq < this.MAX_LOCK_DIST_SQ && distSq > 100) {
                 let dist = Math.sqrt(distSq);
-                let dot  = (ex / dist) * f.x + (ey / dist) * f.y + (ez / dist) * f.z;
+                let dot = (ex / dist) * f.x + (ey / dist) * f.y + (ez / dist) * f.z;
 
                 if (dot > this.CONE_ANGLE && dot > bestDot) {
-                    bestDot    = dot;
+                    bestDot = dot;
                     bestTarget = e;
-                    bestDist   = dist;
+                    bestDist = dist;
                 }
             }
         }
 
         if (!bestTarget) {
-            this.lastTracking.target       = null;
+            this.lastTracking.target = null;
             this.lastTracking.predictedPos = null;
             return null;
         }
 
         // Nudge toward the lead position (pre-calculated dist avoids a second sqrt)
         let predicted = this._getPredictedPos(ship, bestTarget, 25, bestDist);
-        let strength  = isSwipingHard ? this.ASSIST_STRENGTH_WEAK : this.ASSIST_STRENGTH_NORMAL;
-        let res       = this._calculateNudge(ship, predicted, strength);
+        let strength = isSwipingHard ? this.ASSIST_STRENGTH_WEAK : this.ASSIST_STRENGTH_NORMAL;
+        let res = this._calculateNudge(ship, predicted, strength);
 
-        this.lastTracking.target        = bestTarget;
-        this.lastTracking.predictedPos  = predicted;
-        this.lastTracking.virusTarget   = null;
-        this.lastTracking.dot           = bestDot;
-        this.lastTracking.yawDelta      = res.yawDelta;
-        this.lastTracking.pitchDelta    = res.pitchDelta;
+        this.lastTracking.target = bestTarget;
+        this.lastTracking.predictedPos = predicted;
+        this.lastTracking.virusTarget = null;
+        this.lastTracking.dot = bestDot;
+        this.lastTracking.yawDelta = res.yawDelta;
+        this.lastTracking.pitchDelta = res.pitchDelta;
         this.lastTracking.isSwipingHard = isSwipingHard;
 
         return res;
@@ -198,7 +198,7 @@ class AimAssist {
         let shipTz = Math.floor(ship.z / 120);
 
         let bestTileK = null;
-        let bestDot   = 0.94;      // Strict ~20° half-angle
+        let bestDot = 0.94;      // Strict ~20° half-angle
         let maxDistSq = 6250000;   // 2500 unit cap
 
         // Scan 22×22 tile window — fast: mostly hash lookups + cheap vector math
@@ -212,7 +212,7 @@ class AimAssist {
                     let distSq = vx * vx + vy * vy + vz * vz;
                     if (distSq < maxDistSq) {
                         let dist = Math.sqrt(distSq);
-                        let dot  = (vx / dist) * f.x + (vy / dist) * f.y + (vz / dist) * f.z;
+                        let dot = (vx / dist) * f.x + (vy / dist) * f.y + (vz / dist) * f.z;
                         if (dot > bestDot) { bestDot = dot; bestTileK = k; }
                     }
                 }
@@ -232,9 +232,9 @@ class AimAssist {
         let res = this._calculateNudge(ship, bestTile, this.VIRUS_ASSIST_STRENGTH);
 
         this.lastTracking.virusTarget = bestTile;
-        this.lastTracking.dot         = bestDot;
-        this.lastTracking.yawDelta    = res.yawDelta;
-        this.lastTracking.pitchDelta  = res.pitchDelta;
+        this.lastTracking.dot = bestDot;
+        this.lastTracking.yawDelta = res.yawDelta;
+        this.lastTracking.pitchDelta = res.pitchDelta;
         return res;
     }
 
@@ -246,7 +246,7 @@ class AimAssist {
      */
     getAssistDeltas(ship, enemies, isSwipingHard) {
         const cameraForward = this._getCameraForward(ship);
-        const shipForward   = this._getShipForward(ship);
+        const shipForward = this._getShipForward(ship);
 
         let assist = this.calculateAimAssist(ship, enemies, isSwipingHard, cameraForward);
         if (assist) return assist;

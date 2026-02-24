@@ -151,7 +151,7 @@ class ParticleSystem {
                 if (aboveSea(terrain.getAltitude(nx * TILE, nz * TILE))) continue;
                 let nk = tileKey(nx, nz);
                 if (!infectedTiles[nk]) {
-                  infectedTiles[nk] = { tick: frameCount };
+                  infectedTiles[nk] = 1;
                   if (isLaunchpad(nx * TILE, nz * TILE)) hitLP = true;
                 }
               }
@@ -164,7 +164,7 @@ class ParticleSystem {
         } else {
           // Normal bomb: infect the single tile recorded when the bomb was spawned
           if (!infectedTiles[b.k]) {
-            infectedTiles[b.k] = { tick: frameCount };
+            infectedTiles[b.k] = 1;
             if (isLaunchpad(b.x, b.z)) {
               if (millis() - lastAlarmTime > 1000) {
                 if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();

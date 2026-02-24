@@ -219,7 +219,7 @@ class EnemyManager {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (!infectedTiles[k]) {
-          infectedTiles[k] = { tick: frameCount };
+          infectedTiles[k] = 1;
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -424,7 +424,7 @@ class EnemyManager {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (!infectedTiles[k]) {
-          infectedTiles[k] = { tick: frameCount };
+          infectedTiles[k] = 1;
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -517,7 +517,7 @@ class EnemyManager {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (!infectedTiles[k]) {
-          infectedTiles[k] = { tick: frameCount };
+          infectedTiles[k] = 1;
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -534,7 +534,7 @@ class EnemyManager {
               if (!infectedTiles[nk]) {
                 let nx = (tx + di) * TILE, nz = (tz + dj) * TILE;
                 if (!aboveSea(terrain.getAltitude(nx, nz)))
-                  infectedTiles[nk] = { tick: frameCount };
+                  infectedTiles[nk] = 1;
               }
             }
           }

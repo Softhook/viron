@@ -249,7 +249,8 @@ function drawRadarForPlayer(p, hw, h) {
   // Infected tiles (small red squares)
   fill(180, 0, 0, 80); noStroke();
   for (let k of Object.keys(infectedTiles)) {
-    let [tx, tz] = k.split(',').map(Number);
+    let comma = k.indexOf(',');
+    let tx = +k.slice(0, comma), tz = +k.slice(comma + 1);
     let rx = (tx * TILE - s.x) * 0.012, rz = (tz * TILE - s.z) * 0.012;
     if (abs(rx) < 68 && abs(rz) < 68) rect(rx, rz, 2, 2);
   }

@@ -30,21 +30,23 @@ const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached as p5 geometry
 
 // --- Mountain peaks — Gaussian altitude bumps placed at fixed world positions ---
-// Each entry lowers the terrain Y value (raises the peak height) by `strength` at the centre,
-// falling off with a Gaussian sigma of SENTINEL_PEAK_SIGMA world units.
+// Each entry lowers the terrain Y value (raises the peak height) by `strength` at the centre.
+// `sigma`    — optional per-peak Gaussian spread radius (world units); falls back to SENTINEL_PEAK_SIGMA.
+// `strength` — how many units the peak is pushed upward at its centre.
 /* const MOUNTAIN_PEAKS = [
-  { x: -2200, z: -1600, strength: 450 },
-  { x:  2800, z:   900, strength: 400 },
-  { x: -1200, z:  3200, strength: 380 },
-  { x:  3000, z: -2600, strength: 420 },
-  { x: -2800, z:  2000, strength: 390 }
+  { x: -2200, z: -1600, strength: 450, sigma: 1100 },
+  { x:  2800, z:   900, strength: 400, sigma: 1100 },
+  { x: -1200, z:  3200, strength: 380, sigma: 1100 },
+  { x:  3000, z: -2600, strength: 420, sigma: 1100 },
+  { x: -2800, z:  2000, strength: 390, sigma: 1100 }
 ]; */
 const MOUNTAIN_PEAKS = [
-  { x: -2200, z: -1600, strength: 450 },
+  { x: -2200, z: -1600, strength: 450, sigma: 400 },
+  { x: 2800, z: 900, strength: 400, sigma: 1100 },
 ];
 
 
-const SENTINEL_PEAK_SIGMA = 400;  // Gaussian spread radius (world units)
+const SENTINEL_PEAK_SIGMA = 400;  // Default Gaussian spread radius — used when a peak has no sigma field
 const SENTINEL_PULSE_INTERVAL = 300;  // Frames between each sentinel pulse (~5 s at 60 fps)
 // Infection parameters for an infected sentinel (much faster than normal INF_RATE)
 const SENTINEL_INFECTION_RADIUS = 5;     // Tile radius of accelerated spread around an infected sentinel

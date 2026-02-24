@@ -133,8 +133,8 @@ class Terrain {
    * Called once per frame from the main draw loop to prevent unbounded memory use.
    */
   clearCaches() {
-    if (this.altCache.size  > 10000) this.altCache.clear();
-    if (this.chunkCache.size > 200)   this.chunkCache.clear();
+    if (this.altCache.size > 10000) this.altCache.clear();
+    if (this.chunkCache.size > 200) this.chunkCache.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -204,13 +204,15 @@ class Terrain {
       // into a visually unrelated region of the noise space.
       let xs = x * 0.0008, zs = z * 0.0008;
       let elevation = noise(xs, zs) +
-                      0.5  * noise(xs * 2.5 + 31.7, zs * 2.5 + 83.3) +
-                      0.25 * noise(xs * 5   + 67.1, zs * 5  + 124.9);
+        0.5 * noise(xs * 2.5 + 31.7, zs * 2.5 + 83.3) +
+        0.25 * noise(xs * 5 + 67.1, zs * 5 + 124.9);
       alt = 300 - Math.pow(elevation / 1.75, 2.0) * 550;
 
       // Blend in Gaussian bumps for the forced mountain peaks
-      let s2 = 2 * SENTINEL_PEAK_SIGMA * SENTINEL_PEAK_SIGMA;
+      // Each peak may carry its own `sigma` field; fall back to the global SENTINEL_PEAK_SIGMA.
       for (let peak of MOUNTAIN_PEAKS) {
+        let sigma = peak.sigma !== undefined ? peak.sigma : SENTINEL_PEAK_SIGMA;
+        let s2 = 2 * sigma * sigma;
         let dx = x - peak.x, dz = z - peak.z;
         let falloff = Math.exp(-(dx * dx + dz * dz) / s2);
         alt -= peak.strength * falloff;
@@ -237,9 +239,9 @@ class Terrain {
 
     if (fx === 0 && fz === 0) return this.getGridAltitude(tx, tz);
 
-    let y00 = this.getGridAltitude(tx,     tz);
+    let y00 = this.getGridAltitude(tx, tz);
     let y10 = this.getGridAltitude(tx + 1, tz);
-    let y01 = this.getGridAltitude(tx,     tz + 1);
+    let y01 = this.getGridAltitude(tx, tz + 1);
     let y11 = this.getGridAltitude(tx + 1, tz + 1);
 
     // Split the quad into two triangles along the diagonal and interpolate.
@@ -274,8 +276,8 @@ class Terrain {
         for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
           let xP = tx * TILE, zP = tz * TILE;
           let xP1 = xP + TILE, zP1 = zP + TILE;
-          let y00 = this.getAltitude(xP,  zP),  y10 = this.getAltitude(xP1, zP);
-          let y01 = this.getAltitude(xP,  zP1), y11 = this.getAltitude(xP1, zP1);
+          let y00 = this.getAltitude(xP, zP), y10 = this.getAltitude(xP1, zP);
+          let y01 = this.getAltitude(xP, zP1), y11 = this.getAltitude(xP1, zP1);
           let avgY = (y00 + y10 + y01 + y11) * 0.25;
           let minY = Math.min(y00, y10, y01, y11);
           if (aboveSea(minY)) continue;  // Skip fully submerged tiles
@@ -316,8 +318,8 @@ class Terrain {
 
           fill(finalR, finalG, finalB);
           // Each tile is two triangles sharing the diagonal
-          vertex(xP,  y00, zP);  vertex(xP1, y10, zP);  vertex(xP,  y01, zP1);
-          vertex(xP1, y10, zP);  vertex(xP1, y11, zP1); vertex(xP,  y01, zP1);
+          vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
+          vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
         }
       }
       endShape();
@@ -365,7 +367,7 @@ class Terrain {
    * @returns {number[]} Fog-blended RGB array.
    */
   getFogColor(col, depth) {
-    let fogEnd   = VIEW_FAR * TILE + 400;
+    let fogEnd = VIEW_FAR * TILE + 400;
     let fogStart = VIEW_FAR * TILE - 800;
     let f = constrain(map(depth, fogStart, fogEnd, 0, 1), 0, 1);
     return [
@@ -388,7 +390,7 @@ class Terrain {
    */
   applyShader() {
     shader(this.shader);
-    this.shader.setUniform('uTime',    millis() / 1000.0);
+    this.shader.setUniform('uTime', millis() / 1000.0);
     this.shader.setUniform('uFogDist', [VIEW_FAR * TILE - 800, VIEW_FAR * TILE + 400]);
 
     // Build the flat uniform array expected by the GLSL array declaration
@@ -460,11 +462,11 @@ class Terrain {
               let xP1 = xP + TILE, zP1 = zP + TILE;
 
               // Slightly below ground (- 0.5) to avoid z-fighting with base terrain
-              let y00 = this.getAltitude(xP,  zP)  - 0.5, y10 = this.getAltitude(xP1, zP)  - 0.5;
-              let y01 = this.getAltitude(xP,  zP1) - 0.5, y11 = this.getAltitude(xP1, zP1) - 0.5;
+              let y00 = this.getAltitude(xP, zP) - 0.5, y10 = this.getAltitude(xP1, zP) - 0.5;
+              let y01 = this.getAltitude(xP, zP1) - 0.5, y11 = this.getAltitude(xP1, zP1) - 0.5;
 
               let avgY = (this.getAltitude(xP, zP) + this.getAltitude(xP1, zP) +
-                          this.getAltitude(xP, zP1) + this.getAltitude(xP1, zP1)) * 0.25;
+                this.getAltitude(xP, zP1) + this.getAltitude(xP1, zP1)) * 0.25;
               let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
 
               // Animate the green glow with a sine wave per-tile offset
@@ -491,8 +493,8 @@ class Terrain {
       for (let t of infected) {
         fill(t.r, t.g, t.b);
         let v = t.v;
-        vertex(v[0],  v[1],  v[2]);  vertex(v[3],  v[4],  v[5]);  vertex(v[6],  v[7],  v[8]);
-        vertex(v[9],  v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
+        vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
+        vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
       }
       endShape();
     }
@@ -511,14 +513,14 @@ class Terrain {
     let mX = LAUNCH_MAX - 100;
     for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
       let mDepth = (mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ;
-      let bCol = this.getFogColor([60, 60, 60],   mDepth);
-      let mCol = this.getFogColor([255, 140, 20],  mDepth);
+      let bCol = this.getFogColor([60, 60, 60], mDepth);
+      let mCol = this.getFogColor([255, 140, 20], mDepth);
       push();
       translate(mX, LAUNCH_ALT, mZ);
       fill(bCol[0], bCol[1], bCol[2]);
-      push(); translate(0, -10, 0);  box(30, 20, 30); pop();          // Stand
+      push(); translate(0, -10, 0); box(30, 20, 30); pop();          // Stand
       fill(mCol[0], mCol[1], mCol[2]);
-      push(); translate(0, -70, 0);  rotateX(Math.PI); cone(18, 100, 4, 1); pop();  // Rocket body
+      push(); translate(0, -70, 0); rotateX(Math.PI); cone(18, 100, 4, 1); pop();  // Rocket body
       pop();
     }
     pop();

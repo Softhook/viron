@@ -53,6 +53,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
     bullets: [],
     homingMissiles: [],
     missilesRemaining: 1,
+    aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
     mobileMissilePressed: false   // Tracks the mobile missile button edge so it fires once per tap
   };
   resetShip(p, offsetX);
@@ -261,6 +262,9 @@ function shipDisplay(s, tintColor) {
 function updateShipInput(p) {
   if (p.dead) return;
 
+  // Reset each frame so stale enemy references never persist across frames.
+  p.aimTarget = null;
+
   // --- Mouse steering (pointer-lock, desktop P1 only) ---
   if (p.id === 0 && !isMobile && document.pointerLockElement) {
     smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
@@ -269,23 +273,13 @@ function updateShipInput(p) {
     let newYaw = p.ship.yaw - smoothedMX * MOUSE_SENSITIVITY;
     let newPitch = p.ship.pitch - smoothedMY * MOUSE_SENSITIVITY;
 
-    // Apply Desktop Aim Assist if enabled
-    if (typeof mobileController !== 'undefined' && mobileController.desktopAssist) {
-      const shipForward = mobileController._getShipForward(p.ship);
-      const cameraForward = mobileController._getCameraForward(p.ship);
-
-      let assist = mobileController.calculateAimAssist(p.ship, enemyManager.enemies, false, cameraForward);
-      if (assist) {
-        newYaw += assist.yawDelta;
-        newPitch += assist.pitchDelta;
-      } else {
-        // Try virus assist if no enemy targeted - USE SHIP NOSE
-        let vAssist = mobileController.calculateVirusAssist(p.ship, shipForward);
-        if (vAssist) {
-          newYaw += vAssist.yawDelta;
-          newPitch += vAssist.pitchDelta;
-        }
-      }
+    // Apply aim assist if enabled
+    if (aimAssist.enabled) {
+      let assist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
+      newYaw   += assist.yawDelta;
+      newPitch += assist.pitchDelta;
+      // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
+      p.aimTarget = aimAssist.lastTracking.target;
     }
     p.ship.yaw = newYaw;
     p.ship.pitch = constrain(newPitch, -PI / 2.2, PI / 2.2);
@@ -316,8 +310,10 @@ function updateShipInput(p) {
       p.mobileMissilePressed = false;
     }
 
-    p.ship.yaw += inputs.yawDelta;
-    p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta, -PI / 2.2, PI / 2.2);
+    p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
+    p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
+    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
+    p.aimTarget = aimAssist.lastTracking.target;
   }
 
   // --- Keyboard steering ---
@@ -325,6 +321,17 @@ function updateShipInput(p) {
   if (keyIsDown(k.right)) p.ship.yaw -= YAW_RATE;
   if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
   if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
+
+  // Aim assist for keyboard players (P2 always; P1 when not using mouse pointer-lock).
+  // Skipped for the mouse-look path (already handled above).
+  const isKeyboardPlayer = !(p.id === 0 && document.pointerLockElement);
+  if (!isMobile && aimAssist.enabled && isKeyboardPlayer) {
+    let kAssist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
+    p.ship.yaw += kAssist.yawDelta;
+    p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);
+    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
+    p.aimTarget = aimAssist.lastTracking.target;
+  }
 
   let s = p.ship;
 
@@ -410,7 +417,7 @@ function updateProjectilePhysics(p) {
 
     // PERFORMANCE: Only seeking for "fresh" bullets (first 30 frames)
     // and only if Aim Assist is enabled (for P1 or via 'P' toggle)
-    let assistEnabled = (typeof mobileController !== 'undefined' && (mobileController.desktopAssist || isMobile));
+    let assistEnabled = aimAssist.enabled || isMobile;
 
     if (assistEnabled && b.life > 240) { // Bullets start at 300 life
       let bestTarget = null;
@@ -431,7 +438,7 @@ function updateProjectilePhysics(p) {
             if (dot > bestDot) {
               bestDot = dot;
               // PREDICTIVE: Seek lead position (pass pre-calculated d)
-              bestTarget = mobileController._getPredictedPos(b, e, speed, d);
+              bestTarget = aimAssist._getPredictedPos(b, e, speed, d);
             }
           }
         }
@@ -488,16 +495,12 @@ function updateProjectilePhysics(p) {
     let m = p.homingMissiles[i];
     const maxSpd = 10;
 
-    // Steer toward the locked target if it exists, otherwise find nearest
-    const tracking = (typeof mobileController !== 'undefined') ? mobileController.lastTracking : null;
-    let locked = tracking ? (tracking.target || tracking.virusTarget) : null;
-    let target = locked || findNearest(enemyManager.enemies, m.x, m.y, m.z);
+    // Use this player's locked aim target; fall back to nearest enemy
+    let target = p.aimTarget || findNearest(enemyManager.enemies, m.x, m.y, m.z);
 
     if (target) {
       // PREDICTIVE: Seek future position (maxSpd 10)
-      let predicted = (typeof mobileController !== 'undefined') ?
-        mobileController._getPredictedPos(m, target, maxSpd) : target;
-
+      let predicted = aimAssist._getPredictedPos(m, target, maxSpd);
       let dx = predicted.x - m.x, dy = predicted.y - m.y, dz = predicted.z - m.z;
       let dSq = dx * dx + dy * dy + dz * dz;
       if (dSq > 0) {

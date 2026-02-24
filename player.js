@@ -423,12 +423,15 @@ function updateProjectilePhysics(p) {
         // 1. Enemies (Highest priority)
         for (let e of enemyManager.enemies) {
           let dx = e.x - b.x, dy = e.y - b.y, dz = e.z - b.z;
-          let d = Math.hypot(dx, dy, dz);
-          if (d < 1200 && d > 20) {
+          let dSq = dx * dx + dy * dy + dz * dz;
+
+          if (dSq < 1440000 && dSq > 400) { // 1200^2 and 20^2
+            let d = Math.sqrt(dSq);
             let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
             if (dot > bestDot) {
               bestDot = dot;
-              bestTarget = { x: e.x, y: e.y, z: e.z };
+              // PREDICTIVE: Seek lead position (pass pre-calculated d)
+              bestTarget = mobileController._getPredictedPos(b, e, speed, d);
             }
           }
         }
@@ -443,8 +446,9 @@ function updateProjectilePhysics(p) {
                 let txPos = tx * 120 + 60, tzPos = tz * 120 + 60;
                 let tyPos = terrain.getAltitude(txPos, tzPos);
                 let dx = txPos - b.x, dy = tyPos - b.y, dz = tzPos - b.z;
-                let d = Math.hypot(dx, dy, dz);
-                if (d < 600) {
+                let dSq = dx * dx + dy * dy + dz * dz;
+                if (dSq < 360000) { // 600^2
+                  let d = Math.sqrt(dSq);
                   let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
                   if (dot > bestDot) {
                     bestDot = dot;
@@ -455,15 +459,15 @@ function updateProjectilePhysics(p) {
             }
           }
         }
+      }
 
-        if (bestTarget) {
-          let dx = bestTarget.x - b.x, dy = bestTarget.y - b.y, dz = bestTarget.z - b.z;
-          let d = Math.hypot(dx, dy, dz);
-          let steer = 0.04;
-          b.vx = lerp(b.vx, (dx / d) * speed, steer);
-          b.vy = lerp(b.vy, (dy / d) * speed, steer);
-          b.vz = lerp(b.vz, (dz / d) * speed, steer);
-        }
+      if (bestTarget) {
+        let dx = bestTarget.x - b.x, dy = bestTarget.y - b.y, dz = bestTarget.z - b.z;
+        let d = Math.hypot(dx, dy, dz);
+        let steer = 0.04;
+        b.vx = lerp(b.vx, (dx / d) * speed, steer);
+        b.vy = lerp(b.vy, (dy / d) * speed, steer);
+        b.vz = lerp(b.vz, (dz / d) * speed, steer);
       }
     }
 
@@ -477,54 +481,54 @@ function updateProjectilePhysics(p) {
       p.bullets.splice(i, 1);
     }
   }
+}
 
-  // --- Homing missiles ---
-  for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
-    let m = p.homingMissiles[i];
-    const maxSpd = 10;
+// --- Homing missiles ---
+for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
+  let m = p.homingMissiles[i];
+  const maxSpd = 10;
 
-    // Steer toward the nearest enemy using a proportional guidance law
-    let target = findNearest(enemyManager.enemies, m.x, m.y, m.z);
-    if (target) {
-      let dx = target.x - m.x, dy = target.y - m.y, dz = target.z - m.z;
-      let mg = Math.hypot(dx, dy, dz);
-      if (mg > 0) {
-        let bl = 0.12;  // Blend factor — higher = more responsive homing
-        m.vx = lerp(m.vx, (dx / mg) * maxSpd, bl);
-        m.vy = lerp(m.vy, (dy / mg) * maxSpd, bl);
-        m.vz = lerp(m.vz, (dz / mg) * maxSpd, bl);
-      }
+  // Steer toward the nearest enemy using a proportional guidance law
+  let target = findNearest(enemyManager.enemies, m.x, m.y, m.z);
+  if (target) {
+    let dx = target.x - m.x, dy = target.y - m.y, dz = target.z - m.z;
+    let mg = Math.hypot(dx, dy, dz);
+    if (mg > 0) {
+      let bl = 0.12;  // Blend factor — higher = more responsive homing
+      m.vx = lerp(m.vx, (dx / mg) * maxSpd, bl);
+      m.vy = lerp(m.vy, (dy / mg) * maxSpd, bl);
+      m.vz = lerp(m.vz, (dz / mg) * maxSpd, bl);
     }
+  }
 
-    // Clamp speed to maxSpd so homing can't accelerate without limit
-    let sp = Math.hypot(m.vx, m.vy, m.vz);
-    if (sp > 0) {
-      m.vx = (m.vx / sp) * maxSpd;
-      m.vy = (m.vy / sp) * maxSpd;
-      m.vz = (m.vz / sp) * maxSpd;
+  // Clamp speed to maxSpd so homing can't accelerate without limit
+  let sp = Math.hypot(m.vx, m.vy, m.vz);
+  if (sp > 0) {
+    m.vx = (m.vx / sp) * maxSpd;
+    m.vy = (m.vy / sp) * maxSpd;
+    m.vz = (m.vz / sp) * maxSpd;
+  }
+
+  m.x += m.vx; m.y += m.vy; m.z += m.vz;
+  m.life--;
+
+  // Smoke trail — one particle every other frame
+  if (frameCount % 2 === 0) {
+    particleSystem.particles.push({
+      x: m.x, y: m.y, z: m.z,
+      vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),
+      life: 120, decay: 5, seed: random(1.0), size: random(2, 5)
+    });
+  }
+
+  let gnd = terrain.getAltitude(m.x, m.z);
+  if (m.life <= 0 || m.y > gnd) {
+    if (m.y > gnd) {
+      // Hit terrain — explode and attempt infection clear
+      particleSystem.addExplosion(m.x, m.y, m.z);
+      clearInfectionAt(m.x, m.z, p);
     }
-
-    m.x += m.vx; m.y += m.vy; m.z += m.vz;
-    m.life--;
-
-    // Smoke trail — one particle every other frame
-    if (frameCount % 2 === 0) {
-      particleSystem.particles.push({
-        x: m.x, y: m.y, z: m.z,
-        vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),
-        life: 120, decay: 5, seed: random(1.0), size: random(2, 5)
-      });
-    }
-
-    let gnd = terrain.getAltitude(m.x, m.z);
-    if (m.life <= 0 || m.y > gnd) {
-      if (m.y > gnd) {
-        // Hit terrain — explode and attempt infection clear
-        particleSystem.addExplosion(m.x, m.y, m.z);
-        clearInfectionAt(m.x, m.z, p);
-      }
-      p.homingMissiles.splice(i, 1);
-    }
+    p.homingMissiles.splice(i, 1);
   }
 }
 

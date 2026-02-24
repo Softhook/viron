@@ -155,7 +155,7 @@ class MobileController {
         let ex = targetPos.x - ship.x;
         let ey = targetPos.y - ship.y;
         let ez = targetPos.z - ship.z;
-        let distH = Math.hypot(ex, ez);
+        let distH = Math.sqrt(ex * ex + ez * ez);
 
         let targetYaw = Math.atan2(-ex, -ez);
         let targetPitch = Math.atan2(ey, distH);
@@ -170,9 +170,32 @@ class MobileController {
         };
     }
 
+    _getPredictedPos(ship, target, projectileSpeed, dist) {
+        if (!target || !projectileSpeed) return target;
+
+        // Use provided distance or calculate if missing (manual sqrt is faster than hypot)
+        let d = dist;
+        if (d === undefined) {
+            let dx = target.x - ship.x;
+            let dy = target.y - ship.y;
+            let dz = target.z - ship.z;
+            d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        // Time to impact (first order approximation)
+        let tti = d / projectileSpeed;
+
+        return {
+            x: target.x + (target.vx || 0) * tti,
+            y: target.y + (target.vy || 0) * tti,
+            z: target.z + (target.vz || 0) * tti
+        };
+    }
+
     calculateAimAssist(ship, enemies, isSwipingHard, forward) {
         let bestTarget = null;
         let bestDot = -1;
+        let bestDist = 0;
 
         // Use provided forward or calculate if missing
         const f = forward || this._getShipForward(ship);
@@ -191,20 +214,26 @@ class MobileController {
                 if (dot > this.CONE_ANGLE && dot > bestDot) {
                     bestDot = dot;
                     bestTarget = e;
+                    bestDist = dist;
                 }
             }
         }
 
         if (!bestTarget) {
             this.lastTracking.target = null;
+            this.lastTracking.predictedPos = null;
             return null;
         }
 
+        // PREDICTIVE: Nudge toward future position (pass pre-calculated distance)
+        let predicted = this._getPredictedPos(ship, bestTarget, 25, bestDist); // 25 is standard bullet speed
+
         let strength = isSwipingHard ? this.ASSIST_STRENGTH_WEAK : this.ASSIST_STRENGTH_NORMAL;
-        let res = this._calculateNudge(ship, bestTarget, strength);
+        let res = this._calculateNudge(ship, predicted, strength);
 
         // Store for debug
         this.lastTracking.target = bestTarget;
+        this.lastTracking.predictedPos = predicted;
         this.lastTracking.virusTarget = null;
         this.lastTracking.dot = bestDot;
         this.lastTracking.yawDelta = res.yawDelta;
@@ -344,6 +373,22 @@ class MobileController {
             vertex(0, 0, -s); vertex(0, -s, 0); vertex(0, 0, s); vertex(0, s, 0);
             endShape(CLOSE);
             pop();
+
+            // Draw Lead Marker
+            if (this.lastTracking.predictedPos) {
+                let p = this.lastTracking.predictedPos;
+                push();
+                stroke(255, 255, 0, 150); // Yellow lead marker
+                strokeWeight(2);
+                line(t.x, t.y, t.z, p.x, p.y, p.z); // Connect with velocity line
+
+                translate(p.x, p.y, p.z);
+                noFill();
+                circle(0, 0, 20); // Small lead circle
+                rotateY(PI / 4);
+                circle(0, 0, 20);
+                pop();
+            }
         }
 
         // Draw Virus Target (Green Box on Ground)

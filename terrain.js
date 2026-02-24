@@ -618,7 +618,7 @@ class Terrain {
   /**
    * Draws all buildings within rendering range with fog blending and infection
    * tinting.  Four building archetypes are supported:
-   *   0 — House (box + pyramid roof)
+   *   0 — Geometric structure (box body + inverted-pyramid roof funnel)
    *   1 — Water tower (cylinder + dome)
    *   2 — Industrial complex (layered boxes + smokestack)
    *   3 — Orbiting UFO power-up (double-cone, floats above ground)
@@ -639,7 +639,7 @@ class Terrain {
       push(); translate(b.x, y, b.z); noStroke();
 
       if (b.type === 0) {
-        // House: white box body + red pyramid roof (turns red when infected)
+        // Geometric structure: white box body + inverted-pyramid roof funnel (turns red when infected)
         let bc = this.getFogColor(inf ? [200, 50, 50] : [220, 220, 220], depth);
         fill(bc[0], bc[1], bc[2]);
         push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();

@@ -75,11 +75,11 @@ function createPlayer(id, keys, offsetX, labelColor) {
  */
 function spawnProjectile(s, power, life) {
   let cp = cos(s.pitch), sp = sin(s.pitch);
-  let cy = cos(s.yaw),   sy = sin(s.yaw);
+  let cy = cos(s.yaw), sy = sin(s.yaw);
 
   // Forward unit vector in world space
   let fx = -cp * sy;
-  let fy =  sp;
+  let fy = sp;
   let fz = -cp * cy;
 
   // Barrel offset: 30 units forward, 10 units below the ship centre
@@ -88,9 +88,9 @@ function spawnProjectile(s, power, life) {
   let z1 = ly * sp + lz * cp;
 
   return {
-    x:  s.x + z1 * sy,
-    y:  s.y + y1,
-    z:  s.z + z1 * cy,
+    x: s.x + z1 * sy,
+    y: s.y + y1,
+    z: s.z + z1 * cy,
     vx: fx * power + s.vx,
     vy: fy * power + s.vy,
     vz: fz * power + s.vz,
@@ -125,7 +125,7 @@ function fireMissile(p) {
  */
 function shipUpDir(s) {
   let sp = sin(s.pitch), cp = cos(s.pitch);
-  let sy = sin(s.yaw),   cy = cos(s.yaw);
+  let sy = sin(s.yaw), cy = cos(s.yaw);
   return { x: sp * -sy, y: -cp, z: sp * -cy };
 }
 
@@ -161,7 +161,7 @@ function drawShadow(x, groundY, z, w, h) {
 function drawShipShadow(x, groundY, z, yaw, alt) {
   if (aboveSea(groundY)) return;
   let spread = max(1, (groundY - alt) * 0.012);
-  let alpha  = map(groundY - alt, 0, 600, 60, 15, true);
+  let alpha = map(groundY - alt, 0, 600, 60, 15, true);
   push();
   translate(x, groundY - 0.3, z);
   rotateY(yaw);
@@ -169,9 +169,9 @@ function drawShipShadow(x, groundY, z, yaw, alt) {
   fill(0, 0, 0, alpha);
   // Triangular shadow pointing forward
   beginShape();
-  vertex(-15 * spread, 0,  15 * spread);
-  vertex( 15 * spread, 0,  15 * spread);
-  vertex(  0,          0, -25 * spread);
+  vertex(-15 * spread, 0, 15 * spread);
+  vertex(15 * spread, 0, 15 * spread);
+  vertex(0, 0, -25 * spread);
   endShape(CLOSE);
   pop();
 }
@@ -196,7 +196,7 @@ function shipDisplay(s, tintColor) {
   terrain.applyShader();
   noStroke();
 
-  let cy = Math.cos(s.yaw),   sy = Math.sin(s.yaw);
+  let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
   let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
 
   // Transform a local-space point through pitch then yaw and offset to world space
@@ -204,7 +204,7 @@ function shipDisplay(s, tintColor) {
     let x = pt[0], y = pt[1], z = pt[2];
     let y1 = y * cx - z * sx;
     let z1 = y * sx + z * cx;
-    let x2 =  x * cy + z1 * sy;
+    let x2 = x * cy + z1 * sy;
     let z2 = -x * sy + z1 * cy;
     return [x2 + s.x, y1 + s.y, z2 + s.z];
   };
@@ -214,11 +214,11 @@ function shipDisplay(s, tintColor) {
   // Four faces with slightly different tint strengths for a faceted look
   let faces = [
     // Bottom face (brightest)
-    [lerp(200, r, 0.3), lerp(200, g, 0.3), lerp(200, b, 0.3),  [-15, 10, 15], [15, 10, 15], [0, 10, -25]],
+    [lerp(200, r, 0.3), lerp(200, g, 0.3), lerp(200, b, 0.3), [-15, 10, 15], [15, 10, 15], [0, 10, -25]],
     // Left face
-    [lerp(170, r, 0.2), lerp(170, g, 0.2), lerp(170, b, 0.2),  [0, -10, 5], [-15, 10, 15], [0, 10, -25]],
+    [lerp(170, r, 0.2), lerp(170, g, 0.2), lerp(170, b, 0.2), [0, -10, 5], [-15, 10, 15], [0, 10, -25]],
     // Right face
-    [lerp(150, r, 0.2), lerp(150, g, 0.2), lerp(150, b, 0.2),  [0, -10, 5], [15, 10, 15],  [0, 10, -25]],
+    [lerp(150, r, 0.2), lerp(150, g, 0.2), lerp(150, b, 0.2), [0, -10, 5], [15, 10, 15], [0, 10, -25]],
     // Rear/belly face (darkest)
     [lerp(130, r, 0.15), lerp(130, g, 0.15), lerp(130, b, 0.15), [0, -10, 5], [-15, 10, 15], [15, 10, 15]]
   ];
@@ -265,8 +265,17 @@ function updateShipInput(p) {
   if (p.id === 0 && !isMobile && document.pointerLockElement) {
     smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
     smoothedMY = lerp(smoothedMY, movedY, MOUSE_SMOOTHING);
-    p.ship.yaw   -= smoothedMX * MOUSE_SENSITIVITY;
-    p.ship.pitch  = constrain(p.ship.pitch - smoothedMY * MOUSE_SENSITIVITY, -PI / 2.2, PI / 2.2);
+    p.ship.yaw -= smoothedMX * MOUSE_SENSITIVITY;
+    p.ship.pitch = constrain(p.ship.pitch - smoothedMY * MOUSE_SENSITIVITY, -PI / 2.2, PI / 2.2);
+
+    // Apply Desktop Aim Assist if enabled
+    if (typeof mobileController !== 'undefined' && mobileController.desktopAssist) {
+      let assist = mobileController.calculateAimAssist(p.ship, enemyManager.enemies, false);
+      if (assist) {
+        p.ship.yaw += assist.yawDelta;
+        p.ship.pitch = constrain(p.ship.pitch + assist.pitchDelta, -PI / 2.2, PI / 2.2);
+      }
+    }
   }
 
   let k = p.keys;
@@ -276,15 +285,15 @@ function updateShipInput(p) {
   if (!leftMouseDown) mouseReleasedSinceStart = true;
 
   let isThrusting = keyIsDown(k.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
-  let isBraking   = keyIsDown(k.brake);
-  let isShooting  = keyIsDown(k.shoot)  || (p.id === 0 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
+  let isBraking = keyIsDown(k.brake);
+  let isShooting = keyIsDown(k.shoot) || (p.id === 0 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
 
   // --- Mobile joystick / button input ---
   if (isMobile && p.id === 0 && typeof mobileController !== 'undefined') {
     let inputs = mobileController.getInputs(p.ship, enemyManager.enemies, YAW_RATE, PITCH_RATE);
 
     isThrusting = isThrusting || inputs.thrust;
-    isShooting  = isShooting  || inputs.shoot;
+    isShooting = isShooting || inputs.shoot;
 
     // Edge-detect the missile button so a single tap fires one missile
     if (inputs.missile && !p.mobileMissilePressed) {
@@ -294,14 +303,14 @@ function updateShipInput(p) {
       p.mobileMissilePressed = false;
     }
 
-    p.ship.yaw   += inputs.yawDelta;
-    p.ship.pitch  = constrain(p.ship.pitch + inputs.pitchDelta, -PI / 2.2, PI / 2.2);
+    p.ship.yaw += inputs.yawDelta;
+    p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta, -PI / 2.2, PI / 2.2);
   }
 
   // --- Keyboard steering ---
-  if (keyIsDown(k.left))      p.ship.yaw += YAW_RATE;
-  if (keyIsDown(k.right))     p.ship.yaw -= YAW_RATE;
-  if (keyIsDown(k.pitchUp))   p.ship.pitch = constrain(p.ship.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
+  if (keyIsDown(k.left)) p.ship.yaw += YAW_RATE;
+  if (keyIsDown(k.right)) p.ship.yaw -= YAW_RATE;
+  if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
   if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
 
   let s = p.ship;
@@ -310,7 +319,7 @@ function updateShipInput(p) {
   s.vy += GRAV;  // Gravity
 
   if (isThrusting) {
-    let pw   = 0.45;
+    let pw = 0.45;
     let dVec = shipUpDir(s);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
     // Emit orange exhaust particles every other frame
@@ -338,7 +347,7 @@ function updateShipInput(p) {
 
   // Global air drag
   s.vx *= 0.985; s.vy *= 0.985; s.vz *= 0.985;
-  s.x  += s.vx;  s.y  += s.vy;  s.z  += s.vz;
+  s.x += s.vx; s.y += s.vy; s.z += s.vz;
 
   let g = terrain.getAltitude(s.x, s.z);
 

@@ -20,32 +20,32 @@
 
 let trees = [], buildings = [];    // Static world objects populated in setup()
 
-let infectedTiles  = {};           // Map of tileKey → {tick} for infected land tiles
-let level          = 1;            // Current level number (increases on level completion)
+let infectedTiles = {};           // Map of tileKey → {tick} for infected land tiles
+let level = 1;            // Current level number (increases on level completion)
 let currentMaxEnemies = 2;         // Max simultaneous enemies for the current level
 
-let levelComplete     = false;     // True once all infection has been cleared
-let infectionStarted  = false;     // Latches to true when the first tile is infected
-let levelEndTime      = 0;         // millis() timestamp of level completion / game over
+let levelComplete = false;     // True once all infection has been cleared
+let infectionStarted = false;     // Latches to true when the first tile is infected
+let levelEndTime = 0;         // millis() timestamp of level completion / game over
 
 let gameFont;                      // Loaded Impact font used for all HUD / menu text
-let gameState         = 'menu';    // Current game mode: 'menu' | 'playing' | 'gameover'
-let gameOverReason    = '';        // Human-readable reason string shown on game-over screen
-let lastAlarmTime     = 0;         // millis() of the last launchpad alarm SFX (rate-limited)
-let gameStartTime     = 0;         // millis() when the current game started
+let gameState = 'menu';    // Current game mode: 'menu' | 'playing' | 'gameover'
+let gameOverReason = '';        // Human-readable reason string shown on game-over screen
+let lastAlarmTime = 0;         // millis() of the last launchpad alarm SFX (rate-limited)
+let gameStartTime = 0;         // millis() when the current game started
 
-let numPlayers        = 1;         // 1 or 2 — set by startGame()
-let menuStars         = [];        // Animated star positions for the title screen
+let numPlayers = 1;         // 1 or 2 — set by startGame()
+let menuStars = [];        // Animated star positions for the title screen
 
 // Mouse state tracked via raw DOM events so they work before pointer-lock
 let mouseReleasedSinceStart = true;
-let leftMouseDown           = false;
-let rightMouseDown          = false;
+let leftMouseDown = false;
+let rightMouseDown = false;
 
-let players   = [];                // Array of player objects; length = numPlayers
+let players = [];                // Array of player objects; length = numPlayers
 let smoothedMX = 0, smoothedMY = 0; // Smoothed mouse deltas for mouse-look steering
 
-let isMobile  = false;             // True on any touch-capable device
+let isMobile = false;             // True on any touch-capable device
 let isAndroid = false;             // True on Android (affects some edge-case behaviour)
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ let isAndroid = false;             // True on Android (affects some edge-case be
  */
 function checkMobile() {
   isAndroid = /Android/i.test(navigator.userAgent);
-  isMobile  = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
+  isMobile = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window);
 }
 
 /**
@@ -66,7 +66,7 @@ function checkMobile() {
  * Called after resetShader() so p5's built-in lighting uniforms are active again.
  */
 function setSceneLighting() {
-  directionalLight(240, 230, 210,  0.5,  0.8, -0.3);
+  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
   ambientLight(60, 60, 70);
 }
 
@@ -156,7 +156,7 @@ function setup() {
   checkMobile();
   if (isMobile) {
     VIEW_NEAR = 20;
-    VIEW_FAR  = 30;
+    VIEW_FAR = 30;
     CULL_DIST = 3500;
   }
   createCanvas(windowWidth, windowHeight, WEBGL);
@@ -166,12 +166,12 @@ function setup() {
 
   // Track mouse button state via DOM events — more reliable than p5's mousePressed
   document.addEventListener('mousedown', e => {
-    if (e.button === 0) leftMouseDown  = true;
+    if (e.button === 0) leftMouseDown = true;
     if (e.button === 1) e.preventDefault();
     if (e.button === 2) rightMouseDown = true;
   });
   document.addEventListener('mouseup', e => {
-    if (e.button === 0) leftMouseDown  = false;
+    if (e.button === 0) leftMouseDown = false;
     if (e.button === 2) rightMouseDown = false;
   });
 
@@ -217,7 +217,7 @@ function setup() {
  * @param {number} np  Number of players (1 or 2).
  */
 function startGame(np) {
-  numPlayers    = np;
+  numPlayers = np;
   gameStartTime = millis();
   mouseReleasedSinceStart = !leftMouseDown;  // Don't fire on the frame the game starts
   if (np === 1) {
@@ -244,8 +244,8 @@ function startGame(np) {
  */
 function startLevel(lvl) {
   if (typeof gameSFX !== 'undefined') gameSFX.playNewLevel();
-  level        = lvl;
-  levelComplete    = false;
+  level = lvl;
+  levelComplete = false;
   infectionStarted = false;
   currentMaxEnemies = 1 + level;  // Enemy count scales linearly with level
 
@@ -257,7 +257,7 @@ function startLevel(lvl) {
     } else {
       p.missilesRemaining = 1;
     }
-    p.dead         = false;
+    p.dead = false;
     p.respawnTimer = 0;
   }
 
@@ -296,7 +296,7 @@ function startLevel(lvl) {
  * @param {number}                pxDensity devicePixelRatio from p5's pixelDensity().
  */
 function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
-  let s  = p.ship;
+  let s = p.ship;
   let vx = viewX * pxDensity, vw = viewW * pxDensity, vh = viewH * pxDensity;
 
   gl.viewport(vx, 0, vw, vh);
@@ -309,11 +309,11 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
 
   // Camera position: 550 units behind the ship at a slightly raised height
-  let cd   = 550;
+  let cd = 550;
   let camY = min(s.y - 120, SEA - 60);  // Clamp camera above sea so it doesn't clip
-  let cx   = s.x + sin(s.yaw) * cd;
-  let cy   = camY;
-  let cz   = s.z + cos(s.yaw) * cd;
+  let cx = s.x + sin(s.yaw) * cd;
+  let cy = camY;
+  let cz = s.z + cos(s.yaw) * cd;
   camera(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
 
   // Update spatial audio listener to match this camera position
@@ -331,12 +331,18 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     renderProjectiles(player, s.x, s.z);
   }
   particleSystem.render(s.x, s.z);
+
+  // 3D Visual Debugging
+  if (typeof mobileController !== 'undefined') mobileController.drawDebug3D(s);
+
   pop();
 
   // Overlay HUD (2D pass on top of the 3D scene)
   gl.clear(gl.DEPTH_BUFFER_BIT);
   drawPlayerHUD(p, pi, viewW, viewH);
-  if (isMobile && numPlayers === 1 && typeof mobileController !== 'undefined') mobileController.draw(width, height);
+  if ((isMobile || (typeof mobileController !== 'undefined' && mobileController.debug)) && numPlayers === 1 && typeof mobileController !== 'undefined') {
+    mobileController.draw(width, height);
+  }
   gl.disable(gl.SCISSOR_TEST);
 }
 
@@ -361,7 +367,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
  *   6. Respawn logic: decrement respawn timers, reset dead ships.
  */
 function draw() {
-  if (gameState === 'menu')     { drawMenu();     return; }
+  if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
 
   // --- Dynamic Performance Scaling ---
@@ -377,12 +383,12 @@ function draw() {
     if (fps < targetFPS * 0.9) {
       // Underperforming: shrink draw distances
       VIEW_NEAR = max(15, VIEW_NEAR - 2);
-      VIEW_FAR  = max(20, VIEW_FAR  - 2);
+      VIEW_FAR = max(20, VIEW_FAR - 2);
       CULL_DIST = max(2000, CULL_DIST - 400);
     } else if (fps >= targetFPS * 0.95) {
       // Plenty of headroom: try restoring draw distances
       VIEW_NEAR = min(35, VIEW_NEAR + 1);
-      VIEW_FAR  = min(50, VIEW_FAR  + 1);
+      VIEW_FAR = min(50, VIEW_FAR + 1);
       CULL_DIST = min(6000, CULL_DIST + 200);
     }
   }
@@ -395,12 +401,12 @@ function draw() {
   if (isMobile && numPlayers === 1 && typeof mobileController !== 'undefined') mobileController.update(touches, width, height);
 
   // --- Physics update ---
-  for (let p of players)    updateShipInput(p);
+  for (let p of players) updateShipInput(p);
   enemyManager.update();
-  for (let p of players)    checkCollisions(p);
+  for (let p of players) checkCollisions(p);
   spreadInfection();
   particleSystem.updatePhysics();
-  for (let p of players)    updateProjectilePhysics(p);
+  for (let p of players) updateProjectilePhysics(p);
 
   // --- Render ---
   let h = height;
@@ -432,7 +438,7 @@ function draw() {
   if (ic > 0) infectionStarted = true;
   if (infectionStarted && ic === 0 && !levelComplete) {
     levelComplete = true;
-    levelEndTime  = millis();
+    levelEndTime = millis();
   }
   if (levelComplete && millis() - levelEndTime > 4000) startLevel(level + 1);
 
@@ -463,15 +469,15 @@ function draw() {
 function spreadInfection() {
   if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
 
-  let keys    = Object.keys(infectedTiles);
+  let keys = Object.keys(infectedTiles);
   let keysLen = keys.length;
 
   // Game over — too much infection
   if (keysLen >= MAX_INF) {
     if (gameState !== 'gameover') {
-      gameState      = 'gameover';
+      gameState = 'gameover';
       gameOverReason = 'INFECTION REACHED CRITICAL MASS';
-      levelEndTime   = millis();
+      levelEndTime = millis();
       if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
     }
     return;
@@ -487,9 +493,9 @@ function spreadInfection() {
   }
   if (lpInfected >= lpTotal) {
     if (gameState !== 'gameover') {
-      gameState      = 'gameover';
+      gameState = 'gameover';
       gameOverReason = 'LAUNCH PAD INFECTED';
-      levelEndTime   = millis();
+      levelEndTime = millis();
       if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
     }
     return;
@@ -501,7 +507,7 @@ function spreadInfection() {
     if (random() > INF_RATE) continue;
     let parts = keys[i].split(',');
     let tx = +parts[0], tz = +parts[1];
-    let d  = ORTHO_DIRS[floor(random(4))];
+    let d = ORTHO_DIRS[floor(random(4))];
     let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
     if (aboveSea(terrain.getAltitude(wx, wz)) || infectedTiles[nk]) continue;
@@ -510,10 +516,10 @@ function spreadInfection() {
 
   // Commit all new infections after the loop (avoid modifying while iterating)
   for (let i = 0; i < fresh.length; i++) {
-    let nk    = fresh[i];
+    let nk = fresh[i];
     infectedTiles[nk] = { tick: frameCount };
     let parts = nk.split(',');
-    let ptx   = +parts[0], ptz = +parts[1];
+    let ptx = +parts[0], ptz = +parts[1];
     if (typeof gameSFX !== 'undefined') gameSFX.playInfectionSpread(ptx * TILE, terrain.getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
     if (isLaunchpad(ptx * TILE, ptz * TILE)) {
       if (millis() - lastAlarmTime > 1000) {
@@ -600,7 +606,7 @@ function checkCollisions(p) {
   for (let i = buildings.length - 1; i >= 0; i--) {
     let b = buildings[i];
     if (b.type === 3) {
-      let bGnd   = terrain.getAltitude(b.x, b.z);
+      let bGnd = terrain.getAltitude(b.x, b.z);
       let floatY = bGnd - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
       let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
       let radiusSq = (b.w + 15) ** 2;
@@ -639,8 +645,8 @@ function checkCollisions(p) {
     for (let t of trees) {
       let ty = terrain.getAltitude(t.x, t.z);
       if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 < 3600 &&
-          b.y > ty - t.trunkH - 30 * t.canopyScale - 10 &&
-          b.y < ty + 10) {
+        b.y > ty - t.trunkH - 30 * t.canopyScale - 10 &&
+        b.y < ty + 10) {
         let tx = toTile(t.x), tz = toTile(t.z);
         if (infectedTiles[tileKey(tx, tz)]) {
           clearInfectionRadius(tx, tz);
@@ -671,6 +677,12 @@ function keyPressed() {
   for (let p of players) {
     if (keyCode === p.keys.missile) fireMissile(p);
   }
+
+  // Toggle Aim Assist Debug/Desktop mode
+  if (key === 'p' || key === 'P') {
+    mobileController.debug = !mobileController.debug;
+    mobileController.desktopAssist = mobileController.debug; // Sync for testing
+  }
 }
 
 /**
@@ -683,10 +695,10 @@ function touchStarted(event) {
 }
 
 /** Prevents default on touch end so scrolling doesn't resume. */
-function touchEnded(event)  { return false; }
+function touchEnded(event) { return false; }
 
 /** Prevents default on touch move (stops page scrolling during gameplay). */
-function touchMoved(event)  { return false; }
+function touchMoved(event) { return false; }
 
 /**
  * p5 mousePressed — desktop only.
@@ -711,7 +723,7 @@ function mousePressed() {
 
 function mouseDragged() { mouseMoved(); }
 
-function mouseMoved() {}
+function mouseMoved() { }
 
 /** Resizes the p5 canvas to match the new browser window dimensions. */
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }

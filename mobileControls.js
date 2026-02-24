@@ -5,21 +5,32 @@ class MobileController {
         this.joyPos = null;
 
         this.btns = {
-            thrust:  { active: false, r: 65, col: [0, 255, 60],   label: 'THR', x: 0, y: 0 },
-            shoot:   { active: false, r: 65, col: [255, 60, 60],   label: 'SHT', x: 0, y: 0 },
-            missile: { active: false, r: 40, col: [0, 200, 255],   label: 'MSL', x: 0, y: 0 }
+            thrust: { active: false, r: 65, col: [0, 255, 60], label: 'THR', x: 0, y: 0 },
+            shoot: { active: false, r: 65, col: [255, 60, 60], label: 'SHT', x: 0, y: 0 },
+            missile: { active: false, r: 40, col: [0, 200, 255], label: 'MSL', x: 0, y: 0 }
         };
 
         // Configurable Aim Assist settings
         this.CONE_ANGLE = 0.82;          // ~35° half-angle (was 0.90 / ~26°)
         this.MAX_LOCK_DIST_SQ = 3000000; // ~1732 units (was 1800000 / ~1342)
-        this.ASSIST_STRENGTH_NORMAL = 0.12;  // (was 0.08)
-        this.ASSIST_STRENGTH_WEAK   = 0.04;  // (was 0.02)
+        this.ASSIST_STRENGTH_NORMAL = 0.05;  // Subtler (was 0.12)
+        this.ASSIST_STRENGTH_WEAK = 0.02;    // Subtler (was 0.04)
+
+        // Debug & Testing
+        this.debug = false;
+        this.desktopAssist = false;
+        this.lastTracking = {
+            target: null,
+            dot: 0,
+            yawDelta: 0,
+            pitchDelta: 0,
+            isSwipingHard: false
+        };
     }
 
     update(touches, w, h) {
-        this.btns.thrust.x  = w - 250; this.btns.thrust.y  = h - 100;
-        this.btns.shoot.x   = w - 105; this.btns.shoot.y   = h - 100;
+        this.btns.thrust.x = w - 250; this.btns.thrust.y = h - 100;
+        this.btns.shoot.x = w - 105; this.btns.shoot.y = h - 100;
         this.btns.missile.x = w - 105; this.btns.missile.y = h - 240;
 
         for (let b in this.btns) this.btns[b].active = false;
@@ -82,8 +93,8 @@ class MobileController {
         if (ship && enemies) {
             let assist = this.calculateAimAssist(ship, enemies, isSwipingHard);
             if (assist) {
-                inputs.yawDelta += assist.yawDelta;
-                inputs.pitchDelta += assist.pitchDelta;
+                ship.yaw += assist.yawDelta;
+                ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + assist.pitchDelta));
             }
         }
 
@@ -94,9 +105,11 @@ class MobileController {
         let bestTarget = null;
         let bestDot = -1;
 
-        let forwardX = Math.sin(ship.yaw) * Math.cos(ship.pitch);
-        let forwardY = -Math.sin(ship.pitch);
-        let forwardZ = Math.cos(ship.yaw) * Math.cos(ship.pitch);
+        // Correct forward vector based on player.js (Forward = -sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
+        let cp = Math.cos(ship.pitch);
+        let forwardX = -Math.sin(ship.yaw) * cp;
+        let forwardY = Math.sin(ship.pitch);
+        let forwardZ = -Math.cos(ship.yaw) * cp;
 
         for (let i = 0; i < enemies.length; i++) {
             let e = enemies[i];
@@ -122,27 +135,43 @@ class MobileController {
             }
         }
 
-        if (bestTarget) {
-            let assistStrength = isSwipingHard ? this.ASSIST_STRENGTH_WEAK : this.ASSIST_STRENGTH_NORMAL;
-
-            let ex = bestTarget.x - ship.x;
-            let ey = bestTarget.y - ship.y;
-            let ez = bestTarget.z - ship.z;
-            let distH = Math.hypot(ex, ez);
-
-            let targetYaw = Math.atan2(ex, ez);
-            let targetPitch = Math.atan2(-ey, distH);
-
-            let yawDiff = targetYaw - ship.yaw;
-            while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
-            while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
-
-            return {
-                yawDelta: yawDiff * assistStrength,
-                pitchDelta: (targetPitch - ship.pitch) * assistStrength
-            };
+        // Reset tracking if no target
+        if (!bestTarget) {
+            this.lastTracking.target = null;
+            this.lastTracking.dot = 0;
+            return null;
         }
-        return null;
+
+        let assistStrength = isSwipingHard ? this.ASSIST_STRENGTH_WEAK : this.ASSIST_STRENGTH_NORMAL;
+
+        let ex = bestTarget.x - ship.x;
+        let ey = bestTarget.y - ship.y;
+        let ez = bestTarget.z - ship.z;
+        let distH = Math.hypot(ex, ez);
+
+        // Correct target angles for p5 coordinate system
+        // Yaw: atan2(-x, -z) since forward faces -Z
+        // Pitch: atan2(y, distH) since +Y is up
+        let targetYaw = Math.atan2(-ex, -ez);
+        let targetPitch = Math.atan2(ey, distH);
+
+        let yawDiff = targetYaw - ship.yaw;
+        while (yawDiff < -Math.PI) yawDiff += 2 * Math.PI;
+        while (yawDiff > Math.PI) yawDiff -= 2 * Math.PI;
+
+        let res = {
+            yawDelta: yawDiff * assistStrength,
+            pitchDelta: (targetPitch - ship.pitch) * assistStrength
+        };
+
+        // Store for debug display
+        this.lastTracking.target = bestTarget;
+        this.lastTracking.dot = bestDot;
+        this.lastTracking.yawDelta = res.yawDelta;
+        this.lastTracking.pitchDelta = res.pitchDelta;
+        this.lastTracking.isSwipingHard = isSwipingHard;
+
+        return res;
     }
 
     draw(w, h) {
@@ -171,7 +200,67 @@ class MobileController {
             textAlign(CENTER, CENTER); textSize(Math.max(10, btn.r * 0.4));
             text(btn.label, btn.x, btn.y);
         }
+
+        // 2D Debug Overlay
+        if (this.debug) {
+            resetMatrix();
+            textAlign(LEFT, TOP);
+            textSize(16);
+            noStroke();
+            fill(0, 255, 0);
+            let info = [
+                `DEBUG MODE (P to toggle)`,
+                `Desktop Assist: ${this.desktopAssist ? "ON" : "OFF"}`,
+                `Target: ${this.lastTracking.target ? "LOCKED" : "NONE"}`,
+                `Dot Product: ${this.lastTracking.dot.toFixed(3)}`,
+                `Yaw Delta: ${this.lastTracking.yawDelta.toFixed(4)}`,
+                `Pitch Delta: ${this.lastTracking.pitchDelta.toFixed(4)}`,
+                `Hard Swipe: ${this.lastTracking.isSwipingHard}`
+            ];
+            for (let i = 0; i < info.length; i++) {
+                text(info[i], 20, 20 + i * 22);
+            }
+        }
         pop();
+    }
+
+    drawDebug3D(ship) {
+        if (!this.debug || !ship) return;
+
+        // Draw 3D Reticle around target
+        if (this.lastTracking.target) {
+            let t = this.lastTracking.target;
+            push();
+            translate(t.x, t.y, t.z);
+            noFill();
+            stroke(255, 0, 0, 200);
+            strokeWeight(3);
+
+            // Dynamic size based on enemy type
+            let baseSize = this.getReticleSize(t.type);
+            let s = baseSize + Math.sin(frameCount * 0.1) * 5; // Pulsing size
+
+            beginShape();
+            vertex(-s, 0, 0); vertex(0, -s, 0); vertex(s, 0, 0); vertex(0, s, 0);
+            endShape(CLOSE);
+
+            beginShape();
+            vertex(0, 0, -s); vertex(0, -s, 0); vertex(0, 0, s); vertex(0, s, 0);
+            endShape(CLOSE);
+            pop();
+        }
+    }
+
+    getReticleSize(type) {
+        const sizes = {
+            bomber: 100,
+            crab: 80,
+            squid: 60,
+            fighter: 50,
+            hunter: 40,
+            seeder: 60
+        };
+        return sizes[type] || 50;
     }
 }
 

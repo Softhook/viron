@@ -54,7 +54,8 @@ function createPlayer(id, keys, offsetX, labelColor) {
     homingMissiles: [],
     missilesRemaining: 1,
     aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
-    mobileMissilePressed: false   // Tracks the mobile missile button edge so it fires once per tap
+    mobileMissilePressed: false,  // Tracks the mobile missile button edge so it fires once per tap
+    lpDeaths: 0                   // Tracks consecutive deaths on an occupied launchpad
   };
   resetShip(p, offsetX);
   return p;
@@ -276,7 +277,7 @@ function updateShipInput(p) {
     // Apply aim assist if enabled
     if (aimAssist.enabled) {
       let assist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
-      newYaw   += assist.yawDelta;
+      newYaw += assist.yawDelta;
       newPitch += assist.pitchDelta;
       // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
       p.aimTarget = aimAssist.lastTracking.target;
@@ -396,6 +397,28 @@ function killPlayer(p) {
   p.dead = true;
   p.respawnTimer = 120;  // ~2 seconds at 60 fps
   p.bullets = [];
+
+  // --- "Launch Pad Taken Over" detection ---
+  // If the player dies on the launch pad while an enemy is also on the pad,
+  // we increment a special counter.  Two such deaths end the game.
+  if (isLaunchpad(p.ship.x, p.ship.z)) {
+    let enemyOnPad = enemyManager.enemies.some(e => isLaunchpad(e.x, e.z));
+    if (enemyOnPad) {
+      p.lpDeaths = (p.lpDeaths || 0) + 1;
+      if (p.lpDeaths >= 3) {
+        if (typeof gameState !== 'undefined') {
+          gameState = 'gameover';
+          gameOverReason = 'LAUNCH PAD TAKEN OVER';
+          levelEndTime = millis();
+          if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
+        }
+      }
+    } else {
+      p.lpDeaths = 0; // Enemy cleared the pad, reset counter
+    }
+  } else {
+    p.lpDeaths = 0; // Died elsewhere, reset counter
+  }
 }
 
 /**

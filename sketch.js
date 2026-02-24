@@ -303,6 +303,7 @@ function startLevel(lvl) {
     }
     p.dead = false;
     p.respawnTimer = 0;
+    p.lpDeaths = 0;
   }
 
   enemyManager.clear();

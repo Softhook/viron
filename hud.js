@@ -1,13 +1,40 @@
-// === HUD & MENU RENDERING ===
+// =============================================================================
+// hud.js — HUD and menu rendering functions
+//
+// All 2D overlay rendering is handled here.  Every function that draws in 2D
+// must call setup2DViewport() first (or work within an ortho projection set up
+// by the caller) and end with pop() to restore the 3D camera state.
+//
+// Functions:
+//   drawMenu        — full-screen animated title / start screen
+//   drawGameOver    — full-screen game-over overlay with auto-return to menu
+//   drawPlayerHUD   — per-player HUD (score, altitude, infection count, radar)
+//   drawRadarForPlayer — circular mini-map rendered inside drawPlayerHUD
+//   drawControlHints   — small control hint text at the bottom of the viewport
+// =============================================================================
 
+/**
+ * Renders the animated title / start screen.
+ *
+ * Layers (back to front):
+ *   1. Dark space background
+ *   2. Drifting star field (menuStars[])
+ *   3. Soft green glow behind the title
+ *   4. Drop-shadow + pulsing title text "V I R O N"
+ *   5. Author credit
+ *   6. CRT scanline overlay
+ *   7. Blinking start prompt (desktop: "PRESS 1/2", mobile: "TAP TO START")
+ *   8. Control hint line at the bottom
+ */
 function drawMenu() {
   background(8, 12, 28);
   setup2DViewport();
 
+  // --- Animated star field ---
   noStroke();
   for (let st of menuStars) {
-    st.y += st.spd * 0.002;
-    if (st.y > 1) st.y -= 2;
+    st.y += st.spd * 0.002;   // Drift downward (parallax scroll)
+    if (st.y > 1) st.y -= 2;  // Wrap around
     let sx = st.x * width / 2;
     let sy = st.y * height / 2;
     let twinkle = 150 + sin(frameCount * 0.05 + st.x * 100) * 105;
@@ -15,6 +42,7 @@ function drawMenu() {
     ellipse(sx, sy, st.s, st.s);
   }
 
+  // --- Glow halo behind the title ---
   let glowPulse = sin(frameCount * 0.04) * 0.3 + 0.7;
   noStroke();
   fill(0, 255, 60, 18 * glowPulse);
@@ -25,28 +53,32 @@ function drawMenu() {
   textAlign(CENTER, CENTER);
   noStroke();
 
+  // Drop shadow layer
   fill(0, 180, 40, 80);
   textSize(110);
   text('V I R O N', 3, -height * 0.14 + 4);
 
+  // Pulsing title (green hue oscillates with a slight colour shift)
   let titlePulse = sin(frameCount * 0.06) * 30;
   fill(30 + titlePulse, 255, 60 + titlePulse);
   textSize(110);
   text('V I R O N', 0, -height * 0.14);
 
+  // Author credit
   textSize(16);
   fill(140, 200, 140, 180);
   text('Christian Nold, 2026', 0, -height * 0.14 + 70);
 
+  // CRT scanline overlay — subtle dark horizontal lines for retro feel
   for (let y = -height / 2; y < height / 2; y += 4) {
-    stroke(0, 0, 0, 20);
-    strokeWeight(1);
+    stroke(0, 0, 0, 20); strokeWeight(1);
     line(-width / 2, y, width / 2, y);
   }
   noStroke();
 
-  let optY = height * 0.08;
-  let blink1 = sin(frameCount * 0.08) * 0.3 + 0.7;
+  // --- Start prompt (alternating blink phases for 1P / 2P options) ---
+  let optY  = height * 0.08;
+  let blink1 = sin(frameCount * 0.08)       * 0.3 + 0.7;
   let blink2 = sin(frameCount * 0.08 + 1.5) * 0.3 + 0.7;
 
   textSize(28);
@@ -56,11 +88,11 @@ function drawMenu() {
   } else {
     fill(255, 255, 255, 255 * blink1);
     text('PRESS 1 — SINGLE PLAYER', 0, optY);
-
     fill(255, 255, 255, 255 * blink2);
     text('PRESS 2 — MULTIPLAYER', 0, optY + 50);
   }
 
+  // --- Control hint (bottom of screen) ---
   textSize(13);
   fill(100, 140, 100, 150);
   if (isMobile) {
@@ -73,64 +105,97 @@ function drawMenu() {
   pop();
 }
 
+/**
+ * Renders the full-screen game-over overlay.
+ * Shows the game-over reason string (or a default message) and automatically
+ * returns to the menu after 5 seconds.
+ */
 function drawGameOver() {
   setup2DViewport();
-  drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);
+  drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);  // Prevent 3D geometry bleeding through
 
   fill(255, 60, 60);
   textAlign(CENTER, CENTER);
   textSize(80);
   text('GAME OVER', 0, -50);
+
   textSize(24);
   fill(180, 200, 180);
   text(gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
+
   pop();
 
+  // Auto-return to menu after 5 seconds
   if (millis() - levelEndTime > 5000) {
     gameState = 'menu';
   }
 }
 
+/**
+ * Renders the 2D HUD overlay for one player within their viewport slice.
+ *
+ * Displays (top-left):
+ *   P#  player number in label colour
+ *   SCORE, ALT, INF (infection count), ENEMIES, MISSILES
+ *
+ * Displays (top-right):
+ *   LVL #
+ *
+ * Also shows a "DESTROYED / Respawning..." message when the player is dead,
+ * then calls drawRadarForPlayer and drawControlHints.
+ *
+ * @param {object} p   Player state object.
+ * @param {number} pi  Player index (0 or 1) — used for the "P#" label.
+ * @param {number} hw  Viewport half-width in pixels.
+ * @param {number} h   Viewport height in pixels.
+ */
 function drawPlayerHUD(p, pi, hw, h) {
   let s = p.ship;
 
   push();
+  // Set up an orthographic 2D projection for this viewport slice
   ortho(-hw / 2, hw / 2, -h / 2, h / 2, 0, 1000);
   resetMatrix();
 
   noStroke();
   textAlign(LEFT, TOP);
 
-  let lx = -hw / 2 + 14;
-  let ly = -h / 2;
+  let lx  = -hw / 2 + 14;
+  let ly  = -h  / 2;
   let col = p.labelColor;
 
+  // Player number in label colour
   textSize(16);
   fill(col[0], col[1], col[2]);
   text('P' + (pi + 1), lx, ly + 6);
 
+  // Stat lines: [size, [r,g,b], text, x, y]
   let lines = [
-    [20, [255, 255, 255], 'SCORE ' + p.score, lx, ly + 26],
-    [16, [0, 255, 0], 'ALT ' + max(0, floor(SEA - s.y)), lx, ly + 50],
-    [14, [255, 80, 80], 'INF ' + Object.keys(infectedTiles).length, lx, ly + 72],
-    [14, [255, 100, 100], 'ENEMIES ' + enemyManager.enemies.length, lx, ly + 90],
-    [14, [0, 200, 255], 'MISSILES ' + p.missilesRemaining, lx, ly + 108]
+    [20, [255, 255, 255], 'SCORE '    + p.score,                        lx, ly + 26],
+    [16, [0, 255, 0],     'ALT '      + max(0, floor(SEA - s.y)),        lx, ly + 50],
+    [14, [255, 80, 80],   'INF '      + Object.keys(infectedTiles).length, lx, ly + 72],
+    [14, [255, 100, 100], 'ENEMIES '  + enemyManager.enemies.length,    lx, ly + 90],
+    [14, [0, 200, 255],   'MISSILES ' + p.missilesRemaining,             lx, ly + 108]
   ];
-  for (let [sz, c, txt, x, y] of lines) { textSize(sz); fill(c[0], c[1], c[2]); text(txt, x, y); }
+  for (let [sz, c, txt, x, y] of lines) {
+    textSize(sz); fill(c[0], c[1], c[2]); text(txt, x, y);
+  }
 
+  // Level number (top-right)
   textSize(16);
   fill(255);
   textAlign(RIGHT, TOP);
   text('LVL ' + level, hw / 2 - 14, ly + 6);
 
+  // Death / respawn overlay
   if (p.dead) {
     fill(255, 0, 0, 200);
     textAlign(CENTER, CENTER);
     textSize(28);
-    text("DESTROYED", 0, 0);
+    text('DESTROYED', 0, 0);
     textSize(16);
     fill(200);
-    text("Respawning...", 0, 30);
+    text('Respawning...', 0, 30);
   }
 
   drawRadarForPlayer(p, hw, h);
@@ -139,15 +204,32 @@ function drawPlayerHUD(p, pi, hw, h) {
   pop();
 }
 
+/**
+ * Renders a circular mini-map radar in the top-right corner of the player's viewport.
+ *
+ * The radar rotates with the player's yaw so forward is always up.
+ * Contents:
+ *   • Red squares — infected tiles (scaled to fit the 110×110 radar area)
+ *   • Yellow square — launchpad centre (if in range)
+ *   • Red squares / triangles — enemies (triangle when off-screen, pointing toward enemy)
+ *   • Player colour square — co-op partner ship (two-player only)
+ *   • Yellow centre square — own ship
+ *
+ * @param {object} p   Player state.
+ * @param {number} hw  Viewport half-width.
+ * @param {number} h   Viewport height.
+ */
 function drawRadarForPlayer(p, hw, h) {
   let s = p.ship;
   push();
+  // Position the radar in the top-right corner
   translate(hw / 2 - 70, -h / 2 + 80, 0);
   fill(0, 150); stroke(0, 255, 0); strokeWeight(1.5);
   rectMode(CENTER);
-  rect(0, 0, 110, 110);
-  rotateZ(s.yaw);
+  rect(0, 0, 110, 110);   // Radar frame
+  rotateZ(s.yaw);          // Rotate so ship forward faces up
 
+  // Infected tiles (small red squares)
   fill(180, 0, 0, 80); noStroke();
   for (let k of Object.keys(infectedTiles)) {
     let [tx, tz] = k.split(',').map(Number);
@@ -155,14 +237,20 @@ function drawRadarForPlayer(p, hw, h) {
     if (abs(rx) < 50 && abs(rz) < 50) rect(rx, rz, 2, 2);
   }
 
+  // Launchpad centre marker (yellow square if in radar range)
   let lx = (420 - s.x) * 0.012, lz = (420 - s.z) * 0.012;
-  if (abs(lx) < 50 && abs(lz) < 50) { fill(255, 255, 0, 150); noStroke(); rect(lx, lz, 4, 4); }
+  if (abs(lx) < 50 && abs(lz) < 50) {
+    fill(255, 255, 0, 150); noStroke(); rect(lx, lz, 4, 4);
+  }
 
+  // Enemy markers (square when in range, directional triangle when off-screen)
   fill(255, 0, 0); noStroke();
   for (let e of enemyManager.enemies) {
     let rx = (e.x - s.x) * 0.012, rz = (e.z - s.z) * 0.012;
-    if (abs(rx) < 50 && abs(rz) < 50) rect(rx, rz, 3, 3);
-    else {
+    if (abs(rx) < 50 && abs(rz) < 50) {
+      rect(rx, rz, 3, 3);
+    } else {
+      // Off-screen: draw a directional arrow clamped to the radar boundary
       push();
       translate(constrain(rx, -49, 49), constrain(rz, -49, 49), 0);
       rotateZ(atan2(rz, rx));
@@ -172,6 +260,7 @@ function drawRadarForPlayer(p, hw, h) {
     }
   }
 
+  // Co-op partner ship (two-player only)
   let other = players[1 - p.id];
   if (other && !other.dead) {
     let ox = (other.ship.x - s.x) * 0.012, oz = (other.ship.z - s.z) * 0.012;
@@ -180,12 +269,21 @@ function drawRadarForPlayer(p, hw, h) {
     if (abs(ox) < 50 && abs(oz) < 50) rect(ox, oz, 4, 4);
   }
 
+  // Own ship — always at radar centre
   rotateZ(-s.yaw);
   fill(255, 255, 0);
   rect(0, 0, 4, 4);
   pop();
 }
 
+/**
+ * Renders one-line keyboard/touch control hints at the bottom of the viewport.
+ * Hidden on mobile (replaced by the on-screen button overlay in mobileControls.js).
+ * @param {object} p   Player state (unused, kept for API consistency).
+ * @param {number} pi  Player index — used to show P1 vs P2 bindings.
+ * @param {number} hw  Viewport half-width.
+ * @param {number} h   Viewport height.
+ */
 function drawControlHints(p, pi, hw, h) {
   if (isMobile) return;
   push();

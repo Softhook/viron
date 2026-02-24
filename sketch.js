@@ -440,6 +440,7 @@ function draw() {
   if (infectionStarted && ic === 0 && !levelComplete) {
     levelComplete = true;
     levelEndTime = millis();
+    if (typeof gameSFX !== 'undefined') gameSFX.playLevelComplete();
   }
   if (levelComplete && millis() - levelEndTime > 4000) startLevel(level + 1);
 

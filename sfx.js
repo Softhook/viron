@@ -298,33 +298,257 @@ class GameSFX {
         let s = this._setup();
         if (!s) return;
         let { ctx, t, targetNode } = s;
-        let freqs = [261.63, 329.63, 392.00, 523.25];
+        let pick = Math.floor(Math.random() * 8);
+        this._levelTunes[pick](ctx, t, targetNode);
+    }
 
-        freqs.forEach((freq, i) => {
-            let noteT = t + i * 0.15;
-            [-12, 12].forEach(det => {
-                let osc = ctx.createOscillator();
-                let gain = ctx.createGain();
-                let filter = ctx.createBiquadFilter();
+    /**
+     * Eight Sentinel-style atmospheric dark tunes.
+     * Each is a different atmospheric/electronic mood.
+     */
+    _levelTunes = [
 
-                osc.type = 'sawtooth';
-                osc.frequency.value = freq;
-                osc.detune.value = det;
-
-                filter.type = 'lowpass';
-                filter.frequency.setValueAtTime(3000, noteT);
-                filter.frequency.exponentialRampToValueAtTime(400, noteT + 0.8);
-
-                gain.gain.setValueAtTime(0.0, noteT);
-                gain.gain.linearRampToValueAtTime(0.2, noteT + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.01, noteT + 0.8);
-
-                osc.connect(filter);
-                filter.connect(gain);
-                gain.connect(targetNode);
-                osc.start(noteT);
-                osc.stop(noteT + 0.9);
+        // 0 — Original: eerie resonant filter sweep on low A minor
+        (ctx, t, targetNode) => {
+            let freqs = [110.00, 146.83, 164.81, 220.00]; // A2 D3 E3 A3
+            freqs.forEach((freq, i) => {
+                let noteT = t + i * 0.8;
+                [-5, 5].forEach(det => {
+                    let osc = ctx.createOscillator(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+                    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(freq, noteT); osc.detune.value = det;
+                    filter.type = 'lowpass'; filter.Q.value = 10;
+                    filter.frequency.setValueAtTime(100, noteT);
+                    filter.frequency.exponentialRampToValueAtTime(2000, noteT + 0.4);
+                    filter.frequency.exponentialRampToValueAtTime(100, noteT + 1.2);
+                    gain.gain.setValueAtTime(0, noteT);
+                    gain.gain.linearRampToValueAtTime(0.15, noteT + 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, noteT + 1.4);
+                    osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
+                    osc.start(noteT); osc.stop(noteT + 1.5);
+                });
             });
+        },
+
+        // 1 — Rapid chiptune arpeggio: tight 8-bit style bleeps racing up and down
+        (ctx, t, targetNode) => {
+            // Fast sequence of short square wave blips — sounds like a retro computer booting
+            let seq = [220, 277.18, 329.63, 415.30, 523.25, 415.30, 329.63, 220, 174.61, 220];
+            let masterGain = ctx.createGain();
+            masterGain.gain.setValueAtTime(0.12, t);
+            masterGain.connect(targetNode);
+            seq.forEach((freq, i) => {
+                let noteT = t + i * 0.1;
+                let osc = ctx.createOscillator(), env = ctx.createGain();
+                osc.type = 'square'; osc.frequency.value = freq;
+                env.gain.setValueAtTime(0, noteT);
+                env.gain.linearRampToValueAtTime(1, noteT + 0.005);
+                env.gain.setValueAtTime(1, noteT + 0.07);
+                env.gain.linearRampToValueAtTime(0, noteT + 0.09);
+                osc.connect(env); env.connect(masterGain);
+                osc.start(noteT); osc.stop(noteT + 0.1);
+            });
+        },
+
+        // 2 — FM-style clang: carrier + modulator for metallic bell-like tones
+        (ctx, t, targetNode) => {
+            // Simulated FM: modulate gain of a high-freq osc into a carrier's frequency input via ring
+            let carriers = [220, 293.66, 184.99]; // A3, D4, F#3
+            carriers.forEach((cFreq, i) => {
+                let noteT = t + i * 0.7;
+                let carrier = ctx.createOscillator();
+                let modulator = ctx.createOscillator();
+                let modGain = ctx.createGain();
+                let outGain = ctx.createGain();
+
+                carrier.type = 'sine'; carrier.frequency.value = cFreq;
+                modulator.type = 'sine'; modulator.frequency.value = cFreq * 3.51; // Non-integer ratio = inharmonic
+                modGain.gain.setValueAtTime(cFreq * 8, noteT); // Modulation depth
+                modGain.gain.exponentialRampToValueAtTime(cFreq * 0.1, noteT + 1.4);
+
+                modulator.connect(modGain);
+                modGain.connect(carrier.frequency); // Frequency modulation
+
+                outGain.gain.setValueAtTime(0, noteT);
+                outGain.gain.linearRampToValueAtTime(0.2, noteT + 0.01);
+                outGain.gain.exponentialRampToValueAtTime(0.001, noteT + 1.6);
+
+                carrier.connect(outGain); outGain.connect(targetNode);
+                carrier.start(noteT); carrier.stop(noteT + 1.7);
+                modulator.start(noteT); modulator.stop(noteT + 1.7);
+            });
+        },
+
+        // 3 — Theremin-like glide: one continuous pitch sliding eerily through wide interval
+        (ctx, t, targetNode) => {
+            let osc = ctx.createOscillator();
+            let filter = ctx.createBiquadFilter();
+            let gain = ctx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, t);
+            osc.frequency.exponentialRampToValueAtTime(120, t + 1.5);   // Sweeping glide
+            osc.frequency.exponentialRampToValueAtTime(400, t + 2.8);   // Bend back up
+
+            filter.type = 'bandpass'; filter.Q.value = 4; filter.frequency.value = 600;
+
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(0.2, t + 0.3);
+            gain.gain.setValueAtTime(0.2, t + 2.4);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 3.0);
+
+            osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
+            osc.start(t); osc.stop(t + 3.1);
+        },
+
+        // 4 — Rhythmic techno stabs: punchy staccato bursts at irregular intervals
+        (ctx, t, targetNode) => {
+            // Offbeat pattern with two alternating pitches — robotic/mechanical feel
+            let pattern = [
+                [t + 0.0, 311.13],  // E♭4
+                [t + 0.18, 233.08],  // B♭3
+                [t + 0.3, 311.13],
+                [t + 0.55, 174.61],  // F3
+                [t + 0.7, 311.13],
+                [t + 0.8, 233.08],
+                [t + 1.1, 415.30],  // A♭4 — accent
+                [t + 1.3, 311.13],
+            ];
+            pattern.forEach(([noteT, freq]) => {
+                let osc = ctx.createOscillator(), gain = ctx.createGain(), filter = ctx.createBiquadFilter();
+                osc.type = 'sawtooth'; osc.frequency.value = freq;
+                filter.type = 'lowpass'; filter.frequency.setValueAtTime(3500, noteT);
+                filter.frequency.exponentialRampToValueAtTime(200, noteT + 0.12);
+                gain.gain.setValueAtTime(0.22, noteT);
+                gain.gain.exponentialRampToValueAtTime(0.001, noteT + 0.14);
+                osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
+                osc.start(noteT); osc.stop(noteT + 0.16);
+            });
+        },
+
+        // 5 — Laser ping sweep: sci-fi rising "pew" with trailing decay
+        (ctx, t, targetNode) => {
+            // Three overlapping laser sweeps at different speeds and pitches
+            [[80, 2400, 0.3], [60, 1800, 0.55], [40, 3200, 0.8]].forEach(([start, end, offset]) => {
+                let noteT = t + offset;
+                let osc = ctx.createOscillator(), gain = ctx.createGain(), filter = ctx.createBiquadFilter();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(start, noteT);
+                osc.frequency.exponentialRampToValueAtTime(end, noteT + 0.25);
+
+                filter.type = 'bandpass'; filter.Q.value = 8;
+                filter.frequency.setValueAtTime(start, noteT);
+                filter.frequency.exponentialRampToValueAtTime(end, noteT + 0.25);
+
+                gain.gain.setValueAtTime(0.25, noteT);
+                gain.gain.exponentialRampToValueAtTime(0.001, noteT + 0.6);
+
+                osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
+                osc.start(noteT); osc.stop(noteT + 0.65);
+            });
+        },
+
+        // 6 — Deep bass pulse with tremolo: sub-bass heartbeat that throbs and fades
+        (ctx, t, targetNode) => {
+            // A low drone with amplitude tremolo — ominous and pulsing
+            let baseFreq = 55; // A1
+            let osc = ctx.createOscillator();
+            let tremoloOsc = ctx.createOscillator();
+            let tremoloGain = ctx.createGain();
+            let masterGain = ctx.createGain();
+            let filter = ctx.createBiquadFilter();
+
+            osc.type = 'sawtooth'; osc.frequency.value = baseFreq;
+            tremoloOsc.type = 'sine'; tremoloOsc.frequency.value = 6; // 6Hz tremolo
+            tremoloGain.gain.value = 0.5;
+
+            filter.type = 'lowpass'; filter.frequency.value = 300; filter.Q.value = 5;
+
+            masterGain.gain.setValueAtTime(0, t);
+            masterGain.gain.linearRampToValueAtTime(0.3, t + 0.2);
+            masterGain.gain.setValueAtTime(0.3, t + 2.5);
+            masterGain.gain.exponentialRampToValueAtTime(0.001, t + 3.5);
+
+            tremoloOsc.connect(tremoloGain);
+            tremoloGain.connect(masterGain.gain); // Tremolo modulates the master gain
+            osc.connect(filter); filter.connect(masterGain); masterGain.connect(targetNode);
+            osc.start(t); osc.stop(t + 3.6);
+            tremoloOsc.start(t); tremoloOsc.stop(t + 3.6);
+        },
+
+        // 7 — Alien morse code: irregular high-pitched digital beeps with feedback ring
+        (ctx, t, targetNode) => {
+            // Bursts of high sine tones at varying lengths — like intercepted transmissions
+            let beeps = [
+                [0.0, 0.04, 1200],
+                [0.07, 0.04, 1200],
+                [0.13, 0.12, 900],   // long
+                [0.3, 0.04, 1500],
+                [0.37, 0.04, 1500],
+                [0.44, 0.04, 1500],
+                [0.55, 0.12, 700],   // long low
+                [0.72, 0.04, 1200],
+                [0.79, 0.12, 1000],
+                [0.95, 0.04, 1800],
+            ];
+            beeps.forEach(([offset, dur, freq]) => {
+                let noteT = t + offset;
+                let osc = ctx.createOscillator(), gain = ctx.createGain();
+                osc.type = 'sine'; osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, noteT);
+                gain.gain.linearRampToValueAtTime(0.18, noteT + 0.005);
+                gain.gain.setValueAtTime(0.18, noteT + dur - 0.01);
+                gain.gain.linearRampToValueAtTime(0, noteT + dur);
+                osc.connect(gain); gain.connect(targetNode);
+                osc.start(noteT); osc.stop(noteT + dur + 0.01);
+            });
+        },
+    ];
+
+
+    /**
+     * Plays a triumphant, electronic fanfare upon level completion.
+     * Fast upward arpeggio with bright, snappy pulse waves.
+     */
+    playLevelComplete() {
+        let s = this._setup();
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
+
+        let notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 (C Major)
+
+        notes.forEach((freq, i) => {
+            let noteT = t + i * 0.08;
+            let osc = ctx.createOscillator();
+            let gain = ctx.createGain();
+
+            osc.type = 'square';
+            osc.frequency.value = freq;
+
+            gain.gain.setValueAtTime(0, noteT);
+            gain.gain.linearRampToValueAtTime(0.2, noteT + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.01, noteT + 0.15);
+
+            osc.connect(gain);
+            gain.connect(targetNode);
+
+            osc.start(noteT);
+            osc.stop(noteT + 0.2);
+        });
+
+        // Final lingering bright chord
+        [523.25, 1046.50].forEach(freq => {
+            let noteT = t + 0.4;
+            let osc = ctx.createOscillator();
+            let gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0, noteT);
+            gain.gain.linearRampToValueAtTime(0.1, noteT + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, noteT + 1.2);
+            osc.connect(gain);
+            gain.connect(targetNode);
+            osc.start(noteT);
+            osc.stop(noteT + 1.3);
         });
     }
 

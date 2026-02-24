@@ -231,6 +231,40 @@ function startGame(np) {
 }
 
 /**
+ * Places one guaranteed infected tile within a random distance of the player
+ * spawn point at the start of each level.  The tile is chosen in a ring
+ * between MIN_DIST and MAX_DIST world-space units from the launchpad centre.
+ * We try up to MAX_TRIES random candidates and skip any that land on water or
+ * on the launchpad itself, falling back silently if none is found.
+ */
+function seedInitialInfection() {
+  const CENTER_X = (LAUNCH_MIN + LAUNCH_MAX) / 2;  // ≈ 420
+  const CENTER_Z = (LAUNCH_MIN + LAUNCH_MAX) / 2;  // ≈ 420
+  const MIN_DIST = 500;    // Closest the seed tile may be (world units)
+  const MAX_DIST = 1500;   // Farthest the seed tile may be (world units)
+  const MAX_TRIES = 50;
+
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    // Pick a random angle and radius in the annular zone
+    let angle = random(TWO_PI);
+    let dist = random(MIN_DIST, MAX_DIST);
+    let wx = CENTER_X + cos(angle) * dist;
+    let wz = CENTER_Z + sin(angle) * dist;
+
+    // Skip underwater and launchpad tiles
+    if (aboveSea(terrain.getAltitude(wx, wz))) continue;
+    if (isLaunchpad(wx, wz)) continue;
+
+    // Valid land tile — infect it and stop searching
+    let tk = tileKey(toTile(wx), toTile(wz));
+    infectedTiles[tk] = { tick: 0 };
+    return;
+  }
+  // (Silently give up if no valid tile found in MAX_TRIES — the seeder will
+  //  create infection naturally soon after spawn.)
+}
+
+/**
  * Resets the world for a new level.
  * Respawns all ships on the launchpad, clears enemies/particles/infection,
  * then spawns the new wave of enemies (first enemy is always a seeder to
@@ -263,6 +297,9 @@ function startLevel(lvl) {
   particleSystem.clear();
   terrain.activePulses = [];
   infectedTiles = {};
+
+  // Guarantee at least one infection tile is visible from the very start
+  seedInitialInfection();
 
   for (let i = 0; i < currentMaxEnemies; i++) enemyManager.spawn(i === 0);
 }

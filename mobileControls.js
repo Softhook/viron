@@ -5,22 +5,22 @@ class MobileController {
         this.joyPos = null;
 
         this.btns = {
-            thrust: { active: false, r: 40, col: [0, 255, 60], label: 'THR', x: 0, y: 0 },
-            shoot: { active: false, r: 50, col: [255, 60, 60], label: 'SHT', x: 0, y: 0 },
-            missile: { active: false, r: 35, col: [0, 200, 255], label: 'MSL', x: 0, y: 0 }
+            thrust:  { active: false, r: 65, col: [0, 255, 60],   label: 'THR', x: 0, y: 0 },
+            shoot:   { active: false, r: 65, col: [255, 60, 60],   label: 'SHT', x: 0, y: 0 },
+            missile: { active: false, r: 40, col: [0, 200, 255],   label: 'MSL', x: 0, y: 0 }
         };
 
         // Configurable Aim Assist settings
-        this.CONE_ANGLE = 0.90;
-        this.MAX_LOCK_DIST_SQ = 1800000;
-        this.ASSIST_STRENGTH_NORMAL = 0.08;
-        this.ASSIST_STRENGTH_WEAK = 0.02;
+        this.CONE_ANGLE = 0.82;          // ~35° half-angle (was 0.90 / ~26°)
+        this.MAX_LOCK_DIST_SQ = 3000000; // ~1732 units (was 1800000 / ~1342)
+        this.ASSIST_STRENGTH_NORMAL = 0.12;  // (was 0.08)
+        this.ASSIST_STRENGTH_WEAK   = 0.04;  // (was 0.02)
     }
 
     update(touches, w, h) {
-        this.btns.thrust.x = w - 180; this.btns.thrust.y = h - 70;
-        this.btns.shoot.x = w - 70; this.btns.shoot.y = h - 70;
-        this.btns.missile.x = w - 70; this.btns.missile.y = h - 180;
+        this.btns.thrust.x  = w - 250; this.btns.thrust.y  = h - 100;
+        this.btns.shoot.x   = w - 105; this.btns.shoot.y   = h - 100;
+        this.btns.missile.x = w - 105; this.btns.missile.y = h - 240;
 
         for (let b in this.btns) this.btns[b].active = false;
 
@@ -29,7 +29,7 @@ class MobileController {
             let t = touches[i];
             if (t.x > w / 2) {
                 for (let b in this.btns) {
-                    if (Math.hypot(t.x - this.btns[b].x, t.y - this.btns[b].y) < this.btns[b].r * 1.5) this.btns[b].active = true;
+                    if (Math.hypot(t.x - this.btns[b].x, t.y - this.btns[b].y) < this.btns[b].r * 1.7) this.btns[b].active = true;
                 }
             } else {
                 if (this.leftTouchId === t.id) {
@@ -78,8 +78,8 @@ class MobileController {
             }
         }
 
-        // Apply soft lock-on aim assist
-        if (this.joyCenter && this.joyPos && ship && enemies) {
+        // Apply soft lock-on aim assist — always active on mobile, not just when joysticking
+        if (ship && enemies) {
             let assist = this.calculateAimAssist(ship, enemies, isSwipingHard);
             if (assist) {
                 inputs.yawDelta += assist.yawDelta;

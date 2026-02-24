@@ -494,11 +494,12 @@ class Terrain {
               let xP1 = xP + TILE, zP1 = zP + TILE;
 
               // Slightly below ground (- 0.5) to avoid z-fighting with base terrain
-              let y00 = this.getAltitude(xP, zP) - 0.5, y10 = this.getAltitude(xP1, zP) - 0.5;
-              let y01 = this.getAltitude(xP, zP1) - 0.5, y11 = this.getAltitude(xP1, zP1) - 0.5;
+              // Cache the four corner altitudes so they are looked up only once each.
+              let r00 = this.getAltitude(xP, zP), r10 = this.getAltitude(xP1, zP);
+              let r01 = this.getAltitude(xP, zP1), r11 = this.getAltitude(xP1, zP1);
+              let y00 = r00 - 0.5, y10 = r10 - 0.5, y01 = r01 - 0.5, y11 = r11 - 0.5;
 
-              let avgY = (this.getAltitude(xP, zP) + this.getAltitude(xP1, zP) +
-                this.getAltitude(xP, zP1) + this.getAltitude(xP1, zP1)) * 0.25;
+              let avgY = (r00 + r10 + r01 + r11) * 0.25;
               let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
 
               // Animate the green glow with a sine wave per-tile offset
@@ -531,10 +532,21 @@ class Terrain {
       endShape();
     }
 
-    // Animated sea — colour oscillates slightly for a water shimmer effect
-    let p = sin(frameCount * 0.03) * 8;
-    let seaC = [15, 45 + p, 150 + p];
-    model(this.getSeaGeometry(VIEW_FAR * TILE * 1.5, seaC, s.x, s.z));
+    // Animated sea — colour oscillates slightly for a water shimmer effect.
+    // Drawn directly with beginShape/vertex/endShape to avoid the per-frame
+    // buildGeometry() call (which would allocate new WebGL buffers every frame).
+    let seaP = sin(frameCount * 0.03) * 8;
+    let seaSize = VIEW_FAR * TILE * 1.5;
+    let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
+    fill(15, 45 + seaP, 150 + seaP);
+    beginShape(TRIANGLES);
+    vertex(seaCx - seaSize, SEA + 3, seaCz - seaSize);
+    vertex(seaCx + seaSize, SEA + 3, seaCz - seaSize);
+    vertex(seaCx - seaSize, SEA + 3, seaCz + seaSize);
+    vertex(seaCx + seaSize, SEA + 3, seaCz - seaSize);
+    vertex(seaCx + seaSize, SEA + 3, seaCz + seaSize);
+    vertex(seaCx - seaSize, SEA + 3, seaCz + seaSize);
+    endShape();
 
     // Restore standard lighting for subsequent non-terrain objects
     resetShader();

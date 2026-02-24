@@ -53,7 +53,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
     bullets: [],
     homingMissiles: [],
     missilesRemaining: 1,
-    aimTarget: null,              // Per-player locked aim target (used for missile homing)
+    aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
     mobileMissilePressed: false   // Tracks the mobile missile button edge so it fires once per tap
   };
   resetShip(p, offsetX);
@@ -262,6 +262,9 @@ function shipDisplay(s, tintColor) {
 function updateShipInput(p) {
   if (p.dead) return;
 
+  // Reset each frame so stale enemy references never persist across frames.
+  p.aimTarget = null;
+
   // --- Mouse steering (pointer-lock, desktop P1 only) ---
   if (p.id === 0 && !isMobile && document.pointerLockElement) {
     smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
@@ -287,7 +290,8 @@ function updateShipInput(p) {
           newPitch += vAssist.pitchDelta;
         }
       }
-      p.aimTarget = mobileController.lastTracking && (mobileController.lastTracking.target || mobileController.lastTracking.virusTarget) || null;
+      // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
+      p.aimTarget = mobileController.lastTracking && mobileController.lastTracking.target || null;
     }
     p.ship.yaw = newYaw;
     p.ship.pitch = constrain(newPitch, -PI / 2.2, PI / 2.2);
@@ -320,7 +324,8 @@ function updateShipInput(p) {
 
     p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
     p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
-    p.aimTarget = mobileController.lastTracking && (mobileController.lastTracking.target || mobileController.lastTracking.virusTarget) || null;
+    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
+    p.aimTarget = mobileController.lastTracking && mobileController.lastTracking.target || null;
   }
 
   // --- Keyboard steering ---
@@ -346,7 +351,8 @@ function updateShipInput(p) {
         p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);
       }
     }
-    p.aimTarget = mobileController.lastTracking && (mobileController.lastTracking.target || mobileController.lastTracking.virusTarget) || null;
+    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
+    p.aimTarget = mobileController.lastTracking && mobileController.lastTracking.target || null;
   }
 
   let s = p.ship;

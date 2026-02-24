@@ -479,56 +479,66 @@ function updateProjectilePhysics(p) {
       // Bullet hit terrain — attempt to clear infection
       clearInfectionAt(b.x, b.z, p);
       p.bullets.splice(i, 1);
-    }
-  }
-}
 
-// --- Homing missiles ---
-for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
-  let m = p.homingMissiles[i];
-  const maxSpd = 10;
-
-  // Steer toward the nearest enemy using a proportional guidance law
-  let target = findNearest(enemyManager.enemies, m.x, m.y, m.z);
-  if (target) {
-    let dx = target.x - m.x, dy = target.y - m.y, dz = target.z - m.z;
-    let mg = Math.hypot(dx, dy, dz);
-    if (mg > 0) {
-      let bl = 0.12;  // Blend factor — higher = more responsive homing
-      m.vx = lerp(m.vx, (dx / mg) * maxSpd, bl);
-      m.vy = lerp(m.vy, (dy / mg) * maxSpd, bl);
-      m.vz = lerp(m.vz, (dz / mg) * maxSpd, bl);
     }
   }
 
-  // Clamp speed to maxSpd so homing can't accelerate without limit
-  let sp = Math.hypot(m.vx, m.vy, m.vz);
-  if (sp > 0) {
-    m.vx = (m.vx / sp) * maxSpd;
-    m.vy = (m.vy / sp) * maxSpd;
-    m.vz = (m.vz / sp) * maxSpd;
-  }
+  // --- Homing missiles ---
+  for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
+    let m = p.homingMissiles[i];
+    const maxSpd = 10;
 
-  m.x += m.vx; m.y += m.vy; m.z += m.vz;
-  m.life--;
+    // Steer toward the locked target if it exists, otherwise find nearest
+    const tracking = (typeof mobileController !== 'undefined') ? mobileController.lastTracking : null;
+    let locked = tracking ? (tracking.target || tracking.virusTarget) : null;
+    let target = locked || findNearest(enemyManager.enemies, m.x, m.y, m.z);
 
-  // Smoke trail — one particle every other frame
-  if (frameCount % 2 === 0) {
-    particleSystem.particles.push({
-      x: m.x, y: m.y, z: m.z,
-      vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),
-      life: 120, decay: 5, seed: random(1.0), size: random(2, 5)
-    });
-  }
+    if (target) {
+      // PREDICTIVE: Seek future position (maxSpd 10)
+      let predicted = (typeof mobileController !== 'undefined') ?
+        mobileController._getPredictedPos(m, target, maxSpd) : target;
 
-  let gnd = terrain.getAltitude(m.x, m.z);
-  if (m.life <= 0 || m.y > gnd) {
-    if (m.y > gnd) {
-      // Hit terrain — explode and attempt infection clear
-      particleSystem.addExplosion(m.x, m.y, m.z);
-      clearInfectionAt(m.x, m.z, p);
+      let dx = predicted.x - m.x, dy = predicted.y - m.y, dz = predicted.z - m.z;
+      let dSq = dx * dx + dy * dy + dz * dz;
+      if (dSq > 0) {
+        let mg = Math.sqrt(dSq);
+        let bl = 0.12;  // Blend factor — higher = more responsive homing
+        m.vx = lerp(m.vx, (dx / mg) * maxSpd, bl);
+        m.vy = lerp(m.vy, (dy / mg) * maxSpd, bl);
+        m.vz = lerp(m.vz, (dz / mg) * maxSpd, bl);
+      }
     }
-    p.homingMissiles.splice(i, 1);
+
+    // Clamp speed to maxSpd so homing can't accelerate without limit
+    let spSq = m.vx * m.vx + m.vy * m.vy + m.vz * m.vz;
+    if (spSq > maxSpd * maxSpd) {
+      let sp = Math.sqrt(spSq);
+      m.vx = (m.vx / sp) * maxSpd;
+      m.vy = (m.vy / sp) * maxSpd;
+      m.vz = (m.vz / sp) * maxSpd;
+    }
+
+    m.x += m.vx; m.y += m.vy; m.z += m.vz;
+    m.life--;
+
+    // Smoke trail — one particle every other frame
+    if (frameCount % 2 === 0) {
+      particleSystem.particles.push({
+        x: m.x, y: m.y, z: m.z,
+        vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),
+        life: 120, decay: 5, seed: random(1.0), size: random(2, 5)
+      });
+    }
+
+    let gnd = terrain.getAltitude(m.x, m.z);
+    if (m.life <= 0 || m.y > gnd) {
+      if (m.y > gnd) {
+        // Hit terrain — explode and attempt infection clear
+        particleSystem.addExplosion(m.x, m.y, m.z);
+        clearInfectionAt(m.x, m.z, p);
+      }
+      p.homingMissiles.splice(i, 1);
+    }
   }
 }
 

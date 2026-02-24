@@ -141,7 +141,8 @@ class Terrain {
    */
   addPulse(x, z, type = 0.0) {
     // Prepend so the newest pulse is first; cap list at 5 so the shader array stays in sync.
-    this.activePulses = [{ x, z, start: millis() / 1000.0, type }, ...this.activePulses].slice(0, 5);
+    this.activePulses.unshift({ x, z, start: millis() / 1000.0, type });
+    if (this.activePulses.length > 5) this.activePulses.length = 5;
   }
 
   // ---------------------------------------------------------------------------
@@ -556,7 +557,7 @@ class Terrain {
     for (let t of trees) {
       let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
       if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
-      let y = this.getAltitude(t.x, t.z);
+      let y = t.y;  // Pre-cached at setup — no Map lookup needed
       if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
 
       push(); translate(t.x, y, t.z); noStroke();
@@ -615,7 +616,7 @@ class Terrain {
     for (let b of buildings) {
       let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
       if (dSq >= cullSq || !this.inFrustum(cam, b.x, b.z)) continue;
-      let y = this.getAltitude(b.x, b.z);
+      let y = b.y;  // Pre-cached at setup — no Map lookup needed
       if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
       let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];

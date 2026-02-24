@@ -96,8 +96,8 @@ function drawMenu() {
   text('Christian Nold, 2026', 0, -height * 0.14 + 78);
 
   // CRT scanline overlay — subtle dark horizontal lines for retro feel
+  stroke(0, 0, 0, 20); strokeWeight(1);
   for (let y = -height / 2; y < height / 2; y += 4) {
-    stroke(0, 0, 0, 20); strokeWeight(1);
     line(-width / 2, y, width / 2, y);
   }
   noStroke();

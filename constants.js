@@ -61,8 +61,6 @@ for (let peak of MOUNTAIN_PEAKS) {
 const SENTINEL_INFECTION_RADIUS = 5;     // Tile radius of accelerated spread around an infected sentinel
 const SENTINEL_INFECTION_PROBABILITY = 0.35;  // Per-tile per-update spread chance near an infected sentinel
 
-// --- Sky colour palette (used by fog blending in Terrain.getFogColor) ---
-
 // --- Tree visual variants (healthy colour, infected colour, cone geometry) ---
 // Each variant is used to draw one of three distinct tree silhouettes.
 const TREE_VARIANTS = [
@@ -122,5 +120,5 @@ const toTile = v => Math.floor(v / TILE);
 /** Returns true if world-space (x, z) falls inside the flat launchpad area. */
 const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_MIN && z <= LAUNCH_MAX;
 
-/** Returns true if a terrain Y value is at or above sea level (i.e. the tile is under water). */
+/** Returns true when terrain depth y indicates a submerged tile (y ≥ SEA means underwater; WEBGL Y axis is inverted, larger values are deeper). */
 const aboveSea = y => y >= SEA - 1;

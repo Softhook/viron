@@ -435,13 +435,13 @@ function killPlayer(p) {
  */
 function updateProjectilePhysics(p) {
   // --- Bullets ---
+  // Aim assist flag is constant for the duration of this frame's bullet updates
+  let assistEnabled = aimAssist.enabled;
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
 
     // PERFORMANCE: Only seeking for "fresh" bullets (first 30 frames)
     // and only if Aim Assist is enabled (for P1 or via 'P' toggle)
-    let assistEnabled = aimAssist.enabled;
-
     if (assistEnabled && b.life > 240) { // Bullets start at 300 life
       let bestTarget = null;
       let bestDot = 0.985;

@@ -21,6 +21,7 @@
 let trees = [], buildings = [];    // Static world objects populated in setup()
 
 let infectedTiles = {};           // Map of tileKey → {tick} for infected land tiles
+let infectedCount = 0;            // Running count of infectedTiles keys (avoids Object.keys().length every frame)
 let level = 1;            // Current level number (increases on level completion)
 let currentMaxEnemies = 2;         // Max simultaneous enemies for the current level
 
@@ -122,7 +123,7 @@ function clearInfectionRadius(tx, tz) {
   for (let dx = -CLEAR_R; dx <= CLEAR_R; dx++)
     for (let dz = -CLEAR_R; dz <= CLEAR_R; dz++) {
       let k = tileKey(tx + dx, tz + dz);
-      if (infectedTiles[k]) { delete infectedTiles[k]; cleared++; }
+      if (infectedTiles[k]) { delete infectedTiles[k]; cleared++; infectedCount--; }
     }
   return cleared;
 }
@@ -189,11 +190,14 @@ function setup() {
   // Trees — placed with a fixed seed for a consistent world layout
   randomSeed(42);
   let numTrees = isMobile ? 80 : 250;
-  for (let i = 0; i < numTrees; i++)
+  for (let i = 0; i < numTrees; i++) {
+    let tx = random(-5000, 5000), tz = random(-5000, 5000);
     trees.push({
-      x: random(-5000, 5000), z: random(-5000, 5000),
+      x: tx, z: tz,
+      y: terrain.getAltitude(tx, tz),  // Cached altitude — never changes
       variant: floor(random(3)), trunkH: random(25, 50), canopyScale: random(1.0, 1.8)
     });
+  }
 
   // menuCam starts over open terrain away from the launchpad
 
@@ -201,8 +205,10 @@ function setup() {
   randomSeed(123);
   let numBldgs = isMobile ? 15 : 40;
   for (let i = 0; i < numBldgs; i++) {
+    let bx = random(-4500, 4500), bz = random(-4500, 4500);
     buildings.push({
-      x: random(-4500, 4500), z: random(-4500, 4500),
+      x: bx, z: bz,
+      y: terrain.getAltitude(bx, bz),  // Cached altitude — never changes
       w: random(40, 100), h: random(50, 180), d: random(40, 100),
       type: floor(random(4)),
       col: [random(80, 200), random(80, 200), random(80, 200)]
@@ -214,6 +220,7 @@ function setup() {
     let peak = MOUNTAIN_PEAKS[i];
     buildings.push({
       x: peak.x, z: peak.z,
+      y: terrain.getAltitude(peak.x, peak.z),  // Cached altitude — never changes
       w: 60, h: 280, d: 60,   // Larger than ordinary buildings — monumental scale
       type: 4,
       col: [0, 220, 200],
@@ -278,6 +285,7 @@ function seedInitialInfection() {
     // Valid land tile — infect it and stop searching
     let tk = tileKey(toTile(wx), toTile(wz));
     infectedTiles[tk] = 1;
+    infectedCount++;
     return;
   }
   // (Silently give up if no valid tile found in MAX_TRIES — the seeder will
@@ -318,6 +326,7 @@ function startLevel(lvl) {
   particleSystem.clear();
   terrain.activePulses = [];
   infectedTiles = {};
+  infectedCount = 0;
 
   // Guarantee at least one infection tile is visible from the very start
   seedInitialInfection();
@@ -521,7 +530,7 @@ function draw() {
 
   // --- Level progression ---
   if (!levelComplete) {
-    let ic = Object.keys(infectedTiles).length;
+    let ic = infectedCount;
     if (ic > 0) infectionStarted = true;
     if (infectionStarted && ic === 0) {
       levelComplete = true;
@@ -558,11 +567,8 @@ function draw() {
 function spreadInfection() {
   if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
 
-  let keys = Object.keys(infectedTiles);
-  let keysLen = keys.length;
-
-  // Game over — too much infection
-  if (keysLen >= MAX_INF) {
+  // Game over — too much infection (fast path: no Object.keys allocation needed)
+  if (infectedCount >= MAX_INF) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       gameOverReason = 'INFECTION REACHED CRITICAL MASS';
@@ -589,11 +595,13 @@ function spreadInfection() {
     return;
   }
 
+  let keys = Object.keys(infectedTiles);
+
   // Probabilistic spread to one random orthogonal neighbour per infected tile.
   // A Set is used so that duplicate keys from the normal spread loop and the
   // sentinel acceleration loop below cannot both process the same tile.
   let freshSet = new Set();
-  for (let i = 0; i < keysLen; i++) {
+  for (let i = 0; i < keys.length; i++) {
     if (random() > INF_RATE) continue;
     let comma = keys[i].indexOf(',');
     let tx = +keys[i].slice(0, comma), tz = +keys[i].slice(comma + 1);
@@ -628,6 +636,7 @@ function spreadInfection() {
   let soundCount = 0;
   for (let nk of freshSet) {
     infectedTiles[nk] = 1;
+    infectedCount++;
     let comma = nk.indexOf(',');
     let ptx = +nk.slice(0, comma), ptz = +nk.slice(comma + 1);
     // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
@@ -754,8 +763,7 @@ function checkCollisions(p) {
   for (let i = buildings.length - 1; i >= 0; i--) {
     let b = buildings[i];
     if (b.type === 3) {
-      let bGnd = terrain.getAltitude(b.x, b.z);
-      let floatY = bGnd - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
+      let floatY = b.y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
       let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
       let radiusSq = (b.w + 15) ** 2;
 
@@ -791,10 +799,9 @@ function checkCollisions(p) {
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
     for (let t of trees) {
-      let ty = terrain.getAltitude(t.x, t.z);
       if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 < 3600 &&
-        b.y > ty - t.trunkH - 30 * t.canopyScale - 10 &&
-        b.y < ty + 10) {
+        b.y > t.y - t.trunkH - 30 * t.canopyScale - 10 &&
+        b.y < t.y + 10) {
         let tx = toTile(t.x), tz = toTile(t.z);
         if (infectedTiles[tileKey(tx, tz)]) {
           clearInfectionRadius(tx, tz);
@@ -869,10 +876,6 @@ function mousePressed() {
     }
   }
 }
-
-function mouseDragged() { mouseMoved(); }
-
-function mouseMoved() { }
 
 /** Resizes the p5 canvas to match the new browser window dimensions. */
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }

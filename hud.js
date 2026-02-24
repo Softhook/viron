@@ -190,28 +190,18 @@ function drawPlayerHUD(p, pi, hw, h) {
   let ly = -h / 2;
   let col = p.labelColor;
 
-  // Player number in label colour
-  textSize(16);
-  fill(col[0], col[1], col[2]);
-  text('P' + (pi + 1), lx, ly + 6);
 
   // Stat lines: [size, [r,g,b], text, x, y]
   let lines = [
-    [20, [255, 255, 255], 'SCORE ' + p.score, lx, ly + 26],
-    [16, [0, 255, 0], 'ALT ' + max(0, floor(SEA - s.y)), lx, ly + 50],
-    [14, [255, 80, 80], 'INF ' + Object.keys(infectedTiles).length, lx, ly + 72],
-    [14, [255, 100, 100], 'ENEMIES ' + enemyManager.enemies.length, lx, ly + 90],
-    [14, [0, 200, 255], 'MISSILES ' + p.missilesRemaining, lx, ly + 108]
+    [20, [255, 255, 255], 'SCORE ' + p.score, lx, ly + 8],
+    [16, [0, 255, 0], 'ALT ' + max(0, floor(SEA - s.y)), lx, ly + 32],
+    [14, [255, 80, 80], 'INF ' + Object.keys(infectedTiles).length, lx, ly + 54],
+    [14, [255, 100, 100], 'ENEMIES ' + enemyManager.enemies.length, lx, ly + 72],
+    [14, [0, 200, 255], 'MISSILES ' + p.missilesRemaining, lx, ly + 90]
   ];
   for (let [sz, c, txt, x, y] of lines) {
     textSize(sz); fill(c[0], c[1], c[2]); text(txt, x, y);
   }
-
-  // Level number (top-right)
-  textSize(16);
-  fill(255);
-  textAlign(RIGHT, TOP);
-  text('LVL ' + level, hw / 2 - 14, ly + 6);
 
   // Death / respawn overlay
   if (p.dead) {
@@ -249,10 +239,11 @@ function drawRadarForPlayer(p, hw, h) {
   let s = p.ship;
   push();
   // Position the radar in the top-right corner
-  translate(hw / 2 - 70, -h / 2 + 80, 0);
+  let radarSize = 150;
+  translate(hw / 2 - radarSize / 2 - 4, -h / 2 + radarSize / 2 + 4, 0);
   fill(0, 150); stroke(0, 255, 0); strokeWeight(1.5);
   rectMode(CENTER);
-  rect(0, 0, 110, 110);   // Radar frame
+  rect(0, 0, radarSize, radarSize);   // Radar frame
   rotateZ(s.yaw);          // Rotate so ship forward faces up
 
   // Infected tiles (small red squares)
@@ -260,12 +251,12 @@ function drawRadarForPlayer(p, hw, h) {
   for (let k of Object.keys(infectedTiles)) {
     let [tx, tz] = k.split(',').map(Number);
     let rx = (tx * TILE - s.x) * 0.012, rz = (tz * TILE - s.z) * 0.012;
-    if (abs(rx) < 50 && abs(rz) < 50) rect(rx, rz, 2, 2);
+    if (abs(rx) < 68 && abs(rz) < 68) rect(rx, rz, 2, 2);
   }
 
   // Launchpad centre marker (yellow square if in radar range)
   let lx = (420 - s.x) * 0.012, lz = (420 - s.z) * 0.012;
-  if (abs(lx) < 50 && abs(lz) < 50) {
+  if (abs(lx) < 68 && abs(lz) < 68) {
     fill(255, 255, 0, 150); noStroke(); rect(lx, lz, 4, 4);
   }
 
@@ -273,12 +264,12 @@ function drawRadarForPlayer(p, hw, h) {
   fill(255, 0, 0); noStroke();
   for (let e of enemyManager.enemies) {
     let rx = (e.x - s.x) * 0.012, rz = (e.z - s.z) * 0.012;
-    if (abs(rx) < 50 && abs(rz) < 50) {
+    if (abs(rx) < 68 && abs(rz) < 68) {
       rect(rx, rz, 3, 3);
     } else {
       // Off-screen: draw a directional arrow clamped to the radar boundary
       push();
-      translate(constrain(rx, -49, 49), constrain(rz, -49, 49), 0);
+      translate(constrain(rx, -67, 67), constrain(rz, -67, 67), 0);
       rotateZ(atan2(rz, rx));
       fill(255, 0, 0, 180);
       triangle(3, 0, -2, -2, -2, 2);
@@ -292,7 +283,7 @@ function drawRadarForPlayer(p, hw, h) {
     let ox = (other.ship.x - s.x) * 0.012, oz = (other.ship.z - s.z) * 0.012;
     fill(other.labelColor[0], other.labelColor[1], other.labelColor[2], 200);
     noStroke();
-    if (abs(ox) < 50 && abs(oz) < 50) rect(ox, oz, 4, 4);
+    if (abs(ox) < 68 && abs(oz) < 68) rect(ox, oz, 4, 4);
   }
 
   // Own ship — always at radar centre

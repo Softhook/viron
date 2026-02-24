@@ -218,6 +218,7 @@ function setup() {
  */
 function startGame(np) {
   numPlayers = np;
+  if (typeof gameSFX !== 'undefined') gameSFX.spatialEnabled = (np === 1);
   gameStartTime = millis();
   mouseReleasedSinceStart = !leftMouseDown;  // Don't fire on the frame the game starts
   if (np === 1) {
@@ -681,7 +682,7 @@ function keyPressed() {
   // Toggle Aim Assist + Debug overlay (P key)
   if (key === 'p' || key === 'P') {
     mobileController.debug = !mobileController.debug;
-    aimAssist.debug   = mobileController.debug;
+    aimAssist.debug = mobileController.debug;
     aimAssist.enabled = mobileController.debug; // Sync assist on/off with debug for testing
   }
 }

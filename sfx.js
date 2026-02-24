@@ -2,6 +2,7 @@ class GameSFX {
     constructor() {
         this.initialized = false;
         this.distCurve = null;
+        this.spatialEnabled = true;
     }
 
     init() {
@@ -21,7 +22,7 @@ class GameSFX {
         let t = this.ctx.currentTime;
         let targetNode = this.ctx.destination;
 
-        if (x !== undefined && y !== undefined && z !== undefined) {
+        if (x !== undefined && y !== undefined && z !== undefined && this.spatialEnabled) {
             let panner = this.createSpatializer(x, y, z);
             if (panner) {
                 panner.connect(targetNode);
@@ -47,7 +48,7 @@ class GameSFX {
     }
 
     updateListener(cx, cy, cz, lx, ly, lz, ux, uy, uz) {
-        if (!this.ctx || !this.ctx.listener) return;
+        if (!this.ctx || !this.ctx.listener || !this.spatialEnabled) return;
         const listener = this.ctx.listener;
 
         let fx = lx - cx, fy = ly - cy, fz = lz - cz;

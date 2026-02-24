@@ -206,7 +206,7 @@ function setup() {
     let peak = MOUNTAIN_PEAKS[i];
     buildings.push({
       x: peak.x, z: peak.z,
-      w: 40, h: 200, d: 40,
+      w: 60, h: 280, d: 60,   // Larger than ordinary buildings — monumental scale
       type: 4,
       col: [0, 220, 200],
       pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / MOUNTAIN_PEAKS.length)
@@ -455,18 +455,27 @@ function draw() {
   particleSystem.updatePhysics();
   for (let p of players) updateProjectilePhysics(p);
 
-  // --- Sentinel pulse emission ---
-  // Each sentinel building periodically emits a localised shader pulse.
-  // Infected sentinels use the infection-blue (type 1) pulse so the player
-  // can spot a compromised sentinel from a distance; healthy ones use the
-  // dedicated cyan sentinel pulse (type 3).
+  // --- Sentinel glow update ---
+  // Healthy sentinels: upload their positions to the terrain shader so it can
+  // draw a steady breathing ring on the ground around the building base.
+  // Infected sentinels: emit the old expanding infection-blue pulse instead,
+  // giving a clear visual cue that danger is spreading from this location.
+  terrain.sentinelGlows = [];   // Rebuilt each frame
   for (let b of buildings) {
     if (b.type !== 4) continue;
     b.pulseTimer = (b.pulseTimer || 0) + 1;
-    if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
-      b.pulseTimer = 0;
-      let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
-      terrain.addPulse(b.x, b.z, inf ? 1.0 : 3.0);
+    let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+    if (inf) {
+      // Infected — emit the classic expanding pulse every SENTINEL_PULSE_INTERVAL frames
+      if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
+        b.pulseTimer = 0;
+        terrain.addPulse(b.x, b.z, 1.0);  // infection-blue expanding ring
+      }
+    } else {
+      // Healthy — register position for the shader steady glow ring
+      // Glow radius ≈ 1.4× the plinth width (b.w * 1.1) for a nice halo outside the base
+      terrain.sentinelGlows.push({ x: b.x, z: b.z, radius: b.w * 1.5 });
+      if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) b.pulseTimer = 0;  // prevent overflow
     }
   }
 

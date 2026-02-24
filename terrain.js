@@ -46,28 +46,41 @@ varying vec4 vWorldPos;
 uniform float uTime;
 uniform vec4 uPulses[5];
 uniform vec2 uFogDist;
+// Steady sentinel glows: xy = world position, z = glow radius, w = 1.0 if active
+uniform vec4 uSentinelGlows[2];
 
 void main() {  
   vec3 cyberColor = vec3(0.0);
   
-  // Bomb drop pulses
+  // Expanding shockwave pulses (bombs, infection, explosions)
   for (int i = 0; i < 5; i++) {
     float age = uTime - uPulses[i].z;
-    if (age >= 0.0 && age < 3.0) { // Lasts for 3 seconds
+    if (age >= 0.0 && age < 3.0) {
       float type = uPulses[i].w;
-      // Scale differences by 0.01 before taking length to avoid fp16 overflow on mobile
       vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
       float distToPulse = length(diff) * 100.0;
-      
-      // type 3 = sentinel (small localised cyan ring)
-      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : (type == 3.0 ? age * 150.0 : age * 800.0));
-      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : (type == 3.0 ? 18.0 : 80.0));
+      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
+      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
       float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
-      
       float fade = 1.0 - (age / 3.0);
-      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : (type == 3.0 ? vec3(0.0, 0.9, 0.8) : vec3(1.0, 0.1, 0.1))); // Blue crab, yellow ship, cyan sentinel, red bomb
-      cyberColor += pulseColor * ring * fade * 2.0; 
+      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
+      cyberColor += pulseColor * ring * fade * 2.0;
     }
+  }
+
+  // Steady sentinel base glows — fixed-radius breathing ring for healthy sentinels
+  for (int j = 0; j < 2; j++) {
+    if (uSentinelGlows[j].w < 0.5) continue;  // inactive slot
+    vec2 diff2 = (vWorldPos.xz - uSentinelGlows[j].xy) * 0.01;
+    float dist2 = length(diff2) * 100.0;
+    float glowR = uSentinelGlows[j].z;
+    // Inner soft fill + sharp edge ring
+    float innerGlow = smoothstep(glowR * 1.1, 0.0, dist2) * 0.18;  // soft filled disc
+    float ringW = glowR * 0.12;
+    float ring2 = smoothstep(glowR - ringW, glowR, dist2) * (1.0 - smoothstep(glowR, glowR + ringW, dist2));
+    // Breathe brightness with a slow sine wave, phase-offset by x position
+    float breath = 0.6 + 0.4 * sin(uTime * 1.6 + uSentinelGlows[j].x * 0.002);
+    cyberColor += vec3(0.0, 0.9, 0.8) * (ring2 * breath * 2.2 + innerGlow * breath);
   }
   
   vec3 outColor = vColor.rgb + cyberColor;
@@ -98,6 +111,13 @@ class Terrain {
 
     /** @type {Array<{x,z,start,type}>} Up to 5 active shockwave pulses. */
     this.activePulses = [];
+
+    /**
+     * Positions of healthy (uninfected) sentinels for the steady glow shader.
+     * Each entry: {x, z, radius}.  Uploaded each frame by sketch.js.
+     * @type {Array<{x:number,z:number,radius:number}>}
+     */
+    this.sentinelGlows = [];
   }
 
   // ---------------------------------------------------------------------------
@@ -408,6 +428,18 @@ class Terrain {
       }
     }
     this.shader.setUniform('uPulses', pulseArr);
+
+    // Upload steady sentinel glow positions (up to 2 slots, matching the shader array)
+    let glowArr = [];
+    for (let i = 0; i < 2; i++) {
+      if (i < this.sentinelGlows.length) {
+        let g = this.sentinelGlows[i];
+        glowArr.push(g.x, g.z, g.radius, 1.0);  // active
+      } else {
+        glowArr.push(0.0, 0.0, 0.0, 0.0);  // inactive slot
+      }
+    }
+    this.shader.setUniform('uSentinelGlows', glowArr);
   }
 
   // ---------------------------------------------------------------------------
@@ -649,40 +681,86 @@ class Terrain {
         pop();
 
       } else if (b.type === 4) {
-        // Sentinel: tall narrow tower on a mountain peak with a rotating emitter dish.
-        // Healthy = dark steel body + cyan emitter; infected = red body + orange emitter.
-        let towerR = b.w / 5;
+        // Sentinel: iconic multi-tiered energy tower on a mountain peak.
+        // Healthy = cold steel/cyan energy; infected = corroded red/orange.
+        // Structure layers (bottom to top):
+        //   1. Wide hexagonal base plinth
+        //   2. Tier 1 — wide lower section
+        //   3. Tier 2 — mid section (narrower)
+        //   4. Central energy reactor sphere
+        //   5. Tier 3 — upper section (narrowest)
+        //   6. Pinnacle spire + rotating crown ring
+        // Steady ground glow is rendered by the terrain GLSL shader (uSentinelGlows).
 
-        // Main tower shaft
-        let tc = this.getFogColor(inf ? [180, 40, 40] : [55, 70, 90], depth);
-        fill(tc[0], tc[1], tc[2]);
-        push(); translate(0, -b.h / 2, 0); cylinder(towerR, b.h, 8, 1); pop();
+        // Colours
+        let cSteel = inf ? [160, 38, 38] : [52, 68, 90];
+        let cPlinth = inf ? [130, 28, 28] : [38, 52, 72];
+        let cAccent = inf ? [200, 55, 20] : [40, 200, 185];
+        let cReactor = inf ? [255, 100, 30] : [80, 240, 215];
+        let cGlow = inf ? [220, 60, 20] : [20, 230, 210];
+        let cSpire = inf ? [240, 80, 40] : [160, 240, 255];
 
-        // Four angled support struts at the base
-        let stc = this.getFogColor(inf ? [140, 30, 30] : [45, 60, 75], depth);
-        fill(stc[0], stc[1], stc[2]);
-        for (let i = 0; i < 4; i++) {
-          let a = (i / 4) * TWO_PI + PI / 4;
-          push();
-          translate(sin(a) * b.w * 0.55, -b.h * 0.15, cos(a) * b.w * 0.55);
-          rotateZ(sin(a) * 0.45); rotateX(cos(a) * 0.45);
-          translate(0, -b.h * 0.1, 0);
-          cylinder(towerR * 0.6, b.h * 0.22, 4, 1);
-          pop();
-        }
+        // Fog-blended colours
+        let fcSteel = this.getFogColor(cSteel, depth);
+        let fcPlinth = this.getFogColor(cPlinth, depth);
+        let fcAccent = this.getFogColor(cAccent, depth);
+        let fcReactor = this.getFogColor(cReactor, depth);
+        let fcGlow = this.getFogColor(cGlow, depth);
+        let fcSpire = this.getFogColor(cSpire, depth);
 
-        // Rotating emitter ring + inner cone at the tower tip
-        let ec = this.getFogColor(inf ? [255, 90, 20] : [0, 220, 200], depth);
-        fill(ec[0], ec[1], ec[2]);
+        let bw = b.w;   // base width reference (40)
+        let bh = b.h;   // total height reference (200)
+
+        // ── 1. Wide hexagonal base plinth ───────────────────────────────
+        fill(fcPlinth[0], fcPlinth[1], fcPlinth[2]);
+        push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
+        // Plinth rim band
+        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
+
+        // ── 2. Tier 1 — wide lower section ──────────────────────────────
+        fill(fcSteel[0], fcSteel[1], fcSteel[2]);
+        push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
+        // Tier 1 accent band
+        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
+
+        // ── 3. Tier 2 — mid section ─────────────────────────────────────
+        fill(fcSteel[0], fcSteel[1], fcSteel[2]);
+        push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
+        // Tier 2 accent band
+        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
+
+        // ── 4. Central energy reactor sphere (mid-height) ────────────────
+        fill(fcReactor[0], fcReactor[1], fcReactor[2]);
+        push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
+
+        // ── 5. Tier 3 — upper section ────────────────────────────────────
+        fill(fcSteel[0], fcSteel[1], fcSteel[2]);
+        push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
+        // Tier 3 accent band
+        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
+
+        // ── 6. Pinnacle spire + rotating crown ring ──────────────────────
+        // Tier 3 top = -bh*0.86. Crown ring sits right there.
+        fill(fcGlow[0], fcGlow[1], fcGlow[2]);
         push();
-        translate(0, -b.h - b.w * 0.4, 0);
-        rotateY(frameCount * 0.025 + b.x * 0.001);
-        torus(b.w * 0.4, b.w * 0.1, 12, 6);
+        translate(0, -bh * 0.87, 0);
+        rotateY(frameCount * 0.032 + b.x * 0.001);
+        torus(bw * 0.32, bw * 0.07, 14, 6);
         pop();
-        push();
-        translate(0, -b.h - b.w * 0.55, 0);
-        cone(b.w * 0.25, b.w * 0.5, 6, 1);
-        pop();
+
+        // Spire cone — p5 cone() points upward by default; no PI rotation needed.
+        // Centre at -bh*0.99 → base at -bh*0.87 (crown level), tip at -bh*1.11.
+        fill(fcSpire[0], fcSpire[1], fcSpire[2]);
+        push(); translate(0, -bh * 0.99, 0); cone(bw * 0.18, bh * 0.24, 6, 1); pop();
+        // Tip ball at the very apex
+        fill(fcReactor[0], fcReactor[1], fcReactor[2]);
+        push(); translate(0, -bh * 1.11, 0); sphere(bw * 0.08, 6, 4); pop();
+        // (The ground-level energy ring glow is rendered by the terrain shader
+        //  via the uSentinelGlows uniform — no 3D halo tori needed here.)
       }
       pop();
 

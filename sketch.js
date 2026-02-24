@@ -347,7 +347,6 @@ function checkCollisions(p) {
   for (let i = particleSystem.enemyBullets.length - 1; i >= 0; i--) {
     let eb = particleSystem.enemyBullets[i];
     if ((eb.x - s.x) ** 2 + (eb.y - s.y) ** 2 + (eb.z - s.z) ** 2 < 4900) {
-      particleSystem.addExplosion(s.x, s.y, s.z);
       killPlayer(p);
       particleSystem.enemyBullets.splice(i, 1);
       return;

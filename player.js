@@ -190,7 +190,6 @@ function updateShipInput(p) {
   let g = terrain.getAltitude(s.x, s.z);
 
   if (s.y > SEA - 12) {
-    particleSystem.addExplosion(s.x, SEA, s.z);
     killPlayer(p);
     return;
   }

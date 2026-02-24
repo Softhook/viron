@@ -272,12 +272,14 @@ function updateShipInput(p) {
     // Apply Desktop Aim Assist if enabled
     if (typeof mobileController !== 'undefined' && mobileController.desktopAssist) {
       const shipForward = mobileController._getShipForward(p.ship);
-      let assist = mobileController.calculateAimAssist(p.ship, enemyManager.enemies, false, shipForward);
+      const cameraForward = mobileController._getCameraForward(p.ship);
+
+      let assist = mobileController.calculateAimAssist(p.ship, enemyManager.enemies, false, cameraForward);
       if (assist) {
         newYaw += assist.yawDelta;
         newPitch += assist.pitchDelta;
       } else {
-        // Try virus assist if no enemy targeted
+        // Try virus assist if no enemy targeted - USE SHIP NOSE
         let vAssist = mobileController.calculateVirusAssist(p.ship, shipForward);
         if (vAssist) {
           newYaw += vAssist.yawDelta;
@@ -405,6 +407,61 @@ function updateProjectilePhysics(p) {
   // --- Bullets ---
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
+
+    // Subtle seeking toward enemies and virus
+    let bestTarget = null;
+    let bestDot = 0.985; // Very narrow cone for bullets
+    let speed = Math.hypot(b.vx, b.vy, b.vz);
+
+    if (speed > 0) {
+      let bDirX = b.vx / speed, bDirY = b.vy / speed, bDirZ = b.vz / speed;
+
+      // 1. Check Enemies
+      for (let e of enemyManager.enemies) {
+        let dx = e.x - b.x, dy = e.y - b.y, dz = e.z - b.z;
+        let d = Math.hypot(dx, dy, dz);
+        if (d < 1200 && d > 20) {
+          let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
+          if (dot > bestDot) {
+            bestDot = dot;
+            bestTarget = { x: e.x, y: e.y, z: e.z };
+          }
+        }
+      }
+
+      // 2. Check nearby infected tiles (if no enemy found or if closer)
+      if (bestDot < 0.999) { // Only search virus if not perfectly locked on enemy
+        let bTx = Math.floor(b.x / 120), bTz = Math.floor(b.z / 120);
+        for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
+          for (let tx = bTx - 2; tx <= bTx + 2; tx++) {
+            let k = tx + ',' + tz;
+            if (infectedTiles[k]) {
+              let txPos = tx * 120 + 60, tzPos = tz * 120 + 60;
+              let tyPos = terrain.getAltitude(txPos, tzPos);
+              let dx = txPos - b.x, dy = tyPos - b.y, dz = tzPos - b.z;
+              let d = Math.hypot(dx, dy, dz);
+              if (d < 600) {
+                let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
+                if (dot > bestDot) {
+                  bestDot = dot;
+                  bestTarget = { x: txPos, y: tyPos, z: tzPos };
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (bestTarget) {
+        let dx = bestTarget.x - b.x, dy = bestTarget.y - b.y, dz = bestTarget.z - b.z;
+        let d = Math.hypot(dx, dy, dz);
+        let steer = 0.04; // Very subtle leaning
+        b.vx = lerp(b.vx, (dx / d) * speed, steer);
+        b.vy = lerp(b.vy, (dy / d) * speed, steer);
+        b.vz = lerp(b.vz, (dz / d) * speed, steer);
+      }
+    }
+
     b.x += b.vx; b.y += b.vy; b.z += b.vz;
     b.life -= 2;
     if (b.life <= 0) {

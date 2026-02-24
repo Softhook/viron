@@ -13,9 +13,9 @@ class MobileController {
         // Configurable Aim Assist settings
         this.CONE_ANGLE = 0.82;          // ~35° half-angle (was 0.90 / ~26°)
         this.MAX_LOCK_DIST_SQ = 3000000; // ~1732 units (was 1800000 / ~1342)
-        this.ASSIST_STRENGTH_NORMAL = 0.05;  // Subtler (was 0.12)
-        this.ASSIST_STRENGTH_WEAK = 0.02;    // Subtler (was 0.04)
-        this.VIRUS_ASSIST_STRENGTH = 0.025;  // Slightly stronger (was 0.015)
+        this.ASSIST_STRENGTH_NORMAL = 0.03;  // Reduced (was 0.05)
+        this.ASSIST_STRENGTH_WEAK = 0.01;    // Reduced (was 0.02)
+        this.VIRUS_ASSIST_STRENGTH = 0.012;  // Reduced (was 0.025)
 
         // Debug & Testing
         this.debug = false;
@@ -93,15 +93,17 @@ class MobileController {
 
         // Pre-calculate ship orientation once per frame
         const shipForward = this._getShipForward(ship);
+        const cameraForward = this._getCameraForward(ship);
 
         // Apply soft lock-on aim assist — always active on mobile, not just when joysticking
         if (ship && enemies) {
-            let assist = this.calculateAimAssist(ship, enemies, isSwipingHard, shipForward);
+            // Use camera view for selection, but ship nose for alignment
+            let assist = this.calculateAimAssist(ship, enemies, isSwipingHard, cameraForward);
             if (assist) {
                 ship.yaw += assist.yawDelta;
                 ship.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, ship.pitch + assist.pitchDelta));
             } else {
-                // Try virus assist if no enemy is targeted
+                // Try virus assist if no enemy is targeted - USE SHIP NOSE for virus
                 let vAssist = this.calculateVirusAssist(ship, shipForward);
                 if (vAssist) {
                     ship.yaw += vAssist.yawDelta;
@@ -120,6 +122,22 @@ class MobileController {
             y: Math.sin(ship.pitch),
             z: -Math.cos(ship.yaw) * cp
         };
+    }
+
+    _getCameraForward(ship) {
+        // Camera math from sketch.js:
+        // let cx = s.x + sin(s.yaw) * cd;
+        // let cz = s.z + cos(s.yaw) * cd;
+        // camera(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
+        // Normalized vector from Camera (cx, cy, cz) to Ship (s.x, s.y, s.z)
+        // points exactly at the screen center.
+
+        let dx = -Math.sin(ship.yaw); // s.x - (s.x + sin*550)
+        let dz = -Math.cos(ship.yaw); // s.z - (s.z + cos*550)
+        let dy = 0.2; // Approximate upward tilt of the camera look vector
+
+        let mag = Math.hypot(dx, dy, dz);
+        return { x: dx / mag, y: dy / mag, z: dz / mag };
     }
 
     _calculateNudge(ship, targetPos, strength) {

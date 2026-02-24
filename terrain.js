@@ -153,7 +153,7 @@ class Terrain {
    * Called once per frame from the main draw loop to prevent unbounded memory use.
    */
   clearCaches() {
-    if (this.altCache.size > 10000) this.altCache.clear();
+    if (this.altCache.size > 25000) this.altCache.clear();
     if (this.chunkCache.size > 200) this.chunkCache.clear();
   }
 
@@ -228,14 +228,13 @@ class Terrain {
         0.25 * noise(xs * 5 + 67.1, zs * 5 + 124.9);
       alt = 300 - Math.pow(elevation / 1.75, 2.0) * 550;
 
-      // Blend in Gaussian bumps for the forced mountain peaks
-      // Each peak may carry its own `sigma` field; fall back to the global SENTINEL_PEAK_SIGMA.
+      // Blend in Gaussian bumps for the forced mountain peaks.
+      // _s2 and _skipDistSq are pre-computed in constants.js for each peak.
       for (let peak of MOUNTAIN_PEAKS) {
-        let sigma = peak.sigma !== undefined ? peak.sigma : SENTINEL_PEAK_SIGMA;
-        let s2 = 2 * sigma * sigma;
         let dx = x - peak.x, dz = z - peak.z;
-        let falloff = Math.exp(-(dx * dx + dz * dz) / s2);
-        alt -= peak.strength * falloff;
+        let dSq = dx * dx + dz * dz;
+        if (dSq > peak._skipDistSq) continue;  // Contribution < 0.5 units — skip Math.exp
+        alt -= peak.strength * Math.exp(-dSq / peak._s2);
       }
     }
 

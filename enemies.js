@@ -141,7 +141,7 @@ class EnemyManager {
       else if (e.type === 'crab') this.updateCrab(e, alivePlayers, refShip);
       else if (e.type === 'hunter') this.updateHunter(e, alivePlayers, refShip);
       else if (e.type === 'squid') this.updateSquid(e, alivePlayers, refShip);
-      else if (e.type === 'scorpion') this.updateScorpion(e, refShip);
+      else if (e.type === 'scorpion') this.updateScorpion(e, alivePlayers, refShip);
       else if (e.type === 'colossus') this.updateColossus(e, alivePlayers, refShip);
       else this.updateSeeder(e, refShip);
     }
@@ -219,7 +219,7 @@ class EnemyManager {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (!infectedTiles[k]) {
-          infectedTiles[k] = { tick: frameCount };
+          infectedTiles[k] = 1;
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -373,13 +373,12 @@ class EnemyManager {
    *           range), it crawls toward the launchpad centre and randomly infects
    *           tiles below itself, triggering the launchpad alarm.
    * The scorpion fires an upward bullet at any player within 1200 units.
-   * @param {object} e        Enemy state.
-   * @param {object} refShip  Fallback target for boundary checks.
+   * @param {object}   e            Enemy state.
+   * @param {object[]} alivePlayers Alive ship states (pre-computed by update()).
+   * @param {object}   refShip      Fallback target for boundary checks.
    */
-  updateScorpion(e, refShip) {
+  updateScorpion(e, alivePlayers, refShip) {
     const LP_CENTER = (LAUNCH_MIN + LAUNCH_MAX) / 2;  // ≈ 420
-
-    let alivePlayers = players.filter(p => !p.dead).map(p => p.ship);
 
     let targetX, targetZ;
 
@@ -424,7 +423,7 @@ class EnemyManager {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (!infectedTiles[k]) {
-          infectedTiles[k] = { tick: frameCount };
+          infectedTiles[k] = 1;
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -517,7 +516,7 @@ class EnemyManager {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (!infectedTiles[k]) {
-          infectedTiles[k] = { tick: frameCount };
+          infectedTiles[k] = 1;
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -534,7 +533,7 @@ class EnemyManager {
               if (!infectedTiles[nk]) {
                 let nx = (tx + di) * TILE, nz = (tz + dj) * TILE;
                 if (!aboveSea(terrain.getAltitude(nx, nz)))
-                  infectedTiles[nk] = { tick: frameCount };
+                  infectedTiles[nk] = 1;
               }
             }
           }

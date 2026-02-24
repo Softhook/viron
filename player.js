@@ -522,9 +522,9 @@ function updateProjectilePhysics(p) {
     let target = p.aimTarget || findNearest(enemyManager.enemies, m.x, m.y, m.z);
 
     if (target) {
-      // PREDICTIVE: Seek future position (maxSpd 10)
-      let predicted = aimAssist._getPredictedPos(m, target, maxSpd);
-      let dx = predicted.x - m.x, dy = predicted.y - m.y, dz = predicted.z - m.z;
+      // Predictive lead when aim assist is on; direct homing otherwise (no aimAssist overhead)
+      let dest = aimAssist.enabled ? aimAssist._getPredictedPos(m, target, maxSpd) : target;
+      let dx = dest.x - m.x, dy = dest.y - m.y, dz = dest.z - m.z;
       let dSq = dx * dx + dy * dy + dz * dz;
       if (dSq > 0) {
         let mg = Math.sqrt(dSq);

@@ -277,7 +277,7 @@ function seedInitialInfection() {
 
     // Valid land tile — infect it and stop searching
     let tk = tileKey(toTile(wx), toTile(wz));
-    infectedTiles[tk] = { tick: 0 };
+    infectedTiles[tk] = 1;
     return;
   }
   // (Silently give up if no valid tile found in MAX_TRIES — the seeder will
@@ -520,12 +520,14 @@ function draw() {
   pop();
 
   // --- Level progression ---
-  let ic = Object.keys(infectedTiles).length;
-  if (ic > 0) infectionStarted = true;
-  if (infectionStarted && ic === 0 && !levelComplete) {
-    levelComplete = true;
-    levelEndTime = millis();
-    if (typeof gameSFX !== 'undefined') gameSFX.playLevelComplete();
+  if (!levelComplete) {
+    let ic = Object.keys(infectedTiles).length;
+    if (ic > 0) infectionStarted = true;
+    if (infectionStarted && ic === 0) {
+      levelComplete = true;
+      levelEndTime = millis();
+      if (typeof gameSFX !== 'undefined') gameSFX.playLevelComplete();
+    }
   }
   if (levelComplete && millis() - levelEndTime > 4000) startLevel(level + 1);
 
@@ -594,8 +596,8 @@ function spreadInfection() {
   let freshSet = new Set();
   for (let i = 0; i < keysLen; i++) {
     if (random() > INF_RATE) continue;
-    let parts = keys[i].split(',');
-    let tx = +parts[0], tz = +parts[1];
+    let comma = keys[i].indexOf(',');
+    let tx = +keys[i].slice(0, comma), tz = +keys[i].slice(comma + 1);
     let d = ORTHO_DIRS[floor(random(4))];
     let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
@@ -625,9 +627,9 @@ function spreadInfection() {
   }
 
   for (let nk of freshSet) {
-    infectedTiles[nk] = { tick: frameCount };
-    let parts = nk.split(',');
-    let ptx = +parts[0], ptz = +parts[1];
+    infectedTiles[nk] = 1;
+    let comma = nk.indexOf(',');
+    let ptx = +nk.slice(0, comma), ptz = +nk.slice(comma + 1);
     if (typeof gameSFX !== 'undefined') gameSFX.playInfectionSpread(ptx * TILE, terrain.getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
     if (isLaunchpad(ptx * TILE, ptz * TILE)) {
       if (millis() - lastAlarmTime > 1000) {

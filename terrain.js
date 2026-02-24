@@ -153,7 +153,7 @@ class Terrain {
    * Called once per frame from the main draw loop to prevent unbounded memory use.
    */
   clearCaches() {
-    if (this.altCache.size > 10000) this.altCache.clear();
+    if (this.altCache.size > 25000) this.altCache.clear();
     if (this.chunkCache.size > 200) this.chunkCache.clear();
   }
 
@@ -228,14 +228,13 @@ class Terrain {
         0.25 * noise(xs * 5 + 67.1, zs * 5 + 124.9);
       alt = 300 - Math.pow(elevation / 1.75, 2.0) * 550;
 
-      // Blend in Gaussian bumps for the forced mountain peaks
-      // Each peak may carry its own `sigma` field; fall back to the global SENTINEL_PEAK_SIGMA.
+      // Blend in Gaussian bumps for the forced mountain peaks.
+      // _s2 and _skipDistSq are pre-computed in constants.js for each peak.
       for (let peak of MOUNTAIN_PEAKS) {
-        let sigma = peak.sigma !== undefined ? peak.sigma : SENTINEL_PEAK_SIGMA;
-        let s2 = 2 * sigma * sigma;
         let dx = x - peak.x, dz = z - peak.z;
-        let falloff = Math.exp(-(dx * dx + dz * dz) / s2);
-        alt -= peak.strength * falloff;
+        let dSq = dx * dx + dz * dz;
+        if (dSq > peak._skipDistSq) continue;  // Contribution < 0.5 units — skip Math.exp
+        alt -= peak.strength * Math.exp(-dSq / peak._s2);
       }
     }
 
@@ -347,31 +346,6 @@ class Terrain {
 
     this.chunkCache.set(key, geom);
     return geom;
-  }
-
-  /**
-   * Builds a simple two-triangle sea plane centred on the current ship position.
-   * Rebuilt every frame (not cached) so the sea follows the player without a seam.
-   * @param {number} seaSize  Half-extent of the sea quad in world units.
-   * @param {number[]} seaC   RGB colour array [r, g, b].
-   * @param {number} sx       Ship world-space X (used to centre the quad).
-   * @param {number} sz       Ship world-space Z.
-   * @returns {p5.Geometry}
-   */
-  getSeaGeometry(seaSize, seaC, sx, sz) {
-    return buildGeometry(() => {
-      fill(seaC[0], seaC[1], seaC[2]);
-      beginShape(TRIANGLES);
-      let y = SEA + 3;  // Slightly above sea level to avoid z-fighting with shore tiles
-      let cx = toTile(sx) * TILE, cz = toTile(sz) * TILE;
-      vertex(cx - seaSize, y, cz - seaSize);
-      vertex(cx + seaSize, y, cz - seaSize);
-      vertex(cx - seaSize, y, cz + seaSize);
-      vertex(cx + seaSize, y, cz - seaSize);
-      vertex(cx + seaSize, y, cz + seaSize);
-      vertex(cx - seaSize, y, cz + seaSize);
-      endShape();
-    });
   }
 
   // ---------------------------------------------------------------------------
@@ -494,11 +468,12 @@ class Terrain {
               let xP1 = xP + TILE, zP1 = zP + TILE;
 
               // Slightly below ground (- 0.5) to avoid z-fighting with base terrain
-              let y00 = this.getAltitude(xP, zP) - 0.5, y10 = this.getAltitude(xP1, zP) - 0.5;
-              let y01 = this.getAltitude(xP, zP1) - 0.5, y11 = this.getAltitude(xP1, zP1) - 0.5;
+              // Cache the four corner altitudes so they are looked up only once each.
+              let r00 = this.getAltitude(xP, zP), r10 = this.getAltitude(xP1, zP);
+              let r01 = this.getAltitude(xP, zP1), r11 = this.getAltitude(xP1, zP1);
+              let y00 = r00 - 0.5, y10 = r10 - 0.5, y01 = r01 - 0.5, y11 = r11 - 0.5;
 
-              let avgY = (this.getAltitude(xP, zP) + this.getAltitude(xP1, zP) +
-                this.getAltitude(xP, zP1) + this.getAltitude(xP1, zP1)) * 0.25;
+              let avgY = (r00 + r10 + r01 + r11) * 0.25;
               let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
 
               // Animate the green glow with a sine wave per-tile offset
@@ -531,10 +506,34 @@ class Terrain {
       endShape();
     }
 
-    // Animated sea — colour oscillates slightly for a water shimmer effect
-    let p = sin(frameCount * 0.03) * 8;
-    let seaC = [15, 45 + p, 150 + p];
-    model(this.getSeaGeometry(VIEW_FAR * TILE * 1.5, seaC, s.x, s.z));
+    // Animated sea — vertex Y positions oscillate with a two-component sine wave so the
+    // surface visibly undulates.  A 3×3 grid of quads (18 triangles) gives enough vertices
+    // for smooth-looking waves without significant CPU cost.
+    // Colour also oscillates slightly for a secondary water shimmer.
+    let seaP = sin(frameCount * 0.03) * 8;
+    let seaSize = VIEW_FAR * TILE * 1.5;
+    let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
+    let wt = frameCount * 0.04;                // Wave phase advances each frame
+    const waveAmp = 6, waveFreq = 0.0006;      // Amplitude (world units) and spatial frequency
+
+    // Helper: animated Y at a world-space point
+    const seaY = (wx, wz) =>
+      SEA + 3 + sin(wx * waveFreq + wt) * waveAmp + sin(wz * waveFreq * 1.3 + wt * 0.75) * (waveAmp * 0.5);
+
+    const SEGS = 3;  // Subdivisions per axis
+    let segSize = seaSize * 2 / SEGS;
+    fill(15, 45 + seaP, 150 + seaP);
+    beginShape(TRIANGLES);
+    for (let zi = 0; zi < SEGS; zi++) {
+      for (let xi = 0; xi < SEGS; xi++) {
+        let x0 = seaCx - seaSize + xi * segSize,       x1 = x0 + segSize;
+        let z0 = seaCz - seaSize + zi * segSize,       z1 = z0 + segSize;
+        let y00 = seaY(x0, z0), y10 = seaY(x1, z0), y01 = seaY(x0, z1), y11 = seaY(x1, z1);
+        vertex(x0, y00, z0); vertex(x1, y10, z0); vertex(x0, y01, z1);
+        vertex(x1, y10, z0); vertex(x1, y11, z1); vertex(x0, y01, z1);
+      }
+    }
+    endShape();
 
     // Restore standard lighting for subsequent non-terrain objects
     resetShader();

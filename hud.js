@@ -191,11 +191,14 @@ function drawPlayerHUD(p, pi, hw, h) {
   let col = p.labelColor;
 
 
+  // Compute infection keys once — reused for both the stats count and the radar loop below
+  let infKeys = Object.keys(infectedTiles);
+
   // Stat lines: [size, [r,g,b], text, x, y]
   let lines = [
     [20, [255, 255, 255], 'SCORE ' + p.score, lx, ly + 8],
     [16, [0, 255, 0], 'ALT ' + max(0, floor(SEA - s.y)), lx, ly + 32],
-    [14, [255, 80, 80], 'INF ' + Object.keys(infectedTiles).length, lx, ly + 54],
+    [14, [255, 80, 80], 'INF ' + infKeys.length, lx, ly + 54],
     [14, [255, 100, 100], 'ENEMIES ' + enemyManager.enemies.length, lx, ly + 72],
     [14, [0, 200, 255], 'MISSILES ' + p.missilesRemaining, lx, ly + 90]
   ];
@@ -214,7 +217,7 @@ function drawPlayerHUD(p, pi, hw, h) {
     text('Respawning...', 0, 30);
   }
 
-  drawRadarForPlayer(p, hw, h);
+  drawRadarForPlayer(p, hw, h, infKeys);
   drawControlHints(p, pi, hw, h);
 
   pop();
@@ -231,11 +234,12 @@ function drawPlayerHUD(p, pi, hw, h) {
  *   • Player colour square — co-op partner ship (two-player only)
  *   • Yellow centre square — own ship
  *
- * @param {object} p   Player state.
- * @param {number} hw  Viewport half-width.
- * @param {number} h   Viewport height.
+ * @param {object} p        Player state.
+ * @param {number} hw       Viewport half-width.
+ * @param {number} h        Viewport height.
+ * @param {string[]} infKeys Pre-computed Object.keys(infectedTiles) from drawPlayerHUD.
  */
-function drawRadarForPlayer(p, hw, h) {
+function drawRadarForPlayer(p, hw, h, infKeys) {
   let s = p.ship;
   push();
   // Position the radar in the top-right corner
@@ -246,10 +250,11 @@ function drawRadarForPlayer(p, hw, h) {
   rect(0, 0, radarSize, radarSize);   // Radar frame
   rotateZ(s.yaw);          // Rotate so ship forward faces up
 
-  // Infected tiles (small red squares)
+  // Infected tiles (small red squares) — use the keys computed in drawPlayerHUD
   fill(180, 0, 0, 80); noStroke();
-  for (let k of Object.keys(infectedTiles)) {
-    let [tx, tz] = k.split(',').map(Number);
+  for (let k of infKeys) {
+    let comma = k.indexOf(',');
+    let tx = +k.slice(0, comma), tz = +k.slice(comma + 1);
     let rx = (tx * TILE - s.x) * 0.012, rz = (tz * TILE - s.z) * 0.012;
     if (abs(rx) < 68 && abs(rz) < 68) rect(rx, rz, 2, 2);
   }

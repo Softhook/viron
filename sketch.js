@@ -333,7 +333,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   particleSystem.render(s.x, s.z);
 
   // 3D Visual Debugging
-  if (typeof mobileController !== 'undefined') mobileController.drawDebug3D(s);
+  if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
 
   pop();
 
@@ -678,10 +678,11 @@ function keyPressed() {
     if (keyCode === p.keys.missile) fireMissile(p);
   }
 
-  // Toggle Aim Assist Debug/Desktop mode
+  // Toggle Aim Assist + Debug overlay (P key)
   if (key === 'p' || key === 'P') {
     mobileController.debug = !mobileController.debug;
-    mobileController.desktopAssist = mobileController.debug; // Sync for testing
+    aimAssist.debug   = mobileController.debug;
+    aimAssist.enabled = mobileController.debug; // Sync assist on/off with debug for testing
   }
 }
 

@@ -4,7 +4,7 @@
 
 // --- World geometry ---
 const TILE = 120;              // World-space size of one terrain tile (pixels)
-const SEA  = 200;              // Y value above which terrain is below sea (sea surface)
+const SEA = 200;              // Y value above which terrain is below sea (sea surface)
 const LAUNCH_ALT = 100;        // Fixed Y altitude of the flat launchpad surface
 const GRAV = 0.09;             // Per-frame gravitational acceleration applied to ships
 const LAUNCH_MIN = 0;          // Launchpad world-space minimum X and Z coordinate
@@ -12,16 +12,16 @@ const LAUNCH_MAX = 840;        // Launchpad world-space maximum X and Z coordina
 
 // --- Rendering distances (can be adjusted dynamically for performance) ---
 let VIEW_NEAR = 35;            // Inner tile radius — always rendered, no frustum test
-let VIEW_FAR  = 50;            // Outer tile radius — rendered with frustum culling
+let VIEW_FAR = 50;            // Outer tile radius — rendered with frustum culling
 let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
 const SKY_R = 30, SKY_G = 60, SKY_B = 120;
 
 // --- Infection spread parameters ---
-const MAX_INF  = 2000;   // Total infected tile count that triggers game over
+const MAX_INF = 2000;   // Total infected tile count that triggers game over
 const INF_RATE = 0.01;   // Per-tile per-update probability of spreading to a neighbour
-const CLEAR_R  = 3;      // Radius (in tiles) cleared by a single bullet/missile impact
+const CLEAR_R = 3;      // Radius (in tiles) cleared by a single bullet/missile impact
 
 // --- Infection spread direction vectors (4-connected grid) ---
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -32,17 +32,22 @@ const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached
 // --- Mountain peaks — Gaussian altitude bumps placed at fixed world positions ---
 // Each entry lowers the terrain Y value (raises the peak height) by `strength` at the centre,
 // falling off with a Gaussian sigma of SENTINEL_PEAK_SIGMA world units.
-const MOUNTAIN_PEAKS = [
+/* const MOUNTAIN_PEAKS = [
   { x: -2200, z: -1600, strength: 450 },
   { x:  2800, z:   900, strength: 400 },
   { x: -1200, z:  3200, strength: 380 },
   { x:  3000, z: -2600, strength: 420 },
   { x: -2800, z:  2000, strength: 390 }
+]; */
+const MOUNTAIN_PEAKS = [
+  { x: -2200, z: -1600, strength: 450 },
 ];
-const SENTINEL_PEAK_SIGMA    = 1100;  // Gaussian spread radius (world units)
+
+
+const SENTINEL_PEAK_SIGMA = 400;  // Gaussian spread radius (world units)
 const SENTINEL_PULSE_INTERVAL = 300;  // Frames between each sentinel pulse (~5 s at 60 fps)
 // Infection parameters for an infected sentinel (much faster than normal INF_RATE)
-const SENTINEL_INFECTION_RADIUS      = 5;     // Tile radius of accelerated spread around an infected sentinel
+const SENTINEL_INFECTION_RADIUS = 5;     // Tile radius of accelerated spread around an infected sentinel
 const SENTINEL_INFECTION_PROBABILITY = 0.35;  // Per-tile per-update spread chance near an infected sentinel
 
 // --- Sky colour palette (used by fog blending in Terrain.getFogColor) ---
@@ -62,35 +67,35 @@ const TREE_VARIANTS = [
 ];
 
 // --- Ship steering rates (radians per frame) ---
-const YAW_RATE   = 0.04;   // Keyboard left/right turn speed
+const YAW_RATE = 0.04;   // Keyboard left/right turn speed
 const PITCH_RATE = 0.04;   // Keyboard pitch up/down speed
 
 // --- Mouse steering ---
 const MOUSE_SENSITIVITY = 0.003;  // Mouse pixels → radians conversion factor
-const MOUSE_SMOOTHING   = 0.25;   // Lerp blend factor for smoothed mouse delta (lower = smoother)
+const MOUSE_SMOOTHING = 0.25;   // Lerp blend factor for smoothed mouse delta (lower = smoother)
 
 // --- Key bindings — Player 1 (WASD + Q / E / R / F) ---
 const P1_KEYS = {
-  thrust:     87,   // W
-  left:       65,   // A
-  right:      68,   // D
-  brake:      83,   // S
-  pitchUp:    82,   // R
-  pitchDown:  70,   // F
-  shoot:      81,   // Q
-  missile:    69    // E
+  thrust: 87,   // W
+  left: 65,   // A
+  right: 68,   // D
+  brake: 83,   // S
+  pitchUp: 82,   // R
+  pitchDown: 70,   // F
+  shoot: 81,   // Q
+  missile: 69    // E
 };
 
 // --- Key bindings — Player 2 (Arrow keys + punctuation row) ---
 const P2_KEYS = {
-  thrust:     38,    // UP_ARROW
-  left:       37,    // LEFT_ARROW
-  right:      39,    // RIGHT_ARROW
-  brake:      40,    // DOWN_ARROW
-  pitchUp:    186,   // ; (semicolon)
-  pitchDown:  222,   // ' (quote)
-  shoot:      190,   // . (period)
-  missile:    191    // / (slash)
+  thrust: 38,    // UP_ARROW
+  left: 37,    // LEFT_ARROW
+  right: 39,    // RIGHT_ARROW
+  brake: 40,    // DOWN_ARROW
+  pitchUp: 186,   // ; (semicolon)
+  pitchDown: 222,   // ' (quote)
+  shoot: 190,   // . (period)
+  missile: 191    // / (slash)
 };
 
 // =============================================================================

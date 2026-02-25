@@ -418,14 +418,19 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
 // ---------------------------------------------------------------------------
 
 /**
- * Main p5 draw loop — runs at ~60 fps.
+ * Main p5 draw loop — runs at the display refresh rate (60 / 75 / 90 / 120 / 144 Hz).
  *
  * If in 'menu' or 'gameover' state, delegates entirely to the appropriate
  * HUD function and returns early.
  *
  * In 'playing' state:
  *   1. Dynamic performance scaling: adjusts VIEW_NEAR/FAR and CULL_DIST
- *      every 120 frames to maintain the target frame rate.
+ *      every 120 frames to maintain the target frame rate.  Uses an
+ *      exponential moving average (EMA) of raw FPS readings so that
+ *      momentary GC pauses or chunk-load spikes do not falsely shrink the
+ *      view distance.  The target FPS is derived from the smoothed value
+ *      itself, preventing a single lucky frame on a 75 Hz display from
+ *      locking the target at 75 fps when the hardware sustains only 65 fps.
  *   2. Physics update: ship input, enemy AI, collision detection, infection spread,
  *      particle physics, projectile physics.
  *   3. Render: one or two viewport passes via renderPlayerView().
@@ -438,24 +443,39 @@ function draw() {
   if (gameState === 'gameover') { drawGameOver(); return; }
 
   // --- Dynamic Performance Scaling ---
-  // Every 2 seconds, compare actual FPS to the target and shrink or grow the
-  // draw distances to keep the game smooth on a wide range of hardware.
-  if (frameCount > 60 && frameCount % 120 === 0) {
-    let fps = frameRate();
-    if (!window.maxObservedFPS) window.maxObservedFPS = 60;
-    if (fps > window.maxObservedFPS + 2) window.maxObservedFPS = fps;
+  // Evaluate every 2 s (120 frames).  Use an exponential moving average
+  // (EMA, α = 0.2) of raw frameRate() samples so that a single slow frame
+  // caused by a GC pause, chunk-load, or rAF scheduling jitter does not
+  // incorrectly trigger a view-distance reduction.
+  //
+  // The target FPS is derived from the *smoothed* value rather than a
+  // raw historic peak.  This prevents a single lucky frame on a 75 Hz
+  // display from locking the target to 75 fps when the hardware is
+  // actually sustaining ~65 fps — the original cause of excessive fog.
+  if (frameCount > 120 && frameCount % 120 === 0) {
+    let rawFPS = frameRate();
 
-    let targetFPS = window.maxObservedFPS > 70 ? 75 : 60;
+    // EMA: each new sample contributes 20 %, giving ~5-sample memory.
+    // Seed with 60 so early startup dips are diluted against a neutral
+    // baseline rather than dominating the first few decisions.
+    if (window._fpsEMA === undefined) window._fpsEMA = 60;
+    window._fpsEMA = window._fpsEMA * 0.8 + rawFPS * 0.2;
+    let fps = window._fpsEMA;
+
+    // Target based on the smoothed rate — avoids the stale-ceiling bug
+    // of the old maxObservedFPS approach where a 75 fps spike would lock
+    // the target at 75 even when the sustained average was only 65 fps.
+    let targetFPS = fps > 70 ? 75 : 60;
 
     if (fps < targetFPS * 0.9) {
-      // Underperforming: shrink draw distances
+      // Clearly underperforming: shrink draw distances to regain headroom.
       VIEW_NEAR = max(15, VIEW_NEAR - 2);
-      VIEW_FAR = max(20, VIEW_FAR - 2);
+      VIEW_FAR  = max(20, VIEW_FAR  - 2);
       CULL_DIST = max(2000, CULL_DIST - 400);
     } else if (fps >= targetFPS * 0.95) {
-      // Plenty of headroom: try restoring draw distances
+      // Close to or above target: gradually restore full draw distances.
       VIEW_NEAR = min(35, VIEW_NEAR + 1);
-      VIEW_FAR = min(50, VIEW_FAR + 1);
+      VIEW_FAR  = min(50, VIEW_FAR  + 1);
       CULL_DIST = min(6000, CULL_DIST + 200);
     }
   }

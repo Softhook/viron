@@ -52,7 +52,7 @@ function drawMenu() {
   };
 
   setSceneLighting();
-  terrain.drawLandscape(fakeShip);
+  terrain.drawLandscape(fakeShip, width / height);
   terrain.drawTrees(fakeShip);
   terrain.drawBuildings(fakeShip);
 

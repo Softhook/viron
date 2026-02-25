@@ -387,7 +387,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   if (typeof gameSFX !== 'undefined') gameSFX.updateListener(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
 
   setSceneLighting();
-  terrain.drawLandscape(s);
+  terrain.drawLandscape(s, viewW / viewH);
   terrain.drawTrees(s);
   terrain.drawBuildings(s);
   enemyManager.draw(s);

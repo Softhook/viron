@@ -182,7 +182,8 @@ class Terrain {
   /**
    * Broad frustum test — returns false for world objects that are clearly
    * behind the camera or beyond the horizontal field of view.
-   * @param {{x,z,fwdX,fwdZ,fovSlope}} cam  Camera descriptor; fovSlope is pre-computed in drawLandscape.
+   * @param {{x,z,fwdX,fwdZ,fovSlope}} cam  Camera descriptor from getCameraParams() with
+   *                                          fovSlope pre-computed by drawLandscape().
    * @param {number} tx  World-space X to test.
    * @param {number} tz  World-space Z to test.
    */
@@ -191,10 +192,7 @@ class Terrain {
     let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
     if (fwdDist < -TILE * 5) return false;
     let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
-    // Use pre-cached fovSlope (set by drawLandscape) to avoid recomputing aspect every call.
-    // Fall back to on-the-fly calculation if called outside a normal draw pass (e.g. menu).
-    let slope = cam.fovSlope || (0.57735 * ((numPlayers === 1 ? width : width * 0.5) / height) + 0.3);
-    let halfWidth = (fwdDist > 0 ? fwdDist : 0) * slope + TILE * 6;
+    let halfWidth = (fwdDist > 0 ? fwdDist : 0) * cam.fovSlope + TILE * 6;
     return Math.abs(rightDist) <= halfWidth;
   }
 
@@ -436,8 +434,11 @@ class Terrain {
    * drawBuildings and enemies.draw can reuse it without recomputing sin/cos.
    *
    * @param {{x,y,z,yaw,pitch}} s  The ship whose viewport is being rendered.
+   * @param {number} viewAspect    viewW / viewH of the actual WebGL viewport — must
+   *                               match the aspect passed to p5's perspective() so
+   *                               frustum culling matches what the camera sees.
    */
-  drawLandscape(s) {
+  drawLandscape(s, viewAspect) {
     let gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
@@ -450,8 +451,8 @@ class Terrain {
     // and inFrustum() calls in drawTrees/drawBuildings.
     // 0.57735 = tan(30°), matching the PI/3 perspective FOV used in renderPlayerView.
     // The +0.3 padding ensures objects at oblique angles are never incorrectly culled.
-    let aspect = (numPlayers === 1 ? width : width * 0.5) / height;
-    cam.fovSlope = 0.57735 * aspect + 0.3;  // Attached to cam so inFrustum() reuses it
+    // viewAspect must match the value passed to perspective() so culling is accurate.
+    cam.fovSlope = 0.57735 * viewAspect + 0.3;  // Attached to cam so inFrustum() reuses it
     this._cam = cam;
 
     let fovSlope = cam.fovSlope;

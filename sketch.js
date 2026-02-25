@@ -193,6 +193,11 @@ function setup() {
   terrain.init();  // Compile terrain GLSL shader (must happen after canvas creation)
   textFont(gameFont);
 
+  // Initialize Aim Assist based on platform
+  if (typeof aimAssist !== 'undefined') {
+    aimAssist.enabled = isMobile;
+  }
+
   // Trees — placed with a fixed seed for a consistent world layout
   randomSeed(42);
   let numTrees = isMobile ? 80 : 250;
@@ -922,9 +927,9 @@ function keyPressed() {
 
   // Toggle Aim Assist + Debug overlay (P key)
   if (key === 'p' || key === 'P') {
-    mobileController.debug = !mobileController.debug;
-    aimAssist.debug = mobileController.debug;
-    aimAssist.enabled = mobileController.debug; // Sync assist on/off with debug for testing
+    aimAssist.enabled = !aimAssist.enabled;
+    aimAssist.debug = aimAssist.enabled;
+    mobileController.debug = aimAssist.enabled;
   }
 
   // Toggle first-person / behind-ship camera (O key)
@@ -962,7 +967,9 @@ function mousePressed() {
       startGame(1);
     } else if (gameState === 'playing') {
       if (mouseButton === CENTER) {
-        if (players.length > 0 && !players[0].dead) fireActiveWeapon(players[0]);
+        if (players.length > 0 && !players[0].dead) {
+          players[0].weaponMode = (players[0].weaponMode + 1) % WEAPON_MODES.length;
+        }
       }
       requestPointerLock();
     }

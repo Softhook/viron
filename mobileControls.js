@@ -15,7 +15,7 @@ class MobileController {
         this.btns = {
             thrust: { active: false, r: 65, col: [0, 255, 60], label: 'THR', x: 0, y: 0 },
             shoot: { active: false, r: 65, col: [255, 60, 60], label: 'SHT', x: 0, y: 0 },
-            missile: { active: false, r: 40, col: [0, 200, 255], label: 'MSL', x: 0, y: 0 }
+            missile: { active: false, r: 40, col: [0, 200, 255], label: 'WPN', x: 0, y: 0 }
         };
 
         this.debug = false; // Controls the 2D debug overlay and syncs aimAssist.enabled
@@ -59,7 +59,7 @@ class MobileController {
         let inputs = {
             thrust: this.btns.thrust.active,
             shoot: this.btns.shoot.active,
-            missile: this.btns.missile.active,
+            cycleWeapon: this.btns.missile.active,
             yawDelta: 0,
             pitchDelta: 0,
             assistYaw: 0,

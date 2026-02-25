@@ -124,7 +124,7 @@ function drawMenu() {
   if (isMobile) {
     text('Use virtual joystick and buttons to play', 0, height / 2 - 40);
   } else {
-    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  (Click to lock mouse)', 0, height / 2 - 55);
+    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click to lock mouse)', 0, height / 2 - 55);
     text('P2: ARROWS + ;/\' pitch  . shoot  / cycle weapon  \u2193 brake', 0, height / 2 - 35);
   }
 
@@ -364,10 +364,10 @@ function drawControlHints(p, pi, hw, h) {
   fill(255, 255, 255, 120);
   let hints = '';
   if (numPlayers === 1) {
-    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  (Click to lock mouse)';
+    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click to lock mouse)';
   } else {
     hints = pi === 0
-      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  (Click lock)'
+      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click lock)'
       : '\u2191 thrust  \u2190/\u2192 turn  ;/\' pitch  . shoot  / cycle weapon  \u2193 brake';
   }
   text(hints, 0, h / 2 - 8);

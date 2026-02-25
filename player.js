@@ -340,11 +340,11 @@ function updateShipInput(p) {
     isThrusting = isThrusting || inputs.thrust;
     isShooting = isShooting || inputs.shoot;
 
-    // Edge-detect the missile button so a single tap fires one missile
-    if (inputs.missile && !p.mobileMissilePressed) {
-      fireMissile(p);
+    // Edge-detect the weapon-cycle button so a single tap cycles once
+    if (inputs.cycleWeapon && !p.mobileMissilePressed) {
+      p.weaponMode = (p.weaponMode + 1) % WEAPON_MODES.length;
       p.mobileMissilePressed = true;
-    } else if (!inputs.missile) {
+    } else if (!inputs.cycleWeapon) {
       p.mobileMissilePressed = false;
     }
 

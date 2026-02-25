@@ -82,28 +82,32 @@ const PITCH_RATE = 0.04;   // Keyboard pitch up/down speed
 const MOUSE_SENSITIVITY = 0.003;  // Mouse pixels → radians conversion factor
 const MOUSE_SMOOTHING = 0.25;   // Lerp blend factor for smoothed mouse delta (lower = smoother)
 
+// --- Weapon modes (index into WEAPON_MODES array) ---
+const WEAPON_MODES = ['NORMAL', 'MISSILE', 'BARRIER'];
+const BARRIER_SIZE = 120;  // World-space side length of a placed barrier square (one tile width)
+
 // --- Key bindings — Player 1 (WASD + Q / E / R / F) ---
 const P1_KEYS = {
-  thrust: 87,   // W
-  left: 65,   // A
-  right: 68,   // D
-  brake: 83,   // S
-  pitchUp: 82,   // R
+  thrust: 87,      // W
+  left: 65,        // A
+  right: 68,       // D
+  brake: 83,       // S
+  pitchUp: 82,     // R
   pitchDown: 70,   // F
-  shoot: 81,   // Q
-  missile: 69    // E
+  shoot: 81,       // Q
+  weaponCycle: 69  // E — cycles NORMAL → MISSILE → BARRIER
 };
 
 // --- Key bindings — Player 2 (Arrow keys + punctuation row) ---
 const P2_KEYS = {
-  thrust: 38,    // UP_ARROW
-  left: 37,    // LEFT_ARROW
-  right: 39,    // RIGHT_ARROW
-  brake: 40,    // DOWN_ARROW
-  pitchUp: 186,   // ; (semicolon)
-  pitchDown: 222,   // ' (quote)
-  shoot: 190,   // . (period)
-  missile: 191    // / (slash)
+  thrust: 38,        // UP_ARROW
+  left: 37,          // LEFT_ARROW
+  right: 39,         // RIGHT_ARROW
+  brake: 40,         // DOWN_ARROW
+  pitchUp: 186,      // ; (semicolon)
+  pitchDown: 222,    // ' (quote)
+  shoot: 190,        // . (period)
+  weaponCycle: 191   // / (slash) — cycles NORMAL → MISSILE → BARRIER
 };
 
 // =============================================================================

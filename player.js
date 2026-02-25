@@ -53,6 +53,8 @@ function createPlayer(id, keys, offsetX, labelColor) {
     bullets: [],
     homingMissiles: [],
     missilesRemaining: 1,
+    weaponMode: 0,                // 0=NORMAL, 1=MISSILE, 2=BARRIER (index into WEAPON_MODES)
+    shootHeld: false,             // Edge-detect for shoot key (prevents missile/barrier auto-repeat)
     aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
     mobileMissilePressed: false,  // Tracks the mobile missile button edge so it fires once per tap
     lpDeaths: 0                   // Tracks consecutive deaths on an occupied launchpad
@@ -111,6 +113,38 @@ function fireMissile(p) {
     p.missilesRemaining--;
     p.homingMissiles.push(spawnProjectile(p.ship, 8, 300));
     if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
+  }
+}
+
+/**
+ * Fires a barrier projectile from the player's ship.  The barrier travels
+ * forward, is affected by gravity, and embeds itself in the ground on landing.
+ * Once landed it acts as a permanent wall segment for this level.
+ * @param {object} p  Player state object.
+ */
+function fireBarrier(p) {
+  if (p.dead) return;
+  let proj = spawnProjectile(p.ship, 14, 300);
+  if (typeof inFlightBarriers !== 'undefined') inFlightBarriers.push(proj);
+  if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
+}
+
+/**
+ * Fires the player's currently selected weapon:
+ *   NORMAL (0) — fires a single bullet burst
+ *   MISSILE (1) — launches a homing missile
+ *   BARRIER (2) — places a barrier projectile
+ * @param {object} p  Player state object.
+ */
+function fireActiveWeapon(p) {
+  if (p.dead) return;
+  let mode = p.weaponMode;
+  if (mode === 1) fireMissile(p);
+  else if (mode === 2) fireBarrier(p);
+  else {
+    // NORMAL: fire one bullet immediately (used for middle-click single shot)
+    p.bullets.push(spawnProjectile(p.ship, 25, 300));
+    if (typeof gameSFX !== 'undefined') gameSFX.playShot(p.ship.x, p.ship.y, p.ship.z);
   }
 }
 
@@ -365,10 +399,21 @@ function updateShipInput(p) {
     s.vx *= 0.96; s.vy *= 0.96; s.vz *= 0.96;
   }
 
-  // Fire a bullet every 6 frames while the shoot input is held
-  if (isShooting && frameCount % 6 === 0) {
-    p.bullets.push(spawnProjectile(s, 25, 300));
-    if (typeof gameSFX !== 'undefined') gameSFX.playShot(s.x, s.y, s.z);
+  // Fire based on selected weapon mode
+  if (p.weaponMode === 0) {
+    // NORMAL: rapid-fire bullets every 6 frames while shoot is held
+    if (isShooting && frameCount % 6 === 0) {
+      p.bullets.push(spawnProjectile(s, 25, 300));
+      if (typeof gameSFX !== 'undefined') gameSFX.playShot(s.x, s.y, s.z);
+    }
+    p.shootHeld = isShooting;
+  } else {
+    // MISSILE / BARRIER: fire once per press (edge-detect on shoot button)
+    if (isShooting && !p.shootHeld) {
+      if (p.weaponMode === 1) fireMissile(p);
+      else if (p.weaponMode === 2) fireBarrier(p);
+    }
+    p.shootHeld = isShooting;
   }
 
   // Global air drag
@@ -571,6 +616,52 @@ function updateProjectilePhysics(p) {
       p.homingMissiles.splice(i, 1);
     }
   }
+
+}
+
+/**
+ * Advances all in-flight barrier projectiles one frame.
+ * On landing adds the tile to barrierTiles (dedup automatic).
+ * On expiry without landing simply discards the projectile.
+ * Environment-owned: no player reference needed.
+ */
+function updateBarrierPhysics() {
+  if (typeof inFlightBarriers === 'undefined') return;
+  for (let i = inFlightBarriers.length - 1; i >= 0; i--) {
+    let b = inFlightBarriers[i];
+    b.vy += 0.15;  // Gravity
+    b.x += b.vx; b.y += b.vy; b.z += b.vz;
+    b.life--;
+    let gnd = terrain.getAltitude(b.x, b.z);
+    if (b.y >= gnd || b.life <= 0) {
+      if (b.y >= gnd) {
+        let tx = Math.floor(b.x / TILE);
+        let tz = Math.floor(b.z / TILE);
+        if (typeof barrierTiles !== 'undefined') barrierTiles.add(tileKey(tx, tz));
+      }
+      inFlightBarriers.splice(i, 1);
+    }
+  }
+}
+
+/**
+ * Renders all in-flight barrier projectiles as small white cubes.
+ * Called once per viewport from the main render loop.
+ * @param {number} camX  Camera world X.
+ * @param {number} camZ  Camera world Z.
+ */
+function renderInFlightBarriers(camX, camZ) {
+  if (typeof inFlightBarriers === 'undefined' || !inFlightBarriers.length) return;
+  let cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
+  noStroke();
+  for (let b of inFlightBarriers) {
+    if ((b.x - camX) ** 2 + (b.z - camZ) ** 2 > cullSq) continue;
+    push();
+    translate(b.x, b.y, b.z);
+    fill(255, 255, 255, 220);
+    box(8);
+    pop();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +686,9 @@ function renderProjectiles(p, camX, camZ) {
     box(6);
     pop();
   }
+
+  // --- Barriers are now rendered by renderInFlightBarriers() in the main loop ---
+
 
   for (let m of p.homingMissiles) {
     if ((m.x - camX) ** 2 + (m.z - camZ) ** 2 > cullSq) continue;

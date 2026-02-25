@@ -546,6 +546,39 @@ class Terrain {
       endShape();
     }
 
+    // --- Barrier tile overlays ---
+    // Reads from the global barrierTiles Set \u2014 exactly the same pattern as
+    // infected tile overlays above.  White quads follow the real terrain slope.
+    if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
+      beginShape(TRIANGLES);
+      for (let k of barrierTiles) {
+        let comma = k.indexOf(',');
+        let tx = +k.slice(0, comma), tz = +k.slice(comma + 1);
+        // Bounding-box + frustum cull
+        if (tx < minTx || tx > maxTx || tz < minTz || tz > maxTz) continue;
+        let tcx = tx * TILE + TILE * 0.5, tcz = tz * TILE + TILE * 0.5;
+        let tdx = tcx - cam.x, tdz = tcz - cam.z;
+        let tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
+        if (tFwd < -TILE * 2) continue;
+        let tRight = Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX);
+        if (tRight > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
+
+        let xP = tx * TILE, zP = tz * TILE;
+        let xP1 = xP + TILE, zP1 = zP + TILE;
+        let y00 = this.getAltitude(xP, zP) - 0.3;
+        let y10 = this.getAltitude(xP1, zP) - 0.3;
+        let y01 = this.getAltitude(xP, zP1) - 0.3;
+        let y11 = this.getAltitude(xP1, zP1) - 0.3;
+
+        // Subtle checkerboard so adjacent white tiles stay distinguishable
+        let chk = (tx + tz) % 2 === 0;
+        fill(chk ? 255 : 235, chk ? 255 : 235, chk ? 255 : 240);
+        vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
+        vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+      }
+      endShape();
+    }
+
     // Static sea plane — a single flat quad at SEA + 3 covering the visible area.
     // No per-vertex sine calculations; all four corners share the same Y so there
     // is no per-frame geometry work beyond issuing the two-triangle draw call.
@@ -581,6 +614,8 @@ class Terrain {
     }
     pop();
   }
+
+
 
   /**
    * Draws all trees within rendering range, applying fog colour blending and

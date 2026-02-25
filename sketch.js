@@ -25,6 +25,14 @@ let currentMaxEnemies = 2;         // Max simultaneous enemies for the current l
 
 let levelComplete = false;     // True once all infection has been cleared
 let infectionStarted = false;     // Latches to true when the first tile is infected
+
+// Barrier tile Set — mirrors `infection` but marks immune/blocked tiles.
+// Keys are tileKey strings.  Cleared each level.  Written when a barrier lands.
+let barrierTiles = new Set();
+
+// In-flight barrier projectile objects — environment state, not per-player.
+// Same structure as bullets/missiles: { x, y, z, vx, vy, vz, life }.
+let inFlightBarriers = [];
 let levelEndTime = 0;         // millis() timestamp of level completion / game over
 
 let gameFont;                      // Loaded Impact font used for all HUD / menu text
@@ -324,6 +332,9 @@ function startLevel(lvl) {
     p.lpDeaths = 0;
   }
 
+  barrierTiles.clear();    // All barrier marks reset with each new level
+  inFlightBarriers = [];   // Discard any in-flight barriers
+
   enemyManager.clear();
   particleSystem.clear();
   terrain.activePulses = [];
@@ -417,6 +428,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     if (!player.dead && (player !== p || !firstPersonView)) shipDisplay(player.ship, player.labelColor);
     renderProjectiles(player, s.x, s.z);
   }
+  renderInFlightBarriers(s.x, s.z);  // Environment-owned in-flight barrier cubes
   particleSystem.render(s.x, s.z);
 
   // 3D Visual Debugging
@@ -551,6 +563,7 @@ function draw() {
   spreadInfection();
   particleSystem.updatePhysics();
   for (let p of players) updateProjectilePhysics(p);
+  updateBarrierPhysics();  // Environment-owned in-flight barriers
 
   // --- Sentinel glow update ---
   // Healthy sentinels: upload their positions to the terrain shader so it can
@@ -708,6 +721,9 @@ function spreadInfection() {
 
   let soundCount = 0;
   for (let nk of freshSet) {
+    // Barrier blocking: immune tiles stop infection spread
+    if (barrierTiles.has(nk)) continue;
+
     infection.add(nk);
     let comma = nk.indexOf(',');
     let ptx = +nk.slice(0, comma), ptz = +nk.slice(comma + 1);
@@ -884,15 +900,17 @@ function checkCollisions(p) {
       }
     }
   }
-}
+
+} // end checkCollisions
+
 
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
 
 /**
- * p5 keyPressed — handles game-start key presses on the menu, and missile
- * firing during gameplay for both players.
+ * p5 keyPressed — handles game-start key presses on the menu, and weapon
+ * cycling during gameplay for both players.
  */
 function keyPressed() {
   if (gameState === 'menu') {
@@ -902,7 +920,9 @@ function keyPressed() {
   }
 
   for (let p of players) {
-    if (keyCode === p.keys.missile) fireMissile(p);
+    if (keyCode === p.keys.weaponCycle) {
+      p.weaponMode = (p.weaponMode + 1) % WEAPON_MODES.length;
+    }
   }
 
   // Toggle Aim Assist + Debug overlay (P key)
@@ -936,7 +956,7 @@ function touchMoved(event) { return false; }
 /**
  * p5 mousePressed — desktop only.
  * • Any click on the menu enters fullscreen and starts a 1-player game.
- * • Middle-click during gameplay fires a missile for P1.
+ * • Middle-click during gameplay fires the active weapon for P1.
  * • Any click during gameplay requests pointer-lock for mouse-look.
  */
 function mousePressed() {
@@ -947,7 +967,7 @@ function mousePressed() {
       startGame(1);
     } else if (gameState === 'playing') {
       if (mouseButton === CENTER) {
-        if (players.length > 0 && !players[0].dead) fireMissile(players[0]);
+        if (players.length > 0 && !players[0].dead) fireActiveWeapon(players[0]);
       }
       requestPointerLock();
     }

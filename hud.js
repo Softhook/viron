@@ -124,8 +124,8 @@ function drawMenu() {
   if (isMobile) {
     text('Use virtual joystick and buttons to play', 0, height / 2 - 40);
   } else {
-    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB missile', 0, height / 2 - 55);
-    text('P2: ARROWS + ;/\' pitch  . shoot  / missile', 0, height / 2 - 35);
+    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  (Click to lock mouse)', 0, height / 2 - 55);
+    text('P2: ARROWS + ;/\' pitch  . shoot  / cycle weapon  \u2193 brake', 0, height / 2 - 35);
   }
 
   pop();
@@ -232,6 +232,46 @@ function drawPlayerHUD(p, pi, hw, h) {
   drawRadarForPlayer(p, hw, h, infKeys);
   drawControlHints(p, pi, hw, h);
 
+  // --- Weapon Selector Indicator (top-centre) ---
+  // Three pills horizontally: NORMAL | MISSILE | BARRIER
+  // Active pill: solid white box with black label.
+  // Inactive pill: dim outline with grey label.
+  {
+    let pillW = 82, pillH = 22, pillGap = 8;
+    let totalW = 3 * pillW + 2 * pillGap;
+    let startX = -totalW / 2;
+    let pillY = -h / 2 + 8;   // Near the very top of the viewport
+    const labels = ['\u25CF NORMAL', '\uD83D\uDE80 MISSILE', '\u25A0 BARRIER'];
+    const activeCols = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
+    const labelBlacks = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+
+    textAlign(CENTER, TOP);
+    for (let i = 0; i < 3; i++) {
+      let px = startX + i * (pillW + pillGap);
+      let active = (p.weaponMode === i);
+      if (active) {
+        // Filled pill
+        fill(activeCols[i][0], activeCols[i][1], activeCols[i][2], 230);
+        noStroke();
+        rect(px, pillY, pillW, pillH, 4);
+        // Label in dark ink
+        fill(labelBlacks[i][0], labelBlacks[i][1], labelBlacks[i][2]);
+        textSize(11);
+        text(labels[i], px + pillW / 2, pillY + 5);
+      } else {
+        // Outline pill
+        noFill();
+        stroke(180, 180, 180, 130);
+        strokeWeight(1);
+        rect(px, pillY, pillW, pillH, 4);
+        noStroke();
+        fill(180, 180, 180, 130);
+        textSize(11);
+        text(labels[i], px + pillW / 2, pillY + 5);
+      }
+    }
+  }
+
   pop();
 }
 
@@ -326,11 +366,11 @@ function drawControlHints(p, pi, hw, h) {
   fill(255, 255, 255, 120);
   let hints = '';
   if (numPlayers === 1) {
-    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB missile  S brake  (Click to lock mouse)';
+    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  (Click to lock mouse)';
   } else {
     hints = pi === 0
-      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB missile  S brake  (Click lock)'
-      : '↑ thrust  ←/→ turn  ;/\' pitch  . shoot  / missile  ↓ brake';
+      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  (Click lock)'
+      : '\u2191 thrust  \u2190/\u2192 turn  ;/\' pitch  . shoot  / cycle weapon  \u2193 brake';
   }
   text(hints, 0, h / 2 - 8);
   pop();

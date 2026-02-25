@@ -147,7 +147,7 @@ const BUILD_GEOM_US      = 1000; // μs per chunk (conservative midpoint)
 const stutter_old_ms = (VISIBLE_CHUNKS * BUILD_GEOM_US) / 1000;
 const stutter_new_ms = (Math.ceil(VISIBLE_CHUNKS / 2) * BUILD_GEOM_US) / 1000;
 
-console.log(`\n  Eviction operation cost: clear-all=${(t2_old/100_000*1e6).toFixed(0)}μs  evict-half=${(t2_new/100_000*1e6).toFixed(0)}μs`);
+console.log(`\n  Eviction operation cost: clear-all=${(t2_old/100_000*1e6).toFixed(0)}ns  evict-half=${(t2_new/100_000*1e6).toFixed(0)}ns`);
 console.log(`\n  Worst-case FRAME STUTTER caused by rebuilding all evicted chunks:`);
 console.log(`    OLD (clear all ${VISIBLE_CHUNKS} chunks): ~${stutter_old_ms.toFixed(0)} ms  — visible hitch at 60 fps (budget = 16 ms)`);
 console.log(`    NEW (evict ~${Math.ceil(VISIBLE_CHUNKS/2)} oldest):  ~${stutter_new_ms.toFixed(0)} ms  — within frame budget\n`);

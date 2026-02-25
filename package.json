@@ -19,7 +19,7 @@
     "url": "https://github.com/Softhook/virus/issues"
   },
   "homepage": "https://github.com/Softhook/virus#readme",
-  "dependencies": {
+  "devDependencies": {
     "express": "^5.2.1",
     "puppeteer": "^24.37.5"
   }

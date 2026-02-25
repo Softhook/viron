@@ -210,6 +210,12 @@ class Terrain {
      * @type {Array<{x:number,z:number,radius:number}>}
      */
     this.sentinelGlows = [];
+
+    // Pre-allocated uniform upload buffers — reused every frame to avoid GC churn.
+    // pulseArr  : 5 pulses × 4 floats  (x, z, startTime, type)
+    // glowArr   : 2 sentinels × 4 floats (x, z, radius, active)
+    this._pulseArr = new Array(20).fill(0);
+    this._glowArr  = new Array(8).fill(0);
   }
 
   // ---------------------------------------------------------------------------
@@ -402,8 +408,13 @@ class Terrain {
         for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
           let xP = tx * TILE, zP = tz * TILE;
           let xP1 = xP + TILE, zP1 = zP + TILE;
-          let y00 = this.getAltitude(xP, zP), y10 = this.getAltitude(xP1, zP);
-          let y01 = this.getAltitude(xP, zP1), y11 = this.getAltitude(xP1, zP1);
+          // Grid corners are always exact tile boundaries (fx=0, fz=0), so call
+          // getGridAltitude() directly — it hits the altCache with a single Map.get()
+          // and skips the bilinear interpolation logic in getAltitude().
+          let y00 = this.getGridAltitude(tx,     tz    );
+          let y10 = this.getGridAltitude(tx + 1, tz    );
+          let y01 = this.getGridAltitude(tx,     tz + 1);
+          let y11 = this.getGridAltitude(tx + 1, tz + 1);
           let minY = Math.min(y00, y10, y01, y11);
           if (aboveSea(minY)) continue;
 
@@ -469,30 +480,39 @@ class Terrain {
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
 
-    // Build the flat uniform array expected by the GLSL array declaration
-    let pulseArr = [];
+    // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
+    const pulseArr = this._pulseArr;
     for (let i = 0; i < 5; i++) {
+      const base = i * 4;
       if (i < this.activePulses.length) {
-        pulseArr.push(
-          this.activePulses[i].x,
-          this.activePulses[i].z,
-          this.activePulses[i].start,
-          this.activePulses[i].type || 0.0
-        );
+        pulseArr[base]     = this.activePulses[i].x;
+        pulseArr[base + 1] = this.activePulses[i].z;
+        pulseArr[base + 2] = this.activePulses[i].start;
+        pulseArr[base + 3] = this.activePulses[i].type || 0.0;
       } else {
-        pulseArr.push(0.0, 0.0, -9999.0, 0.0);  // Inactive slot: start = -9999 so age never triggers
+        pulseArr[base]     = 0.0;
+        pulseArr[base + 1] = 0.0;
+        pulseArr[base + 2] = -9999.0;  // Inactive: age never reaches 0
+        pulseArr[base + 3] = 0.0;
       }
     }
     this.shader.setUniform('uPulses', pulseArr);
 
-    // Upload steady sentinel glow positions (up to 2 slots, matching the shader array)
-    let glowArr = [];
+    // Write sentinel glow data into the pre-allocated buffer.
+    const glowArr = this._glowArr;
     for (let i = 0; i < 2; i++) {
+      const base = i * 4;
       if (i < this.sentinelGlows.length) {
-        let g = this.sentinelGlows[i];
-        glowArr.push(g.x, g.z, g.radius, 1.0);  // active
+        const g = this.sentinelGlows[i];
+        glowArr[base]     = g.x;
+        glowArr[base + 1] = g.z;
+        glowArr[base + 2] = g.radius;
+        glowArr[base + 3] = 1.0;  // active
       } else {
-        glowArr.push(0.0, 0.0, 0.0, 0.0);  // inactive slot
+        glowArr[base]     = 0.0;
+        glowArr[base + 1] = 0.0;
+        glowArr[base + 2] = 0.0;
+        glowArr[base + 3] = 0.0;  // inactive slot
       }
     }
     this.shader.setUniform('uSentinelGlows', glowArr);
@@ -524,7 +544,6 @@ class Terrain {
     let gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
-    let infected = [];
     // Compute camera params once and cache on the instance so drawTrees,
     // drawBuildings and enemies.draw reuse the same values this frame.
     let cam = this.getCameraParams(s);

@@ -11,7 +11,6 @@
 //   player.js    → ship physics, input, and projectile functions
 //   hud.js       → HUD, radar, menu and game-over overlays
 //   sfx.js       → GameSFX class (unchanged)
-//   mobileControls.js → MobileController class (unchanged)
 // =============================================================================
 
 // ---------------------------------------------------------------------------
@@ -23,12 +22,12 @@ let trees = [], buildings = [];    // Static world objects populated in setup()
 let level = 1;            // Current level number (increases on level completion)
 let currentMaxEnemies = 2;         // Max simultaneous enemies for the current level
 
-let levelComplete = false;     // True once all infection has been cleared
+let levelComplete = false;     // True once all Viron has been cleared
 let infectionStarted = false;     // Latches to true when the first tile is infected
 
-// Barrier tile Set — mirrors `infection` but marks immune/blocked tiles.
-// Keys are tileKey strings.  Cleared each level.  Written when a barrier lands.
-let barrierTiles = new Set();
+// Barrier tile Map — mirrors `infection` but marks immune/blocked tiles.
+// Stores {k, tx, tz, verts} objects to allow vertex caching.
+let barrierTiles = new Map();
 
 // In-flight barrier projectile objects — environment state, not per-player.
 // Same structure as bullets/missiles: { x, y, z, vx, vy, vz, life }.
@@ -681,18 +680,14 @@ function spreadInfection() {
     return;
   }
 
-  let keys = infection.keys();
-
+  let infObjects = infection.keys();
   // Probabilistic spread to one random orthogonal neighbour per infected tile.
-  // A Set is used so that duplicate keys from the normal spread loop and the
-  // sentinel acceleration loop below cannot both process the same tile.
   let freshSet = new Set();
-  for (let i = 0; i < keys.length; i++) {
+  for (let i = 0; i < infObjects.length; i++) {
     if (random() > INF_RATE) continue;
-    let comma = keys[i].indexOf(',');
-    let tx = +keys[i].slice(0, comma), tz = +keys[i].slice(comma + 1);
+    let t = infObjects[i];
     let d = ORTHO_DIRS[floor(random(4))];
-    let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
+    let nx = t.tx + d[0], nz = t.tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
     if (aboveSea(terrain.getAltitude(wx, wz)) || infection.tiles[nk]) continue;
     freshSet.add(nk);
@@ -725,14 +720,14 @@ function spreadInfection() {
     if (barrierTiles.has(nk)) continue;
 
     infection.add(nk);
-    let comma = nk.indexOf(',');
-    let ptx = +nk.slice(0, comma), ptz = +nk.slice(comma + 1);
+    let o = infection.tiles[nk];
+    let wx = o.tx * TILE, wz = o.tz * TILE;
     // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
     if (typeof gameSFX !== 'undefined' && soundCount < 3) {
-      gameSFX.playInfectionSpread(ptx * TILE, terrain.getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
+      gameSFX.playInfectionSpread(wx, terrain.getAltitude(wx, wz), wz);
       soundCount++;
     }
-    if (isLaunchpad(ptx * TILE, ptz * TILE)) {
+    if (isLaunchpad(wx, wz)) {
       if (millis() - lastAlarmTime > 1000) {
         if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
         lastAlarmTime = millis();

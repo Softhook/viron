@@ -48,8 +48,66 @@ uniform vec4 uPulses[5];
 uniform vec2 uFogDist;
 // Steady sentinel glows: xy = world position, z = glow radius, w = 1.0 if active
 uniform vec4 uSentinelGlows[2];
+// uTileSize: world-space size of one tile (= TILE constant) — used by infection animation
+uniform float uTileSize;
 
-void main() {  
+void main() {
+  // ── Infection tile animation ─────────────────────────────────────────────
+  // Infection tile overlays are drawn with a magenta "tag" colour so the shader
+  // can recognise them without any extra per-tile uniform uploads.
+  // The tag is  (1.0, 0.0, 1.0)  for even-checkerboard tiles and
+  //             (0.5, 0.0, 0.5)  for odd-checkerboard tiles.
+  // When detected the fragment colour is replaced with GPU-computed pulsing green,
+  // exactly matching the old JS lerp but at zero CPU cost per tile per frame.
+  float isEvenInf = step(0.99, vColor.r) * step(vColor.g, 0.01) * step(0.99, vColor.b);
+  float isOddInf  = step(0.49, vColor.r) * (1.0 - step(0.51, vColor.r))
+                  * step(vColor.g, 0.01)
+                  * step(0.49, vColor.b) * (1.0 - step(0.51, vColor.b));
+  
+  // Tag detection for Barriers: White (1.0, 1.0, 1.0) and Grey (0.92, 0.92, 0.92)
+  float isBarEven = step(0.99, vColor.r) * step(0.99, vColor.g) * step(0.99, vColor.b);
+  float isBarOdd  = step(0.91, vColor.r) * step(0.91, vColor.g) * step(0.93, vColor.b); 
+  float isBar     = clamp(isBarEven + isBarOdd, 0.0, 1.0);
+  
+  float isInfTile = clamp(isEvenInf + isOddInf, 0.0, 1.0);
+
+  vec3 baseColor = vColor.rgb;
+  
+  if (isInfTile > 0.5) {
+    // ── Classic-Speed Digital Viron ─────────────────────────────────────
+    float xP = vWorldPos.x / uTileSize;
+    float zP = vWorldPos.z / uTileSize;
+    
+    // Global pulse matching original JS (frameCount * 0.06 ≈ uTime * 3.6)
+    // Small spatial offsets (0.05) keep it organic without looking 'confusing'
+    float pulse = sin(uTime * 3.6 + xP * 0.05 + zP * 0.05) * 0.5 + 0.5;
+    
+    // Intermittent scanner: Once every 10 seconds
+    float scanPos = uTime / 10.0;
+    float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
+    
+    float af = clamp(mix(1.15, 0.7, (vWorldPos.y - 200.0) / -350.0), 0.7, 1.15);
+    float parity = isEvenInf > 0.5 ? 1.0 : 0.75;
+    
+    vec3 cRed    = vec3(0.85, 0.05, 0.02) * parity;
+    vec3 cDark   = vec3(0.18, 0.02, 0.01) * parity;
+    vec3 cScan   = vec3(1.0, 0.55, 0.1) * parity; 
+    
+    baseColor = mix(cDark, cRed, pulse);
+    baseColor += cScan * scan * 1.5;      // High-tech intermittent sweep
+    baseColor *= af;
+  } else if (isBar > 0.5) {
+    // ── 'Pearl' Barrier (Slow Cool-Tone Shimmer) ────────────────────────
+    float xP = vWorldPos.x / uTileSize;
+    float zP = vWorldPos.z / uTileSize;
+    
+    float shimmer = sin(uTime * 0.7 + xP * 0.15 + zP * 0.1) * 0.5 + 0.5;
+    float parity = isBarEven > 0.5 ? 1.0 : 0.90;
+    
+    vec3 pearlBase = vec3(0.96, 0.97, 1.0);
+    baseColor = pearlBase * parity * (0.88 + 0.12 * shimmer);
+  }
+
   vec3 cyberColor = vec3(0.0);
   
   // Expanding shockwave pulses (bombs, infection, explosions)
@@ -83,7 +141,7 @@ void main() {
     cyberColor += vec3(0.0, 0.9, 0.8) * (ring2 * breath * 2.2 + innerGlow * breath);
   }
   
-  vec3 outColor = vColor.rgb + cyberColor;
+  vec3 outColor = baseColor + cyberColor;
   
   // Apply fog to smoothly hide chunk loading edges
   float dist = gl_FragCoord.z / gl_FragCoord.w;
@@ -386,6 +444,7 @@ class Terrain {
     shader(this.shader);
     this.shader.setUniform('uTime', millis() / 1000.0);
     this.shader.setUniform('uFogDist', [VIEW_FAR * TILE - 800, VIEW_FAR * TILE + 400]);
+    this.shader.setUniform('uTileSize', TILE);  // Used by infection animation in the fragment shader
 
     // Build the flat uniform array expected by the GLSL array declaration
     let pulseArr = [];
@@ -486,63 +545,50 @@ class Terrain {
       }
     }
 
-    // Build infected tile overlays by iterating the infection map directly
-    // (O(infected_count)) instead of scanning every tile in every visible chunk
-    // (O(visible_chunk_area) ≈ 12,000 lookups).  The bounding-box + frustum
-    // checks below discard tiles that are out of range or behind the camera.
-    let infKeys = infection.keys();
-    let minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
-    let minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
-    for (let ki = 0; ki < infKeys.length; ki++) {
-      let k = infKeys[ki];
-      let comma = k.indexOf(',');
-      let tx = +k.slice(0, comma), tz = +k.slice(comma + 1);
-      // Fast bounding-box reject before any vector math
-      if (tx < minTx || tx > maxTx || tz < minTz || tz > maxTz) continue;
-      // Frustum cull: skip tiles behind the camera (use tile centre)
-      let tcx = tx * TILE + TILE * 0.5, tcz = tz * TILE + TILE * 0.5;
-      let tdx = tcx - cam.x, tdz = tcz - cam.z;
-      let tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
+    // Build Viron tile overlays — iterate using the persistent object list.
+    // Vertex positions are pre-cached in the tile objects themselves so there are 
+    // ZERO altitude lookups and ZERO string operations here.
+    const infObjects = infection.keys();
+    const minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
+    const minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
+
+    let iVerts0 = [], iVerts1 = [];
+
+    for (let ki = 0; ki < infObjects.length; ki++) {
+      const t = infObjects[ki];
+      // Fast integer-based reject
+      if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
+
+      // Frustum cull
+      const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
+      const tdx = tcx - cam.x, tdz = tcz - cam.z;
+      const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
       if (tFwd < -TILE * 2) continue;
-      let tRight = Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX);
-      let tHW = (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4;
-      if (tRight > tHW) continue;
+      if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
 
-      let xP = tx * TILE, zP = tz * TILE;
-      let xP1 = xP + TILE, zP1 = zP + TILE;
+      if (!t.verts) {
+        const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
+        t.verts = [xP, this.getAltitude(xP, zP) - 0.5, zP, xP1, this.getAltitude(xP1, zP) - 0.5, zP, xP, this.getAltitude(xP, zP1) - 0.5, zP1,
+          xP1, this.getAltitude(xP1, zP) - 0.5, zP, xP1, this.getAltitude(xP1, zP1) - 0.5, zP1, xP, this.getAltitude(xP, zP1) - 0.5, zP1];
+      }
 
-      // Slightly below ground (- 0.5) to avoid z-fighting with base terrain
-      // Cache the four corner altitudes so they are looked up only once each.
-      let r00 = this.getAltitude(xP, zP), r10 = this.getAltitude(xP1, zP);
-      let r01 = this.getAltitude(xP, zP1), r11 = this.getAltitude(xP1, zP1);
-      let y00 = r00 - 0.5, y10 = r10 - 0.5, y01 = r01 - 0.5, y11 = r11 - 0.5;
-
-      let avgY = (r00 + r10 + r01 + r11) * 0.25;
-      let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
-
-      // Animate the green glow with a sine wave per-tile offset
-      let chk = (tx + tz) % 2 === 0;
-      let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
-      // Altitude factor: brighter near sea (danger), dimmer inland
-      let af = map(avgY, -100, SEA, 1.15, 0.65);
-      let base = chk ? [160, 255, 10, 40, 10, 25] : [120, 200, 5, 25, 5, 15];
-      infected.push({
-        v,
-        r: lerp(base[0], base[1], pulse) * af,
-        g: lerp(base[2], base[3], pulse) * af,
-        b: lerp(base[4], base[5], pulse) * af
-      });
+      const bucket = ((t.tx + t.tz) % 2 === 0) ? iVerts0 : iVerts1;
+      const bLen = bucket.length;
+      for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
     }
 
-    // Draw all infected overlays in a single beginShape/endShape call to minimise draw calls
-    if (infected.length) {
+    // Pass 0 — even tiles: tag = pure magenta (1, 0, 1) → shader applies bright green pulse
+    if (iVerts0.length) {
+      fill(255, 0, 255);
       beginShape(TRIANGLES);
-      for (let t of infected) {
-        fill(t.r, t.g, t.b);
-        let v = t.v;
-        vertex(v[0], v[1], v[2]); vertex(v[3], v[4], v[5]); vertex(v[6], v[7], v[8]);
-        vertex(v[9], v[10], v[11]); vertex(v[12], v[13], v[14]); vertex(v[15], v[16], v[17]);
-      }
+      for (let i = 0; i < iVerts0.length; i += 3) vertex(iVerts0[i], iVerts0[i + 1], iVerts0[i + 2]);
+      endShape();
+    }
+    // Pass 1 — odd tiles: tag = dark magenta (127, 0, 127) → shader applies dimmer green pulse
+    if (iVerts1.length) {
+      fill(127, 0, 127);
+      beginShape(TRIANGLES);
+      for (let i = 0; i < iVerts1.length; i += 3) vertex(iVerts1[i], iVerts1[i + 1], iVerts1[i + 2]);
       endShape();
     }
 
@@ -554,44 +600,36 @@ class Terrain {
     // internal vertex buffer on every colour change; with 2,000 barrier tiles
     // alternating between two colours that would be ~2,000 GPU flushes per frame.
     if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
-      // Two flat vertex arrays: even-parity tiles (bright white) and odd-parity (off-white)
       let bVerts0 = [], bVerts1 = [];
 
-      for (let k of barrierTiles) {
-        let comma = k.indexOf(',');
-        let tx = +k.slice(0, comma), tz = +k.slice(comma + 1);
-        // Bounding-box + frustum cull — same logic as infection tiles above
-        if (tx < minTx || tx > maxTx || tz < minTz || tz > maxTz) continue;
-        let tcx = tx * TILE + TILE * 0.5, tcz = tz * TILE + TILE * 0.5;
-        let tdx = tcx - cam.x, tdz = tcz - cam.z;
-        let tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
+      for (let [k, t] of barrierTiles) {
+        if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
+
+        const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
+        const tdx = tcx - cam.x, tdz = tcz - cam.z;
+        const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
         if (tFwd < -TILE * 2) continue;
-        let tRight = Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX);
-        if (tRight > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
+        if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
 
-        let xP = tx * TILE, zP = tz * TILE;
-        let xP1 = xP + TILE, zP1 = zP + TILE;
-        let y00 = this.getAltitude(xP, zP) - 0.3;
-        let y10 = this.getAltitude(xP1, zP) - 0.3;
-        let y01 = this.getAltitude(xP, zP1) - 0.3;
-        let y11 = this.getAltitude(xP1, zP1) - 0.3;
+        if (!t.verts) {
+          const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
+          t.verts = [xP, this.getAltitude(xP, zP) - 0.3, zP, xP1, this.getAltitude(xP1, zP) - 0.3, zP, xP, this.getAltitude(xP, zP1) - 0.3, zP1,
+            xP1, this.getAltitude(xP1, zP) - 0.3, zP, xP1, this.getAltitude(xP1, zP1) - 0.3, zP1, xP, this.getAltitude(xP, zP1) - 0.3, zP1];
+        }
 
-        // Route into the appropriate bucket by checkerboard parity
-        let bucket = ((tx + tz) % 2 === 0) ? bVerts0 : bVerts1;
-        bucket.push(xP, y00, zP, xP1, y10, zP, xP, y01, zP1,
-          xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1);
+        const bucket = ((t.tx + t.tz) % 2 === 0) ? bVerts0 : bVerts1;
+        const bLen = bucket.length;
+        for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
       }
 
-      // Pass 0 — bright white (even-parity tiles)
       if (bVerts0.length) {
-        fill(255, 255, 255);
+        fill(255, 255, 255); // Shader detects white
         beginShape(TRIANGLES);
         for (let i = 0; i < bVerts0.length; i += 3) vertex(bVerts0[i], bVerts0[i + 1], bVerts0[i + 2]);
         endShape();
       }
-      // Pass 1 — off-white (odd-parity tiles) — subtle contrast so edges stay visible
       if (bVerts1.length) {
-        fill(235, 235, 240);
+        fill(235, 235, 238); // Shader detects light grey
         beginShape(TRIANGLES);
         for (let i = 0; i < bVerts1.length; i += 3) vertex(bVerts1[i], bVerts1[i + 1], bVerts1[i + 2]);
         endShape();

@@ -135,18 +135,18 @@ const aboveSea = y => y >= SEA - 1;
 class InfectionManager {
   constructor() {
     /**
-     * @type {Object<string,number>} Tile-key → 1 map.
-     * READ-ONLY from outside the class — direct reads are allowed in hot paths
-     * (e.g. `if (infection.tiles[k])`) for performance.
-     * NEVER write directly: always use add()/remove() so count stays in sync.
+     * @type {Object<string,object>} Tile-key → {k, tx, tz, verts} map.
+     * READ-ONLY from outside the class.
      */
     this.tiles = {};
-    /** @type {number} Running count — always in sync with this.tiles. Use instead of Object.keys().length. */
+    /** @type {number} Running count — always in sync with this.tiles. */
     this.count = 0;
+    /** @type {object[]} Persistent list of tile objects. */
+    this.keyList = [];
   }
 
   /** Clears all infection state. Called at the start of each level. */
-  reset() { this.tiles = {}; this.count = 0; }
+  reset() { this.tiles = {}; this.count = 0; this.keyList = []; }
 
   /**
    * Marks tile key k as infected.
@@ -155,8 +155,13 @@ class InfectionManager {
    */
   add(k) {
     if (this.tiles[k]) return false;
-    this.tiles[k] = 1;
+    const comma = k.indexOf(',');
+    const tx = +k.slice(0, comma);
+    const tz = +k.slice(comma + 1);
+    const obj = { k, tx, tz, verts: null };
+    this.tiles[k] = obj;
     this.count++;
+    this.keyList.push(obj);
     return true;
   }
 
@@ -169,14 +174,16 @@ class InfectionManager {
     if (!this.tiles[k]) return false;
     delete this.tiles[k];
     this.count--;
+    const idx = this.keyList.findIndex(o => o.k === k);
+    if (idx !== -1) this.keyList.splice(idx, 1);
     return true;
   }
 
   /** Returns true if tile key k is currently infected. */
   has(k) { return !!this.tiles[k]; }
 
-  /** Returns an array of all infected tile keys. */
-  keys() { return Object.keys(this.tiles); }
+  /** Returns the persistent array of all infected tile keys. */
+  keys() { return this.keyList; }
 }
 
 /** Singleton infection state shared across all modules. */

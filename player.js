@@ -629,8 +629,11 @@ function updateBarrierPhysics() {
     b.x += b.vx; b.y += b.vy; b.z += b.vz;
     b.life--;
     if (b.y >= terrain.getAltitude(b.x, b.z) || b.life <= 0) {
-      if (b.life > 0)  // Landed (not expired)
-        barrierTiles.add(tileKey(Math.floor(b.x / TILE), Math.floor(b.z / TILE)));
+      if (b.life > 0) { // Landed (not expired)
+        let tx = Math.floor(b.x / TILE), tz = Math.floor(b.z / TILE);
+        let k = tileKey(tx, tz);
+        if (!barrierTiles.has(k)) barrierTiles.set(k, { k, tx, tz, verts: null });
+      }
       inFlightBarriers.splice(i, 1);
     }
   }

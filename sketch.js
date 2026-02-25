@@ -35,6 +35,7 @@ let gameStartTime = 0;         // millis() when the current game started
 
 let numPlayers = 1;         // 1 or 2 — set by startGame()
 let menuCam = { x: 1500, z: 1500, yaw: 0 }; // Title-screen camera state
+let firstPersonView = false;  // Toggle with O key; false = behind-ship (default)
 
 // Mouse state tracked via raw DOM events so they work before pointer-lock
 let mouseReleasedSinceStart = true;
@@ -377,18 +378,33 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   push();
-  perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
 
-  // Camera position: 550 units behind the ship at a slightly raised height
-  let cd = 550;
-  let camY = min(s.y - 180, SEA - 60);  // Clamp camera above sea so it doesn't clip
-  let cx = s.x + sin(s.yaw) * cd;
-  let cy = camY;
-  let cz = s.z + cos(s.yaw) * cd;
-  camera(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
+  let cx, cy, cz, lx, ly, lz;
+  if (firstPersonView) {
+    // First-person: near plane 5 so bullets spawned ~30 units ahead are never clipped.
+    perspective(PI / 3, viewW / viewH, 5, VIEW_FAR * TILE * 1.5);
+    // Cockpit eye looking along the ship's forward vector.
+    let cosPitch = cos(s.pitch), sinPitch = sin(s.pitch);
+    let fwdX = -sin(s.yaw) * cosPitch;
+    let fwdY = sinPitch;
+    let fwdZ = -cos(s.yaw) * cosPitch;
+    cx = s.x; cy = s.y - 25; cz = s.z;
+    lx = s.x + fwdX * 500;
+    ly = (s.y - 25) + fwdY * 500;
+    lz = s.z + fwdZ * 500;
+  } else {
+    // Default (original) behind-ship camera — near plane 50, matches original build.
+    perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
+    // Camera sits 550 units behind the ship at a height-capped Y, looking at the ship body.
+    cy = min(s.y - 120, 140);
+    cx = s.x + 550 * sin(s.yaw);
+    cz = s.z + 550 * cos(s.yaw);
+    lx = s.x; ly = s.y; lz = s.z;
+  }
+  camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
 
   // Update spatial audio listener to match this camera position
-  if (typeof gameSFX !== 'undefined') gameSFX.updateListener(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
+  if (typeof gameSFX !== 'undefined') gameSFX.updateListener(cx, cy, cz, lx, ly, lz, 0, 1, 0);
 
   setSceneLighting();
   terrain.drawLandscape(s, viewW / viewH);
@@ -396,9 +412,9 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   terrain.drawBuildings(s);
   enemyManager.draw(s);
 
-  // Draw all ships from this viewport's perspective (including the current player)
+  // In first-person the player's own ship is hidden; in third-person it is visible
   for (let player of players) {
-    if (!player.dead) shipDisplay(player.ship, player.labelColor);
+    if (!player.dead && (player !== p || !firstPersonView)) shipDisplay(player.ship, player.labelColor);
     renderProjectiles(player, s.x, s.z);
   }
   particleSystem.render(s.x, s.z);
@@ -894,6 +910,11 @@ function keyPressed() {
     mobileController.debug = !mobileController.debug;
     aimAssist.debug = mobileController.debug;
     aimAssist.enabled = mobileController.debug; // Sync assist on/off with debug for testing
+  }
+
+  // Toggle first-person / behind-ship camera (O key)
+  if (key === 'o' || key === 'O') {
+    firstPersonView = !firstPersonView;
   }
 }
 

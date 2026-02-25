@@ -206,6 +206,18 @@ function drawPlayerHUD(p, pi, hw, h) {
     textSize(sz); fill(c[0], c[1], c[2]); text(txt, x, y);
   }
 
+  // --- Crosshair (first-person reticle — only shown in first-person mode) ---
+  if (typeof firstPersonView !== 'undefined' && firstPersonView) {
+    let cw = 12, gap = 4;
+    stroke(255, 255, 255, 200); strokeWeight(1.5); noFill();
+    line(-cw - gap, 0, -gap, 0);
+    line(gap, 0, cw + gap, 0);
+    line(0, -cw - gap, 0, -gap);
+    line(0, gap, 0, cw + gap);
+    noStroke(); fill(255, 255, 255, 200);
+    ellipse(0, 0, 3, 3);
+  }
+
   // Death / respawn overlay
   if (p.dead) {
     fill(255, 0, 0, 200);

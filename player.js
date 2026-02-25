@@ -272,7 +272,11 @@ function updateShipInput(p) {
     smoothedMY = lerp(smoothedMY, movedY, MOUSE_SMOOTHING);
 
     let newYaw = p.ship.yaw - smoothedMX * MOUSE_SENSITIVITY;
-    let newPitch = p.ship.pitch - smoothedMY * MOUSE_SENSITIVITY;
+    // Pitch polarity depends on camera mode:
+    //   behind-ship (default): mouse-down = nose up (original behaviour) → subtract
+    //   first-person:          mouse-down = nose down                     → add
+    let pitchSign = (typeof firstPersonView !== 'undefined' && firstPersonView) ? 1 : -1;
+    let newPitch = p.ship.pitch + pitchSign * smoothedMY * MOUSE_SENSITIVITY;
 
     // Apply aim assist if enabled
     if (aimAssist.enabled) {
@@ -320,6 +324,7 @@ function updateShipInput(p) {
   // --- Keyboard steering ---
   if (keyIsDown(k.left)) p.ship.yaw += YAW_RATE;
   if (keyIsDown(k.right)) p.ship.yaw -= YAW_RATE;
+  // Keyboard pitch: original behaviour — pitchUp adds, pitchDown subtracts, regardless of camera mode.
   if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
   if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
 

@@ -1,5 +1,10 @@
 
-make sure we have recent p5 min
+Allow the player to fire a barrier that the virus can't cross. This allows strategic positioning to enclose areas or protect areas 
+Use a key to toggle between different weapons selected. This could toggle between missile, barrier, and normal fire.
+We'd need an indicator at the top of the screen which one is selected 
+
+Try and make it so that the player sees directly from the ship position 
+
 
 update. the package.json
 

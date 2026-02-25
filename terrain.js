@@ -25,20 +25,18 @@ const TERRAIN_PALETTE = {
   ]
 };
 
-// Flattened for uniform upload (r,g,b sequences)
-function getFlattenedPalette() {
+// Flattened palette — normalised 0-1, built once at module load rather than
+// every frame so applyShader() never allocates a temporary array per draw call.
+// Index layout: 0-5 Inland, 6-8 Shore, 9-11 Viron (Red/Dark/Scan), 12-13 Barrier.
+const TERRAIN_PALETTE_FLAT = (() => {
   let p = TERRAIN_PALETTE;
   let arr = [];
-  // Indices 0-5: Inland
-  for (let c of p.inland) arr.push(...c);
-  // Indices 6-8: Shore
-  for (let c of p.shore) arr.push(...c);
-  // Indices 9-11: Viron
-  for (let c of p.viron) arr.push(...c);
-  // Indices 12-13: Barrier
+  for (let c of p.inland)  arr.push(...c);
+  for (let c of p.shore)   arr.push(...c);
+  for (let c of p.viron)   arr.push(...c);
   for (let c of p.barrier) arr.push(...c);
   return arr.map(v => v / 255.0);
-}
+})();
 
 // --- GLSL vertex shader ---
 // Passes world-space position through to the fragment shader so the pulse rings
@@ -118,8 +116,12 @@ void main() {
     float rand = vColor.b;
     float parity = vColor.a;
     
-    // Position-based check for the Launchpad
-    vec2 tPos = floor(vWorldPos.xz / uTileSize + 0.01);
+    // Position-based check for the Launchpad.
+    // The 0.001 bias (= 0.12 world units) handles floating-point precision at
+    // exact tile boundaries without misclassifying vertices that are genuinely
+    // on the far edge of the launchpad (the old 0.01 offset = 1.2 world units
+    // was large enough to cause a visible seam at the launchpad boundary).
+    vec2 tPos = floor(vWorldPos.xz / uTileSize + 0.001);
     if (tPos.x >= 0.0 && tPos.x < 7.0 && tPos.y >= 0.0 && tPos.y < 7.0) {
       baseColor = vec3(1.0);
     } else {
@@ -208,6 +210,12 @@ class Terrain {
      * @type {Array<{x:number,z:number,radius:number}>}
      */
     this.sentinelGlows = [];
+
+    // Pre-allocated uniform upload buffers — reused every frame to avoid GC churn.
+    // pulseArr  : 5 pulses × 4 floats  (x, z, startTime, type)
+    // glowArr   : 2 sentinels × 4 floats (x, z, radius, active)
+    this._pulseArr = new Array(20).fill(0);
+    this._glowArr  = new Array(8).fill(0);
   }
 
   // ---------------------------------------------------------------------------
@@ -242,10 +250,24 @@ class Terrain {
   /**
    * Evicts the altitude and geometry caches if they grow too large.
    * Called once per frame from the main draw loop to prevent unbounded memory use.
+   *
+   * altCache is cleared in full — it rebuilds cheaply one entry at a time as tiles
+   * are visited, producing no perceptible stutter.
+   *
+   * chunkCache is trimmed by evicting only the oldest half rather than clearing
+   * entirely.  Clearing all 500+ chunks at once forces ~50 buildGeometry() calls
+   * in the same frame (all visible chunks must be rebuilt), causing a visible
+   * frame stutter.  Halving the cache retains the most recently built chunks,
+   * which are most likely to still be in the current view, so far fewer chunks
+   * need rebuilding on the next frame.
    */
   clearCaches() {
     if (this.altCache.size > 25000) this.altCache.clear();
-    if (this.chunkCache.size > 500) this.chunkCache.clear();
+    if (this.chunkCache.size > 500) {
+      // Evict the oldest half (Maps iterate in insertion order).
+      const keys = this.chunkCache.keys();
+      for (let i = 0; i < 250; i++) this.chunkCache.delete(keys.next().value);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -386,8 +408,13 @@ class Terrain {
         for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
           let xP = tx * TILE, zP = tz * TILE;
           let xP1 = xP + TILE, zP1 = zP + TILE;
-          let y00 = this.getAltitude(xP, zP), y10 = this.getAltitude(xP1, zP);
-          let y01 = this.getAltitude(xP, zP1), y11 = this.getAltitude(xP1, zP1);
+          // Grid corners are always exact tile boundaries (fx=0, fz=0), so call
+          // getGridAltitude() directly — it hits the altCache with a single Map.get()
+          // and skips the bilinear interpolation logic in getAltitude().
+          let y00 = this.getGridAltitude(tx,     tz    );
+          let y10 = this.getGridAltitude(tx + 1, tz    );
+          let y01 = this.getGridAltitude(tx,     tz + 1);
+          let y11 = this.getGridAltitude(tx + 1, tz + 1);
           let minY = Math.min(y00, y10, y01, y11);
           if (aboveSea(minY)) continue;
 
@@ -451,32 +478,41 @@ class Terrain {
     this.shader.setUniform('uTime', millis() / 1000.0);
     this.shader.setUniform('uFogDist', [VIEW_FAR * TILE - 800, VIEW_FAR * TILE + 400]);
     this.shader.setUniform('uTileSize', TILE);
-    this.shader.setUniform('uPalette', getFlattenedPalette());
+    this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
 
-    // Build the flat uniform array expected by the GLSL array declaration
-    let pulseArr = [];
+    // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
+    const pulseArr = this._pulseArr;
     for (let i = 0; i < 5; i++) {
+      const base = i * 4;
       if (i < this.activePulses.length) {
-        pulseArr.push(
-          this.activePulses[i].x,
-          this.activePulses[i].z,
-          this.activePulses[i].start,
-          this.activePulses[i].type || 0.0
-        );
+        pulseArr[base]     = this.activePulses[i].x;
+        pulseArr[base + 1] = this.activePulses[i].z;
+        pulseArr[base + 2] = this.activePulses[i].start;
+        pulseArr[base + 3] = this.activePulses[i].type || 0.0;
       } else {
-        pulseArr.push(0.0, 0.0, -9999.0, 0.0);  // Inactive slot: start = -9999 so age never triggers
+        pulseArr[base]     = 0.0;
+        pulseArr[base + 1] = 0.0;
+        pulseArr[base + 2] = -9999.0;  // Inactive: age never reaches 0
+        pulseArr[base + 3] = 0.0;
       }
     }
     this.shader.setUniform('uPulses', pulseArr);
 
-    // Upload steady sentinel glow positions (up to 2 slots, matching the shader array)
-    let glowArr = [];
+    // Write sentinel glow data into the pre-allocated buffer.
+    const glowArr = this._glowArr;
     for (let i = 0; i < 2; i++) {
+      const base = i * 4;
       if (i < this.sentinelGlows.length) {
-        let g = this.sentinelGlows[i];
-        glowArr.push(g.x, g.z, g.radius, 1.0);  // active
+        const g = this.sentinelGlows[i];
+        glowArr[base]     = g.x;
+        glowArr[base + 1] = g.z;
+        glowArr[base + 2] = g.radius;
+        glowArr[base + 3] = 1.0;  // active
       } else {
-        glowArr.push(0.0, 0.0, 0.0, 0.0);  // inactive slot
+        glowArr[base]     = 0.0;
+        glowArr[base + 1] = 0.0;
+        glowArr[base + 2] = 0.0;
+        glowArr[base + 3] = 0.0;  // inactive slot
       }
     }
     this.shader.setUniform('uSentinelGlows', glowArr);
@@ -508,7 +544,6 @@ class Terrain {
     let gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
-    let infected = [];
     // Compute camera params once and cache on the instance so drawTrees,
     // drawBuildings and enemies.draw reuse the same values this frame.
     let cam = this.getCameraParams(s);
@@ -590,8 +625,10 @@ class Terrain {
       endShape();
     }
     // Pass 1 — odd tiles: mat 11
+    // The shader derives parity from mat (11 → 0.75×); vColor.a is NOT read for
+    // Viron tiles so the alpha here does not affect the rendered colour.
     if (iVerts1.length) {
-      fill(11, 0, 0, 191); // 191/255 = 0.75 parity
+      fill(11, 0, 0, 255);
       beginShape(TRIANGLES);
       for (let i = 0; i < iVerts1.length; i += 3) vertex(iVerts1[i], iVerts1[i + 1], iVerts1[i + 2]);
       endShape();
@@ -634,7 +671,9 @@ class Terrain {
         endShape();
       }
       if (bVerts1.length) {
-        fill(21, 0, 0, 230); // 230/255 ~= 0.9 parity
+        // The shader derives parity from mat (21 → 0.90×); vColor.a is NOT read for
+        // Barrier tiles so the alpha here does not affect the rendered colour.
+        fill(21, 0, 0, 255);
         beginShape(TRIANGLES);
         for (let i = 0; i < bVerts1.length; i += 3) vertex(bVerts1[i], bVerts1[i + 1], bVerts1[i + 2]);
         endShape();
@@ -644,6 +683,10 @@ class Terrain {
     // Static sea plane — a single flat quad at SEA + 3 covering the visible area.
     // No per-vertex sine calculations; all four corners share the same Y so there
     // is no per-frame geometry work beyond issuing the two-triangle draw call.
+    // The sea is drawn while the terrain shader is still active so it receives the
+    // same fog blending that hides terrain chunk pop-in at the view boundary.
+    // mat = int(15 * 255/255 + 0.5) = 15, which matches no material branch in the
+    // shader, so vColor.rgb falls through as the raw sea blue — this is intentional.
     let seaSize = VIEW_FAR * TILE * 1.5;
     let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
     let sx0 = seaCx - seaSize, sx1 = seaCx + seaSize;

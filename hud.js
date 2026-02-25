@@ -192,7 +192,7 @@ function drawPlayerHUD(p, pi, hw, h) {
 
 
   // Compute infection keys once — reused for both the stats count and the radar loop below
-  let infKeys = Object.keys(infectedTiles);
+  let infKeys = infection.keys();
 
   // Stat lines: [size, [r,g,b], text, x, y]
   let lines = [
@@ -237,7 +237,7 @@ function drawPlayerHUD(p, pi, hw, h) {
  * @param {object} p        Player state.
  * @param {number} hw       Viewport half-width.
  * @param {number} h        Viewport height.
- * @param {string[]} infKeys Pre-computed Object.keys(infectedTiles) from drawPlayerHUD.
+ * @param {string[]} infKeys Pre-computed infection.keys() from drawPlayerHUD.
  */
 function drawRadarForPlayer(p, hw, h, infKeys) {
   let s = p.ship;

@@ -20,8 +20,6 @@
 
 let trees = [], buildings = [];    // Static world objects populated in setup()
 
-let infectedTiles = {};           // Map of tileKey → {tick} for infected land tiles
-let infectedCount = 0;            // Running count of infectedTiles keys (avoids Object.keys().length every frame)
 let level = 1;            // Current level number (increases on level completion)
 let currentMaxEnemies = 2;         // Max simultaneous enemies for the current level
 
@@ -123,7 +121,7 @@ function clearInfectionRadius(tx, tz) {
   for (let dx = -CLEAR_R; dx <= CLEAR_R; dx++)
     for (let dz = -CLEAR_R; dz <= CLEAR_R; dz++) {
       let k = tileKey(tx + dx, tz + dz);
-      if (infectedTiles[k]) { delete infectedTiles[k]; cleared++; infectedCount--; }
+      if (infection.remove(k)) cleared++;
     }
   return cleared;
 }
@@ -138,7 +136,7 @@ function clearInfectionRadius(tx, tz) {
  */
 function clearInfectionAt(wx, wz, p) {
   let tx = toTile(wx), tz = toTile(wz);
-  if (!infectedTiles[tileKey(tx, tz)]) return false;
+  if (!infection.has(tileKey(tx, tz))) return false;
   clearInfectionRadius(tx, tz);
   if (p) p.score += 100;
   if (typeof gameSFX !== 'undefined') gameSFX.playClearInfection(wx, terrain.getAltitude(wx, wz), wz);
@@ -284,8 +282,7 @@ function seedInitialInfection() {
 
     // Valid land tile — infect it and stop searching
     let tk = tileKey(toTile(wx), toTile(wz));
-    infectedTiles[tk] = 1;
-    infectedCount++;
+    infection.add(tk);
     return;
   }
   // (Silently give up if no valid tile found in MAX_TRIES — the seeder will
@@ -325,8 +322,7 @@ function startLevel(lvl) {
   enemyManager.clear();
   particleSystem.clear();
   terrain.activePulses = [];
-  infectedTiles = {};
-  infectedCount = 0;
+  infection.reset();
 
   // Guarantee at least one infection tile is visible from the very start
   seedInitialInfection();
@@ -488,7 +484,7 @@ function draw() {
   for (let b of buildings) {
     if (b.type !== 4) continue;
     b.pulseTimer = (b.pulseTimer || 0) + 1;
-    let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+    let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
     if (inf) {
       // Infected — emit the classic expanding pulse every SENTINEL_PULSE_INTERVAL frames
       if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
@@ -530,7 +526,7 @@ function draw() {
 
   // --- Level progression ---
   if (!levelComplete) {
-    let ic = infectedCount;
+    let ic = infection.count;
     if (ic > 0) infectionStarted = true;
     if (infectionStarted && ic === 0) {
       levelComplete = true;
@@ -568,7 +564,7 @@ function spreadInfection() {
   if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
 
   // Game over — too much infection (fast path: no Object.keys allocation needed)
-  if (infectedCount >= MAX_INF) {
+  if (infection.count >= MAX_INF) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       gameOverReason = 'INFECTION REACHED CRITICAL MASS';
@@ -582,7 +578,7 @@ function spreadInfection() {
   let lpInfected = 0;
   for (let tx = 0; tx < 7; tx++) {
     for (let tz = 0; tz < 7; tz++) {
-      if (infectedTiles[tileKey(tx, tz)]) lpInfected++;
+      if (infection.tiles[tileKey(tx, tz)]) lpInfected++;
     }
   }
   if (lpInfected >= 49) {
@@ -595,7 +591,7 @@ function spreadInfection() {
     return;
   }
 
-  let keys = Object.keys(infectedTiles);
+  let keys = infection.keys();
 
   // Probabilistic spread to one random orthogonal neighbour per infected tile.
   // A Set is used so that duplicate keys from the normal spread loop and the
@@ -608,7 +604,7 @@ function spreadInfection() {
     let d = ORTHO_DIRS[floor(random(4))];
     let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
-    if (aboveSea(terrain.getAltitude(wx, wz)) || infectedTiles[nk]) continue;
+    if (aboveSea(terrain.getAltitude(wx, wz)) || infection.tiles[nk]) continue;
     freshSet.add(nk);
   }
 
@@ -617,7 +613,7 @@ function spreadInfection() {
   for (let b of buildings) {
     if (b.type !== 4) continue;
     let stx = toTile(b.x), stz = toTile(b.z);
-    if (!infectedTiles[tileKey(stx, stz)]) continue;  // Only when this sentinel is infected
+    if (!infection.tiles[tileKey(stx, stz)]) continue;  // Only when this sentinel is infected
     // Blast outward in a ~5-tile radius circle with high per-tile probability
     for (let ddx = -SENTINEL_INFECTION_RADIUS; ddx <= SENTINEL_INFECTION_RADIUS; ddx++) {
       for (let ddz = -SENTINEL_INFECTION_RADIUS; ddz <= SENTINEL_INFECTION_RADIUS; ddz++) {
@@ -626,7 +622,7 @@ function spreadInfection() {
         let nx = stx + ddx, nz = stz + ddz;
         let nk = tileKey(nx, nz);
         let wx = nx * TILE, wz = nz * TILE;
-        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infectedTiles[nk]) {
+        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infection.tiles[nk]) {
           freshSet.add(nk);
         }
       }
@@ -635,8 +631,7 @@ function spreadInfection() {
 
   let soundCount = 0;
   for (let nk of freshSet) {
-    infectedTiles[nk] = 1;
-    infectedCount++;
+    infection.add(nk);
     let comma = nk.indexOf(',');
     let ptx = +nk.slice(0, comma), ptz = +nk.slice(comma + 1);
     // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
@@ -768,7 +763,7 @@ function checkCollisions(p) {
       let radiusSq = (b.w + 15) ** 2;
 
       if (dx * dx + dy * dy + dz * dz < radiusSq) {
-        let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+        let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
         if (inf) {
           // Infected powerup — penalty: lose a missile
           if (p.missilesRemaining > 0) p.missilesRemaining--;
@@ -803,7 +798,7 @@ function checkCollisions(p) {
         b.y > t.y - t.trunkH - 30 * t.canopyScale - 10 &&
         b.y < t.y + 10) {
         let tx = toTile(t.x), tz = toTile(t.z);
-        if (infectedTiles[tileKey(tx, tz)]) {
+        if (infection.tiles[tileKey(tx, tz)]) {
           clearInfectionRadius(tx, tz);
           p.score += 200;
           p.bullets.splice(i, 1);

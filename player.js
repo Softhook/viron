@@ -472,7 +472,7 @@ function updateProjectilePhysics(p) {
           for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
             for (let tx = bTx - 2; tx <= bTx + 2; tx++) {
               let k = tx + ',' + tz;
-              if (infectedTiles[k]) {
+              if (infection.tiles[k]) {
                 let txPos = tx * 120 + 60, tzPos = tz * 120 + 60;
                 let tyPos = terrain.getAltitude(txPos, tzPos);
                 let dx = txPos - b.x, dy = tyPos - b.y, dz = tzPos - b.z;

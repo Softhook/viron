@@ -485,7 +485,7 @@ class Terrain {
     // (O(infected_count)) instead of scanning every tile in every visible chunk
     // (O(visible_chunk_area) ≈ 12,000 lookups).  The bounding-box + frustum
     // checks below discard tiles that are out of range or behind the camera.
-    let infKeys = Object.keys(infectedTiles);
+    let infKeys = infection.keys();
     let minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
     let minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
     for (let ki = 0; ki < infKeys.length; ki++) {
@@ -597,7 +597,7 @@ class Terrain {
 
       push(); translate(t.x, y, t.z); noStroke();
       let { trunkH: h, canopyScale: sc, variant: vi } = t;
-      let inf = !!infectedTiles[tileKey(toTile(t.x), toTile(t.z))];
+      let inf = infection.has(tileKey(toTile(t.x), toTile(t.z)));
 
       let depth = (t.x - cam.x) * cam.fwdX + (t.z - cam.z) * cam.fwdZ;
 
@@ -655,7 +655,7 @@ class Terrain {
       let y = b.y;  // Pre-cached at setup — no Map lookup needed
       if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
-      let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+      let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
       let depth = (b.x - cam.x) * cam.fwdX + (b.z - cam.z) * cam.fwdZ;
       push(); translate(b.x, y, b.z); noStroke();
 

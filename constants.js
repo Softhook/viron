@@ -122,3 +122,55 @@ const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_
 
 /** Returns true when terrain depth y indicates a submerged tile (y ≥ SEA means underwater; WEBGL Y axis is inverted, larger values are deeper). */
 const aboveSea = y => y >= SEA - 1;
+
+// =============================================================================
+// InfectionManager — single source of truth for all infected tile state
+//
+// Centralises every read and write so the running count is always in sync
+// with the tile map.  All modules that previously accessed `infectedTiles`
+// and `infectedCount` directly now use `infection.*`.
+// =============================================================================
+class InfectionManager {
+  constructor() {
+    /** @type {Object<string,number>} Tile-key → 1 map; readable directly for fast loop checks. */
+    this.tiles = {};
+    /** @type {number} Running count — always in sync with this.tiles. Use instead of Object.keys().length. */
+    this.count = 0;
+  }
+
+  /** Clears all infection state. Called at the start of each level. */
+  reset() { this.tiles = {}; this.count = 0; }
+
+  /**
+   * Marks tile key k as infected.
+   * @param {string} k  Tile key from tileKey().
+   * @returns {boolean} true if the tile was newly infected (was not already set).
+   */
+  add(k) {
+    if (this.tiles[k]) return false;
+    this.tiles[k] = 1;
+    this.count++;
+    return true;
+  }
+
+  /**
+   * Removes the infection on tile key k.
+   * @param {string} k  Tile key from tileKey().
+   * @returns {boolean} true if the tile existed and was removed.
+   */
+  remove(k) {
+    if (!this.tiles[k]) return false;
+    delete this.tiles[k];
+    this.count--;
+    return true;
+  }
+
+  /** Returns true if tile key k is currently infected. */
+  has(k) { return !!this.tiles[k]; }
+
+  /** Returns an array of all infected tile keys. */
+  keys() { return Object.keys(this.tiles); }
+}
+
+/** Singleton infection state shared across all modules. */
+const infection = new InfectionManager();

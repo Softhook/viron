@@ -218,8 +218,7 @@ class EnemyManager {
       if (!aboveSea(gy)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
-        if (!infectedTiles[k]) {
-          infectedTiles[k] = 1;
+        if (infection.add(k)) {
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -328,7 +327,7 @@ class EnemyManager {
         if (!aboveSea(gy)) {
           let tx = toTile(e.x), tz = toTile(e.z);
           let k = tileKey(tx, tz);
-          if (!infectedTiles[k]) {
+          if (!infection.tiles[k]) {
             particleSystem.bombs.push({ x: e.x, y: e.y, z: e.z, k });
             if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal', e.x, e.y, e.z);
           }
@@ -356,7 +355,7 @@ class EnemyManager {
       if (!aboveSea(gy)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
-        if (!infectedTiles[k]) {
+        if (!infection.tiles[k]) {
           particleSystem.bombs.push({ x: e.x, y: e.y, z: e.z, k });
           if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal', e.x, e.y, e.z);
         }
@@ -394,7 +393,7 @@ class EnemyManager {
       for (let b of buildings) {
         if (b.type !== 4) continue;
         let sk = tileKey(toTile(b.x), toTile(b.z));
-        if (infectedTiles[sk]) continue;  // Already infected — skip
+        if (infection.tiles[sk]) continue;  // Already infected — skip
         let distSq = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
         if (distSq < bestDist) { bestDist = distSq; targetX = b.x; targetZ = b.z; }
       }
@@ -422,8 +421,7 @@ class EnemyManager {
       if (!aboveSea(gy)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
-        if (!infectedTiles[k]) {
-          infectedTiles[k] = 1;
+        if (infection.add(k)) {
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -515,8 +513,7 @@ class EnemyManager {
       if (!aboveSea(gy)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
-        if (!infectedTiles[k]) {
-          infectedTiles[k] = 1;
+        if (infection.add(k)) {
           if (isLaunchpad(e.x, e.z)) {
             if (millis() - lastAlarmTime > 1000) {
               if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -530,10 +527,10 @@ class EnemyManager {
           for (let dj = -1; dj <= 1; dj++) {
             if (random() < 0.25) {
               let nk = tileKey(tx + di, tz + dj);
-              if (!infectedTiles[nk]) {
+              if (!infection.tiles[nk]) {
                 let nx = (tx + di) * TILE, nz = (tz + dj) * TILE;
                 if (!aboveSea(terrain.getAltitude(nx, nz)))
-                  infectedTiles[nk] = 1;
+                  infection.add(nk);
               }
             }
           }

@@ -489,7 +489,7 @@ function draw() {
   // median frame time and snap to the nearest standard tier.
   if (!_p.budgetSet && _p.full) {
     const sorted = Array.from(_p.buf).sort((a, b) => a - b);
-    const medMs = sorted[30]; // p50 of 60 samples
+    const medMs = (sorted[29] + sorted[30]) / 2; // p50 of 60 samples (even-sized set)
     // ms-per-frame for standard tiers: 144 / 120 / 90 / 75 / 60 / 30 Hz
     const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
     _p.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
@@ -500,12 +500,12 @@ function draw() {
   if (_p.full && _now >= _p.nextEval) {
     _p.nextEval = _now + 2000; // re-evaluate every 2 s wall-clock
 
-    // 90th-percentile frame time: sort a copy and read index 54 of 60.
+    // 90th-percentile frame time: sort a copy and read index 53 of 60.
     // Thresholds form a dead zone that prevents quality bouncing:
-    //   reduce  if p90 > budget × 1.40  (sustained stutter — 40 % over budget)
-    //   restore if p90 < budget × 1.15  (clear headroom — within 15 % of budget)
+    //   reduce  if p90 > budget × 1.40  (sustained stutter — 40% over budget)
+    //   restore if p90 < budget × 1.15  (clear headroom — within 15% of budget)
     const sorted = Array.from(_p.buf).sort((a, b) => a - b);
-    const p90ms = sorted[54];
+    const p90ms = sorted[53];
 
     if (p90ms > _p.budgetMs * 1.4) {
       // 90th-percentile frame is >40% over budget → sustained jitter → reduce.
@@ -513,7 +513,7 @@ function draw() {
       VIEW_FAR  = max(20, VIEW_FAR  - 2);
       CULL_DIST = max(2000, CULL_DIST - 400);
       _p.cooldown = _now + 4000; // 4 s before any upgrade is allowed
-    } else if (p90ms < _p.budgetMs * 1.15 && _now > _p.cooldown) {
+    } else if (p90ms < _p.budgetMs * 1.15 && _now >= _p.cooldown) {
       // 90th-percentile within 15% of budget AND cooldown elapsed → gradually restore.
       VIEW_NEAR = min(35, VIEW_NEAR + 1);
       VIEW_FAR  = min(50, VIEW_FAR  + 1);

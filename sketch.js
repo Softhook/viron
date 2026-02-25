@@ -251,6 +251,10 @@ function startGame(np) {
       createPlayer(1, P2_KEYS, 500, [255, 180, 80])
     ];
   }
+  // Reset performance monitor cooldown so this new session starts without
+  // carrying over a quality-reduction penalty from the previous game.
+  if (window._perf) window._perf.cooldown = 0;
+
   startLevel(1);
   gameState = 'playing';
 }
@@ -425,12 +429,12 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
  *
  * In 'playing' state:
  *   1. Dynamic performance scaling: adjusts VIEW_NEAR/FAR and CULL_DIST
- *      every 120 frames to maintain the target frame rate.  Uses an
- *      exponential moving average (EMA) of raw FPS readings so that
- *      momentary GC pauses or chunk-load spikes do not falsely shrink the
- *      view distance.  The target FPS is derived from the smoothed value
- *      itself, preventing a single lucky frame on a 75 Hz display from
- *      locking the target at 75 fps when the hardware sustains only 65 fps.
+ *      every 2 s wall-clock time using a frame-time percentile monitor.
+ *      Raw deltaTime values fill a 60-frame circular buffer; the 90th-
+ *      percentile frame time is compared against the detected display
+ *      budget (ms/frame).  This catches jitter that FPS averages hide,
+ *      works correctly at any refresh rate, and prevents quality bouncing
+ *      on mobile via a 4-second post-reduction cooldown.
  *   2. Physics update: ship input, enemy AI, collision detection, infection spread,
  *      particle physics, projectile physics.
  *   3. Render: one or two viewport passes via renderPlayerView().
@@ -443,37 +447,74 @@ function draw() {
   if (gameState === 'gameover') { drawGameOver(); return; }
 
   // --- Dynamic Performance Scaling ---
-  // Evaluate every 2 s (120 frames).  Use an exponential moving average
-  // (EMA, α = 0.2) of raw frameRate() samples so that a single slow frame
-  // caused by a GC pause, chunk-load, or rAF scheduling jitter does not
-  // incorrectly trigger a view-distance reduction.
+  // Approach: frame-time percentile monitor (industry-standard technique).
   //
-  // The target FPS is derived from the *smoothed* value rather than a
-  // raw historic peak.  This prevents a single lucky frame on a 75 Hz
-  // display from locking the target to 75 fps when the hardware is
-  // actually sustaining ~65 fps — the original cause of excessive fog.
-  if (frameCount > 120 && frameCount % 120 === 0) {
-    let rawFPS = frameRate();
+  // Why not frameRate() / EMA:
+  //   • p5's frameRate() is itself an average of recent deltaTime values —
+  //     applying another EMA compounds the smoothing lag.
+  //   • FPS averages mask jitter: a game averaging 60 fps but spiking to
+  //     100 ms every second feels terrible; the average shows no problem.
+  //   • "Every N frames" evaluates at different wall-clock rates depending
+  //     on the display (75 Hz → 1.6 s, 120 Hz → 1.0 s).
+  //
+  // This monitor instead:
+  //   • Stores every raw deltaTime in a 60-entry circular buffer.
+  //   • Derives the display frame budget once from the median of the first
+  //     60 samples, snapped to a standard tier (144/120/90/75/60/30 Hz).
+  //   • Evaluates the 90th-percentile frame time every 2 s wall-clock — if
+  //     1 in 10 frames is slow the player feels it; averages would miss it.
+  //   • Enforces a 4 s cooldown after every quality reduction to prevent
+  //     bouncing (critical on mobile, where thermal throttling causes brief
+  //     spikes that quickly recover).
 
-    // EMA: each new sample contributes 20 %, giving ~5-sample memory.
-    // Seed with 60 so early startup dips are diluted against a neutral
-    // baseline rather than dominating the first few decisions.
-    if (window._fpsEMA === undefined) window._fpsEMA = 60;
-    window._fpsEMA = window._fpsEMA * 0.8 + rawFPS * 0.2;
-    let fps = window._fpsEMA;
+  if (!window._perf) {
+    window._perf = {
+      buf: new Float32Array(60), // circular buffer of raw frame times (ms)
+      idx: 0,
+      full: false,
+      budgetMs: 1000 / 60,      // ms-per-frame budget; refined after first 60 frames
+      budgetSet: false,
+      nextEval: 0,              // performance.now() timestamp of next evaluation
+      cooldown: 0,              // don't upgrade quality before this timestamp
+    };
+  }
+  const _p = window._perf;
 
-    // Target based on the smoothed rate — avoids the stale-ceiling bug
-    // of the old maxObservedFPS approach where a 75 fps spike would lock
-    // the target at 75 even when the sustained average was only 65 fps.
-    let targetFPS = fps > 70 ? 75 : 60;
+  // Record this frame's raw time (capped at 100 ms to exclude one-off load spikes).
+  _p.buf[_p.idx] = Math.min(deltaTime, 100);
+  _p.idx = (_p.idx + 1) % 60;
+  if (_p.idx === 0) _p.full = true;
 
-    if (fps < targetFPS * 0.9) {
-      // Clearly underperforming: shrink draw distances to regain headroom.
+  // After the first full buffer pass, detect the display refresh rate from the
+  // median frame time and snap to the nearest standard tier.
+  if (!_p.budgetSet && _p.full) {
+    const sorted = Array.from(_p.buf).sort((a, b) => a - b);
+    const medMs = sorted[30]; // p50 of 60 samples
+    // ms-per-frame for standard tiers: 144 / 120 / 90 / 75 / 60 / 30 Hz
+    const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
+    _p.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
+    _p.budgetSet = true;
+  }
+
+  const _now = performance.now();
+  if (_p.full && _now >= _p.nextEval) {
+    _p.nextEval = _now + 2000; // re-evaluate every 2 s wall-clock
+
+    // 90th-percentile frame time: sort a copy and read index 54 of 60.
+    // Thresholds form a dead zone that prevents quality bouncing:
+    //   reduce  if p90 > budget × 1.40  (sustained stutter — 40 % over budget)
+    //   restore if p90 < budget × 1.15  (clear headroom — within 15 % of budget)
+    const sorted = Array.from(_p.buf).sort((a, b) => a - b);
+    const p90ms = sorted[54];
+
+    if (p90ms > _p.budgetMs * 1.4) {
+      // 90th-percentile frame is >40% over budget → sustained jitter → reduce.
       VIEW_NEAR = max(15, VIEW_NEAR - 2);
       VIEW_FAR  = max(20, VIEW_FAR  - 2);
       CULL_DIST = max(2000, CULL_DIST - 400);
-    } else if (fps >= targetFPS * 0.95) {
-      // Close to or above target: gradually restore full draw distances.
+      _p.cooldown = _now + 4000; // 4 s before any upgrade is allowed
+    } else if (p90ms < _p.budgetMs * 1.15 && _now > _p.cooldown) {
+      // 90th-percentile within 15% of budget AND cooldown elapsed → gradually restore.
       VIEW_NEAR = min(35, VIEW_NEAR + 1);
       VIEW_FAR  = min(50, VIEW_FAR  + 1);
       CULL_DIST = min(6000, CULL_DIST + 200);

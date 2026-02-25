@@ -124,8 +124,7 @@ function fireMissile(p) {
  */
 function fireBarrier(p) {
   if (p.dead) return;
-  let proj = spawnProjectile(p.ship, 14, 300);
-  if (typeof inFlightBarriers !== 'undefined') inFlightBarriers.push(proj);
+  inFlightBarriers.push(spawnProjectile(p.ship, 14, 300));
   if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
 }
 
@@ -621,24 +620,17 @@ function updateProjectilePhysics(p) {
 
 /**
  * Advances all in-flight barrier projectiles one frame.
- * On landing adds the tile to barrierTiles (dedup automatic).
- * On expiry without landing simply discards the projectile.
- * Environment-owned: no player reference needed.
+ * On landing, snaps to tile grid and adds key to barrierTiles (dedup is automatic).
  */
 function updateBarrierPhysics() {
-  if (typeof inFlightBarriers === 'undefined') return;
   for (let i = inFlightBarriers.length - 1; i >= 0; i--) {
     let b = inFlightBarriers[i];
     b.vy += 0.15;  // Gravity
     b.x += b.vx; b.y += b.vy; b.z += b.vz;
     b.life--;
-    let gnd = terrain.getAltitude(b.x, b.z);
-    if (b.y >= gnd || b.life <= 0) {
-      if (b.y >= gnd) {
-        let tx = Math.floor(b.x / TILE);
-        let tz = Math.floor(b.z / TILE);
-        if (typeof barrierTiles !== 'undefined') barrierTiles.add(tileKey(tx, tz));
-      }
+    if (b.y >= terrain.getAltitude(b.x, b.z) || b.life <= 0) {
+      if (b.life > 0)  // Landed (not expired)
+        barrierTiles.add(tileKey(Math.floor(b.x / TILE), Math.floor(b.z / TILE)));
       inFlightBarriers.splice(i, 1);
     }
   }
@@ -651,16 +643,12 @@ function updateBarrierPhysics() {
  * @param {number} camZ  Camera world Z.
  */
 function renderInFlightBarriers(camX, camZ) {
-  if (typeof inFlightBarriers === 'undefined' || !inFlightBarriers.length) return;
-  let cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
-  noStroke();
+  if (!inFlightBarriers.length) return;
+  const cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
+  noStroke(); fill(255, 255, 255, 220);
   for (let b of inFlightBarriers) {
     if ((b.x - camX) ** 2 + (b.z - camZ) ** 2 > cullSq) continue;
-    push();
-    translate(b.x, b.y, b.z);
-    fill(255, 255, 255, 220);
-    box(8);
-    pop();
+    push(); translate(b.x, b.y, b.z); box(8); pop();
   }
 }
 
@@ -686,9 +674,6 @@ function renderProjectiles(p, camX, camZ) {
     box(6);
     pop();
   }
-
-  // --- Barriers are now rendered by renderInFlightBarriers() in the main loop ---
-
 
   for (let m of p.homingMissiles) {
     if ((m.x - camX) ** 2 + (m.z - camZ) ** 2 > cullSq) continue;

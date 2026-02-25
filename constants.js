@@ -84,7 +84,6 @@ const MOUSE_SMOOTHING = 0.25;   // Lerp blend factor for smoothed mouse delta (l
 
 // --- Weapon modes (index into WEAPON_MODES array) ---
 const WEAPON_MODES = ['NORMAL', 'MISSILE', 'BARRIER'];
-const BARRIER_SIZE = 120;  // World-space side length of a placed barrier square (one tile width)
 
 // --- Key bindings — Player 1 (WASD + Q / E / R / F) ---
 const P1_KEYS = {

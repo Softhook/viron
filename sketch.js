@@ -381,7 +381,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
 
   // Camera position: 550 units behind the ship at a slightly raised height
   let cd = 550;
-  let camY = min(s.y - 120, SEA - 60);  // Clamp camera above sea so it doesn't clip
+  let camY = min(s.y - 180, SEA - 60);  // Clamp camera above sea so it doesn't clip
   let cx = s.x + sin(s.yaw) * cd;
   let cy = camY;
   let cz = s.z + cos(s.yaw) * cd;
@@ -510,13 +510,13 @@ function draw() {
     if (p90ms > _p.budgetMs * 1.4) {
       // 90th-percentile frame is >40% over budget → sustained jitter → reduce.
       VIEW_NEAR = max(15, VIEW_NEAR - 2);
-      VIEW_FAR  = max(20, VIEW_FAR  - 2);
+      VIEW_FAR = max(20, VIEW_FAR - 2);
       CULL_DIST = max(2000, CULL_DIST - 400);
       _p.cooldown = _now + 4000; // 4 s before any upgrade is allowed
     } else if (p90ms < _p.budgetMs * 1.15 && _now >= _p.cooldown) {
       // 90th-percentile within 15% of budget AND cooldown elapsed → gradually restore.
       VIEW_NEAR = min(35, VIEW_NEAR + 1);
-      VIEW_FAR  = min(50, VIEW_FAR  + 1);
+      VIEW_FAR = min(50, VIEW_FAR + 1);
       CULL_DIST = min(6000, CULL_DIST + 200);
     }
   }

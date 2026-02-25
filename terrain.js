@@ -1,13 +1,44 @@
 // =============================================================================
-// terrain.js — Terrain class
-//
-// Owns all terrain-related state and rendering:
-//   • GLSL shader with fog and pulse ring effects
-//   • Altitude cache  — memoised per tile-grid coordinate
-//   • Chunk geometry cache — pre-built p5 buildGeometry meshes
-//   • Active pulses   — time-stamped ring effects triggered by explosions / infection
-//   • drawLandscape / drawTrees / drawBuildings rendering methods
+// TERRAIN CONFIGURATION (The "Brain")
+// Edit these swatches to change the look of the world instantly.
 // =============================================================================
+const TERRAIN_PALETTE = {
+  // Material 1: Inland (6 swatches)
+  inland: [
+    [60, 180, 60], [30, 120, 40], [180, 200, 50],
+    [220, 200, 80], [210, 130, 140], [180, 140, 70]
+  ],
+  // Material 2: Shore (3 swatches)
+  shore: [
+    [230, 210, 80], [200, 180, 60], [150, 180, 50]
+  ],
+  // Viron (Red/Dark/Scan)
+  viron: [
+    [217, 13, 5],     // cRed index 0
+    [46, 5, 2],       // cDark index 1
+    [255, 140, 25]    // cScan index 2
+  ],
+  // Barriers
+  barrier: [
+    [245, 247, 255],  // Pearl base
+    [235, 235, 240]   // Subtle parity shift
+  ]
+};
+
+// Flattened for uniform upload (r,g,b sequences)
+function getFlattenedPalette() {
+  let p = TERRAIN_PALETTE;
+  let arr = [];
+  // Indices 0-5: Inland
+  for (let c of p.inland) arr.push(...c);
+  // Indices 6-8: Shore
+  for (let c of p.shore) arr.push(...c);
+  // Indices 9-11: Viron
+  for (let c of p.viron) arr.push(...c);
+  // Indices 12-13: Barrier
+  for (let c of p.barrier) arr.push(...c);
+  return arr.map(v => v / 255.0);
+}
 
 // --- GLSL vertex shader ---
 // Passes world-space position through to the fragment shader so the pulse rings
@@ -48,64 +79,65 @@ uniform vec4 uPulses[5];
 uniform vec2 uFogDist;
 // Steady sentinel glows: xy = world position, z = glow radius, w = 1.0 if active
 uniform vec4 uSentinelGlows[2];
-// uTileSize: world-space size of one tile (= TILE constant) — used by infection animation
+// uPalette: array of vec3 colors for dynamic re-coloring
+uniform vec3 uPalette[14];
 uniform float uTileSize;
 
 void main() {
-  // ── Infection tile animation ─────────────────────────────────────────────
-  // Infection tile overlays are drawn with a magenta "tag" colour so the shader
-  // can recognise them without any extra per-tile uniform uploads.
-  // The tag is  (1.0, 0.0, 1.0)  for even-checkerboard tiles and
-  //             (0.5, 0.0, 0.5)  for odd-checkerboard tiles.
-  // When detected the fragment colour is replaced with GPU-computed pulsing green,
-  // exactly matching the old JS lerp but at zero CPU cost per tile per frame.
-  float isEvenInf = step(0.99, vColor.r) * step(vColor.g, 0.01) * step(0.99, vColor.b);
-  float isOddInf  = step(0.49, vColor.r) * (1.0 - step(0.51, vColor.r))
-                  * step(vColor.g, 0.01)
-                  * step(0.49, vColor.b) * (1.0 - step(0.51, vColor.b));
-  
-  // Tag detection for Barriers: White (1.0, 1.0, 1.0) and Grey (0.92, 0.92, 0.92)
-  float isBarEven = step(0.99, vColor.r) * step(0.99, vColor.g) * step(0.99, vColor.b);
-  float isBarOdd  = step(0.91, vColor.r) * step(0.91, vColor.g) * step(0.93, vColor.b); 
-  float isBar     = clamp(isBarEven + isBarOdd, 0.0, 1.0);
-  
-  float isInfTile = clamp(isEvenInf + isOddInf, 0.0, 1.0);
-
+  // Material IDs (from R channel)
+  int mat = int(vColor.r * 255.0 + 0.5);
   vec3 baseColor = vColor.rgb;
   
-  if (isInfTile > 0.5) {
-    // ── Classic-Speed Digital Viron ─────────────────────────────────────
+  if (mat >= 10 && mat <= 11) {
+    // ── Viron (Mat 10=Even, 11=Odd) ───────────────────────────────────
     float xP = vWorldPos.x / uTileSize;
     float zP = vWorldPos.z / uTileSize;
-    
-    // Global pulse matching original JS (frameCount * 0.06 ≈ uTime * 3.6)
-    // Small spatial offsets (0.05) keep it organic without looking 'confusing'
     float pulse = sin(uTime * 3.6 + xP * 0.05 + zP * 0.05) * 0.5 + 0.5;
-    
-    // Intermittent scanner: Once every 10 seconds
     float scanPos = uTime / 10.0;
     float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
-    
     float af = clamp(mix(1.15, 0.7, (vWorldPos.y - 200.0) / -350.0), 0.7, 1.15);
-    float parity = isEvenInf > 0.5 ? 1.0 : 0.75;
-    
-    vec3 cRed    = vec3(0.85, 0.05, 0.02) * parity;
-    vec3 cDark   = vec3(0.18, 0.02, 0.01) * parity;
-    vec3 cScan   = vec3(1.0, 0.55, 0.1) * parity; 
-    
+    float parity = (mat == 10) ? 1.0 : 0.75;
+    vec3 cRed    = uPalette[9] * parity;
+    vec3 cDark   = uPalette[10] * parity;
+    vec3 cScan   = uPalette[11] * parity; 
     baseColor = mix(cDark, cRed, pulse);
-    baseColor += cScan * scan * 1.5;      // High-tech intermittent sweep
+    baseColor += cScan * scan * 1.5;      
     baseColor *= af;
-  } else if (isBar > 0.5) {
-    // ── 'Pearl' Barrier (Slow Cool-Tone Shimmer) ────────────────────────
+  } else if (mat >= 20 && mat <= 21) {
+    // ── Barrier (Mat 20=Even, 21=Odd) ────────────────────────────────
     float xP = vWorldPos.x / uTileSize;
     float zP = vWorldPos.z / uTileSize;
-    
     float shimmer = sin(uTime * 0.7 + xP * 0.15 + zP * 0.1) * 0.5 + 0.5;
-    float parity = isBarEven > 0.5 ? 1.0 : 0.90;
-    
-    vec3 pearlBase = vec3(0.96, 0.97, 1.0);
+    float parity = (mat == 20) ? 1.0 : 0.90;
+    vec3 pearlBase = uPalette[12];
     baseColor = pearlBase * parity * (0.88 + 0.12 * shimmer);
+  } else if (mat >= 1 && mat <= 2) {
+    // ── Landscape (Mat 1=Inland, 2=Shore) ────────────────────────────
+    // Use pre-computed Organic Tags from vColor
+    float noisePatch = vColor.g;
+    float rand = vColor.b;
+    float parity = vColor.a;
+    
+    // Position-based check for the Launchpad
+    vec2 tPos = floor(vWorldPos.xz / uTileSize + 0.01);
+    if (tPos.x >= 0.0 && tPos.x < 7.0 && tPos.y >= 0.0 && tPos.y < 7.0) {
+      baseColor = vec3(1.0);
+    } else {
+      if (mat == 2) { // Shore
+        float idx = floor(rand * 3.0);
+        baseColor = (idx < 1.0) ? uPalette[6] : (idx < 2.0 ? uPalette[7] : uPalette[8]);
+      } else { // Inland
+        // Exact weight-match to original JS: (noise * 2.0 + rand * 0.2) * 6
+        float val = mod(floor((noisePatch * 2.0 + rand * 0.2) * 6.0), 6.0);
+        if (val < 1.0) baseColor = uPalette[0];
+        else if (val < 2.0) baseColor = uPalette[1];
+        else if (val < 3.0) baseColor = uPalette[2];
+        else if (val < 4.0) baseColor = uPalette[3];
+        else if (val < 5.0) baseColor = uPalette[4];
+        else baseColor = uPalette[5];
+      }
+    }
+    baseColor *= parity;
   }
 
   vec3 cyberColor = vec3(0.0);
@@ -149,7 +181,7 @@ void main() {
   vec3 fogColor = vec3(30.0 / 255.0, 60.0 / 255.0, 120.0 / 255.0);
   outColor = mix(outColor, fogColor, fogFactor);
 
-  gl_FragColor = vec4(outColor, vColor.a);
+  gl_FragColor = vec4(outColor, 1.0);
 }
 `;
 
@@ -213,7 +245,7 @@ class Terrain {
    */
   clearCaches() {
     if (this.altCache.size > 25000) this.altCache.clear();
-    if (this.chunkCache.size > 200) this.chunkCache.clear();
+    if (this.chunkCache.size > 500) this.chunkCache.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -348,6 +380,7 @@ class Terrain {
       let startZ = cz * CHUNK_SIZE;
 
       beginShape(TRIANGLES);
+      fill(34, 139, 34); // Unified Terrain Tag: Forest Green
 
       for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
         for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
@@ -355,46 +388,19 @@ class Terrain {
           let xP1 = xP + TILE, zP1 = zP + TILE;
           let y00 = this.getAltitude(xP, zP), y10 = this.getAltitude(xP1, zP);
           let y01 = this.getAltitude(xP, zP1), y11 = this.getAltitude(xP1, zP1);
-          let avgY = (y00 + y10 + y01 + y11) * 0.25;
           let minY = Math.min(y00, y10, y01, y11);
-          if (aboveSea(minY)) continue;  // Skip fully submerged tiles
+          if (aboveSea(minY)) continue;
 
-          let chk = (tx + tz) % 2 === 0;  // Checkerboard shading variation
+          // Tag the material (R), organic noise (G), random jitter (B) and parity (A)
+          let avgY = (y00 + y10 + y01 + y11) * 0.25;
+          let isShore = (avgY > SEA - 15);
 
-          let baseR, baseG, baseB;
-          let isSkirt = isLaunchpad(xP, zP) || isLaunchpad(xP1, zP) || isLaunchpad(xP, zP1) || isLaunchpad(xP1, zP1);
+          let noiseVal = noise(tx * 0.15, tz * 0.15);
+          let randVal = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453 % 1;
+          let parity = ((tx + tz) % 2 === 0) ? 1.0 : 0.85;
 
-          if (isSkirt) {
-            // Launchpad tiles are pure white
-            baseR = 255; baseG = 255; baseB = 255;
-          } else {
-            // Use a deterministic pseudo-random value per tile for colour variety
-            let rand = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453 % 1;
-            if (avgY > SEA - 15) {
-              // Near-shore sandy / grassy colours
-              let colors = [[230, 210, 80], [200, 180, 60], [150, 180, 50]];
-              let col = colors[Math.floor(rand * 3)];
-              baseR = col[0]; baseG = col[1]; baseB = col[2];
-            } else {
-              // Inland colour patches blended with Perlin noise for organic look
-              let colors = [
-                [60, 180, 60], [30, 120, 40], [180, 200, 50],
-                [220, 200, 80], [210, 130, 140], [180, 140, 70]
-              ];
-              let patch = noise(tx * 0.15, tz * 0.15);
-              let colIdx = Math.floor((patch * 2.0 + rand * 0.2) * 6) % 6;
-              let col = colors[colIdx];
-              baseR = col[0]; baseG = col[1]; baseB = col[2];
-            }
-          }
+          fill(isShore ? 2 : 1, noiseVal * 255, randVal * 255, parity * 255);
 
-          // Dark checkerboard rows add subtle ground texture variation
-          let finalR = chk ? baseR : baseR * 0.85;
-          let finalG = chk ? baseG : baseG * 0.85;
-          let finalB = chk ? baseB : baseB * 0.85;
-
-          fill(finalR, finalG, finalB);
-          // Each tile is two triangles sharing the diagonal
           vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
           vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
         }
@@ -444,7 +450,8 @@ class Terrain {
     shader(this.shader);
     this.shader.setUniform('uTime', millis() / 1000.0);
     this.shader.setUniform('uFogDist', [VIEW_FAR * TILE - 800, VIEW_FAR * TILE + 400]);
-    this.shader.setUniform('uTileSize', TILE);  // Used by infection animation in the fragment shader
+    this.shader.setUniform('uTileSize', TILE);
+    this.shader.setUniform('uPalette', getFlattenedPalette());
 
     // Build the flat uniform array expected by the GLSL array declaration
     let pulseArr = [];
@@ -556,10 +563,8 @@ class Terrain {
 
     for (let ki = 0; ki < infObjects.length; ki++) {
       const t = infObjects[ki];
-      // Fast integer-based reject
       if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
 
-      // Frustum cull
       const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
       const tdx = tcx - cam.x, tdz = tcz - cam.z;
       const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
@@ -577,16 +582,16 @@ class Terrain {
       for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
     }
 
-    // Pass 0 — even tiles: tag = pure magenta (1, 0, 1) → shader applies bright green pulse
+    // Pass 0 — even tiles: mat 10
     if (iVerts0.length) {
-      fill(255, 0, 255);
+      fill(10, 0, 0, 255);
       beginShape(TRIANGLES);
       for (let i = 0; i < iVerts0.length; i += 3) vertex(iVerts0[i], iVerts0[i + 1], iVerts0[i + 2]);
       endShape();
     }
-    // Pass 1 — odd tiles: tag = dark magenta (127, 0, 127) → shader applies dimmer green pulse
+    // Pass 1 — odd tiles: mat 11
     if (iVerts1.length) {
-      fill(127, 0, 127);
+      fill(11, 0, 0, 191); // 191/255 = 0.75 parity
       beginShape(TRIANGLES);
       for (let i = 0; i < iVerts1.length; i += 3) vertex(iVerts1[i], iVerts1[i + 1], iVerts1[i + 2]);
       endShape();
@@ -623,13 +628,13 @@ class Terrain {
       }
 
       if (bVerts0.length) {
-        fill(255, 255, 255); // Shader detects white
+        fill(20, 0, 0, 255);
         beginShape(TRIANGLES);
         for (let i = 0; i < bVerts0.length; i += 3) vertex(bVerts0[i], bVerts0[i + 1], bVerts0[i + 2]);
         endShape();
       }
       if (bVerts1.length) {
-        fill(235, 235, 238); // Shader detects light grey
+        fill(21, 0, 0, 230); // 230/255 ~= 0.9 parity
         beginShape(TRIANGLES);
         for (let i = 0; i < bVerts1.length; i += 3) vertex(bVerts1[i], bVerts1[i + 1], bVerts1[i + 2]);
         endShape();

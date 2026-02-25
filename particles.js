@@ -150,8 +150,7 @@ class ParticleSystem {
                 let nx = tx + r, nz = tz + c;
                 if (aboveSea(terrain.getAltitude(nx * TILE, nz * TILE))) continue;
                 let nk = tileKey(nx, nz);
-                if (!infectedTiles[nk]) {
-                  infectedTiles[nk] = 1;
+                if (infection.add(nk)) {
                   if (isLaunchpad(nx * TILE, nz * TILE)) hitLP = true;
                 }
               }
@@ -163,8 +162,7 @@ class ParticleSystem {
           }
         } else {
           // Normal bomb: infect the single tile recorded when the bomb was spawned
-          if (!infectedTiles[b.k]) {
-            infectedTiles[b.k] = 1;
+          if (infection.add(b.k)) {
             if (isLaunchpad(b.x, b.z)) {
               if (millis() - lastAlarmTime > 1000) {
                 if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -175,7 +173,9 @@ class ParticleSystem {
         }
         terrain.addPulse(b.x, b.z, 0.0);  // Trigger red ground ring
         if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal', b.x, b.y, b.z);
-        this.bombs.splice(i, 1);
+        // Swap-and-pop for O(1) removal (order doesn't matter for bombs)
+        let lastBomb = this.bombs.pop();
+        if (i < this.bombs.length) this.bombs[i] = lastBomb;
       }
     }
 
@@ -185,7 +185,9 @@ class ParticleSystem {
       b.x += b.vx; b.y += b.vy; b.z += b.vz;
       b.life -= 2;
       if (b.life <= 0 || b.y > terrain.getAltitude(b.x, b.z) || b.y > SEA) {
-        this.enemyBullets.splice(i, 1);
+        // Swap-and-pop for O(1) removal (order doesn't matter for enemy bullets)
+        let last = this.enemyBullets.pop();
+        if (i < this.enemyBullets.length) this.enemyBullets[i] = last;
       }
     }
   }

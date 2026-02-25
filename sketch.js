@@ -20,7 +20,6 @@
 
 let trees = [], buildings = [];    // Static world objects populated in setup()
 
-let infectedTiles = {};           // Map of tileKey → {tick} for infected land tiles
 let level = 1;            // Current level number (increases on level completion)
 let currentMaxEnemies = 2;         // Max simultaneous enemies for the current level
 
@@ -122,7 +121,7 @@ function clearInfectionRadius(tx, tz) {
   for (let dx = -CLEAR_R; dx <= CLEAR_R; dx++)
     for (let dz = -CLEAR_R; dz <= CLEAR_R; dz++) {
       let k = tileKey(tx + dx, tz + dz);
-      if (infectedTiles[k]) { delete infectedTiles[k]; cleared++; }
+      if (infection.remove(k)) cleared++;
     }
   return cleared;
 }
@@ -137,7 +136,7 @@ function clearInfectionRadius(tx, tz) {
  */
 function clearInfectionAt(wx, wz, p) {
   let tx = toTile(wx), tz = toTile(wz);
-  if (!infectedTiles[tileKey(tx, tz)]) return false;
+  if (!infection.has(tileKey(tx, tz))) return false;
   clearInfectionRadius(tx, tz);
   if (p) p.score += 100;
   if (typeof gameSFX !== 'undefined') gameSFX.playClearInfection(wx, terrain.getAltitude(wx, wz), wz);
@@ -189,11 +188,14 @@ function setup() {
   // Trees — placed with a fixed seed for a consistent world layout
   randomSeed(42);
   let numTrees = isMobile ? 80 : 250;
-  for (let i = 0; i < numTrees; i++)
+  for (let i = 0; i < numTrees; i++) {
+    let tx = random(-5000, 5000), tz = random(-5000, 5000);
     trees.push({
-      x: random(-5000, 5000), z: random(-5000, 5000),
+      x: tx, z: tz,
+      y: terrain.getAltitude(tx, tz),  // Cached altitude — never changes
       variant: floor(random(3)), trunkH: random(25, 50), canopyScale: random(1.0, 1.8)
     });
+  }
 
   // menuCam starts over open terrain away from the launchpad
 
@@ -201,8 +203,10 @@ function setup() {
   randomSeed(123);
   let numBldgs = isMobile ? 15 : 40;
   for (let i = 0; i < numBldgs; i++) {
+    let bx = random(-4500, 4500), bz = random(-4500, 4500);
     buildings.push({
-      x: random(-4500, 4500), z: random(-4500, 4500),
+      x: bx, z: bz,
+      y: terrain.getAltitude(bx, bz),  // Cached altitude — never changes
       w: random(40, 100), h: random(50, 180), d: random(40, 100),
       type: floor(random(4)),
       col: [random(80, 200), random(80, 200), random(80, 200)]
@@ -214,6 +218,7 @@ function setup() {
     let peak = MOUNTAIN_PEAKS[i];
     buildings.push({
       x: peak.x, z: peak.z,
+      y: terrain.getAltitude(peak.x, peak.z),  // Cached altitude — never changes
       w: 60, h: 280, d: 60,   // Larger than ordinary buildings — monumental scale
       type: 4,
       col: [0, 220, 200],
@@ -277,7 +282,7 @@ function seedInitialInfection() {
 
     // Valid land tile — infect it and stop searching
     let tk = tileKey(toTile(wx), toTile(wz));
-    infectedTiles[tk] = 1;
+    infection.add(tk);
     return;
   }
   // (Silently give up if no valid tile found in MAX_TRIES — the seeder will
@@ -317,7 +322,7 @@ function startLevel(lvl) {
   enemyManager.clear();
   particleSystem.clear();
   terrain.activePulses = [];
-  infectedTiles = {};
+  infection.reset();
 
   // Guarantee at least one infection tile is visible from the very start
   seedInitialInfection();
@@ -382,7 +387,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   if (typeof gameSFX !== 'undefined') gameSFX.updateListener(cx, cy, cz, s.x, s.y, s.z, 0, 1, 0);
 
   setSceneLighting();
-  terrain.drawLandscape(s);
+  terrain.drawLandscape(s, viewW / viewH);
   terrain.drawTrees(s);
   terrain.drawBuildings(s);
   enemyManager.draw(s);
@@ -479,7 +484,7 @@ function draw() {
   for (let b of buildings) {
     if (b.type !== 4) continue;
     b.pulseTimer = (b.pulseTimer || 0) + 1;
-    let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+    let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
     if (inf) {
       // Infected — emit the classic expanding pulse every SENTINEL_PULSE_INTERVAL frames
       if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
@@ -521,7 +526,7 @@ function draw() {
 
   // --- Level progression ---
   if (!levelComplete) {
-    let ic = Object.keys(infectedTiles).length;
+    let ic = infection.count;
     if (ic > 0) infectionStarted = true;
     if (infectionStarted && ic === 0) {
       levelComplete = true;
@@ -558,11 +563,8 @@ function draw() {
 function spreadInfection() {
   if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
 
-  let keys = Object.keys(infectedTiles);
-  let keysLen = keys.length;
-
-  // Game over — too much infection
-  if (keysLen >= MAX_INF) {
+  // Game over — too much infection (fast path: no Object.keys allocation needed)
+  if (infection.count >= MAX_INF) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       gameOverReason = 'INFECTION REACHED CRITICAL MASS';
@@ -572,15 +574,14 @@ function spreadInfection() {
     return;
   }
 
-  // Game over — launchpad fully overrun
-  let lpInfected = 0, lpTotal = 0;
+  // Game over — launchpad fully overrun (7×7 = 49 tiles)
+  let lpInfected = 0;
   for (let tx = 0; tx < 7; tx++) {
     for (let tz = 0; tz < 7; tz++) {
-      lpTotal++;
-      if (infectedTiles[tileKey(tx, tz)]) lpInfected++;
+      if (infection.tiles[tileKey(tx, tz)]) lpInfected++;
     }
   }
-  if (lpInfected >= lpTotal) {
+  if (lpInfected >= 49) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       gameOverReason = 'LAUNCH PAD INFECTED';
@@ -590,18 +591,20 @@ function spreadInfection() {
     return;
   }
 
+  let keys = infection.keys();
+
   // Probabilistic spread to one random orthogonal neighbour per infected tile.
   // A Set is used so that duplicate keys from the normal spread loop and the
   // sentinel acceleration loop below cannot both process the same tile.
   let freshSet = new Set();
-  for (let i = 0; i < keysLen; i++) {
+  for (let i = 0; i < keys.length; i++) {
     if (random() > INF_RATE) continue;
     let comma = keys[i].indexOf(',');
     let tx = +keys[i].slice(0, comma), tz = +keys[i].slice(comma + 1);
     let d = ORTHO_DIRS[floor(random(4))];
     let nx = tx + d[0], nz = tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
-    if (aboveSea(terrain.getAltitude(wx, wz)) || infectedTiles[nk]) continue;
+    if (aboveSea(terrain.getAltitude(wx, wz)) || infection.tiles[nk]) continue;
     freshSet.add(nk);
   }
 
@@ -610,7 +613,7 @@ function spreadInfection() {
   for (let b of buildings) {
     if (b.type !== 4) continue;
     let stx = toTile(b.x), stz = toTile(b.z);
-    if (!infectedTiles[tileKey(stx, stz)]) continue;  // Only when this sentinel is infected
+    if (!infection.tiles[tileKey(stx, stz)]) continue;  // Only when this sentinel is infected
     // Blast outward in a ~5-tile radius circle with high per-tile probability
     for (let ddx = -SENTINEL_INFECTION_RADIUS; ddx <= SENTINEL_INFECTION_RADIUS; ddx++) {
       for (let ddz = -SENTINEL_INFECTION_RADIUS; ddz <= SENTINEL_INFECTION_RADIUS; ddz++) {
@@ -619,18 +622,23 @@ function spreadInfection() {
         let nx = stx + ddx, nz = stz + ddz;
         let nk = tileKey(nx, nz);
         let wx = nx * TILE, wz = nz * TILE;
-        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infectedTiles[nk]) {
+        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infection.tiles[nk]) {
           freshSet.add(nk);
         }
       }
     }
   }
 
+  let soundCount = 0;
   for (let nk of freshSet) {
-    infectedTiles[nk] = 1;
+    infection.add(nk);
     let comma = nk.indexOf(',');
     let ptx = +nk.slice(0, comma), ptz = +nk.slice(comma + 1);
-    if (typeof gameSFX !== 'undefined') gameSFX.playInfectionSpread(ptx * TILE, terrain.getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
+    // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
+    if (typeof gameSFX !== 'undefined' && soundCount < 3) {
+      gameSFX.playInfectionSpread(ptx * TILE, terrain.getAltitude(ptx * TILE, ptz * TILE), ptz * TILE);
+      soundCount++;
+    }
     if (isLaunchpad(ptx * TILE, ptz * TILE)) {
       if (millis() - lastAlarmTime > 1000) {
         if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
@@ -750,13 +758,12 @@ function checkCollisions(p) {
   for (let i = buildings.length - 1; i >= 0; i--) {
     let b = buildings[i];
     if (b.type === 3) {
-      let bGnd = terrain.getAltitude(b.x, b.z);
-      let floatY = bGnd - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
+      let floatY = b.y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
       let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
       let radiusSq = (b.w + 15) ** 2;
 
       if (dx * dx + dy * dy + dz * dz < radiusSq) {
-        let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+        let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
         if (inf) {
           // Infected powerup — penalty: lose a missile
           if (p.missilesRemaining > 0) p.missilesRemaining--;
@@ -787,12 +794,11 @@ function checkCollisions(p) {
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
     for (let t of trees) {
-      let ty = terrain.getAltitude(t.x, t.z);
       if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 < 3600 &&
-        b.y > ty - t.trunkH - 30 * t.canopyScale - 10 &&
-        b.y < ty + 10) {
+        b.y > t.y - t.trunkH - 30 * t.canopyScale - 10 &&
+        b.y < t.y + 10) {
         let tx = toTile(t.x), tz = toTile(t.z);
-        if (infectedTiles[tileKey(tx, tz)]) {
+        if (infection.tiles[tileKey(tx, tz)]) {
           clearInfectionRadius(tx, tz);
           p.score += 200;
           p.bullets.splice(i, 1);
@@ -865,10 +871,6 @@ function mousePressed() {
     }
   }
 }
-
-function mouseDragged() { mouseMoved(); }
-
-function mouseMoved() { }
 
 /** Resizes the p5 canvas to match the new browser window dimensions. */
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }

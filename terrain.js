@@ -141,7 +141,8 @@ class Terrain {
    */
   addPulse(x, z, type = 0.0) {
     // Prepend so the newest pulse is first; cap list at 5 so the shader array stays in sync.
-    this.activePulses = [{ x, z, start: millis() / 1000.0, type }, ...this.activePulses].slice(0, 5);
+    this.activePulses.unshift({ x, z, start: millis() / 1000.0, type });
+    if (this.activePulses.length > 5) this.activePulses.length = 5;
   }
 
   // ---------------------------------------------------------------------------
@@ -181,7 +182,8 @@ class Terrain {
   /**
    * Broad frustum test — returns false for world objects that are clearly
    * behind the camera or beyond the horizontal field of view.
-   * @param {{x,z,fwdX,fwdZ}} cam  Camera descriptor from getCameraParams().
+   * @param {{x,z,fwdX,fwdZ,fovSlope}} cam  Camera descriptor from getCameraParams() with
+   *                                          fovSlope pre-computed by drawLandscape().
    * @param {number} tx  World-space X to test.
    * @param {number} tz  World-space Z to test.
    */
@@ -190,9 +192,7 @@ class Terrain {
     let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
     if (fwdDist < -TILE * 5) return false;
     let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
-    let aspect = (numPlayers === 1 ? width : width * 0.5) / height;
-    let slope = 0.57735 * aspect + 0.3;
-    let halfWidth = (fwdDist > 0 ? fwdDist : 0) * slope + TILE * 6;
+    let halfWidth = (fwdDist > 0 ? fwdDist : 0) * cam.fovSlope + TILE * 6;
     return Math.abs(rightDist) <= halfWidth;
   }
 
@@ -427,17 +427,36 @@ class Terrain {
    * Draw order:
    *   1. Terrain chunks (via cached geometry + terrain shader)
    *   2. Infected tile overlays (pulsing green quads drawn on top)
-   *   3. Sea plane (flat quad at SEA+3)
+   *   3. Static sea plane (flat quad at SEA+3)
    *   4. Launchpad missile decorations (standard lighting restored first)
    *
+   * Camera is computed once here and stored as this._cam so drawTrees,
+   * drawBuildings and enemies.draw can reuse it without recomputing sin/cos.
+   *
    * @param {{x,y,z,yaw,pitch}} s  The ship whose viewport is being rendered.
+   * @param {number} viewAspect    viewW / viewH of the actual WebGL viewport — must
+   *                               match the aspect passed to p5's perspective() so
+   *                               frustum culling matches what the camera sees.
    */
-  drawLandscape(s) {
+  drawLandscape(s, viewAspect) {
     let gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
     let infected = [];
+    // Compute camera params once and cache on the instance so drawTrees,
+    // drawBuildings and enemies.draw reuse the same values this frame.
     let cam = this.getCameraParams(s);
+
+    // Pre-compute FOV slope once — used for chunk culling, infected-tile culling,
+    // and inFrustum() calls in drawTrees/drawBuildings.
+    // 0.57735 = tan(30°), matching the PI/3 perspective FOV used in renderPlayerView.
+    // The +0.3 padding ensures objects at oblique angles are never incorrectly culled.
+    // viewAspect must match the value passed to perspective() so culling is accurate.
+    cam.fovSlope = 0.57735 * viewAspect + 0.3;  // Attached to cam so inFrustum() reuses it
+    this._cam = cam;
+
+    let fovSlope = cam.fovSlope;
+    let chunkHalf = CHUNK_SIZE * TILE;   // One chunk width — used as lateral margin
 
     // p5 lighting silently overrides custom shaders that don't declare lighting
     // uniforms; disable it for the terrain pass.
@@ -451,47 +470,68 @@ class Terrain {
 
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
-        // Rough back-face cull at chunk level — skip chunks entirely behind the camera
+        // Full frustum cull at chunk level — skip chunks behind OR to the sides.
+        // Uses the chunk centre with a one-chunk lateral margin so no
+        // partially-visible edge chunk is accidentally dropped.
         let chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
         let chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
         let dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
         let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
-        if (fwdDist < -CHUNK_SIZE * TILE * 1.5) continue;
+        if (fwdDist < -chunkHalf) continue;   // More than one chunk behind
+        let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
+        let halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
+        if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
 
         model(this.getChunkGeometry(cx, cz));
-
-        // Collect infected tiles within this chunk for the overlay pass below
-        for (let tx = cx * CHUNK_SIZE; tx < (cx + 1) * CHUNK_SIZE; tx++) {
-          for (let tz = cz * CHUNK_SIZE; tz < (cz + 1) * CHUNK_SIZE; tz++) {
-            if (infectedTiles[tileKey(tx, tz)]) {
-              let xP = tx * TILE, zP = tz * TILE;
-              let xP1 = xP + TILE, zP1 = zP + TILE;
-
-              // Slightly below ground (- 0.5) to avoid z-fighting with base terrain
-              // Cache the four corner altitudes so they are looked up only once each.
-              let r00 = this.getAltitude(xP, zP), r10 = this.getAltitude(xP1, zP);
-              let r01 = this.getAltitude(xP, zP1), r11 = this.getAltitude(xP1, zP1);
-              let y00 = r00 - 0.5, y10 = r10 - 0.5, y01 = r01 - 0.5, y11 = r11 - 0.5;
-
-              let avgY = (r00 + r10 + r01 + r11) * 0.25;
-              let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
-
-              // Animate the green glow with a sine wave per-tile offset
-              let chk = (tx + tz) % 2 === 0;
-              let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
-              // Altitude factor: brighter near sea (danger), dimmer inland
-              let af = map(avgY, -100, SEA, 1.15, 0.65);
-              let base = chk ? [160, 255, 10, 40, 10, 25] : [120, 200, 5, 25, 5, 15];
-              infected.push({
-                v,
-                r: lerp(base[0], base[1], pulse) * af,
-                g: lerp(base[2], base[3], pulse) * af,
-                b: lerp(base[4], base[5], pulse) * af
-              });
-            }
-          }
-        }
       }
+    }
+
+    // Build infected tile overlays by iterating the infection map directly
+    // (O(infected_count)) instead of scanning every tile in every visible chunk
+    // (O(visible_chunk_area) ≈ 12,000 lookups).  The bounding-box + frustum
+    // checks below discard tiles that are out of range or behind the camera.
+    let infKeys = infection.keys();
+    let minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
+    let minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
+    for (let ki = 0; ki < infKeys.length; ki++) {
+      let k = infKeys[ki];
+      let comma = k.indexOf(',');
+      let tx = +k.slice(0, comma), tz = +k.slice(comma + 1);
+      // Fast bounding-box reject before any vector math
+      if (tx < minTx || tx > maxTx || tz < minTz || tz > maxTz) continue;
+      // Frustum cull: skip tiles behind the camera (use tile centre)
+      let tcx = tx * TILE + TILE * 0.5, tcz = tz * TILE + TILE * 0.5;
+      let tdx = tcx - cam.x, tdz = tcz - cam.z;
+      let tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
+      if (tFwd < -TILE * 2) continue;
+      let tRight = Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX);
+      let tHW = (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4;
+      if (tRight > tHW) continue;
+
+      let xP = tx * TILE, zP = tz * TILE;
+      let xP1 = xP + TILE, zP1 = zP + TILE;
+
+      // Slightly below ground (- 0.5) to avoid z-fighting with base terrain
+      // Cache the four corner altitudes so they are looked up only once each.
+      let r00 = this.getAltitude(xP, zP), r10 = this.getAltitude(xP1, zP);
+      let r01 = this.getAltitude(xP, zP1), r11 = this.getAltitude(xP1, zP1);
+      let y00 = r00 - 0.5, y10 = r10 - 0.5, y01 = r01 - 0.5, y11 = r11 - 0.5;
+
+      let avgY = (r00 + r10 + r01 + r11) * 0.25;
+      let v = [xP, y00, zP, xP1, y10, zP, xP, y01, zP1, xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1];
+
+      // Animate the green glow with a sine wave per-tile offset
+      let chk = (tx + tz) % 2 === 0;
+      let pulse = sin(frameCount * 0.08 + tx * 0.5 + tz * 0.3) * 0.5 + 0.5;
+      // Altitude factor: brighter near sea (danger), dimmer inland
+      let af = map(avgY, -100, SEA, 1.15, 0.65);
+      let base = chk ? [160, 255, 10, 40, 10, 25] : [120, 200, 5, 25, 5, 15];
+      infected.push({
+        v,
+        r: lerp(base[0], base[1], pulse) * af,
+        g: lerp(base[2], base[3], pulse) * af,
+        b: lerp(base[4], base[5], pulse) * af
+      });
     }
 
     // Draw all infected overlays in a single beginShape/endShape call to minimise draw calls
@@ -506,33 +546,18 @@ class Terrain {
       endShape();
     }
 
-    // Animated sea — vertex Y positions oscillate with a two-component sine wave so the
-    // surface visibly undulates.  A 3×3 grid of quads (18 triangles) gives enough vertices
-    // for smooth-looking waves without significant CPU cost.
-    // Colour also oscillates slightly for a secondary water shimmer.
-    let seaP = sin(frameCount * 0.03) * 8;
+    // Static sea plane — a single flat quad at SEA + 3 covering the visible area.
+    // No per-vertex sine calculations; all four corners share the same Y so there
+    // is no per-frame geometry work beyond issuing the two-triangle draw call.
     let seaSize = VIEW_FAR * TILE * 1.5;
     let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
-    let wt = frameCount * 0.04;                // Wave phase advances each frame
-    const waveAmp = 6, waveFreq = 0.0006;      // Amplitude (world units) and spatial frequency
-
-    // Helper: animated Y at a world-space point
-    const seaY = (wx, wz) =>
-      SEA + 3 + sin(wx * waveFreq + wt) * waveAmp + sin(wz * waveFreq * 1.3 + wt * 0.75) * (waveAmp * 0.5);
-
-    const SEGS = 3;  // Subdivisions per axis
-    let segSize = seaSize * 2 / SEGS;
-    fill(15, 45 + seaP, 150 + seaP);
+    let sx0 = seaCx - seaSize, sx1 = seaCx + seaSize;
+    let sz0 = seaCz - seaSize, sz1 = seaCz + seaSize;
+    let sy = SEA + 3;
+    fill(15, 45, 150);
     beginShape(TRIANGLES);
-    for (let zi = 0; zi < SEGS; zi++) {
-      for (let xi = 0; xi < SEGS; xi++) {
-        let x0 = seaCx - seaSize + xi * segSize,       x1 = x0 + segSize;
-        let z0 = seaCz - seaSize + zi * segSize,       z1 = z0 + segSize;
-        let y00 = seaY(x0, z0), y10 = seaY(x1, z0), y01 = seaY(x0, z1), y11 = seaY(x1, z1);
-        vertex(x0, y00, z0); vertex(x1, y10, z0); vertex(x0, y01, z1);
-        vertex(x1, y10, z0); vertex(x1, y11, z1); vertex(x0, y01, z1);
-      }
-    }
+    vertex(sx0, sy, sz0); vertex(sx1, sy, sz0); vertex(sx0, sy, sz1);
+    vertex(sx1, sy, sz0); vertex(sx1, sy, sz1); vertex(sx0, sy, sz1);
     endShape();
 
     // Restore standard lighting for subsequent non-terrain objects
@@ -566,17 +591,18 @@ class Terrain {
   drawTrees(s) {
     let treeCullDist = VIEW_FAR * TILE;
     let cullSq = treeCullDist * treeCullDist;
-    let cam = this.getCameraParams(s);
+    // Reuse the camera params computed in drawLandscape for this frame.
+    let cam = this._cam || this.getCameraParams(s);
 
     for (let t of trees) {
       let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
       if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
-      let y = this.getAltitude(t.x, t.z);
+      let y = t.y;  // Pre-cached at setup — no Map lookup needed
       if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
 
       push(); translate(t.x, y, t.z); noStroke();
       let { trunkH: h, canopyScale: sc, variant: vi } = t;
-      let inf = !!infectedTiles[tileKey(toTile(t.x), toTile(t.z))];
+      let inf = infection.has(tileKey(toTile(t.x), toTile(t.z)));
 
       let depth = (t.x - cam.x) * cam.fwdX + (t.z - cam.z) * cam.fwdZ;
 
@@ -625,15 +651,16 @@ class Terrain {
    */
   drawBuildings(s) {
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
-    let cam = this.getCameraParams(s);
+    // Reuse the camera params computed in drawLandscape for this frame.
+    let cam = this._cam || this.getCameraParams(s);
 
     for (let b of buildings) {
       let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
       if (dSq >= cullSq || !this.inFrustum(cam, b.x, b.z)) continue;
-      let y = this.getAltitude(b.x, b.z);
+      let y = b.y;  // Pre-cached at setup — no Map lookup needed
       if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
-      let inf = !!infectedTiles[tileKey(toTile(b.x), toTile(b.z))];
+      let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
       let depth = (b.x - cam.x) * cam.fwdX + (b.z - cam.z) * cam.fwdZ;
       push(); translate(b.x, y, b.z); noStroke();
 

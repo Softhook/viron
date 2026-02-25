@@ -205,7 +205,7 @@ class AimAssist {
         for (let tz = shipTz - 11; tz <= shipTz + 11; tz++) {
             for (let tx = shipTx - 11; tx <= shipTx + 11; tx++) {
                 let k = tx + ',' + tz;
-                if (infectedTiles[k]) {
+                if (infection.tiles[k]) {
                     let vx = tx * 120 + 60 - ship.x;
                     let vy = 300 - ship.y; // Rough constant Y for fast rejection
                     let vz = tz * 120 + 60 - ship.z;

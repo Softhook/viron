@@ -435,13 +435,13 @@ function killPlayer(p) {
  */
 function updateProjectilePhysics(p) {
   // --- Bullets ---
+  // Aim assist flag is constant for the duration of this frame's bullet updates
+  let assistEnabled = aimAssist.enabled;
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
 
     // PERFORMANCE: Only seeking for "fresh" bullets (first 30 frames)
     // and only if Aim Assist is enabled (for P1 or via 'P' toggle)
-    let assistEnabled = aimAssist.enabled;
-
     if (assistEnabled && b.life > 240) { // Bullets start at 300 life
       let bestTarget = null;
       let bestDot = 0.985;
@@ -472,7 +472,7 @@ function updateProjectilePhysics(p) {
           for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
             for (let tx = bTx - 2; tx <= bTx + 2; tx++) {
               let k = tx + ',' + tz;
-              if (infectedTiles[k]) {
+              if (infection.tiles[k]) {
                 let txPos = tx * 120 + 60, tzPos = tz * 120 + 60;
                 let tyPos = terrain.getAltitude(txPos, tzPos);
                 let dx = txPos - b.x, dy = tyPos - b.y, dz = tzPos - b.z;

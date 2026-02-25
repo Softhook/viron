@@ -52,7 +52,7 @@ function drawMenu() {
   };
 
   setSceneLighting();
-  terrain.drawLandscape(fakeShip);
+  terrain.drawLandscape(fakeShip, width / height);
   terrain.drawTrees(fakeShip);
   terrain.drawBuildings(fakeShip);
 
@@ -96,8 +96,8 @@ function drawMenu() {
   text('Christian Nold, 2026', 0, -height * 0.14 + 78);
 
   // CRT scanline overlay — subtle dark horizontal lines for retro feel
+  stroke(0, 0, 0, 20); strokeWeight(1);
   for (let y = -height / 2; y < height / 2; y += 4) {
-    stroke(0, 0, 0, 20); strokeWeight(1);
     line(-width / 2, y, width / 2, y);
   }
   noStroke();
@@ -192,7 +192,7 @@ function drawPlayerHUD(p, pi, hw, h) {
 
 
   // Compute infection keys once — reused for both the stats count and the radar loop below
-  let infKeys = Object.keys(infectedTiles);
+  let infKeys = infection.keys();
 
   // Stat lines: [size, [r,g,b], text, x, y]
   let lines = [
@@ -237,7 +237,7 @@ function drawPlayerHUD(p, pi, hw, h) {
  * @param {object} p        Player state.
  * @param {number} hw       Viewport half-width.
  * @param {number} h        Viewport height.
- * @param {string[]} infKeys Pre-computed Object.keys(infectedTiles) from drawPlayerHUD.
+ * @param {string[]} infKeys Pre-computed infection.keys() from drawPlayerHUD.
  */
 function drawRadarForPlayer(p, hw, h, infKeys) {
   let s = p.ship;

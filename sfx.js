@@ -673,8 +673,6 @@ class GameSFX {
         let { ctx, t, targetNode } = s;
 
         let gainNode = ctx.createGain();
-        // --- VOLUME SETTING ---
-        // 1 is now louder (was 0.08). Increase this for more volume, decrease for less.
         gainNode.gain.setValueAtTime(1, t);
         gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
 
@@ -684,13 +682,10 @@ class GameSFX {
         filter.frequency.exponentialRampToValueAtTime(200, t + 0.04);
         filter.Q.value = 5;
 
-        // --- SPATIAL EXTENT ---
-        // These settings control how the sound drops off with distance.
-        // We override the default _setup panner if it exists.
         if (targetNode instanceof PannerNode) {
-            targetNode.refDistance = 300;     // Distance where volume begins to drop (default 150)
-            targetNode.maxDistance = 15000;   // Maximum distance the sound can be heard
-            targetNode.rolloffFactor = 1.5;   // How fast it gets quiet (higher = faster drop-off)
+            targetNode.refDistance = 300;
+            targetNode.maxDistance = 15000;
+            targetNode.rolloffFactor = 1.5;
         }
 
         let osc = ctx.createOscillator();

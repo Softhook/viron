@@ -412,8 +412,8 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
     // Camera sits 550 units behind the ship at a height-capped Y, looking at the ship body.
     cy = min(s.y - 120, 140);
-    cx = s.x + 550 * sin(s.yaw);
-    cz = s.z + 550 * cos(s.yaw);
+    cx = s.x + 300 * sin(s.yaw);
+    cz = s.z + 300 * cos(s.yaw);
     lx = s.x; ly = s.y; lz = s.z;
   }
   camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
@@ -935,6 +935,15 @@ function keyPressed() {
   // Toggle first-person / behind-ship camera (O key)
   if (key === 'o' || key === 'O') {
     firstPersonView = !firstPersonView;
+  }
+
+  // Toggle ship design (L key)
+  if (key === 'l' || key === 'L') {
+    for (let p of players) {
+      if (typeof SHIP_DESIGNS !== 'undefined') {
+        p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+      }
+    }
   }
 }
 

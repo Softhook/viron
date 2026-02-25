@@ -57,7 +57,8 @@ function createPlayer(id, keys, offsetX, labelColor) {
     shootHeld: false,             // Edge-detect for shoot key (prevents missile/barrier auto-repeat)
     aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
     mobileMissilePressed: false,  // Tracks the mobile missile button edge so it fires once per tap
-    lpDeaths: 0                   // Tracks consecutive deaths on an occupied launchpad
+    lpDeaths: 0,                  // Tracks consecutive deaths on an occupied launchpad
+    designIndex: 0                // Current ship visual design index
   };
   resetShip(p, offsetX);
   return p;
@@ -152,16 +153,26 @@ function fireActiveWeapon(p) {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the world-space up vector of the ship (pointing away from the thrust
- * nozzle).  Used to apply thrust force in the correct direction regardless of
- * the ship's orientation.
+ * Returns the world-space thrust force vector of the ship.
+ * The thrust direction is determined by the player's ship design settings.
  * @param {{pitch,yaw}} s  Ship state.
- * @returns {{x,y,z}}  Unit up vector in world space.
+ * @param {number} designIdx  Index into SHIP_DESIGNS.
+ * @returns {{x,y,z}}  Thrust force vector in world space.
  */
-function shipUpDir(s) {
-  let sp = sin(s.pitch), cp = cos(s.pitch);
-  let sy = sin(s.yaw), cy = cos(s.yaw);
-  return { x: sp * -sy, y: -cp, z: sp * -cy };
+function shipUpDir(s, designIdx) {
+  let alpha = 0;
+  if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[designIdx]) {
+    alpha = SHIP_DESIGNS[designIdx].thrustAngle || 0;
+  }
+
+  let p = s.pitch, y = s.yaw;
+  // Rotation of [0, -1, 0] (local up) by 'alpha' backward, then by pitch/yaw
+  // Result: x = -sin(p + alpha)*sin(y), y = -cos(p + alpha), z = -sin(p + alpha)*cos(y)
+  return {
+    x: -Math.sin(p + alpha) * Math.sin(y),
+    y: -Math.cos(p + alpha),
+    z: -Math.sin(p + alpha) * Math.cos(y)
+  };
 }
 
 /**
@@ -245,24 +256,92 @@ function shipDisplay(s, tintColor) {
   };
 
   let r = tintColor[0], g = tintColor[1], b = tintColor[2];
+  let dark = [r * 0.4, g * 0.4, b * 0.4];
+  let light = [lerp(r, 255, 0.4), lerp(g, 255, 0.4), lerp(b, 255, 0.4)];
+  let engineGray = [80, 80, 85];
 
-  // Four faces with slightly different tint strengths for a faceted look
-  let faces = [
-    // Bottom face (brightest)
-    [lerp(200, r, 0.3), lerp(200, g, 0.3), lerp(200, b, 0.3), [-15, 10, 15], [15, 10, 15], [0, 10, -25]],
-    // Left face
-    [lerp(170, r, 0.2), lerp(170, g, 0.2), lerp(170, b, 0.2), [0, -10, 5], [-15, 10, 15], [0, 10, -25]],
-    // Right face
-    [lerp(150, r, 0.2), lerp(150, g, 0.2), lerp(150, b, 0.2), [0, -10, 5], [15, 10, 15], [0, 10, -25]],
-    // Rear/belly face (darkest)
-    [lerp(130, r, 0.15), lerp(130, g, 0.15), lerp(130, b, 0.15), [0, -10, 5], [-15, 10, 15], [15, 10, 15]]
-  ];
-
-  for (let [cr, cg, cb, a, bf, d] of faces) {
-    fill(cr, cg, cb);
+  const drawFace = (pts, col) => {
+    fill(col[0], col[1], col[2], col[3] || 255);
     beginShape();
-    vertex(...transform(a)); vertex(...transform(bf)); vertex(...transform(d));
+    for (let p of pts) {
+      let t = transform(p);
+      vertex(t[0], t[1], t[2]);
+    }
     endShape(CLOSE);
+  };
+
+  // Find the player to get their design index and input state
+  let p = players.find(player => player.labelColor === tintColor);
+  let designIdx = p ? (p.designIndex || 0) : 0;
+  let isPushing = false;
+  if (p) {
+    isPushing = keyIsDown(p.keys.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
+    if (isMobile && p.id === 0 && typeof mobileController !== 'undefined') {
+      isPushing = isPushing || mobileController.getInputs(s, [], 0, 0).thrust;
+    }
+  }
+
+  let flamePoints = [], thrustAngle = 0;
+  if (SHIP_DESIGNS[designIdx]) {
+    thrustAngle = SHIP_DESIGNS[designIdx].thrustAngle || 0;
+    flamePoints = SHIP_DESIGNS[designIdx].draw(drawFace, tintColor, engineGray, light, dark, isPushing, s, transform);
+  }
+
+  resetShader();
+  setSceneLighting();
+
+  // --- Afterburner / Thrust Flames ---
+  if (p) {
+    const drawThrustFlame = (flamePt) => {
+      push();
+      // 1. Move to engine nozzle in world space
+      let t = transform([flamePt.x, flamePt.y, flamePt.z]);
+      translate(t[0], t[1], t[2]);
+
+      // 2. Orient to match ship + design's thrust offset
+      rotateY(s.yaw);
+      rotateX(s.pitch + thrustAngle);
+
+      let flicker = 1.0 + Math.sin(frameCount * 0.8) * 0.15;
+      let power = isPushing ? 1.0 : 0.3;
+      noStroke();
+
+      // Cone 1: Hot Core
+      // p5 cone is centered; shift it down by half-height to anchor apex at nozzle
+      let h1 = 15 * power * flicker;
+      push();
+      translate(0, h1 / 2, 0);
+      fill(isPushing ? 200 : 80, 230, 255, isPushing ? 255 : 100);
+      cone(3 * power * flicker, h1, 6);
+      pop();
+
+      // Cone 2: Middle Flame
+      let h2 = 30 * power * flicker;
+      push();
+      translate(0, h2 / 2 + 5 * power, 0); // Start slightly further out
+      fill(50, 150, 255, isPushing ? 150 : 50);
+      cone(6 * power * flicker, h2, 6);
+      pop();
+
+      if (isPushing) {
+        // Outer Exhaust Glow
+        let h3 = 50 * flicker;
+        push();
+        translate(0, h3 / 2 + 15, 0);
+        fill(255, 100, 0, 80);
+        cone(10 * flicker, h3, 6);
+        pop();
+
+        // Engine Glow Point (small highlight at nozzle)
+        fill(255, 255, 255, 200);
+        sphere(2);
+      }
+      pop();
+    };
+
+    if (Array.isArray(flamePoints)) {
+      flamePoints.forEach(fp => drawThrustFlame(fp));
+    }
   }
 
   resetShader();
@@ -379,17 +458,64 @@ function updateShipInput(p) {
 
   if (isThrusting) {
     let pw = 0.45;
-    let dVec = shipUpDir(s);
+    let dVec = shipUpDir(s, p.designIndex);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
-    // Emit orange exhaust particles every other frame
+
+    // Emit particles diagonally back from twin engines every other frame
     if (frameCount % 2 === 0) {
-      particleSystem.particles.push({
-        x: s.x, y: s.y, z: s.z,
-        vx: -dVec.x * 8 + random(-1, 1),
-        vy: -dVec.y * 8 + random(-1, 1),
-        vz: -dVec.z * 8 + random(-1, 1),
-        life: 255, decay: 10, seed: random(1.0), size: random(2, 6),
-        color: [180, 140, 100]
+      let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+      let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
+      let tLocal = (pt) => {
+        let x = pt[0], y = pt[1], z = pt[2];
+        let y1 = y * cx - z * sx;
+        let z1 = y * sx + z * cx;
+        let x2 = x * cy + z1 * sy;
+        let z2 = -x * sy + z1 * cy;
+        return { x: x2 + s.x, y: y1 + s.y, z: z2 + s.z };
+      };
+
+      // Particle exhaust direction is exactly opposite of thrust force
+      let alpha = 0;
+      if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
+        alpha = SHIP_DESIGNS[p.designIndex].thrustAngle || 0;
+      }
+      const pa = s.pitch + alpha;
+      let exDir = {
+        x: Math.sin(pa) * Math.sin(s.yaw),
+        y: Math.cos(pa),
+        z: Math.sin(pa) * Math.cos(s.yaw)
+      };
+
+      // Get engine locations from the current design
+      let engPos = [];
+      if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
+        engPos = SHIP_DESIGNS[p.designIndex].draw(null);
+      } else {
+        engPos = [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
+      }
+
+      engPos.forEach(pos => {
+        let wPos = tLocal([pos.x, pos.y, pos.z + 2]); // Particle spawn slightly behind nozzle
+        particleSystem.particles.push({
+          x: wPos.x, y: wPos.y, z: wPos.z,
+          vx: exDir.x * 12 + random(-1, 1),
+          vy: exDir.y * 12 + random(-1, 1),
+          vz: exDir.z * 12 + random(-1, 1),
+          life: 255, decay: 12, seed: random(1.0), size: random(3, 8),
+          color: [80, 180, 255] // Hot cyan exhaust
+        });
+
+        // Add some secondary orange sparks/smoke
+        if (random() > 0.6) {
+          particleSystem.particles.push({
+            x: wPos.x, y: wPos.y, z: wPos.z,
+            vx: exDir.x * 6 + random(-2, 2),
+            vy: exDir.y * 6 + random(-2, 2),
+            vz: exDir.z * 6 + random(-2, 2),
+            life: 180, decay: 10, seed: random(1.0), size: random(2, 5),
+            color: [255, 120, 0]
+          });
+        }
       });
     }
   }

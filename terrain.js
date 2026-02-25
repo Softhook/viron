@@ -547,14 +547,20 @@ class Terrain {
     }
 
     // --- Barrier tile overlays ---
-    // Reads from the global barrierTiles Set \u2014 exactly the same pattern as
-    // infected tile overlays above.  White quads follow the real terrain slope.
+    // Reads from the global barrierTiles Set — iterates once to cull and collect
+    // visible tile vertices, then draws in exactly TWO beginShape/endShape passes
+    // (one per checkerboard parity) so fill() is never called inside an active
+    // shape.  Calling fill() mid-shape forces p5's WEBGL renderer to flush its
+    // internal vertex buffer on every colour change; with 2,000 barrier tiles
+    // alternating between two colours that would be ~2,000 GPU flushes per frame.
     if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
-      beginShape(TRIANGLES);
+      // Two flat vertex arrays: even-parity tiles (bright white) and odd-parity (off-white)
+      let bVerts0 = [], bVerts1 = [];
+
       for (let k of barrierTiles) {
         let comma = k.indexOf(',');
         let tx = +k.slice(0, comma), tz = +k.slice(comma + 1);
-        // Bounding-box + frustum cull
+        // Bounding-box + frustum cull — same logic as infection tiles above
         if (tx < minTx || tx > maxTx || tz < minTz || tz > maxTz) continue;
         let tcx = tx * TILE + TILE * 0.5, tcz = tz * TILE + TILE * 0.5;
         let tdx = tcx - cam.x, tdz = tcz - cam.z;
@@ -570,13 +576,26 @@ class Terrain {
         let y01 = this.getAltitude(xP, zP1) - 0.3;
         let y11 = this.getAltitude(xP1, zP1) - 0.3;
 
-        // Subtle checkerboard so adjacent white tiles stay distinguishable
-        let chk = (tx + tz) % 2 === 0;
-        fill(chk ? 255 : 235, chk ? 255 : 235, chk ? 255 : 240);
-        vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
-        vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+        // Route into the appropriate bucket by checkerboard parity
+        let bucket = ((tx + tz) % 2 === 0) ? bVerts0 : bVerts1;
+        bucket.push(xP, y00, zP, xP1, y10, zP, xP, y01, zP1,
+          xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1);
       }
-      endShape();
+
+      // Pass 0 — bright white (even-parity tiles)
+      if (bVerts0.length) {
+        fill(255, 255, 255);
+        beginShape(TRIANGLES);
+        for (let i = 0; i < bVerts0.length; i += 3) vertex(bVerts0[i], bVerts0[i + 1], bVerts0[i + 2]);
+        endShape();
+      }
+      // Pass 1 — off-white (odd-parity tiles) — subtle contrast so edges stay visible
+      if (bVerts1.length) {
+        fill(235, 235, 240);
+        beginShape(TRIANGLES);
+        for (let i = 0; i < bVerts1.length; i += 3) vertex(bVerts1[i], bVerts1[i + 1], bVerts1[i + 2]);
+        endShape();
+      }
     }
 
     // Static sea plane — a single flat quad at SEA + 3 covering the visible area.

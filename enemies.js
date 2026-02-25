@@ -63,8 +63,8 @@ class EnemyManager {
    * begins immediately.  Subsequent enemies are weighted randomly.
    *
    * Spawn probability weights (when not forced):
-   *   fighter 22%  |  bomber 13%  |  crab 13%  |  hunter 10%  |  squid 10%  |  scorpion 12%  |  colossus 5% (boss)  |  seeder 15%
-   * The Colossus is also guaranteed to appear once every 3 levels.
+   *   Seeder 35% | Fighter 22% | Bomber 15% | Crab 12% | Hunter 6% | Squid 6% | Scorpion 4%
+   * The Colossus is guaranteed to appear once every 3 levels.
    *
    * @param {boolean} [forceSeeder=false]  If true, always spawns a seeder regardless of level.
    * @param {boolean} [forceColossus=false] If true, forces a Colossus boss spawn.
@@ -75,14 +75,13 @@ class EnemyManager {
       type = 'colossus';
     } else if (!forceSeeder && level > 0) {
       let r = random();
-      if (r < 0.22) type = 'fighter';
-      else if (r < 0.35) type = 'bomber';
-      else if (r < 0.48) type = 'crab';
-      else if (r < 0.58) type = 'hunter';
-      else if (r < 0.68) type = 'squid';
-      else if (r < 0.80) type = 'scorpion';
-      else if (r < 0.85) type = 'colossus';
-      // else seeder
+      if (r < 0.35) type = 'seeder';
+      else if (r < 0.57) type = 'fighter';
+      else if (r < 0.72) type = 'bomber';
+      else if (r < 0.84) type = 'crab';
+      else if (r < 0.90) type = 'hunter';
+      else if (r < 0.96) type = 'squid';
+      else type = 'scorpion';
     }
 
     // Colossus spawns must be far enough from the centre so the player has time to react

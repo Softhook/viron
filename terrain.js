@@ -182,7 +182,7 @@ class Terrain {
   /**
    * Broad frustum test — returns false for world objects that are clearly
    * behind the camera or beyond the horizontal field of view.
-   * @param {{x,z,fwdX,fwdZ}} cam  Camera descriptor from getCameraParams().
+   * @param {{x,z,fwdX,fwdZ,fovSlope}} cam  Camera descriptor; fovSlope is pre-computed in drawLandscape.
    * @param {number} tx  World-space X to test.
    * @param {number} tz  World-space Z to test.
    */
@@ -191,8 +191,9 @@ class Terrain {
     let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
     if (fwdDist < -TILE * 5) return false;
     let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
-    let aspect = (numPlayers === 1 ? width : width * 0.5) / height;
-    let slope = 0.57735 * aspect + 0.3;
+    // Use pre-cached fovSlope (set by drawLandscape) to avoid recomputing aspect every call.
+    // Fall back to on-the-fly calculation if called outside a normal draw pass (e.g. menu).
+    let slope = cam.fovSlope || (0.57735 * ((numPlayers === 1 ? width : width * 0.5) / height) + 0.3);
     let halfWidth = (fwdDist > 0 ? fwdDist : 0) * slope + TILE * 6;
     return Math.abs(rightDist) <= halfWidth;
   }
@@ -444,13 +445,16 @@ class Terrain {
     // Compute camera params once and cache on the instance so drawTrees,
     // drawBuildings and enemies.draw reuse the same values this frame.
     let cam = this.getCameraParams(s);
-    this._cam = cam;
 
-    // Pre-compute FOV slope once — used for both chunk and infected-tile culling.
+    // Pre-compute FOV slope once — used for chunk culling, infected-tile culling,
+    // and inFrustum() calls in drawTrees/drawBuildings.
     // 0.57735 = tan(30°), matching the PI/3 perspective FOV used in renderPlayerView.
     // The +0.3 padding ensures objects at oblique angles are never incorrectly culled.
     let aspect = (numPlayers === 1 ? width : width * 0.5) / height;
-    let fovSlope = 0.57735 * aspect + 0.3;
+    cam.fovSlope = 0.57735 * aspect + 0.3;  // Attached to cam so inFrustum() reuses it
+    this._cam = cam;
+
+    let fovSlope = cam.fovSlope;
     let chunkHalf = CHUNK_SIZE * TILE;   // One chunk width — used as lateral margin
 
     // p5 lighting silently overrides custom shaders that don't declare lighting

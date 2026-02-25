@@ -132,7 +132,12 @@ const aboveSea = y => y >= SEA - 1;
 // =============================================================================
 class InfectionManager {
   constructor() {
-    /** @type {Object<string,number>} Tile-key → 1 map; readable directly for fast loop checks. */
+    /**
+     * @type {Object<string,number>} Tile-key → 1 map.
+     * READ-ONLY from outside the class — direct reads are allowed in hot paths
+     * (e.g. `if (infection.tiles[k])`) for performance.
+     * NEVER write directly: always use add()/remove() so count stays in sync.
+     */
     this.tiles = {};
     /** @type {number} Running count — always in sync with this.tiles. Use instead of Object.keys().length. */
     this.count = 0;

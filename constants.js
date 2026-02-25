@@ -41,8 +41,7 @@ const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached
   { x: -2800, z:  2000, strength: 390, sigma: 1100 }
 ]; */
 const MOUNTAIN_PEAKS = [
-  { x: -2200, z: -1600, strength: 450, sigma: 400 },
-  { x: 2800, z: 900, strength: 400, sigma: 1100 },
+  { x: -2200, z: -1600, strength: 450, sigma: 1100 },
 ];
 
 

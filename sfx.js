@@ -3,6 +3,7 @@ class GameSFX {
         this.initialized = false;
         this.distCurve = null;
         this.spatialEnabled = true;
+        this.thrustNodes = {}; // id -> { osc, noise, gain, panner }
     }
 
     init() {
@@ -36,12 +37,23 @@ class GameSFX {
         let bufferSize = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
         let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         let data = buffer.getChannelData(0);
+
+        // Generate noise
         let lastOut = 0;
         for (let i = 0; i < bufferSize; i++) {
             let white = Math.random() * 2 - 1;
             lastOut = filterCoeff > 0 ? (lastOut + filterCoeff * white) / (1 + filterCoeff) : white;
             data[i] = lastOut * mul;
         }
+
+        // Seamless loop fix: Smooth cross-fade over the entire buffer to 
+        // eliminate any possible loop-point periodicity or clicks.
+        let blendLen = Math.floor(this.ctx.sampleRate * 0.2); // 200ms
+        for (let i = 0; i < blendLen; i++) {
+            let ratio = i / blendLen;
+            data[i] = data[i] * ratio + data[bufferSize - blendLen + i] * (1.0 - ratio);
+        }
+
         let noise = this.ctx.createBufferSource();
         noise.buffer = buffer;
         return noise;
@@ -111,28 +123,45 @@ class GameSFX {
         if (!s) return;
         let { ctx, t, targetNode } = s;
 
+        // Main volume envelope - smoother decay
         let gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(0.35, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+        gainNode.gain.setValueAtTime(0.4, t);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
 
+        // Low-pass filter to remove "annoying" high frequencies
         let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(6000, t);
-        filter.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+        filter.frequency.setValueAtTime(2000, t);
+        filter.frequency.exponentialRampToValueAtTime(600, t + 0.15);
 
         filter.connect(gainNode);
         gainNode.connect(targetNode);
 
-        [-18, 0, 18].forEach(det => {
+        // Core oscillators - triangle waves for a smoother, less buzzing sound
+        [-10, 0, 10].forEach((det) => {
             let osc = ctx.createOscillator();
-            osc.type = 'sawtooth';
+            osc.type = 'triangle';
             osc.detune.value = det;
-            osc.frequency.setValueAtTime(880, t);
-            osc.frequency.exponentialRampToValueAtTime(110, t + 0.15);
+            // Lower base frequency for a more powerful, less shrill sound
+            osc.frequency.setValueAtTime(220, t); // A3
+            osc.frequency.exponentialRampToValueAtTime(140, t + 0.15);
             osc.connect(filter);
             osc.start(t);
-            osc.stop(t + 0.15);
+            osc.stop(t + 0.18);
         });
+
+        // Sub-thrum for weight
+        let sub = ctx.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(80, t);
+        sub.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+        let subGain = ctx.createGain();
+        subGain.gain.setValueAtTime(0.3, t);
+        subGain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+        sub.connect(subGain);
+        subGain.connect(targetNode);
+        sub.start(t);
+        sub.stop(t + 0.12);
     }
 
     playEnemyShot(type = 'fighter', x, y, z) {
@@ -719,6 +748,107 @@ class GameSFX {
         gain.connect(targetNode);
         osc.start(t);
         osc.stop(t + 0.5);
+    }
+
+    /**
+     * Updates or starts/stops a sustained thrust sound for a specific player.
+     * @param {number} id      Player ID.
+     * @param {boolean} active Whether thrust is currently firing.
+     * @param {number} x,y,z   World position for spatialization.
+     */
+    setThrust(id, active, x, y, z) {
+        this.init();
+        if (!this.ctx) return;
+        let t = this.ctx.currentTime;
+
+        if (!active) {
+            if (this.thrustNodes[id]) {
+                let n = this.thrustNodes[id];
+                n.gain.gain.setTargetAtTime(0, t, 0.05);
+                setTimeout(() => {
+                    if (this.thrustNodes[id] === n) {
+                        try {
+                            n.osc.stop();
+                            n.noise.stop();
+                            n.osc.disconnect();
+                            n.noise.disconnect();
+                        } catch (e) { }
+                        delete this.thrustNodes[id];
+                    }
+                }, 200);
+            }
+            return;
+        }
+
+        if (!this.thrustNodes[id]) {
+            let gain = this.ctx.createGain();
+            gain.gain.value = 0;
+
+            // Only spatialize engine thrust for OTHER players or enemies.
+            // For the local player (id 0), the engine drone should be non-spatialized
+            // to avoid HRTF/panning artifacts (crackling) when the ship turns rapidly.
+            let panner = null;
+            if (id !== 0) {
+                panner = this.createSpatializer(x, y, z);
+                if (panner) {
+                    panner.panningModel = 'equalpower';
+                    panner.distanceModel = 'linear';
+                    panner.refDistance = 200;
+                    panner.rolloffFactor = 0.5;
+                }
+            }
+
+            // Low deep rumble (oscillator)
+            let osc = this.ctx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(42, t);
+
+            // Deep roar (noise)
+            let noise = this._createNoise(5.0, 0.45, 0.4);
+            noise.loop = true;
+
+            let filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(110, t);
+            filter.Q.value = 0.2; // Keep Q extra low for the engine core
+
+            osc.connect(filter);
+            noise.connect(filter);
+            filter.connect(gain);
+
+            if (panner) {
+                gain.connect(panner);
+                panner.connect(this.ctx.destination);
+            } else {
+                // Connect local player thrust directly to output for perfect stability
+                gain.connect(this.ctx.destination);
+            }
+
+            osc.start(t);
+            noise.start(t);
+
+            this.thrustNodes[id] = { osc, noise, gain, panner, filter, lastX: x, lastY: y, lastZ: z };
+        }
+
+        let n = this.thrustNodes[id];
+        // 50ms smoothing
+        n.gain.gain.setTargetAtTime(0.22, t, 0.05);
+
+        // Only update panner if it exists (i.e., not the local player)
+        if (n.panner && x !== undefined) {
+            let dt = 0.05;
+            let distSq = (x - n.lastX) ** 2 + (y - n.lastY) ** 2 + (z - n.lastZ) ** 2;
+            if (distSq > 0.1) {
+                try {
+                    n.panner.positionX.linearRampToValueAtTime(x, t + dt);
+                    n.panner.positionY.linearRampToValueAtTime(y, t + dt);
+                    n.panner.positionZ.linearRampToValueAtTime(z, t + dt);
+                } catch (e) {
+                    n.panner.setPosition(x, y, z);
+                }
+                n.lastX = x; n.lastY = y; n.lastZ = z;
+            }
+        }
     }
 }
 

@@ -541,6 +541,11 @@ function updateShipInput(p) {
     }
   }
 
+  // Sustained thrust sound - update every frame for each player
+  if (typeof gameSFX !== 'undefined') {
+    gameSFX.setThrust(p.id, isThrusting, s.x, s.y, s.z);
+  }
+
   if (isBraking) {
     s.vx *= 0.96; s.vy *= 0.96; s.vz *= 0.96;
   }
@@ -588,6 +593,7 @@ function updateShipInput(p) {
  * @param {object} p  Player state object.
  */
 function killPlayer(p) {
+  if (typeof gameSFX !== 'undefined') gameSFX.setThrust(p.id, false);
   particleSystem.addExplosion(p.ship.x, p.ship.y, p.ship.z);
   terrain.addPulse(p.ship.x, p.ship.z, 2.0);  // Yellow ship-explosion ring (type 2)
   p.dead = true;

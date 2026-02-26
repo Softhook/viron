@@ -461,6 +461,26 @@ function updateShipInput(p) {
     let dVec = shipUpDir(s, p.designIndex);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
 
+    // --- Aerodynamic Lift ---
+    // Lift is applied along the ship's local up-vector, scaled by forward velocity.
+    // Local 'up' is shipUpDir with 0 alpha (tilt).
+    let cp = Math.cos(s.pitch), sp = Math.sin(s.pitch);
+    let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+    // Forward unit vector
+    let fx = -cp * sy, fy = sp, fz = -cp * cy;
+    // Local Up unit vector (perpendicular to wings)
+    let ux = -sp * sy, uy = -cp, uz = -sp * cy;
+
+    // Forward speed (dot product of velocity and forward vector)
+    let fSpd = s.vx * fx + s.vy * fy + s.vz * fz;
+    if (fSpd > 0) {
+      // Linear lift model: moderate lift to assist altitude maintenance at high speed
+      let liftAccel = fSpd * LIFT_FACTOR;
+      s.vx += ux * liftAccel;
+      s.vy += uy * liftAccel;
+      s.vz += uz * liftAccel;
+    }
+
     // Emit particles diagonally back from twin engines every other frame
     if (frameCount % 2 === 0) {
       let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);

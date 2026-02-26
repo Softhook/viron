@@ -24,18 +24,17 @@ const SHIP_DESIGNS = [
                 drawFace([nose, tR, top], tintColor); // Right
                 drawFace([tL, tR, top], dark);        // Rear
                 drawFace([[0, -2, -10], [4, -4, 2], [-4, -4, 2]], [100, 200, 255, 180]); // Glass
-                // Engine nozzle
-                drawFace([[-4, -1, 12], [4, -1, 12], [4, 3, 12], [-4, 3, 12]], engineGray);
-                drawFace([[-3, 0, 14], [3, 0, 14], [3, 2, 14], [-3, 2, 14]], [50, 50, 55]);
+                // Ventral Engine Nozzle (Bottom Back)
+                drawFace([[-4, 3, 4], [4, 3, 4], [4, 3, 8], [-4, 3, 8]], [40, 40, 45]);
             }
-            return [{ x: 0, y: 1, z: 14 }];
+            return [{ x: 0, y: 3.5, z: 6 }];
         }
     },
 
     // --- Design 1: Multi-Role Fighter ---
     {
         name: "Fighter (Legacy)",
-        thrustAngle: Math.PI / 4,
+        thrustAngle: Math.PI / 2, // Jet Mode (Straight Back)
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -42];
@@ -62,8 +61,8 @@ const SHIP_DESIGNS = [
 
                 const drE = (ex, ey, ez) => {
                     let p = [[-4, -4, -8], [4, -4, -8], [4, 4, -8], [-4, 4, -8], [-4, -4, 8], [4, -4, 8], [4, 4, 8], [-4, 4, 8]].map(v => [v[0] + ex, v[1] + ey, v[2] + ez]);
+                    for (let i = 0; i < 4; i++) drawFace([p[i], p[(i + 1) % 4], p[(i + 1) % 4 + 4], p[i + 4]], engineGray);
                     drawFace([p[0], p[1], p[2], p[3]], engineGray); drawFace([p[4], p[5], p[6], p[7]], engineGray);
-                    drawFace([p[0], p[1], p[5], p[4]], engineGray); drawFace([p[2], p[3], p[7], p[6]], engineGray);
                     drawFace([p[0], p[4], p[7], p[3]], engineGray); drawFace([p[1], p[5], p[6], p[2]], engineGray);
                 };
                 drE(-13, 5, 18); drE(13, 5, 18);
@@ -106,8 +105,10 @@ const SHIP_DESIGNS = [
                 };
                 drE(0, 0, 20);
                 drawFace([[-3, -3, -25], [3, -3, -25], [4, -5, -5], [-4, -5, -5]], [100, 200, 255, 180]);
+                // Ventral Exhaust (Bottom Back)
+                drawFace([[-4, 6, 12], [4, 6, 12], [4, 6, 22], [-4, 6, 22]], [20, 20, 25]);
             }
-            return [{ x: 0, y: 0, z: 35 }];
+            return [{ x: 0, y: 6, z: 17 }];
         }
     },
 
@@ -142,8 +143,10 @@ const SHIP_DESIGNS = [
                 };
                 drE(-15, 6, 20); drE(15, 6, 20);
                 drawFace([[-8, -8, -16], [8, -8, -16], [8, -10, -5], [-8, -10, -5]], [100, 200, 255, 180]);
+                // Ventral Exhaust (Bottom Back)
+                drawFace([[-10, 12, 12], [10, 12, 12], [10, 12, 22], [-10, 12, 22]], [30, 30, 35]);
             }
-            return [{ x: -15, y: 6, z: 26 }, { x: 15, y: 6, z: 26 }];
+            return [{ x: 0, y: 12, z: 17 }];
         }
     },
 
@@ -179,8 +182,10 @@ const SHIP_DESIGNS = [
                     drawFace([[0, 0, ez], [ex, ey, ez], [ex, ey, ez + 2], [0, 0, ez + 2]], engineGray);
                 };
                 drE(-8, 6, 20); drE(8, 6, 20);
+                // Ventral Exhaust (Bottom Back)
+                drawFace([[-4, 5, 12], [4, 5, 12], [4, 5, 18], [-4, 5, 18]], [30, 30, 35]);
             }
-            return [{ x: -8, y: 6, z: 24 }, { x: 8, y: 6, z: 24 }];
+            return [{ x: 0, y: 5, z: 15 }];
         }
     },
 
@@ -200,9 +205,12 @@ const SHIP_DESIGNS = [
                 let conP = [[-12, -2, 0], [12, -2, 0], [12, 2, 0], [-12, 2, 0], [-12, -2, 2], [12, -2, 2], [12, 2, 2], [-12, 2, 2]];
                 for (let i = 0; i < 4; i++) drawFace([conP[i], conP[(i + 1) % 4], conP[(i + 1) % 4 + 4], conP[i + 4]], engineGray);
                 drawFace([conP[0], conP[1], conP[2], conP[3]], engineGray); drawFace([conP[4], conP[5], conP[6], conP[7]], engineGray);
+                drawFace([[0, 0, 2], [12, 0, 2], [12, 2, 2], [0, 0, 2]], engineGray); // Replaced a broken loop
                 drawFace([[-4, -6, -5], [4, -6, -5], [5, -4, 15], [-5, -4, 15]], [100, 200, 255, 180]);
+                // Ventral center exhaust (Bottom Back)
+                drawFace([[-4, 4, 12], [4, 4, 12], [4, 4, 22], [-4, 4, 22]], [20, 20, 25]);
             }
-            return [{ x: -12, y: 0, z: 25 }, { x: 12, y: 0, z: 25 }];
+            return [{ x: 0, y: 4, z: 17 }];
         }
     },
 
@@ -213,7 +221,7 @@ const SHIP_DESIGNS = [
     // --- Design 6: Classic "Swift Scout" ---
     {
         name: "Swift Scout",
-        thrustAngle: 0,
+        thrustAngle: Math.PI / 2, // Jet Mode
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -32], cp = [0, -5, -8], mL = [-6, 2, 5], mR = [6, 2, 5], t = [0, 4, 15], b = [0, 6, 0];
@@ -231,17 +239,16 @@ const SHIP_DESIGNS = [
                 drW(1); drW(-1);
                 drawFace([[0, -5, -12], [3, -4, -4], [-3, -4, -4]], [100, 200, 255, 200]);
                 drawFace([[0, -5, 5], [0, -18, 18], [0, 2, 15]], tintColor);
-                // Engine nozzle
-                drawFace([[-3, 2, 15], [3, 2, 15], [3, 5, 15], [-3, 5, 15]], engineGray);
+                // Rear Exhaust Nozzle
+                drawFace([[-4, 2, 15], [4, 2, 15], [4, 5, 15], [-4, 5, 15]], engineGray);
             }
             return [{ x: 0, y: 3.5, z: 16 }];
         }
     },
 
-    // --- Design 7: "Viper Fighter" ---
     {
         name: "Viper Fighter",
-        thrustAngle: Math.PI / 10,
+        thrustAngle: Math.PI / 2, // Jet Mode
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, -2, -45], bT = [0, -8, -5], bB = [0, 6, 15], bL = [-8, 0, 5], bR = [8, 0, 5];
@@ -272,15 +279,16 @@ const SHIP_DESIGNS = [
                 };
                 drE(1); drE(-1);
                 drawFace([[0, -8, -12], [5, -6, 2], [-5, -6, 2], [0, -10, -5]], [100, 200, 255, 180]);
+                // Rear Exhaust
+                drawFace([[-6, 2, 15], [6, 2, 15], [6, 6, 15], [-6, 6, 15]], [30, 30, 35]);
             }
             return [{ x: -14, y: 4, z: 28 }, { x: 14, y: 4, z: 28 }];
         }
     },
 
-    // --- Design 8: "Needle Interceptor" ---
     {
         name: "Needle Interceptor",
-        thrustAngle: Math.PI / 8,
+        thrustAngle: Math.PI / 2, // Jet Mode
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -60], neck = [0, 0, -20], base = [0, 0, 30], mT = [0, -4, 0], mB = [0, 4, 0], mL = [-4, 0, 0], mR = [4, 0, 0];
@@ -298,15 +306,16 @@ const SHIP_DESIGNS = [
                 for (let i = 0; i < 4; i++) drawFace([p[i], p[(i + 1) % 4], p[(i + 1) % 4 + 4], p[i + 4]], engineGray);
                 drawFace([p[0], p[1], p[2], p[3]], engineGray); drawFace([p[4], p[5], p[6], p[7]], [20, 20, 25]);
                 drawFace([[0, -4, -15], [2, -3, -10], [-2, -3, -10]], [200, 255, 255]);
+                // Rear Exhaust
+                drawFace([[-3, -4, 30], [3, -4, 30], [3, 4, 30], [-3, 4, 30]], engineGray);
             }
-            return [{ x: 0, y: 0, z: 35 }];
+            return [{ x: 0, y: 0, z: 32 }];
         }
     },
 
-    // --- Design 9: "Behemoth" Heavy ---
     {
         name: "Behemoth",
-        thrustAngle: Math.PI / 6,
+        thrustAngle: Math.PI / 2, // Jet Mode
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let f = [[-12, -10, -25], [12, -10, -25], [12, 12, -25], [-12, 12, -25]], r = [[-15, -12, 30], [15, -12, 30], [15, 14, 30], [-15, 14, 30]];
@@ -329,15 +338,16 @@ const SHIP_DESIGNS = [
                 };
                 drE(-18); drE(18);
                 drawFace([[-10, -10, -20], [10, -10, -20], [8, -14, -10], [-8, -14, -10]], [100, 240, 255, 200]);
+                // Rear Exhaust
+                drawFace([[-12, 4, 30], [12, 4, 30], [12, 12, 30], [-12, 12, 30]], [20, 20, 25]);
             }
-            return [{ x: -18, y: 8, z: 28 }, { x: 18, y: 8, z: 28 }];
+            return [{ x: -18, y: 8, z: 32 }, { x: 18, y: 8, z: 32 }];
         }
     },
 
-    // --- Design 10: "Valkyrie" Tri-Wing ---
     {
         name: "Valkyrie",
-        thrustAngle: Math.PI / 6,
+        thrustAngle: Math.PI / 2, // Jet Mode
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let p = [[-6, -6, -15], [6, -6, -15], [6, 6, -15], [-6, 6, -15], [-8, -8, 20], [8, -8, 20], [8, 8, 20], [-8, 8, 20]];
@@ -365,15 +375,19 @@ const SHIP_DESIGNS = [
                 drawFace([[-6, 6, 10], [-12, 10, 10], [-12, 10, 12], [-6, 6, 12]], engineGray);
                 drawFace([[6, 6, 10], [12, 10, 10], [12, 10, 12], [6, 6, 12]], engineGray);
                 drawFace([[0, -8, -10], [4, -6, 0], [-4, -6, 0], [0, -10, -5]], [200, 255, 255, 180]);
+                // Central Rear Exhaust
+                drawFace([[-5, -4, 20], [5, -4, 20], [5, 4, 20], [-5, 4, 20]], engineGray);
+                // Engine specific exhausts
+                drawFace([[-16, 6, 15], [-8, 6, 15], [-8, 14, 15], [-16, 14, 15]], engineGray);
+                drawFace([[8, 6, 15], [16, 6, 15], [16, 14, 15], [8, 14, 15]], engineGray);
             }
-            return [{ x: -12, y: 10, z: 15 }, { x: 12, y: 10, z: 15 }];
+            return [{ x: 0, y: 0, z: 22 }, { x: -12, y: 10, z: 16 }, { x: 12, y: 10, z: 16 }];
         }
     },
 
-    // --- Design 11: "Star-Racer" Podracer ---
     {
         name: "Star-Racer",
-        thrustAngle: Math.PI / 12,
+        thrustAngle: Math.PI / 2, // Jet Mode
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 const drP = (side) => {
@@ -398,8 +412,11 @@ const SHIP_DESIGNS = [
                 drawFace([[0, -10, 15], [-5, -6, 10], [5, -6, 10], [0, -2, 25]], dark); // Cockpit base
                 drawFace([[0, -10, 15], [-5, -6, 10], [-3, -8, 12]], [150, 220, 255]); // Glass panel L
                 drawFace([[0, -10, 15], [5, -6, 10], [3, -8, 12]], [150, 220, 255]); // Glass panel R
+                // Rear Pod Exhausts
+                drawFace([[-22, -4, 25], [-14, -4, 25], [-14, 4, 25], [-22, 4, 25]], [30, 30, 35]);
+                drawFace([[14, -4, 25], [22, -4, 25], [22, 4, 25], [14, 4, 25]], [30, 30, 35]);
             }
-            return [{ x: -18, y: 0, z: 25 }, { x: 18, y: 0, z: 25 }];
+            return [{ x: -18, y: 0, z: 30 }, { x: 18, y: 0, z: 30 }];
         }
     }
 ];

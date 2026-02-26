@@ -456,30 +456,25 @@ function updateShipInput(p) {
   // --- Physics integration ---
   s.vy += GRAV;  // Gravity
 
+  // --- Aerodynamic Lift ---
+  // Lift is applied along the ship's local up-vector, scaled by forward velocity.
+  // This allows ships to glide even when the engine is off.
+  let cp_L = Math.cos(s.pitch), sp_L = Math.sin(s.pitch);
+  let cy_L = Math.cos(s.yaw), sy_L = Math.sin(s.yaw);
+  let fx_L = -cp_L * sy_L, fy_L = sp_L, fz_L = -cp_L * cy_L;
+  let ux_L = -sp_L * sy_L, uy_L = -cp_L, uz_L = -sp_L * cy_L;
+  let fSpd = s.vx * fx_L + s.vy * fy_L + s.vz * fz_L;
+  if (fSpd > 0) {
+    let liftAccel = fSpd * LIFT_FACTOR;
+    s.vx += ux_L * liftAccel;
+    s.vy += uy_L * liftAccel;
+    s.vz += uz_L * liftAccel;
+  }
+
   if (isThrusting) {
     let pw = 0.45;
     let dVec = shipUpDir(s, p.designIndex);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
-
-    // --- Aerodynamic Lift ---
-    // Lift is applied along the ship's local up-vector, scaled by forward velocity.
-    // Local 'up' is shipUpDir with 0 alpha (tilt).
-    let cp = Math.cos(s.pitch), sp = Math.sin(s.pitch);
-    let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
-    // Forward unit vector
-    let fx = -cp * sy, fy = sp, fz = -cp * cy;
-    // Local Up unit vector (perpendicular to wings)
-    let ux = -sp * sy, uy = -cp, uz = -sp * cy;
-
-    // Forward speed (dot product of velocity and forward vector)
-    let fSpd = s.vx * fx + s.vy * fy + s.vz * fz;
-    if (fSpd > 0) {
-      // Linear lift model: moderate lift to assist altitude maintenance at high speed
-      let liftAccel = fSpd * LIFT_FACTOR;
-      s.vx += ux * liftAccel;
-      s.vy += uy * liftAccel;
-      s.vz += uz * liftAccel;
-    }
 
     // Emit particles diagonally back from twin engines every other frame
     if (frameCount % 2 === 0) {

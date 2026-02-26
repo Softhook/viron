@@ -464,11 +464,17 @@ function updateShipInput(p) {
   let fx_L = -cp_L * sy_L, fy_L = sp_L, fz_L = -cp_L * cy_L;
   let ux_L = -sp_L * sy_L, uy_L = -cp_L, uz_L = -sp_L * cy_L;
   let fSpd = s.vx * fx_L + s.vy * fy_L + s.vz * fz_L;
+
+  let currentDrag = DRAG;
+
   if (fSpd > 0) {
     let liftAccel = fSpd * LIFT_FACTOR;
     s.vx += ux_L * liftAccel;
     s.vy += uy_L * liftAccel;
     s.vz += uz_L * liftAccel;
+
+    // Induced Drag: Generating lift bleeds forward momentum
+    currentDrag -= (fSpd * INDUCED_DRAG * 0.01);
   }
 
   if (isThrusting) {
@@ -556,8 +562,8 @@ function updateShipInput(p) {
     p.shootHeld = isShooting;
   }
 
-  // Global air drag
-  s.vx *= 0.985; s.vy *= 0.985; s.vz *= 0.985;
+  // Global air drag (Thinner Air Fix)
+  s.vx *= currentDrag; s.vy *= currentDrag; s.vz *= currentDrag;
   s.x += s.vx; s.y += s.vy; s.z += s.vz;
 
   let g = terrain.getAltitude(s.x, s.z);

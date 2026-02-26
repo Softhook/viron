@@ -10,6 +10,8 @@ const GRAV = 0.09;             // Per-frame gravitational acceleration applied t
 const LAUNCH_MIN = 0;          // Launchpad world-space minimum X and Z coordinate
 const LAUNCH_MAX = 840;        // Launchpad world-space maximum X and Z coordinate
 const LIFT_FACTOR = 0.008;     // Per-frame lift acceleration coefficient (scales with forward velocity)
+const DRAG = 0.992;            // Global air resistance (higher = thinner air, more gliding)
+const INDUCED_DRAG = 0.002;    // Extra drag proportional to how much lift is being generated
 
 // --- Rendering distances (can be adjusted dynamically for performance) ---
 let VIEW_NEAR = 35;            // Inner tile radius — always rendered, no frustum test

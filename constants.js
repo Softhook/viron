@@ -6,7 +6,7 @@
 const TILE = 120;              // World-space size of one terrain tile (pixels)
 const SEA = 200;              // Y value above which terrain is below sea (sea surface)
 const LAUNCH_ALT = 100;        // Fixed Y altitude of the flat launchpad surface
-const GRAV = 0.09;             // Per-frame gravitational acceleration applied to ships
+const GRAV = 0.07;             // Per-frame gravitational acceleration applied to ships
 const LAUNCH_MIN = 0;          // Launchpad world-space minimum X and Z coordinate
 const LAUNCH_MAX = 840;        // Launchpad world-space maximum X and Z coordinate
 const LIFT_FACTOR = 0.008;     // Per-frame lift acceleration coefficient (scales with forward velocity)

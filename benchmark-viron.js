@@ -1,7 +1,7 @@
 /**
  * Benchmark the Viron infection pipeline (spread + overlay draw) in a real
- * headless Chrome session.  Seeds a large infected field, freezes further
- * spread, then reads the profiler summary emitted by sketch.js / terrain.js.
+ * headless Chrome session.  Seeds a large infected field, then reads the
+ * profiler summary emitted by sketch.js / terrain.js.
  *
  * Usage:  node benchmark-viron.js
  *
@@ -50,10 +50,18 @@ async function run() {
       const page = await browser.newPage();
 
       let profileLine = null;
+      let profileResolve;
+      const profilePromise = new Promise(resolve => { profileResolve = resolve; });
       page.on('console', msg => {
         const text = msg.text();
         if (!text.startsWith('VIRON_PROFILE')) console.log('[browser]', text);
-        if (text.startsWith('VIRON_PROFILE')) profileLine = text;
+        if (text.startsWith('VIRON_PROFILE')) {
+          profileLine = text;
+          if (profileResolve) {
+            profileResolve(text);
+            profileResolve = null;
+          }
+        }
       });
       page.on('pageerror', err => console.error('[pageerror]', err.message));
 
@@ -63,7 +71,6 @@ async function run() {
           label: 'viron',
           sampleFrames,
           once: true,
-          freezeSpread: true,    // Hold infection count steady so we measure at the target size
           maxInfOverride: maxInf // Avoid gameover while seeded infection is high
         };
       }, SAMPLE_FRAMES, MAX_INF_OVERRIDE);
@@ -101,16 +108,7 @@ async function run() {
       console.log('Profiler status:', profStatus);
 
       profileLine = await Promise.race([
-        new Promise(resolve => {
-          const to = setTimeout(() => resolve(null), WAIT_MS);
-          page.on('console', msg => {
-            const text = msg.text();
-            if (text.startsWith('VIRON_PROFILE')) {
-              clearTimeout(to);
-              resolve(text);
-            }
-          });
-        }),
+        profilePromise,
         new Promise(resolve => setTimeout(() => resolve(null), WAIT_MS))
       ]);
 
@@ -131,16 +129,10 @@ async function run() {
         if (summary) {
           profileLine = `VIRON_PROFILE[viron]:${JSON.stringify(summary)}`;
         } else {
-          profileLine = await new Promise(resolve => {
-            const to = setTimeout(() => resolve(null), 3000);
-            page.on('console', msg => {
-              const text = msg.text();
-              if (text.startsWith('VIRON_PROFILE')) {
-                clearTimeout(to);
-                resolve(text);
-              }
-            });
-          });
+          profileLine = await Promise.race([
+            profilePromise,
+            new Promise(resolve => setTimeout(() => resolve(null), 3000))
+          ]);
         }
       }
 

@@ -38,6 +38,9 @@ let gameFont;                      // Loaded Impact font used for all HUD / menu
 let gameState = 'menu';    // Current game mode: 'menu' | 'playing' | 'gameover'
 let gameOverReason = '';        // Human-readable reason string shown on game-over screen
 let lastAlarmTime = 0;         // millis() of the last launchpad alarm SFX (rate-limited)
+
+const SKETCH_PROFILER = (typeof window !== 'undefined') ? window.__vironProfiler : null;
+const SKETCH_PROFILER_CONFIG = SKETCH_PROFILER ? SKETCH_PROFILER.config : null;
 let gameStartTime = 0;         // millis() when the current game started
 
 let numPlayers = 1;         // 1 or 2 — set by startGame()
@@ -570,8 +573,8 @@ function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'shipselect') { drawShipSelect(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
-  const _profiler = window.__vironProfiler;
-  const _pfFrameStart = _profiler ? performance.now() : 0;
+  const profiler = SKETCH_PROFILER;
+  const frameStart = profiler ? performance.now() : 0;
 
   // --- Dynamic Performance Scaling ---
   // Approach: frame-time percentile monitor (industry-standard technique).
@@ -659,9 +662,9 @@ function draw() {
   for (let p of players) updateShipInput(p);
   enemyManager.update();
   for (let p of players) checkCollisions(p);
-  const _pfSpreadStart = _profiler ? performance.now() : 0;
+  const spreadStart = profiler ? performance.now() : 0;
   spreadInfection();
-  if (_profiler) _profiler.record('spread', performance.now() - _pfSpreadStart);
+  if (profiler) profiler.record('spread', performance.now() - spreadStart);
   particleSystem.updatePhysics();
   for (let p of players) updateProjectilePhysics(p);
   updateBarrierPhysics();  // Environment-owned in-flight barriers
@@ -737,7 +740,7 @@ function draw() {
       }
     }
   }
-  if (_profiler) _profiler.frameEnd(performance.now() - _pfFrameStart);
+  if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
 
 // ---------------------------------------------------------------------------
@@ -753,9 +756,9 @@ function draw() {
  *   2. All 7×7 launchpad tiles are infected (launchpad destroyed)
  */
 function spreadInfection() {
-  const _profCfg = (typeof window !== 'undefined' && window.__vironProfiler) ? window.__vironProfiler.config : null;
-  const maxInf = (_profCfg && _profCfg.maxInfOverride) ? _profCfg.maxInfOverride : MAX_INF;
-  const freezeSpread = !!(_profCfg && _profCfg.freezeSpread);
+  const profilerConfig = SKETCH_PROFILER_CONFIG;
+  const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
+  const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
   if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
 
   // Game over — too much infection (fast path: no Object.keys allocation needed)
@@ -785,6 +788,8 @@ function spreadInfection() {
     }
     return;
   }
+
+  if (freezeSpread) return;
 
   let infObjects = infection.keys();
   // Probabilistic spread to one random orthogonal neighbour per infected tile.
@@ -825,7 +830,6 @@ function spreadInfection() {
     // Barrier blocking: immune tiles stop infection spread
     if (barrierTiles.has(nk)) continue;
 
-    if (freezeSpread) continue;
     infection.add(nk);
     let o = infection.tiles[nk];
     let wx = o.tx * TILE, wz = o.tz * TILE;

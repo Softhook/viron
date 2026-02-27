@@ -211,7 +211,7 @@ function createVironProfiler(cfg) {
   };
   let active = true;
 
-  function logAndReset() {
+  function logSummaryAndReset() {
     const frames = Math.max(totals.frames, 1);
     const summary = {
       frames,
@@ -269,20 +269,22 @@ function createVironProfiler(cfg) {
     },
     flush() {
       if (!active || totals.frames === 0) return false;
-      logAndReset();
+      logSummaryAndReset();
       return true;
     },
     frameEnd(frameDelta) {
       if (!active) return;
       totals.frame += frameDelta;
       totals.frames++;
-      if (totals.frames >= sampleFrames) logAndReset();
+      if (totals.frames >= sampleFrames) logSummaryAndReset();
     }
   };
 }
 
-const __profCfg = (typeof window !== 'undefined' && window.VIRON_PROFILE && window.VIRON_PROFILE.enabled !== false)
+const profilerConfig = (typeof window !== 'undefined'
+  && typeof window.VIRON_PROFILE === 'object'
+  && window.VIRON_PROFILE.enabled === true)
   ? window.VIRON_PROFILE
   : null;
-const __vironProfiler = __profCfg ? createVironProfiler(__profCfg) : null;
-if (typeof window !== 'undefined') window.__vironProfiler = __vironProfiler;
+const vironProfiler = profilerConfig ? createVironProfiler(profilerConfig) : null;
+if (typeof window !== 'undefined') window.__vironProfiler = vironProfiler;

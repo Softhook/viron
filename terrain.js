@@ -25,6 +25,8 @@ const TERRAIN_PALETTE = {
   ]
 };
 
+const TERRAIN_PROFILER = (typeof window !== 'undefined') ? window.__vironProfiler : null;
+
 // Flattened palette — normalised 0-1, built once at module load rather than
 // every frame so applyShader() never allocates a temporary array per draw call.
 // Index layout: 0-5 Inland, 6-8 Shore, 9-11 Viron (Red/Dark/Scan), 12-13 Barrier.
@@ -543,7 +545,7 @@ class Terrain {
    * @param {number} maxTz     Tile-space view bound (max Z).
    */
   _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz) {
-    const profiler = (typeof window !== 'undefined') ? window.__vironProfiler : null;
+    const profiler = TERRAIN_PROFILER;
     const overlayStart = profiler ? performance.now() : 0;
     let overlayCount = 0;
     let verts0 = [], verts1 = [];
@@ -634,10 +636,10 @@ class Terrain {
     // p5 lighting silently overrides custom shaders that don't declare lighting
     // uniforms; disable it for the terrain pass.
     noLights();
-    const _profiler = (typeof window !== 'undefined') ? window.__vironProfiler : null;
-    const _shaderStart = _profiler ? performance.now() : 0;
+    const profiler = TERRAIN_PROFILER;
+    const shaderStart = profiler ? performance.now() : 0;
     this.applyShader();
-    if (_profiler) _profiler.record('shader', performance.now() - _shaderStart);
+    if (profiler) profiler.record('shader', performance.now() - shaderStart);
 
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);

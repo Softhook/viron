@@ -125,7 +125,11 @@ function buildCache(n) {
 const CACHE_TEMPLATE = buildCache(500);
 
 console.log('━━━ 2. chunkCache eviction: clear-all vs evict-oldest-half ━━━━━━━━━━━━━━━━\n');
-console.log('  Cache is at capacity (500 entries).  Timings are for the eviction step only.\n');
+console.log('  Cache is at capacity (500 entries).  Each iteration builds a fresh map');
+console.log('  (simulating a full cache) and then evicts.  The absolute ns/op values');
+console.log('  include that map-copy overhead; the DIFFERENCE between old and new');
+console.log('  represents the eviction step itself.  The dominant cost comparison is');
+console.log('  the rebuild stutter on the following frame (shown analytically below).\n');
 
 const t2_old = bench('OLD — Map.clear()  — evict all 500 entries',             () => {
   const cache = new Map(CACHE_TEMPLATE);
@@ -181,13 +185,17 @@ function makeTileSet(n) {
 }
 
 const TILE_COUNTS         = [100, 500, 1000, 2000];
-// Typical WebGL draw call overhead on mid-range desktop/mobile GPU.
-// Source: "Avoiding Redundant State Changes" — Cozzi & Ring, WebGL Insights.
-const GPU_DRAWCALL_US_MID = 100; // μs per state-change+draw
+// Estimated total per-tile rendering overhead in p5.js WEBGL mode.
+// Includes: p5 JavaScript vertex-buffer building (fill/beginShape/vertex×6/endShape),
+// WebGL state validation, and the GPU draw submission itself.
+// Actual cost is device-dependent; 100 μs/tile is a mid-range estimate for
+// a game-class mobile device.  Desktop GPUs with faster drivers are lower (~20–50 μs).
+const GPU_DRAWCALL_US_MID = 100; // μs per tile (p5 JS + WebGL overhead combined)
 
 console.log('━━━ 3. Tile overlay batching: 2 draw calls vs N draw calls ━━━━━━━━━━━━━━━\n');
 console.log('  CPU: batch copies verts into shared arrays; naive builds separate arrays per tile.');
-console.log('  GPU: batch issues 2 draw calls; naive issues N draw calls (one per tile).\n');
+console.log('  GPU+JS: batch issues 2 draw calls; naive issues N draw calls (one per tile),');
+console.log('  each paying p5\'s vertex-buffer building overhead + WebGL submission cost.\n');
 
 for (const n of TILE_COUNTS) {
   const tiles = makeTileSet(n);

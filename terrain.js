@@ -80,6 +80,7 @@ uniform vec4 uSentinelGlows[2];
 // uPalette: array of vec3 colors for dynamic re-coloring
 uniform vec3 uPalette[14];
 uniform float uTileSize;
+uniform vec3 uFogColor;
 
 void main() {
   // Material IDs (from R channel)
@@ -180,8 +181,7 @@ void main() {
   // Apply fog to smoothly hide chunk loading edges
   float dist = gl_FragCoord.z / gl_FragCoord.w;
   float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
-  vec3 fogColor = vec3(30.0 / 255.0, 60.0 / 255.0, 120.0 / 255.0);
-  outColor = mix(outColor, fogColor, fogFactor);
+  outColor = mix(outColor, uFogColor, fogFactor);
 
   gl_FragColor = vec4(outColor, 1.0);
 }
@@ -470,6 +470,7 @@ class Terrain {
    * Binds the terrain GLSL shader and uploads per-frame uniforms:
    *   • uTime     — elapsed seconds, drives pulse ring expansion
    *   • uFogDist  — [fogStart, fogEnd] in world units
+   *   • uFogColor — sky/fog RGB colour (derived from SKY_R/G/B constants)
    *   • uPulses   — flat array of up to 5 pulse descriptors [x, z, startTime, type]
    * Must be called before any model() draw calls that should use the terrain shader.
    */
@@ -477,6 +478,7 @@ class Terrain {
     shader(this.shader);
     this.shader.setUniform('uTime', millis() / 1000.0);
     this.shader.setUniform('uFogDist', [VIEW_FAR * TILE - 800, VIEW_FAR * TILE + 400]);
+    this.shader.setUniform('uFogColor', [SKY_R / 255.0, SKY_G / 255.0, SKY_B / 255.0]);
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
 
@@ -521,6 +523,67 @@ class Terrain {
   // ---------------------------------------------------------------------------
   // Draw methods
   // ---------------------------------------------------------------------------
+
+  /**
+   * Renders a set of tile overlay quads (infection or barrier) using the
+   * currently bound terrain shader.  All visible tiles are sorted into two
+   * parity buckets so each parity is drawn in a single beginShape/endShape
+   * pass, avoiding per-tile GPU flushes.
+   *
+   * @param {Iterable} tiles   Iterable yielding {tx, tz, verts} tile objects.
+   *                           `verts` is lazily populated here when null.
+   * @param {number} matEven   Material ID (R channel) for even-parity tiles.
+   * @param {number} matOdd    Material ID for odd-parity tiles.
+   * @param {number} yOffset   Y offset applied to each vertex corner altitude.
+   * @param {object} cam       Camera descriptor from getCameraParams().
+   * @param {number} fovSlope  FOV slope for lateral frustum culling.
+   * @param {number} minTx     Tile-space view bound (min X).
+   * @param {number} maxTx     Tile-space view bound (max X).
+   * @param {number} minTz     Tile-space view bound (min Z).
+   * @param {number} maxTz     Tile-space view bound (max Z).
+   */
+  _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz) {
+    let verts0 = [], verts1 = [];
+
+    for (const t of tiles) {
+      if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
+
+      const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
+      const tdx = tcx - cam.x, tdz = tcz - cam.z;
+      const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
+      if (tFwd < -TILE * 2) continue;
+      if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
+
+      if (!t.verts) {
+        const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
+        t.verts = [
+          xP,  this.getAltitude(xP,  zP)  + yOffset, zP,
+          xP1, this.getAltitude(xP1, zP)  + yOffset, zP,
+          xP,  this.getAltitude(xP,  zP1) + yOffset, zP1,
+          xP1, this.getAltitude(xP1, zP)  + yOffset, zP,
+          xP1, this.getAltitude(xP1, zP1) + yOffset, zP1,
+          xP,  this.getAltitude(xP,  zP1) + yOffset, zP1
+        ];
+      }
+
+      const bucket = ((t.tx + t.tz) % 2 === 0) ? verts0 : verts1;
+      const bLen = bucket.length;
+      for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
+    }
+
+    if (verts0.length) {
+      fill(matEven, 0, 0, 255);
+      beginShape(TRIANGLES);
+      for (let i = 0; i < verts0.length; i += 3) vertex(verts0[i], verts0[i + 1], verts0[i + 2]);
+      endShape();
+    }
+    if (verts1.length) {
+      fill(matOdd, 0, 0, 255);
+      beginShape(TRIANGLES);
+      for (let i = 0; i < verts1.length; i += 3) vertex(verts1[i], verts1[i + 1], verts1[i + 2]);
+      endShape();
+    }
+  }
 
   /**
    * Renders the visible terrain chunks, infected tile overlays, sea plane and
@@ -587,97 +650,29 @@ class Terrain {
       }
     }
 
-    // Build Viron tile overlays — iterate using the persistent object list.
-    // Vertex positions are pre-cached in the tile objects themselves so there are 
-    // ZERO altitude lookups and ZERO string operations here.
-    const infObjects = infection.keys();
     const minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
     const minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
 
-    let iVerts0 = [], iVerts1 = [];
-
-    for (let ki = 0; ki < infObjects.length; ki++) {
-      const t = infObjects[ki];
-      if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
-
-      const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
-      const tdx = tcx - cam.x, tdz = tcz - cam.z;
-      const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
-      if (tFwd < -TILE * 2) continue;
-      if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
-
-      if (!t.verts) {
-        const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
-        t.verts = [xP, this.getAltitude(xP, zP) - 0.5, zP, xP1, this.getAltitude(xP1, zP) - 0.5, zP, xP, this.getAltitude(xP, zP1) - 0.5, zP1,
-          xP1, this.getAltitude(xP1, zP) - 0.5, zP, xP1, this.getAltitude(xP1, zP1) - 0.5, zP1, xP, this.getAltitude(xP, zP1) - 0.5, zP1];
-      }
-
-      const bucket = ((t.tx + t.tz) % 2 === 0) ? iVerts0 : iVerts1;
-      const bLen = bucket.length;
-      for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
-    }
-
-    // Pass 0 — even tiles: mat 10
-    if (iVerts0.length) {
-      fill(10, 0, 0, 255);
-      beginShape(TRIANGLES);
-      for (let i = 0; i < iVerts0.length; i += 3) vertex(iVerts0[i], iVerts0[i + 1], iVerts0[i + 2]);
-      endShape();
-    }
-    // Pass 1 — odd tiles: mat 11
-    // The shader derives parity from mat (11 → 0.75×); vColor.a is NOT read for
-    // Viron tiles so the alpha here does not affect the rendered colour.
-    if (iVerts1.length) {
-      fill(11, 0, 0, 255);
-      beginShape(TRIANGLES);
-      for (let i = 0; i < iVerts1.length; i += 3) vertex(iVerts1[i], iVerts1[i + 1], iVerts1[i + 2]);
-      endShape();
-    }
+    // Build Viron tile overlays — iterate using the persistent object list.
+    // Vertex positions are pre-cached in the tile objects themselves so there are
+    // ZERO altitude lookups and ZERO string operations here.
+    this._drawTileOverlays(
+      infection.keys(), 10, 11, -0.5,
+      cam, fovSlope, minTx, maxTx, minTz, maxTz
+    );
 
     // --- Barrier tile overlays ---
-    // Reads from the global barrierTiles Set — iterates once to cull and collect
+    // Reads from the global barrierTiles Map — iterates once to cull and collect
     // visible tile vertices, then draws in exactly TWO beginShape/endShape passes
     // (one per checkerboard parity) so fill() is never called inside an active
     // shape.  Calling fill() mid-shape forces p5's WEBGL renderer to flush its
     // internal vertex buffer on every colour change; with 2,000 barrier tiles
     // alternating between two colours that would be ~2,000 GPU flushes per frame.
     if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
-      let bVerts0 = [], bVerts1 = [];
-
-      for (let [k, t] of barrierTiles) {
-        if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
-
-        const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
-        const tdx = tcx - cam.x, tdz = tcz - cam.z;
-        const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
-        if (tFwd < -TILE * 2) continue;
-        if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
-
-        if (!t.verts) {
-          const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
-          t.verts = [xP, this.getAltitude(xP, zP) - 0.3, zP, xP1, this.getAltitude(xP1, zP) - 0.3, zP, xP, this.getAltitude(xP, zP1) - 0.3, zP1,
-            xP1, this.getAltitude(xP1, zP) - 0.3, zP, xP1, this.getAltitude(xP1, zP1) - 0.3, zP1, xP, this.getAltitude(xP, zP1) - 0.3, zP1];
-        }
-
-        const bucket = ((t.tx + t.tz) % 2 === 0) ? bVerts0 : bVerts1;
-        const bLen = bucket.length;
-        for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
-      }
-
-      if (bVerts0.length) {
-        fill(20, 0, 0, 255);
-        beginShape(TRIANGLES);
-        for (let i = 0; i < bVerts0.length; i += 3) vertex(bVerts0[i], bVerts0[i + 1], bVerts0[i + 2]);
-        endShape();
-      }
-      if (bVerts1.length) {
-        // The shader derives parity from mat (21 → 0.90×); vColor.a is NOT read for
-        // Barrier tiles so the alpha here does not affect the rendered colour.
-        fill(21, 0, 0, 255);
-        beginShape(TRIANGLES);
-        for (let i = 0; i < bVerts1.length; i += 3) vertex(bVerts1[i], bVerts1[i + 1], bVerts1[i + 2]);
-        endShape();
-      }
+      this._drawTileOverlays(
+        barrierTiles.values(), 20, 21, -0.3,
+        cam, fovSlope, minTx, maxTx, minTz, maxTz
+      );
     }
 
     // Static sea plane — a single flat quad at SEA + 3 covering the visible area.

@@ -30,7 +30,7 @@ function drawMenu() {
   let gl = drawingContext;
   let pxD = pixelDensity();
   gl.viewport(0, 0, width * pxD, height * pxD);
-  gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);   // sky colour
+  gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);   // sky colour
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   push();

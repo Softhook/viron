@@ -20,6 +20,7 @@ const TARGET_TILES = Number(process.env.VIRON_TILES || 1500);
 const SAMPLE_FRAMES = 120;
 const MAX_INF_OVERRIDE = 5000; // Prevents instant gameover during the run
 const WAIT_MS = 30000;
+const LOAD_TIMEOUT = Number(process.env.VIRON_LOAD_TIMEOUT || 15000);
 
 function findChrome() {
   const candidates = [
@@ -38,7 +39,13 @@ function findChrome() {
 
 async function run() {
   const app = express();
-  app.use(express.static(__dirname));
+  const staticMiddleware = express.static(__dirname);
+  app.use((req, res, next) => {
+    if (!/\.(html|js|css|ttf|wav|mp3|ogg|png)$/i.test(req.path)) {
+      return res.status(404).end();
+    }
+    return staticMiddleware(req, res, next);
+  });
 
   const server = app.listen(PORT, async () => {
     let browser;
@@ -75,7 +82,7 @@ async function run() {
         };
       }, SAMPLE_FRAMES, MAX_INF_OVERRIDE);
 
-      await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load', timeout: 15000 });
+      await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load', timeout: LOAD_TIMEOUT });
       await page.waitForFunction('typeof infection !== "undefined" && typeof tileKey !== "undefined"', { timeout: 8000 });
 
       // Seed a block of infected tiles away from the launchpad so the renderer
@@ -145,7 +152,12 @@ async function run() {
         process.exit(1);
       }
 
-      const payload = profileLine.slice(profileLine.indexOf(':') + 1);
+      const colonIdx = profileLine.indexOf(':');
+      if (colonIdx === -1) {
+        console.error('Unexpected profiler output:', profileLine);
+        process.exit(1);
+      }
+      const payload = profileLine.slice(colonIdx + 1);
       let summary;
       try {
         summary = JSON.parse(payload);

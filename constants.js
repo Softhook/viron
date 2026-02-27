@@ -191,3 +191,98 @@ class InfectionManager {
 
 /** Singleton infection state shared across all modules. */
 const infection = new InfectionManager();
+
+// =============================================================================
+// Lightweight opt-in profiler (no overhead unless window.VIRON_PROFILE is set)
+// =============================================================================
+function createVironProfiler(cfg) {
+  if (typeof performance === 'undefined') return null;
+  const sampleFrames = cfg.sampleFrames || 180;
+  const label = cfg.label || 'default';
+  const totals = {
+    frame: 0,
+    spread: 0,
+    shader: 0,
+    overlayInfection: 0,
+    overlayBarrier: 0,
+    overlayInfectionTiles: 0,
+    overlayBarrierTiles: 0,
+    frames: 0,
+  };
+  let active = true;
+
+  function logAndReset() {
+    const frames = Math.max(totals.frames, 1);
+    const summary = {
+      frames,
+      frameMs: +(totals.frame / frames).toFixed(2),
+      spreadMs: +(totals.spread / frames).toFixed(3),
+      shaderMs: +(totals.shader / frames).toFixed(3),
+      vironOverlayMs: +(totals.overlayInfection / frames).toFixed(3),
+      vironTiles: Math.round(totals.overlayInfectionTiles / frames),
+      barrierOverlayMs: +(totals.overlayBarrier / frames).toFixed(3),
+      barrierTiles: Math.round(totals.overlayBarrierTiles / frames),
+    };
+    const prefix = label ? `VIRON_PROFILE[${label}]` : 'VIRON_PROFILE';
+    console.log(`${prefix}:${JSON.stringify(summary)}`);
+    if (typeof window !== 'undefined') {
+      window.__profilingDone = true;
+      window.__profilingSummary = summary;
+    }
+
+    totals.frame = totals.spread = totals.shader = 0;
+    totals.overlayInfection = totals.overlayBarrier = 0;
+    totals.overlayInfectionTiles = totals.overlayBarrierTiles = 0;
+    totals.frames = 0;
+    if (cfg.once) active = false;
+  }
+
+  return {
+    config: cfg,
+    now: () => performance.now(),
+    record(name, delta) {
+      if (!active) return;
+      if (name === 'spread') totals.spread += delta;
+      else if (name === 'shader') totals.shader += delta;
+    },
+    recordOverlay(tag, tiles, delta) {
+      if (!active) return;
+      if (tag === 'infection') {
+        totals.overlayInfection += delta;
+        totals.overlayInfectionTiles += tiles;
+      } else {
+        totals.overlayBarrier += delta;
+        totals.overlayBarrierTiles += tiles;
+      }
+    },
+    snapshot() {
+      return {
+        frames: totals.frames,
+        frame: totals.frame,
+        spread: totals.spread,
+        shader: totals.shader,
+        overlayInfection: totals.overlayInfection,
+        overlayBarrier: totals.overlayBarrier,
+        overlayInfectionTiles: totals.overlayInfectionTiles,
+        overlayBarrierTiles: totals.overlayBarrierTiles,
+      };
+    },
+    flush() {
+      if (!active || totals.frames === 0) return false;
+      logAndReset();
+      return true;
+    },
+    frameEnd(frameDelta) {
+      if (!active) return;
+      totals.frame += frameDelta;
+      totals.frames++;
+      if (totals.frames >= sampleFrames) logAndReset();
+    }
+  };
+}
+
+const __profCfg = (typeof window !== 'undefined' && window.VIRON_PROFILE && window.VIRON_PROFILE.enabled !== false)
+  ? window.VIRON_PROFILE
+  : null;
+const __vironProfiler = __profCfg ? createVironProfiler(__profCfg) : null;
+if (typeof window !== 'undefined') window.__vironProfiler = __vironProfiler;

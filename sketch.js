@@ -570,6 +570,8 @@ function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'shipselect') { drawShipSelect(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
+  const _profiler = window.__vironProfiler;
+  const _pfFrameStart = _profiler ? performance.now() : 0;
 
   // --- Dynamic Performance Scaling ---
   // Approach: frame-time percentile monitor (industry-standard technique).
@@ -657,7 +659,9 @@ function draw() {
   for (let p of players) updateShipInput(p);
   enemyManager.update();
   for (let p of players) checkCollisions(p);
+  const _pfSpreadStart = _profiler ? performance.now() : 0;
   spreadInfection();
+  if (_profiler) _profiler.record('spread', performance.now() - _pfSpreadStart);
   particleSystem.updatePhysics();
   for (let p of players) updateProjectilePhysics(p);
   updateBarrierPhysics();  // Environment-owned in-flight barriers
@@ -733,6 +737,7 @@ function draw() {
       }
     }
   }
+  if (_profiler) _profiler.frameEnd(performance.now() - _pfFrameStart);
 }
 
 // ---------------------------------------------------------------------------
@@ -748,10 +753,13 @@ function draw() {
  *   2. All 7×7 launchpad tiles are infected (launchpad destroyed)
  */
 function spreadInfection() {
+  const _profCfg = (typeof window !== 'undefined' && window.__vironProfiler) ? window.__vironProfiler.config : null;
+  const maxInf = (_profCfg && _profCfg.maxInfOverride) ? _profCfg.maxInfOverride : MAX_INF;
+  const freezeSpread = !!(_profCfg && _profCfg.freezeSpread);
   if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
 
   // Game over — too much infection (fast path: no Object.keys allocation needed)
-  if (infection.count >= MAX_INF) {
+  if (infection.count >= maxInf) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       gameOverReason = 'INFECTION REACHED CRITICAL MASS';
@@ -817,6 +825,7 @@ function spreadInfection() {
     // Barrier blocking: immune tiles stop infection spread
     if (barrierTiles.has(nk)) continue;
 
+    if (freezeSpread) continue;
     infection.add(nk);
     let o = infection.tiles[nk];
     let wx = o.tx * TILE, wz = o.tz * TILE;

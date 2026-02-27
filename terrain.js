@@ -543,6 +543,9 @@ class Terrain {
    * @param {number} maxTz     Tile-space view bound (max Z).
    */
   _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz) {
+    const profiler = (typeof window !== 'undefined') ? window.__vironProfiler : null;
+    const overlayStart = profiler ? performance.now() : 0;
+    let overlayCount = 0;
     let verts0 = [], verts1 = [];
 
     for (const t of tiles) {
@@ -566,6 +569,7 @@ class Terrain {
         ];
       }
 
+      overlayCount++;
       const bucket = ((t.tx + t.tz) % 2 === 0) ? verts0 : verts1;
       const bLen = bucket.length;
       for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
@@ -582,6 +586,11 @@ class Terrain {
       beginShape(TRIANGLES);
       for (let i = 0; i < verts1.length; i += 3) vertex(verts1[i], verts1[i + 1], verts1[i + 2]);
       endShape();
+    }
+    if (profiler) {
+      const elapsed = performance.now() - overlayStart;
+      const tag = (matEven === 10 && matOdd === 11) ? 'infection' : 'barrier';
+      profiler.recordOverlay(tag, overlayCount, elapsed);
     }
   }
 
@@ -625,7 +634,10 @@ class Terrain {
     // p5 lighting silently overrides custom shaders that don't declare lighting
     // uniforms; disable it for the terrain pass.
     noLights();
+    const _profiler = (typeof window !== 'undefined') ? window.__vironProfiler : null;
+    const _shaderStart = _profiler ? performance.now() : 0;
     this.applyShader();
+    if (_profiler) _profiler.record('shader', performance.now() - _shaderStart);
 
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);

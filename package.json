@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node test.js",
     "benchmark": "node benchmark-terrain.js",
-    "benchmark-particles": "node benchmark-particles.js"
+    "benchmark-particles": "node benchmark-particles.js",
+    "benchmark-viron": "node benchmark-viron.js"
   },
   "repository": {
     "type": "git",

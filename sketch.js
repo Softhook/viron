@@ -464,7 +464,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     // canvas, matching what blitFramebuffer did.
     gl.disable(gl.SCISSOR_TEST);
     push();
-    ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1);
+    ortho(-width / 2, width / 2, -height / 2, height / 2, -1, 1);
     resetMatrix();
     imageMode(CORNER);
     gl.disable(gl.DEPTH_TEST);

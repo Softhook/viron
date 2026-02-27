@@ -425,7 +425,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     gl.viewport(vx, 0, vw, vh);
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(vx, 0, vw, vh);
-    gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);
+    gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);
@@ -486,7 +486,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     gl.viewport(vx, 0, vw, vh);
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(vx, 0, vw, vh);
-    gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);
+    gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);

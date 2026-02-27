@@ -448,24 +448,28 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     }
     renderInFlightBarriers(s.x, s.z);
     if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
+    // Render hard particles (explosions, bombs, bullets) inside the FBO so
+    // they depth-test correctly and are captured in the depth texture used
+    // by the soft-billboard shader.
+    particleSystem.renderHardParticles(s.x, s.z);
     pop();
     sceneFBO.end();
 
-    // ═══ PASS 2 — Blit FBO colour AND depth to the main canvas ════════════
-    // Blitting both buffers means explosion/bomb/bullet spheres drawn in Pass 3
-    // can depth-test correctly against the opaque scene geometry.
+    // ═══ PASS 2 — Blit FBO colour to the main canvas ════════════════════
+    // Only blit COLOR_BUFFER_BIT: blitting DEPTH to the MSAA default canvas
+    // framebuffer is invalid in WebGL2 and triggers GL_INVALID_OPERATION.
+    // Hard particles are already in the FBO colour so they appear correctly.
     let pxD = pixelDensity();
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sceneFBO.framebuffer);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     gl.blitFramebuffer(0, 0, width * pxD, height * pxD,
                        0, 0, width * pxD, height * pxD,
-                       gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT, gl.NEAREST);
+                       gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-    // ═══ PASS 3 — Render particles atop the blitted scene ═══════════════
-    // The soft-billboard quads handle their own depth fade via the sDepth
-    // texture, so we disable DEPTH_TEST for them to avoid stale-depth
-    // clipping.  Hard particles (explosions, bombs, bullets) re-enable it.
+    // ═══ PASS 3 — Render soft billboard particles atop the blitted scene ═
+    // Soft billboards self-manage depth fade via the sDepth texture; DEPTH_TEST
+    // is disabled inside render() for these quads and re-enabled afterwards.
     gl.viewport(vx, 0, vw, vh);
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(vx, 0, vw, vh);

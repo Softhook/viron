@@ -400,45 +400,71 @@ class ParticleSystem {
 
       if (useSoftShader) {
         resetShader();
-        // Restore depth testing for all subsequent hard-geometry draws
-        // (explosions, bombs, bullets) so they occlude against the scene.
+        // Restore depth test for any rendering that follows in the same pass.
         drawingContext.enable(drawingContext.DEPTH_TEST);
       }
 
-      // ── Explosion particles: unlit spheres (wave-front colour model) ──────
-      for (let p of this.particles) {
-        if (!p.isExplosion) continue;
-        if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
+      // In the WebGL2 3-pass path (sceneFBO provided), hard particles are
+      // rendered inside Pass 1 (renderHardParticles) so they depth-test
+      // correctly against the opaque scene.  Skip them here to avoid
+      // double-drawing and so the blit in Pass 2 can stay COLOR-only.
+      if (!sceneFBO) this._drawHardGeometry(camX, camZ, cullSq);
+    } else if (!sceneFBO) {
+      // No soft particles but still need bombs / bullets in fallback path.
+      this._drawHardGeometry(camX, camZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
+    }
+  }
 
-        let lifeNorm = p.life / 255.0;
-        let t        = 1.0 - lifeNorm;
-        let alpha    = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 255 : 255;
+  /**
+   * Render hard-geometry particles (explosions, bombs, enemy bullets) with
+   * normal depth testing.  Called inside Pass 1 (sceneFBO) in the WebGL2
+   * path so they occlude correctly against the opaque scene and are captured
+   * in the depth texture used by the soft-billboard shader.
+   * @param {number} camX  Camera X (world) for culling.
+   * @param {number} camZ  Camera Z (world) for culling.
+   */
+  renderHardParticles(camX, camZ) {
+    noLights(); noStroke();
+    this._drawHardGeometry(camX, camZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
+  }
 
-        let d    = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
-        let wave = 1400.0 * Math.pow(t, 0.6);
-        let diff = wave - d;
-        if (diff < -50) continue;  // Behind wave front — skip
+  /** @private Shared draw logic for explosions, bombs, and enemy bullets. */
+  _drawHardGeometry(camX, camZ, cullSq) {
+    noLights(); noStroke();
 
-        let r, g, b;
-        if (diff < 40) {
-          let f = (diff + 50) / 90;
-          r = lerp(255, p.br, f); g = lerp(255, p.bg, f); b = lerp(255, p.bb, f);
-        } else if (diff < 150) {
-          let f = (diff - 40) / 110;
-          r = lerp(p.br, p.er, f); g = lerp(p.bg, p.eg, f); b = lerp(p.bb, p.eb, f);
-        } else if (diff < 350) {
-          let f = (diff - 150) / 200;
-          r = lerp(p.er, p.sr, f); g = lerp(p.eg, p.sg, f); b = lerp(p.eb, p.sb, f);
-        } else {
-          r = p.sr; g = p.sg; b = p.sb;
-        }
+    // Explosion particles: unlit spheres (wave-front colour model)
+    for (let p of this.particles) {
+      if (!p.isExplosion) continue;
+      if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
 
-        push();
-        translate(p.x, p.y, p.z);
-        fill(r, g, b, alpha);
-        sphere((p.size || 8) / 2);
-        pop();
+      let lifeNorm = p.life / 255.0;
+      let t        = 1.0 - lifeNorm;
+      let alpha    = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 255 : 255;
+
+      let d    = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
+      let wave = 1400.0 * Math.pow(t, 0.6);
+      let diff = wave - d;
+      if (diff < -50) continue;  // Behind wave front — skip
+
+      let r, g, b;
+      if (diff < 40) {
+        let f = (diff + 50) / 90;
+        r = lerp(255, p.br, f); g = lerp(255, p.bg, f); b = lerp(255, p.bb, f);
+      } else if (diff < 150) {
+        let f = (diff - 40) / 110;
+        r = lerp(p.br, p.er, f); g = lerp(p.bg, p.eg, f); b = lerp(p.bb, p.eb, f);
+      } else if (diff < 350) {
+        let f = (diff - 150) / 200;
+        r = lerp(p.er, p.sr, f); g = lerp(p.eg, p.sg, f); b = lerp(p.eb, p.sb, f);
+      } else {
+        r = p.sr; g = p.sg; b = p.sb;
       }
+
+      push();
+      translate(p.x, p.y, p.z);
+      fill(r, g, b, alpha);
+      sphere((p.size || 8) / 2);
+      pop();
     }
 
     // Bombs — narrow red-dark cuboids (falling capsules)
@@ -446,7 +472,7 @@ class ParticleSystem {
       push(); translate(b.x, b.y, b.z); noStroke(); fill(200, 50, 50); box(8, 20, 8); pop();
     }
 
-    // Enemy bullets — red spheres (radius 3 = visual equivalent of the previous box(6) side length)
+    // Enemy bullets — red spheres
     noLights(); noStroke();
     for (let b of this.enemyBullets) {
       push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(3); pop();

@@ -308,10 +308,11 @@ class ParticleSystem {
       noStroke();
 
       // ── Soft billboard particles: exhaust, squid fog, missile smoke ──────
-      // Uses the GLSL soft-particle shader + gradient sprite when the scene
-      // depth FBO is available (WebGL2); falls back to unlit spheres otherwise.
-      const useSoftShader = (_softShader && _cloudTex && sceneFBO);
-      if (useSoftShader) {
+      // Preferred path: GLSL depth-aware soft particles when scene depth is available.
+      // Fallback path: textured billow sprites (still soft, but no depth intersection fade).
+      const useDepthSoftShader = (_softShader && _cloudTex && sceneFBO);
+      const useBillowSprites   = (!!_cloudTex && !useDepthSoftShader);
+      if (useDepthSoftShader) {
         // Soft billboard quads handle depth-fade via the sDepth texture, so
         // disable DEPTH_TEST to prevent stale/blitted depth values from
         // clipping them.  Re-enabled below for hard-geometry particles.
@@ -333,6 +334,7 @@ class ParticleSystem {
         // Alpha in [0, 1] — fade in over the first 40 % of lifetime
         let alpha    = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
         if (p.isFog) alpha *= 0.55;  // Squid ink: gradient sprite already fades edges; 0.55 base keeps cloud visible but translucent
+        if (p.isThrust) alpha *= 0.42; // Thrust smoke should stay soft/translucent
 
         let r, g, b;
         if (p.color) {
@@ -341,6 +343,13 @@ class ParticleSystem {
           r = lerp(p.color[0], 30, f);
           g = lerp(p.color[1], 30, f);
           b = lerp(p.color[2], 30, f);
+          if (p.isThrust) {
+            // Keep thrust in a neutral smoky-grey band (less saturated flame look)
+            let grey = (r + g + b) / 3;
+            r = lerp(r, grey, 0.75);
+            g = lerp(g, grey, 0.75);
+            b = lerp(b, grey, 0.75);
+          }
         } else {
           // Missile smoke: seed-derived hue cycle
           let seed = p.seed || 1.0;
@@ -362,10 +371,12 @@ class ParticleSystem {
           }
         }
 
-        if (useSoftShader) {
+        if (useDepthSoftShader || useBillowSprites) {
           // Billboard: rotate the plane so its face points toward the camera.
           // forward = normalize(camera − particle)
-          let fx = camCX - p.x, fy = camCY - p.y, fz = camCZ - p.z;
+          let fx = (camCX ?? p.x) - p.x;
+          let fy = (camCY ?? p.y) - p.y;
+          let fz = (camCZ ?? (p.z + 1)) - p.z;
           let dist = Math.hypot(fx, fy, fz);
           if (dist < 0.001) continue;
           fx /= dist; fy /= dist; fz /= dist;
@@ -376,8 +387,8 @@ class ParticleSystem {
           // up = cross(forward, right)
           let ux = fy * rz, uy = fz * rx - fx * rz, uz = -fy * rx;
 
-          _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]);
           let sz = p.size || 8;
+          if (p.isThrust) sz *= (1.0 + t * 1.1); // billow outward as it ages
           push();
           translate(p.x, p.y, p.z);
           // applyMatrix is column-major: each group of 4 is one column.
@@ -386,7 +397,15 @@ class ParticleSystem {
                       ux, uy, uz, 0,
                       fx, fy, fz, 0,
                        0,  0,  0, 1);
-          plane(sz, sz);
+          if (useDepthSoftShader) {
+            _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]);
+            plane(sz, sz);
+          } else {
+            texture(_cloudTex);
+            tint(r, g, b, alpha * 255);
+            plane(sz, sz);
+            noTint();
+          }
           pop();
         } else {
           // Fallback: unlit sphere when soft shader is unavailable
@@ -398,7 +417,7 @@ class ParticleSystem {
         }
       }
 
-      if (useSoftShader) {
+      if (useDepthSoftShader) {
         resetShader();
         // Restore depth test for any rendering that follows in the same pass.
         drawingContext.enable(drawingContext.DEPTH_TEST);

@@ -482,8 +482,8 @@ function updateShipInput(p) {
     let dVec = shipUpDir(s, p.designIndex);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
 
-    // Emit particles diagonally back from twin engines every other frame
-    if (frameCount % 2 === 0) {
+    // Emit fewer, softer smoke billows from twin engines
+    if (frameCount % 3 === 0) {
       let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
       let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
       let tLocal = (pt) => {
@@ -516,27 +516,17 @@ function updateShipInput(p) {
       }
 
       engPos.forEach(pos => {
+        if (random() < 0.35) return; // Keep count low for diffuse plume look
         let wPos = tLocal([pos.x, pos.y, pos.z + 2]); // Particle spawn slightly behind nozzle
         particleSystem.particles.push({
           x: wPos.x, y: wPos.y, z: wPos.z,
-          vx: exDir.x * 12 + random(-1, 1),
-          vy: exDir.y * 12 + random(-1, 1),
-          vz: exDir.z * 12 + random(-1, 1),
-          life: 255, decay: 12, seed: random(1.0), size: random(3, 8),
-          color: [80, 180, 255] // Hot cyan exhaust
+          vx: exDir.x * random(4, 7) + random(-0.8, 0.8),
+          vy: exDir.y * random(4, 7) + random(-0.8, 0.8),
+          vz: exDir.z * random(4, 7) + random(-0.8, 0.8),
+          life: random(190, 240), decay: random(4.2, 6.0), seed: random(1.0), size: random(11, 18),
+          isThrust: true,
+          color: [random(150, 195), random(150, 195), random(150, 195)] // Soft grey smoke
         });
-
-        // Add some secondary orange sparks/smoke
-        if (random() > 0.6) {
-          particleSystem.particles.push({
-            x: wPos.x, y: wPos.y, z: wPos.z,
-            vx: exDir.x * 6 + random(-2, 2),
-            vy: exDir.y * 6 + random(-2, 2),
-            vz: exDir.z * 6 + random(-2, 2),
-            life: 180, decay: 10, seed: random(1.0), size: random(2, 5),
-            color: [255, 120, 0]
-          });
-        }
       });
     }
   }

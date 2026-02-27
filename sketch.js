@@ -177,19 +177,12 @@ function setup() {
   }
   createCanvas(windowWidth, windowHeight, WEBGL);
 
-  // Soft-particle depth pre-pass: create a scene framebuffer with a depth
-  // texture if the browser supports WebGL2 (gl.blitFramebuffer available).
-  // When available, ParticleSystem.init() compiles the soft-particle shader.
-  {
-    let gl = drawingContext;
-    if (typeof gl.blitFramebuffer === 'function') {
-      let fb = createFramebuffer({ antialias: false });
-      if (fb && fb.depth) {
-        sceneFBO = fb;
-        ParticleSystem.init();
-      }
-    }
-  }
+  // Soft-particle depth pre-pass is temporarily disabled.
+  // The off-screen FBO path can produce a fully black world on some systems;
+  // keep the stable single-pass renderer active until that pipeline is fixed.
+  // Still initialize particle resources so billowy sprite fallback is available.
+  sceneFBO = null;
+  ParticleSystem.init();
 
   // Suppress context menu on right-click (right mouse is used for thrust)
   document.addEventListener('contextmenu', event => event.preventDefault());
@@ -460,15 +453,19 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     // GL_INVALID_OPERATION in WebGL2 (non-MSAA → MSAA blit is forbidden by
     // spec).  p5.js itself uses this same image() pattern when it faces the
     // same restriction (see p5.Framebuffer source, _beforeEnd antialias path).
-    // Disable the scissor that was set in Pass 1 so the draw covers the full
-    // canvas, matching what blitFramebuffer did.
-    gl.disable(gl.SCISSOR_TEST);
+    // Keep the viewport and scissor aligned with the player's view slice.
+    gl.viewport(vx, 0, vw, vh);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(vx, 0, vw, vh);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     push();
-    ortho(-width / 2, width / 2, -height / 2, height / 2, -1, 1);
+    ortho(-viewW / 2, viewW / 2, -viewH / 2, viewH / 2, -1, 1);
     resetMatrix();
     imageMode(CORNER);
     gl.disable(gl.DEPTH_TEST);
-    image(sceneFBO, -width / 2, -height / 2, width, height);
+    // Draw only the slice of the FBO that was rendered (viewX, 0, viewW, viewH)
+    image(sceneFBO, -viewW / 2, -viewH / 2, viewW, viewH, viewX, 0, viewW, viewH);
     gl.enable(gl.DEPTH_TEST);
     pop();
 
@@ -504,7 +501,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
       renderProjectiles(player, s.x, s.z);
     }
     renderInFlightBarriers(s.x, s.z);
-    particleSystem.render(s.x, s.z);
+    particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
     if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
     pop();
   }

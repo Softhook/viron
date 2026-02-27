@@ -67,8 +67,16 @@ let isAndroid = false;             // True on Android (affects some edge-case be
 function checkMobile() {
   const ua = navigator.userAgent;
   isAndroid = /Android/i.test(ua);
-  // Prioritise UA strings to avoid false positives on touch-enabled desktops/laptops
+
+  // Prioritise UA strings for standard mobile devices
   isMobile = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+
+  // Modern iPads (iPadOS) on Apple Silicon report "Macintosh" in desktop mode.
+  // We identify them by checking for Mac platform/UA + multi-touch support.
+  // Since no touch-screen Macs exist (yet), this is a reliable iPad indicator.
+  if (!isMobile && /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) {
+    isMobile = true;
+  }
 
   // Fallback: if it's a touch device but NOT a desktop OS, then it's mobile
   if (!isMobile && ('ontouchstart' in window)) {

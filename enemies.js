@@ -539,8 +539,9 @@ class EnemyManager {
   }
 
   /**
-   * Squid AI: medium-speed 3D pursuer that emits a dark fog-particle ink trail.
-   * The trail provides visual cover and makes the squid harder to track.
+   * Squid AI: medium-speed 3D pursuer with an ink-squirt ability.
+   * Instead of a constant trail, it periodically releases one very large,
+   * dark cloud that rapidly blooms and obscures a wide area.
    * Terrain avoidance prevents ground clipping.
    * @param {object}   e            Enemy state.
    * @param {object[]} alivePlayers Alive ship states.
@@ -562,24 +563,40 @@ class EnemyManager {
     let gy = terrain.getAltitude(e.x, e.z);
     if (e.y > gy - 150) e.vy -= 1.0;
 
-    e.x += e.vx; e.y += e.vy; e.z += e.vz;
+    // Squirt animation timer: short body squeeze during ink release.
+    if (e.inkSqueeze && e.inkSqueeze > 0) e.inkSqueeze--;
 
-    // Emit dark ink-cloud particles every 5 frames
-    if (frameCount % 5 === 0) {
-      particleSystem.particles.push({
-        x: e.x + random(-10, 10),
-        y: e.y + random(-10, 10),
-        z: e.z + random(-10, 10),
-        isFog: true,
-        vx: e.vx * 0.2 + random(-0.5, 0.5),
-        vy: e.vy * 0.2 + random(-0.5, 0.5),
-        vz: e.vz * 0.2 + random(-0.5, 0.5),
-        life: 255,
-        decay: 3,
-        size: random(30, 80),
-        color: [10, 10, 12]
-      });
+    // Ink squirt decision: single large cloud with cooldown.
+    if (e.inkCooldown === undefined) e.inkCooldown = floor(random(140, 240));
+    e.inkCooldown--;
+    if (e.inkCooldown <= 0) {
+      let shouldSquirt = (d < 1500 && random() < 0.32) || random() < 0.02;
+      if (shouldSquirt) {
+        let vm = Math.max(Math.hypot(e.vx || 0, e.vy || 0, e.vz || 0), 0.001);
+        let bx = -(e.vx || 0) / vm, by = -(e.vy || 0) / vm, bz = -(e.vz || 0) / vm;
+        particleSystem.addFogParticle({
+          x: e.x + bx * 34,
+          y: e.y + by * 20,
+          z: e.z + bz * 34,
+          vx: bx * 1.2 + random(-0.25, 0.25),
+          vy: by * 0.8 + random(-0.2, 0.2),
+          vz: bz * 1.2 + random(-0.25, 0.25),
+          life: 320,
+          decay: 0.95,
+          size: random(780, 980),
+          color: [1, 1, 2],
+          isInkBurst: true
+        });
+        e.inkSqueeze = 12;
+        // Recoil forward after squirting for a darting squid-like motion.
+        e.vx += (e.vx || 0) * 0.22;
+        e.vy += (e.vy || 0) * 0.22;
+        e.vz += (e.vz || 0) * 0.22;
+      }
+      e.inkCooldown = floor(random(220, 360));
     }
+
+    e.x += e.vx; e.y += e.vy; e.z += e.vz;
   }
 
   // ---------------------------------------------------------------------------
@@ -739,6 +756,9 @@ class EnemyManager {
         fill(sqc[0], sqc[1], sqc[2]);
 
         push();
+        // Brief squeeze animation when releasing ink.
+        let squeeze = (e.inkSqueeze || 0) / 12;
+        scale(1.0 + squeeze * 0.20, 1.0 - squeeze * 0.25, 1.0 + squeeze * 0.20);
         rotateX(PI / 2);
         cylinder(12, 40, 8, 1);  // Mantle body
 

@@ -80,6 +80,9 @@ class ParticleSystem {
 
     /** @type {Array<{x,y,z,vx,vy,vz,life}>} Bullets fired by enemy units. */
     this.enemyBullets = [];
+
+    /** @type {number} Live squid-ink fog particle count (performance throttle input). */
+    this.fogCount = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -91,6 +94,29 @@ class ParticleSystem {
     this.particles   = [];
     this.bombs       = [];
     this.enemyBullets = [];
+    this.fogCount = 0;
+  }
+
+  /**
+   * Adds one squid-ink fog particle, respecting a global cap to avoid
+   * runaway fill-rate and per-particle update/render cost.
+   * @param {{x:number,y:number,z:number,vx:number,vy:number,vz:number,life:number,decay:number,size:number,color:number[],isInkBurst?:boolean}} p
+   */
+  addFogParticle(p) {
+    const MAX_FOG_PARTICLES = 220;
+    if (this.fogCount >= MAX_FOG_PARTICLES) return false;
+    this.particles.push({
+      x: p.x, y: p.y, z: p.z,
+      isFog: true,
+      isInkBurst: !!p.isInkBurst,
+      vx: p.vx, vy: p.vy, vz: p.vz,
+      life: p.life,
+      decay: p.decay,
+      size: p.size,
+      color: p.color || [2, 2, 4]
+    });
+    this.fogCount++;
+    return true;
   }
 
   /**
@@ -208,6 +234,7 @@ class ParticleSystem {
       p.life -= (p.decay || 10);
       p.vx *= 0.98; p.vy *= 0.98; p.vz *= 0.98;
       if (p.life <= 0) {
+        if (p.isFog && this.fogCount > 0) this.fogCount--;
         // Swap-and-pop for O(1) removal (order doesn't matter for particles)
         let last = this.particles.pop();
         if (i < this.particles.length) this.particles[i] = last;
@@ -301,6 +328,9 @@ class ParticleSystem {
    */
   render(camX, camZ, camCX, camCY, camCZ, camNear, camFar, sceneFBO) {
     let cullSq = (CULL_DIST * 0.6) * (CULL_DIST * 0.6);
+    let fogCullSq = (CULL_DIST * 0.42) * (CULL_DIST * 0.42);
+    const MAX_FOG_RENDER = 140;
+    let fogRendered = 0;
     let pxD    = pixelDensity();
 
     if (this.particles.length > 0) {
@@ -312,11 +342,15 @@ class ParticleSystem {
       // Fallback path: textured billow sprites (still soft, but no depth intersection fade).
       const useDepthSoftShader = (_softShader && _cloudTex && sceneFBO);
       const useBillowSprites   = (!!_cloudTex && !useDepthSoftShader);
-      if (useDepthSoftShader) {
+      const disableDepthForSoft = useDepthSoftShader || useBillowSprites;
+      if (disableDepthForSoft) {
         // Soft billboard quads handle depth-fade via the sDepth texture, so
-        // disable DEPTH_TEST to prevent stale/blitted depth values from
-        // clipping them.  Re-enabled below for hard-geometry particles.
+        // disable DEPTH_TEST while drawing them so transparent quad texels
+        // don't occlude as rectangles in the fallback textured-billow path.
+        // Re-enabled below for hard-geometry particles.
         drawingContext.disable(drawingContext.DEPTH_TEST);
+      }
+      if (useDepthSoftShader) {
         shader(_softShader);
         _softShader.setUniform('sTexture',         _cloudTex);
         _softShader.setUniform('sDepth',           sceneFBO.depth);
@@ -327,17 +361,36 @@ class ParticleSystem {
 
       for (let p of this.particles) {
         if (p.isExplosion) continue;  // Handled in the explosion loop below
-        if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
+        let dSq = (p.x - camX) ** 2 + (p.z - camZ) ** 2;
+        if (dSq > cullSq) continue;
+        if (p.isFog) {
+          if (dSq > fogCullSq) continue;
+          if (fogRendered >= MAX_FOG_RENDER) continue;
+          fogRendered++;
+        }
 
         let lifeNorm = p.life / 255.0;
         let t        = 1.0 - lifeNorm;
         // Alpha in [0, 1] — fade in over the first 40 % of lifetime
         let alpha    = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
-        if (p.isFog) alpha *= 0.55;  // Squid ink: gradient sprite already fades edges; 0.55 base keeps cloud visible but translucent
+        if (p.isFog) alpha *= p.isInkBurst ? 1.15 : 0.85;  // Burst clouds are much denser/darker
         if (p.isThrust) alpha *= 0.42; // Thrust smoke should stay soft/translucent
 
         let r, g, b;
-        if (p.color) {
+        if (p.isFog && p.color) {
+          // Keep squid ink very dark throughout lifetime (minimal fade-to-grey).
+          if (p.isInkBurst) {
+            let f = Math.min(t * 0.7, 1.0);
+            r = lerp(p.color[0], 3, f);
+            g = lerp(p.color[1], 3, f);
+            b = lerp(p.color[2], 4, f);
+          } else {
+            let f = Math.min(t * 0.9, 1.0);
+            r = lerp(p.color[0], 8, f);
+            g = lerp(p.color[1], 8, f);
+            b = lerp(p.color[2], 10, f);
+          }
+        } else if (p.color) {
           // Exhaust / powerup sparks: fade from base colour to dark grey
           let f = Math.min(t * 1.5, 1.0);
           r = lerp(p.color[0], 30, f);
@@ -373,30 +426,24 @@ class ParticleSystem {
 
         if (useDepthSoftShader || useBillowSprites) {
           // Billboard: rotate the plane so its face points toward the camera.
-          // forward = normalize(camera − particle)
-          let fx = (camCX ?? p.x) - p.x;
-          let fy = (camCY ?? p.y) - p.y;
-          let fz = (camCZ ?? (p.z + 1)) - p.z;
-          let dist = Math.hypot(fx, fy, fz);
-          if (dist < 0.001) continue;
-          fx /= dist; fy /= dist; fz /= dist;
-          // right = cross(worldUp=(0,1,0), forward)  [ry = 0]
-          let rx = fz, rz = -fx;
-          let rLen = Math.hypot(rx, rz);
-          if (rLen > 0.001) { rx /= rLen; rz /= rLen; } else { rx = 1; rz = 0; }
-          // up = cross(forward, right)
-          let ux = fy * rz, uy = fz * rx - fx * rz, uz = -fy * rx;
+          let dx = (camCX ?? p.x) - p.x;
+          let dy = (camCY ?? p.y) - p.y;
+          let dz = (camCZ ?? (p.z + 1)) - p.z;
+          let horiz = Math.hypot(dx, dz);
+          if (horiz < 0.0001 && abs(dy) < 0.0001) continue;
+          let yaw = atan2(dx, dz);
+          let pitch = -atan2(dy, Math.max(horiz, 0.0001));
 
           let sz = p.size || 8;
           if (p.isThrust) sz *= (1.0 + t * 1.1); // billow outward as it ages
+          if (p.isFog) {
+            if (p.isInkBurst) sz *= (1.3 + t * 4.2); // even larger rapid bloom from a single squirt
+            else sz *= (1.35 + t * 2.3);
+          }
           push();
           translate(p.x, p.y, p.z);
-          // applyMatrix is column-major: each group of 4 is one column.
-          // Column 0 = right, column 1 = up, column 2 = forward (toward camera).
-          applyMatrix(rx, 0,  rz, 0,
-                      ux, uy, uz, 0,
-                      fx, fy, fz, 0,
-                       0,  0,  0, 1);
+          rotateY(yaw);
+          rotateX(pitch);
           if (useDepthSoftShader) {
             _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]);
             plane(sz, sz);
@@ -417,8 +464,8 @@ class ParticleSystem {
         }
       }
 
-      if (useDepthSoftShader) {
-        resetShader();
+      if (useDepthSoftShader) resetShader();
+      if (disableDepthForSoft) {
         // Restore depth test for any rendering that follows in the same pass.
         drawingContext.enable(drawingContext.DEPTH_TEST);
       }

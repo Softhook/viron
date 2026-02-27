@@ -455,19 +455,24 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     pop();
     sceneFBO.end();
 
-    // ═══ PASS 2 — Blit FBO colour to the main canvas ════════════════════
-    // Only blit COLOR_BUFFER_BIT: blitting DEPTH to the MSAA default canvas
-    // framebuffer is invalid in WebGL2 and triggers GL_INVALID_OPERATION.
-    // Hard particles are already in the FBO colour so they appear correctly.
-    let pxD = pixelDensity();
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sceneFBO.framebuffer);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.blitFramebuffer(0, 0, width * pxD, height * pxD,
-                       0, 0, width * pxD, height * pxD,
-                       gl.COLOR_BUFFER_BIT, gl.NEAREST);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // ═══ PASS 2 — Draw FBO colour to main canvas using a textured quad ══════
+    // blitFramebuffer from a non-MSAA FBO to the MSAA default canvas is
+    // GL_INVALID_OPERATION in WebGL2 (non-MSAA → MSAA blit is forbidden by
+    // spec).  p5.js itself uses this same image() pattern when it faces the
+    // same restriction (see p5.Framebuffer source, _beforeEnd antialias path).
+    // Disable the scissor that was set in Pass 1 so the draw covers the full
+    // canvas, matching what blitFramebuffer did.
+    gl.disable(gl.SCISSOR_TEST);
+    push();
+    ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1);
+    resetMatrix();
+    imageMode(CORNER);
+    gl.disable(gl.DEPTH_TEST);
+    image(sceneFBO, -width / 2, -height / 2, width, height);
+    gl.enable(gl.DEPTH_TEST);
+    pop();
 
-    // ═══ PASS 3 — Render soft billboard particles atop the blitted scene ═
+    // ═══ PASS 3 — Render soft billboard particles atop the rendered scene ═
     // Soft billboards self-manage depth fade via the sDepth texture; DEPTH_TEST
     // is disabled inside render() for these quads and re-enabled afterwards.
     gl.viewport(vx, 0, vw, vh);

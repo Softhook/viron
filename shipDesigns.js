@@ -12,9 +12,9 @@ const SHIP_DESIGNS = [
     // HOVER / VTOL DESIGNS (Thrust Directly Down)
     // =========================================================================
 
-    // --- Design 0: Classic Basic Triangle ---
+    // --- Design 0: Classic ---
     {
-        name: "Classic (Legacy)",
+        name: "Classic",
         thrustAngle: 0,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -31,7 +31,50 @@ const SHIP_DESIGNS = [
         }
     },
 
-    // --- Design 1: Vindicator VTOL (Heavy Hover) ---
+    // --- Design 1: Sleek Classic ---
+    {
+        name: "Sleek Classic",
+        thrustAngle: 0,
+        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
+            if (drawFace) {
+                // Main Fuselage (Diamond/Sleek)
+                let nose = [0, -2, -35], midL = [-12, 2, 0], midR = [12, 2, 0], midT = [0, -8, 0], midB = [0, 6, 0];
+                let rearL = [-8, 2, 15], rearR = [8, 2, 15], rearT = [0, -4, 15], rearB = [0, 4, 15];
+
+                // Front Section
+                drawFace([nose, midT, midL], light);
+                drawFace([nose, midT, midR], light);
+                drawFace([nose, midB, midL], dark);
+                drawFace([nose, midB, midR], dark);
+
+                // Rear Section
+                drawFace([midT, rearT, rearL, midL], tintColor);
+                drawFace([midT, rearT, rearR, midR], tintColor);
+                drawFace([midB, rearB, rearL, midL], dark);
+                drawFace([midB, rearB, rearR, midR], dark);
+
+                // Vertical Stabilizer (Tail Fin)
+                drawFace([[0, -8, 2], [0, -18, 18], [0, -4, 15]], tintColor);
+
+                // Wings (Small stubs)
+                drawFace([midL, [-25, 4, 10], rearL], tintColor);
+                drawFace([midR, [25, 4, 10], rearR], tintColor);
+
+                // Rear Cap
+                drawFace([rearT, rearL, rearB, rearR], [255, 0, 0]);
+
+                // Cockpit
+                drawFace([[0, -8, -15], [5, -6, -5], [-5, -6, -5], [0, -9, -10]], [100, 200, 255, 200]);
+                drawFace([[0, -8, -15], [0, -9, -10], [5, -6, -5]], [255, 255, 255, 100]); // Highlight
+
+                // Ventral Engine Nozzle
+                drawFace([[-5, 4, 5], [5, 4, 5], [5, 4, 12], [-5, 4, 12]], [40, 40, 45]);
+            }
+            return [{ x: 0, y: 4.5, z: 8.5 }];
+        }
+    },
+
+    // --- Design 2: Vindicator VTOL ---
     {
         name: "Vindicator VTOL",
         thrustAngle: 0,
@@ -70,7 +113,7 @@ const SHIP_DESIGNS = [
         }
     },
 
-    // --- Design 2: Nebula Lifter ---
+    // --- Design 3: Nebula Lifter ---
     {
         name: "Nebula Lifter",
         thrustAngle: 0,
@@ -108,7 +151,7 @@ const SHIP_DESIGNS = [
     // DIAGONAL THRUST DESIGNS (45 Degree Back Tilt)
     // =========================================================================
 
-    // --- Design 3: Sky Dart ---
+    // --- Design 4: Sky Dart ---
     {
         name: "Sky Dart",
         thrustAngle: Math.PI / 4,
@@ -126,7 +169,7 @@ const SHIP_DESIGNS = [
         }
     },
 
-    // --- Design 4: Falcon Interceptor ---
+    // --- Design 5: Falcon Interceptor ---
     {
         name: "Falcon Interceptor",
         thrustAngle: Math.PI / 4,
@@ -152,7 +195,7 @@ const SHIP_DESIGNS = [
         }
     },
 
-    // --- Design 5: Arrowhead SR ---
+    // --- Design 6: Arrowhead SR ---
     {
         name: "Arrowhead SR",
         thrustAngle: Math.PI / 4,
@@ -175,9 +218,9 @@ const SHIP_DESIGNS = [
     // JET / FORWARD THRUST DESIGNS (Thrust Straight Back)
     // =========================================================================
 
-    // --- Design 6: Multi-Role Fighter ---
+    // --- Design 7: Fighter ---
     {
-        name: "Fighter (Legacy)",
+        name: "Fighter",
         thrustAngle: Math.PI / 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -209,7 +252,7 @@ const SHIP_DESIGNS = [
         }
     },
 
-    // --- Design 7: Swift Scout ---
+    // --- Design 8: Swift Scout ---
     {
         name: "Swift Scout",
         thrustAngle: Math.PI / 2,
@@ -235,7 +278,7 @@ const SHIP_DESIGNS = [
         }
     },
 
-    // --- Design 8: Viper Fighter ---
+    // --- Design 9: Viper Fighter ---
     {
         name: "Viper Fighter",
         thrustAngle: Math.PI / 2,
@@ -273,7 +316,7 @@ const SHIP_DESIGNS = [
         }
     },
 
-    // --- Design 9: Needle Interceptor ---
+    // --- Design 10: Needle Interceptor ---
     {
         name: "Needle Interceptor",
         thrustAngle: Math.PI / 2,

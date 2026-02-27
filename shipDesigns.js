@@ -15,6 +15,12 @@ const SHIP_DESIGNS = [
     // --- Design 0: Classic ---
     {
         name: "Classic",
+        role: "BALANCED MULTI-ROLE",
+        desc: "A dependable workhorse with predictable handling and balanced VTOL output.",
+        thrust: 0.45,
+        turnRate: 0.04,
+        pitchRate: 0.04,
+        drag: 0.992,
         thrustAngle: 0,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -34,6 +40,12 @@ const SHIP_DESIGNS = [
     // --- Design 1: Sleek Classic ---
     {
         name: "Sleek Classic",
+        role: "FAST SCOUT",
+        desc: "Upgraded composites and weight-saving measures allow for higher cruising speeds.",
+        thrust: 0.52,
+        turnRate: 0.045,
+        pitchRate: 0.045,
+        drag: 0.994,
         thrustAngle: 0,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -77,6 +89,12 @@ const SHIP_DESIGNS = [
     // --- Design 2: Vindicator VTOL ---
     {
         name: "Vindicator VTOL",
+        role: "HEAVY STABILIZED",
+        desc: "Quad-pod pod engines provide massive lifting power at the cost of rotational inertia.",
+        thrust: 0.65,
+        turnRate: 0.025,
+        pitchRate: 0.025,
+        drag: 0.988,
         thrustAngle: 0,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -116,6 +134,12 @@ const SHIP_DESIGNS = [
     // --- Design 3: Nebula Lifter ---
     {
         name: "Nebula Lifter",
+        role: "STABLE PLATFORM",
+        desc: "Built for steady observation. Outriggers provide incredible hovering precision.",
+        thrust: 0.48,
+        turnRate: 0.03,
+        pitchRate: 0.03,
+        drag: 0.985,
         thrustAngle: 0,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -154,6 +178,12 @@ const SHIP_DESIGNS = [
     // --- Design 4: Sky Dart ---
     {
         name: "Sky Dart",
+        role: "POINT INTERCEPTOR",
+        desc: "Optimized for horizontal acceleration. Sharp nose, sharp turns, and high airspeed.",
+        thrust: 0.58,
+        turnRate: 0.035,
+        pitchRate: 0.035,
+        drag: 0.993,
         thrustAngle: Math.PI / 4,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -172,6 +202,12 @@ const SHIP_DESIGNS = [
     // --- Design 5: Falcon Interceptor ---
     {
         name: "Falcon Interceptor",
+        role: "ELITE STRIKE",
+        desc: "Advanced wing geometry and dual engines allow for aggressive combat maneuvering.",
+        thrust: 0.54,
+        turnRate: 0.05,
+        pitchRate: 0.05,
+        drag: 0.992,
         thrustAngle: Math.PI / 4,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -198,6 +234,12 @@ const SHIP_DESIGNS = [
     // --- Design 6: Arrowhead SR ---
     {
         name: "Arrowhead SR",
+        role: "SPEED DEMON",
+        desc: "Maximum forward thrust with minimal drag. Best suited for high-speed hit and run.",
+        thrust: 0.7,
+        turnRate: 0.02,
+        pitchRate: 0.02,
+        drag: 0.995,
         thrustAngle: Math.PI / 4,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -221,6 +263,12 @@ const SHIP_DESIGNS = [
     // --- Design 7: Fighter ---
     {
         name: "Fighter",
+        role: "SUPERIORITY FIGHTER",
+        desc: "The standard by which all other fighters are measured. Combat-ready and agile.",
+        thrust: 0.5,
+        turnRate: 0.04,
+        pitchRate: 0.04,
+        drag: 0.992,
         thrustAngle: Math.PI / 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -255,6 +303,12 @@ const SHIP_DESIGNS = [
     // --- Design 8: Swift Scout ---
     {
         name: "Swift Scout",
+        role: "LIGHT RECON",
+        desc: "Lightweight chassis and high-output engines. Fragile but incredibly fast.",
+        thrust: 0.6,
+        turnRate: 0.06,
+        pitchRate: 0.045,
+        drag: 0.996,
         thrustAngle: Math.PI / 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -281,6 +335,12 @@ const SHIP_DESIGNS = [
     // --- Design 9: Viper Fighter ---
     {
         name: "Viper Fighter",
+        role: "ADVANCED ATTACK",
+        desc: "High-performance airframe. Aggressive and twitchy handling for expert pilots.",
+        thrust: 0.55,
+        turnRate: 0.07,
+        pitchRate: 0.06,
+        drag: 0.992,
         thrustAngle: Math.PI / 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -319,6 +379,12 @@ const SHIP_DESIGNS = [
     // --- Design 10: Needle Interceptor ---
     {
         name: "Needle Interceptor",
+        role: "EXPERIMENTAL RACER",
+        desc: "Minimal profile, maximum output. Hard to fly, but impossible to catch in a straight line.",
+        thrust: 0.75,
+        turnRate: 0.035,
+        pitchRate: 0.035,
+        drag: 0.997,
         thrustAngle: Math.PI / 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {

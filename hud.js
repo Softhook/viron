@@ -236,17 +236,30 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
   // Ship Details
   let design = SHIP_DESIGNS[p.designIndex];
   if (design) {
+    // Ship Name (Largest)
     fill(p.labelColor[0], p.labelColor[1], p.labelColor[2]);
-    textSize(48);
-    text(design.name.toUpperCase(), relX, vh / 2 - 140);
+    textSize(54);
+    text(design.name.toUpperCase(), relX, vh / 2 - 225);
 
-    // Thrust type label
-    textSize(16);
-    fill(180);
+    // Role (Gold)
+    fill(255, 200, 0);
+    textSize(20);
+    text(design.role || "UNKNOWN ROLE", relX, vh / 2 - 170);
+
+    // Thrust type label (Subtle)
+    textSize(14);
+    fill(180, 180, 180, 200);
     let thrustType = "VTOL / HOVER";
     if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
     if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
-    text(thrustType, relX, vh / 2 - 165);
+    text(thrustType, relX, vh / 2 - 145);
+
+    // Description (Body text, wrapped)
+    fill(220);
+    textSize(14);
+    rectMode(CENTER);
+    text(design.desc || "", relX, vh / 2 - 105, vw * 0.85);
+    rectMode(CORNER);
   }
 
   // Selection Hints / Mobile Buttons

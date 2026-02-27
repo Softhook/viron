@@ -435,11 +435,15 @@ function updateShipInput(p) {
   }
 
   // --- Keyboard steering ---
-  if (keyIsDown(k.left)) p.ship.yaw += YAW_RATE;
-  if (keyIsDown(k.right)) p.ship.yaw -= YAW_RATE;
+  let d = SHIP_DESIGNS[p.designIndex] || { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45 };
+  let currentYawRate = d.turnRate || YAW_RATE;
+  let currentPitchRate = d.pitchRate || PITCH_RATE;
+
+  if (keyIsDown(k.left)) p.ship.yaw += currentYawRate;
+  if (keyIsDown(k.right)) p.ship.yaw -= currentYawRate;
   // Keyboard pitch: original behaviour — pitchUp adds, pitchDown subtracts, regardless of camera mode.
-  if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + PITCH_RATE, -PI / 2.2, PI / 2.2);
-  if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - PITCH_RATE, -PI / 2.2, PI / 2.2);
+  if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + currentPitchRate, -PI / 2.2, PI / 2.2);
+  if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - currentPitchRate, -PI / 2.2, PI / 2.2);
 
   // Aim assist for keyboard players (P2 always; P1 when not using mouse pointer-lock).
   // Skipped for the mouse-look path (already handled above).
@@ -466,7 +470,7 @@ function updateShipInput(p) {
   let ux_L = -sp_L * sy_L, uy_L = -cp_L, uz_L = -sp_L * cy_L;
   let fSpd = s.vx * fx_L + s.vy * fy_L + s.vz * fz_L;
 
-  let currentDrag = DRAG;
+  let currentDrag = d.drag || DRAG;
 
   if (fSpd > 0) {
     let liftAccel = fSpd * LIFT_FACTOR;
@@ -479,7 +483,7 @@ function updateShipInput(p) {
   }
 
   if (isThrusting) {
-    let pw = 0.45;
+    let pw = d.thrust || 0.45;
     let dVec = shipUpDir(s, p.designIndex);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
 

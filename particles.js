@@ -41,8 +41,11 @@ uniform vec2  uCameraRange;      // [near, far] clip distances
 uniform vec2  uInvViewportSize;  // [1/physicalWidth, 1/physicalHeight]
 uniform float uTransitionSize;   // smoothstep width for depth fade
 float calc_depth(in float z) {
-  return (2.0 * uCameraRange.x) /
-    (uCameraRange.y + uCameraRange.x - z * (uCameraRange.y - uCameraRange.x));
+  // Depth-buffer values are in [0, 1]; convert to NDC z in [-1, 1] first,
+  // then apply the standard perspective linearization using near/far.
+  float z_ndc = z * 2.0 - 1.0;
+  return (2.0 * uCameraRange.x * uCameraRange.y) /
+    (uCameraRange.y + uCameraRange.x - z_ndc * (uCameraRange.y - uCameraRange.x));
 }
 uniform sampler2D sDepth;       // opaque-scene depth texture (pre-particle pass)
 uniform sampler2D sTexture;     // cloud gradient sprite (white centre, transparent edge)
@@ -309,6 +312,10 @@ class ParticleSystem {
       // depth FBO is available (WebGL2); falls back to unlit spheres otherwise.
       const useSoftShader = (_softShader && _cloudTex && sceneFBO);
       if (useSoftShader) {
+        // Soft billboard quads handle depth-fade via the sDepth texture, so
+        // disable DEPTH_TEST to prevent stale/blitted depth values from
+        // clipping them.  Re-enabled below for hard-geometry particles.
+        drawingContext.disable(drawingContext.DEPTH_TEST);
         shader(_softShader);
         _softShader.setUniform('sTexture',         _cloudTex);
         _softShader.setUniform('sDepth',           sceneFBO.depth);
@@ -373,11 +380,11 @@ class ParticleSystem {
           let sz = p.size || 8;
           push();
           translate(p.x, p.y, p.z);
-          // applyMatrix maps local axes to world: X→right, Y→up, Z→toward camera.
-          // Parameters are row-major; columns encode where each local axis maps.
-          applyMatrix(rx, ux, fx, 0,
-                       0, uy, fy, 0,
-                      rz, uz, fz, 0,
+          // applyMatrix is column-major: each group of 4 is one column.
+          // Column 0 = right, column 1 = up, column 2 = forward (toward camera).
+          applyMatrix(rx, 0,  rz, 0,
+                      ux, uy, uz, 0,
+                      fx, fy, fz, 0,
                        0,  0,  0, 1);
           plane(sz, sz);
           pop();
@@ -391,7 +398,12 @@ class ParticleSystem {
         }
       }
 
-      if (useSoftShader) resetShader();
+      if (useSoftShader) {
+        resetShader();
+        // Restore depth testing for all subsequent hard-geometry draws
+        // (explosions, bombs, bullets) so they occlude against the scene.
+        drawingContext.enable(drawingContext.DEPTH_TEST);
+      }
 
       // ── Explosion particles: unlit spheres (wave-front colour model) ──────
       for (let p of this.particles) {

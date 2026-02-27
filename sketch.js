@@ -451,20 +451,21 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     pop();
     sceneFBO.end();
 
-    // ═══ PASS 2 — Blit FBO colour to the main canvas ════════════════════
-    // Uses WebGL2 blitFramebuffer for a fast pixel-exact copy.  The scissor
-    // test is already active so only this viewport's region is affected.
+    // ═══ PASS 2 — Blit FBO colour AND depth to the main canvas ════════════
+    // Blitting both buffers means explosion/bomb/bullet spheres drawn in Pass 3
+    // can depth-test correctly against the opaque scene geometry.
     let pxD = pixelDensity();
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sceneFBO.framebuffer);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     gl.blitFramebuffer(0, 0, width * pxD, height * pxD,
                        0, 0, width * pxD, height * pxD,
-                       gl.COLOR_BUFFER_BIT, gl.NEAREST);
+                       gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-    // ═══ PASS 3 — Render soft particles atop the blitted scene ══════════
-    // Same camera as Pass 1 so gl_FragCoord.z values are comparable to the
-    // depth values stored in sceneFBO.depth.
+    // ═══ PASS 3 — Render particles atop the blitted scene ═══════════════
+    // The soft-billboard quads handle their own depth fade via the sDepth
+    // texture, so we disable DEPTH_TEST for them to avoid stale-depth
+    // clipping.  Hard particles (explosions, bombs, bullets) re-enable it.
     gl.viewport(vx, 0, vw, vh);
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(vx, 0, vw, vh);

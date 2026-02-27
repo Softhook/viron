@@ -7,6 +7,62 @@
 //   • enemyBullets  — straight-line projectiles fired by fighters and crabs
 // =============================================================================
 
+// -----------------------------------------------------------------------------
+// Soft-particle GLSL — adapted from SoftDiffuseColoredShader
+//
+// The vertex shader is a standard MVP transform that passes UV coordinates
+// through to the fragment shader.
+//
+// The fragment shader achieves two effects simultaneously:
+//   1. Billowy diffuse shape — samples a radial-gradient cloud sprite
+//      (sTexture) so each particle looks like a soft puff rather than a
+//      hard-edged sphere or square.
+//   2. Soft intersection with geometry — linearises both the pre-particle
+//      scene depth (from sDepth, captured in a pre-pass) and the current
+//      fragment depth (gl_FragCoord.z), then applies a smoothstep fade so
+//      particles dissolve where they intersect terrain or other opaque
+//      objects instead of popping through them.
+// -----------------------------------------------------------------------------
+const SOFT_PARTICLE_VERT = `
+precision mediump float;
+uniform mat4 uModelViewMatrix;
+uniform mat4 uProjectionMatrix;
+attribute vec3 aPosition;
+attribute vec2 aTexCoord;
+varying vec2 vTexCoord;
+void main() {
+  vTexCoord = aTexCoord;
+  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+}`;
+
+const SOFT_PARTICLE_FRAG = `
+precision highp float;
+uniform vec2  uCameraRange;      // [near, far] clip distances
+uniform vec2  uInvViewportSize;  // [1/physicalWidth, 1/physicalHeight]
+uniform float uTransitionSize;   // smoothstep width for depth fade
+float calc_depth(in float z) {
+  return (2.0 * uCameraRange.x) /
+    (uCameraRange.y + uCameraRange.x - z * (uCameraRange.y - uCameraRange.x));
+}
+uniform sampler2D sDepth;       // opaque-scene depth texture (pre-particle pass)
+uniform sampler2D sTexture;     // cloud gradient sprite (white centre, transparent edge)
+uniform vec4      uParticleColor; // rgba in [0, 1]
+varying vec2 vTexCoord;
+void main() {
+  vec4 diffuse    = texture2D(sTexture, vTexCoord) * uParticleColor;
+  vec2 coords     = gl_FragCoord.xy * uInvViewportSize;
+  float geometryZ = calc_depth(texture2D(sDepth, coords).r);
+  float sceneZ    = calc_depth(gl_FragCoord.z);
+  float a = clamp(geometryZ - sceneZ, 0.0, 1.0);
+  float b = smoothstep(0.0, uTransitionSize, a);
+  gl_FragColor = diffuse * b;
+}`;
+
+/** Compiled soft-particle GLSL shader; null until ParticleSystem.init(). */
+let _softShader = null;
+/** 64×64 2D p5.Graphics: white radial-gradient cloud sprite. */
+let _cloudTex   = null;
+
 class ParticleSystem {
   constructor() {
     /** @type {Array} Generic visual-effects particles (exhaust, sparks, explosions). */
@@ -32,6 +88,27 @@ class ParticleSystem {
     this.particles   = [];
     this.bombs       = [];
     this.enemyBullets = [];
+  }
+
+  /**
+   * Creates the radial-gradient cloud sprite and compiles the soft-particle
+   * shader.  Must be called once from p5 setup(), after createCanvas().
+   * Safe to skip — render() falls back to unlit spheres if not called.
+   */
+  static init() {
+    // 64×64 white radial gradient: opaque centre → fully transparent edge.
+    // Used as the diffuse sprite for each billboard particle so the puff
+    // looks soft and cloud-like rather than hard-edged.
+    _cloudTex = createGraphics(64, 64);
+    const ctx  = _cloudTex.drawingContext;
+    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0,    'rgba(255,255,255,0.90)');
+    grad.addColorStop(0.35, 'rgba(255,255,255,0.65)');
+    grad.addColorStop(0.70, 'rgba(255,255,255,0.25)');
+    grad.addColorStop(1.0,  'rgba(255,255,255,0.00)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+    _softShader = createShader(SOFT_PARTICLE_VERT, SOFT_PARTICLE_FRAG);
   }
 
   // ---------------------------------------------------------------------------
@@ -200,68 +277,72 @@ class ParticleSystem {
    * Renders all visible particles, bombs and enemy bullets.
    * Objects beyond CULL_DIST * 0.6 are skipped to save draw calls.
    *
-   * Particle colour is computed in three phases depending on particle type:
-   *   isExplosion — wave-front shader: colour depends on distance from origin
-   *   p.color     — simple fade from base colour to dark grey
-   *   default     — false-colour mapping via a seed-derived hue cycle
+   * When sceneFBO is provided (WebGL2 path) soft particles (exhaust / squid
+   * fog) are drawn as camera-facing billboard planes using the GLSL soft-
+   * particle shader, which:
+   *   • Gives a billowy diffuse shape via the cloud-gradient sprite (sTexture).
+   *   • Fades particles at geometry intersections by comparing their depth
+   *     against the pre-particle scene depth stored in sceneFBO.depth.
    *
-   * @param {number} camX  Camera world X (used for distance culling).
-   * @param {number} camZ  Camera world Z.
+   * Explosion particles are always rendered as unlit spheres.
+   * Enemy bullets are rendered as small red spheres.
+   *
+   * @param {number}         camX     Ship world X — distance-cull centre.
+   * @param {number}         camZ     Ship world Z.
+   * @param {number}        [camCX]   Camera world X (billboard orientation).
+   * @param {number}        [camCY]   Camera world Y.
+   * @param {number}        [camCZ]   Camera world Z.
+   * @param {number}        [camNear] Camera near clip plane.
+   * @param {number}        [camFar]  Camera far clip plane.
+   * @param {p5.Framebuffer}[sceneFBO] Pre-particle opaque-scene framebuffer.
    */
-  render(camX, camZ) {
+  render(camX, camZ, camCX, camCY, camCZ, camNear, camFar, sceneFBO) {
     let cullSq = (CULL_DIST * 0.6) * (CULL_DIST * 0.6);
+    let pxD    = pixelDensity();
 
     if (this.particles.length > 0) {
+      noLights();  // Particles are emissive — skip directional shading
       noStroke();
+
+      // ── Soft billboard particles: exhaust, squid fog, missile smoke ──────
+      // Uses the GLSL soft-particle shader + gradient sprite when the scene
+      // depth FBO is available (WebGL2); falls back to unlit spheres otherwise.
+      const useSoftShader = (_softShader && _cloudTex && sceneFBO);
+      if (useSoftShader) {
+        shader(_softShader);
+        _softShader.setUniform('sTexture',         _cloudTex);
+        _softShader.setUniform('sDepth',           sceneFBO.depth);
+        _softShader.setUniform('uCameraRange',     [camNear, camFar]);
+        _softShader.setUniform('uInvViewportSize', [1 / (width * pxD), 1 / (height * pxD)]);
+        _softShader.setUniform('uTransitionSize',  0.05);
+      }
+
       for (let p of this.particles) {
+        if (p.isExplosion) continue;  // Handled in the explosion loop below
         if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
 
-        let seed     = p.seed || 1.0;
         let lifeNorm = p.life / 255.0;
         let t        = 1.0 - lifeNorm;
-
-        // Seed-based false-colour hue (only used for missile-smoke particles)
-        let kr = (5 + seed * 6) % 6;
-        let kg = (3 + seed * 6) % 6;
-        let kb = (1 + seed * 6) % 6;
-        let vr = 255 * (1 - Math.max(Math.min(kr, 4 - kr, 1), 0));
-        let vg = 255 * (1 - Math.max(Math.min(kg, 4 - kg, 1), 0));
-        let vb = 255 * (1 - Math.max(Math.min(kb, 4 - kb, 1), 0));
+        // Alpha in [0, 1] — fade in over the first 40 % of lifetime
+        let alpha    = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
+        if (p.isFog) alpha *= 0.55;  // Squid ink: gradient sprite already fades edges; 0.55 base keeps cloud visible but translucent
 
         let r, g, b;
-        let alpha = (lifeNorm < 0.4) ? (lifeNorm / 0.4) * 255 : 255;
-        if (p.isFog) alpha *= 0.35;  // Squid ink cloud is soft and diffuse
-
-        if (p.isExplosion) {
-          // Wave-front model: particle colour tracks its distance from the explosion origin.
-          // The front of the wave is hottest (white) and cools toward smoke as the wave passes.
-          let d    = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
-          let wave = 1400.0 * Math.pow(t, 0.6);
-          let diff = wave - d;
-
-          if (diff < -50) {
-            alpha = 0;  // Behind the wave — invisible
-            r = 0; g = 0; b = 0;
-          } else if (diff < 40) {
-            let f = (diff + 50) / 90;
-            r = lerp(255, p.br, f); g = lerp(255, p.bg, f); b = lerp(255, p.bb, f);
-          } else if (diff < 150) {
-            let f = (diff - 40) / 110;
-            r = lerp(p.br, p.er, f); g = lerp(p.bg, p.eg, f); b = lerp(p.bb, p.eb, f);
-          } else if (diff < 350) {
-            let f = (diff - 150) / 200;
-            r = lerp(p.er, p.sr, f); g = lerp(p.eg, p.sg, f); b = lerp(p.eb, p.sb, f);
-          } else {
-            r = p.sr; g = p.sg; b = p.sb;
-          }
-        } else if (p.color) {
-          // Solid-colour particles (exhaust, powerup sparks): fade to dark grey
+        if (p.color) {
+          // Exhaust / powerup sparks: fade from base colour to dark grey
           let f = Math.min(t * 1.5, 1.0);
           r = lerp(p.color[0], 30, f);
           g = lerp(p.color[1], 30, f);
           b = lerp(p.color[2], 30, f);
         } else {
-          // Missile smoke / generic particles: hue cycle from seed
+          // Missile smoke: seed-derived hue cycle
+          let seed = p.seed || 1.0;
+          let kr = (5 + seed * 6) % 6;
+          let kg = (3 + seed * 6) % 6;
+          let kb = (1 + seed * 6) % 6;
+          let vr = 255 * (1 - Math.max(Math.min(kr, 4 - kr, 1), 0));
+          let vg = 255 * (1 - Math.max(Math.min(kg, 4 - kg, 1), 0));
+          let vb = 255 * (1 - Math.max(Math.min(kb, 4 - kb, 1), 0));
           if (t < 0.15) {
             let f = t / 0.15;
             r = lerp(255, vr, f); g = lerp(255, vg, f); b = lerp(255, vb, f);
@@ -274,22 +355,89 @@ class ParticleSystem {
           }
         }
 
-        push(); translate(p.x, p.y, p.z);
+        if (useSoftShader) {
+          // Billboard: rotate the plane so its face points toward the camera.
+          // forward = normalize(camera − particle)
+          let fx = camCX - p.x, fy = camCY - p.y, fz = camCZ - p.z;
+          let dist = Math.hypot(fx, fy, fz);
+          if (dist < 0.001) continue;
+          fx /= dist; fy /= dist; fz /= dist;
+          // right = cross(worldUp=(0,1,0), forward)  [ry = 0]
+          let rx = fz, rz = -fx;
+          let rLen = Math.hypot(rx, rz);
+          if (rLen > 0.001) { rx /= rLen; rz /= rLen; } else { rx = 1; rz = 0; }
+          // up = cross(forward, right)
+          let ux = fy * rz, uy = fz * rx - fx * rz, uz = -fy * rx;
+
+          _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]);
+          let sz = p.size || 8;
+          push();
+          translate(p.x, p.y, p.z);
+          // applyMatrix maps local axes to world: X→right, Y→up, Z→toward camera.
+          // Parameters are row-major; columns encode where each local axis maps.
+          applyMatrix(rx, ux, fx, 0,
+                       0, uy, fy, 0,
+                      rz, uz, fz, 0,
+                       0,  0,  0, 1);
+          plane(sz, sz);
+          pop();
+        } else {
+          // Fallback: unlit sphere when soft shader is unavailable
+          push();
+          translate(p.x, p.y, p.z);
+          fill(r, g, b, alpha * 255);
+          sphere((p.size || 8) / 2);
+          pop();
+        }
+      }
+
+      if (useSoftShader) resetShader();
+
+      // ── Explosion particles: unlit spheres (wave-front colour model) ──────
+      for (let p of this.particles) {
+        if (!p.isExplosion) continue;
+        if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
+
+        let lifeNorm = p.life / 255.0;
+        let t        = 1.0 - lifeNorm;
+        let alpha    = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 255 : 255;
+
+        let d    = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
+        let wave = 1400.0 * Math.pow(t, 0.6);
+        let diff = wave - d;
+        if (diff < -50) continue;  // Behind wave front — skip
+
+        let r, g, b;
+        if (diff < 40) {
+          let f = (diff + 50) / 90;
+          r = lerp(255, p.br, f); g = lerp(255, p.bg, f); b = lerp(255, p.bb, f);
+        } else if (diff < 150) {
+          let f = (diff - 40) / 110;
+          r = lerp(p.br, p.er, f); g = lerp(p.bg, p.eg, f); b = lerp(p.bb, p.eb, f);
+        } else if (diff < 350) {
+          let f = (diff - 150) / 200;
+          r = lerp(p.er, p.sr, f); g = lerp(p.eg, p.sg, f); b = lerp(p.eb, p.sb, f);
+        } else {
+          r = p.sr; g = p.sg; b = p.sb;
+        }
+
+        push();
+        translate(p.x, p.y, p.z);
         fill(r, g, b, alpha);
-        noStroke();
         sphere((p.size || 8) / 2);
         pop();
       }
     }
 
-    // Bombs — rendered as narrow red-dark cuboids so they look like falling capsules
+    // Bombs — narrow red-dark cuboids (falling capsules)
     for (let b of this.bombs) {
       push(); translate(b.x, b.y, b.z); noStroke(); fill(200, 50, 50); box(8, 20, 8); pop();
     }
 
-    // Enemy bullets — small red cubes
+    // Enemy bullets — red spheres (radius 3 = visual equivalent of the previous box(6) side length)
+    noLights(); noStroke();
     for (let b of this.enemyBullets) {
-      push(); translate(b.x, b.y, b.z); noStroke(); fill(255, 80, 80); box(6); pop();
+      push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(3); pop();
     }
   }
 }

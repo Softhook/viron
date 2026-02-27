@@ -43,6 +43,7 @@ let gameStartTime = 0;         // millis() when the current game started
 let numPlayers = 1;         // 1 or 2 — set by startGame()
 let menuCam = { x: 1500, z: 1500, yaw: 0 }; // Title-screen camera state
 let firstPersonView = false;  // Toggle with O key; false = behind-ship (default)
+let sceneFBO = null;          // Pre-particle scene framebuffer for soft-particle depth test (WebGL2)
 
 // Mouse state tracked via raw DOM events so they work before pointer-lock
 let mouseReleasedSinceStart = true;
@@ -175,6 +176,20 @@ function setup() {
     CULL_DIST = 3500;
   }
   createCanvas(windowWidth, windowHeight, WEBGL);
+
+  // Soft-particle depth pre-pass: create a scene framebuffer with a depth
+  // texture if the browser supports WebGL2 (gl.blitFramebuffer available).
+  // When available, ParticleSystem.init() compiles the soft-particle shader.
+  {
+    let gl = drawingContext;
+    if (typeof gl.blitFramebuffer === 'function') {
+      let fb = createFramebuffer({ antialias: false });
+      if (fb && fb.depth) {
+        sceneFBO = fb;
+        ParticleSystem.init();
+      }
+    }
+  }
 
   // Suppress context menu on right-click (right mouse is used for thrust)
   document.addEventListener('contextmenu', event => event.preventDefault());
@@ -386,61 +401,105 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   let s = p.ship;
   let vx = viewX * pxDensity, vw = viewW * pxDensity, vh = viewH * pxDensity;
 
-  gl.viewport(vx, 0, vw, vh);
-  gl.enable(gl.SCISSOR_TEST);
-  gl.scissor(vx, 0, vw, vh);
-  gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);  // Sky colour (matches fog end)
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-  push();
-
+  // Pre-compute camera parameters — shared between the opaque-scene pass and
+  // the particle pass so both use identical view/projection matrices.
+  let camNear = firstPersonView ? 5 : 50;
+  let camFar  = VIEW_FAR * TILE * 1.5;
   let cx, cy, cz, lx, ly, lz;
   if (firstPersonView) {
-    // First-person: near plane 5 so bullets spawned ~30 units ahead are never clipped.
-    perspective(PI / 3, viewW / viewH, 5, VIEW_FAR * TILE * 1.5);
     // Cockpit eye looking along the ship's forward vector.
     let cosPitch = cos(s.pitch), sinPitch = sin(s.pitch);
-    let fwdX = -sin(s.yaw) * cosPitch;
-    let fwdY = sinPitch;
-    let fwdZ = -cos(s.yaw) * cosPitch;
     cx = s.x; cy = s.y - 25; cz = s.z;
-    lx = s.x + fwdX * 500;
-    ly = (s.y - 25) + fwdY * 500;
-    lz = s.z + fwdZ * 500;
+    lx = s.x + (-sin(s.yaw) * cosPitch) * 500;
+    ly = (s.y - 25) + sinPitch * 500;
+    lz = s.z + (-cos(s.yaw) * cosPitch) * 500;
   } else {
-    // Default (original) behind-ship camera — near plane 50, matches original build.
-    perspective(PI / 3, viewW / viewH, 50, VIEW_FAR * TILE * 1.5);
-    // Camera sits 550 units behind the ship at a height-capped Y, looking at the ship body.
+    // Camera sits ~300 units behind the ship (XZ plane) at a height-capped Y, looking at the ship body.
     cy = min(s.y - 120, 140);
     cx = s.x + 300 * sin(s.yaw);
     cz = s.z + 300 * cos(s.yaw);
     lx = s.x; ly = s.y; lz = s.z;
   }
-  camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
 
-  // Update spatial audio listener to match this camera position
+  // Update spatial audio listener once per viewport.
   if (typeof gameSFX !== 'undefined') gameSFX.updateListener(cx, cy, cz, lx, ly, lz, 0, 1, 0);
 
-  setSceneLighting();
-  terrain.drawLandscape(s, viewW / viewH);
-  terrain.drawTrees(s);
-  terrain.drawBuildings(s);
-  enemyManager.draw(s);
+  if (sceneFBO) {
+    // ═══ PASS 1 — Render opaque scene into the FBO (captures depth) ═══════
+    // The depth texture is later used by the soft-particle shader so particles
+    // fade out at terrain/geometry intersections instead of hard-clipping.
+    sceneFBO.begin();
+    gl.viewport(vx, 0, vw, vh);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(vx, 0, vw, vh);
+    gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    push();
+    perspective(PI / 3, viewW / viewH, camNear, camFar);
+    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    setSceneLighting();
+    terrain.drawLandscape(s, viewW / viewH);
+    terrain.drawTrees(s);
+    terrain.drawBuildings(s);
+    enemyManager.draw(s);
+    for (let player of players) {
+      if (!player.dead && (player !== p || !firstPersonView)) shipDisplay(player.ship, player.labelColor);
+      renderProjectiles(player, s.x, s.z);
+    }
+    renderInFlightBarriers(s.x, s.z);
+    if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
+    pop();
+    sceneFBO.end();
 
-  // In first-person the player's own ship is hidden; in third-person it is visible
-  for (let player of players) {
-    if (!player.dead && (player !== p || !firstPersonView)) shipDisplay(player.ship, player.labelColor);
-    renderProjectiles(player, s.x, s.z);
+    // ═══ PASS 2 — Blit FBO colour to the main canvas ════════════════════
+    // Uses WebGL2 blitFramebuffer for a fast pixel-exact copy.  The scissor
+    // test is already active so only this viewport's region is affected.
+    let pxD = pixelDensity();
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sceneFBO.framebuffer);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.blitFramebuffer(0, 0, width * pxD, height * pxD,
+                       0, 0, width * pxD, height * pxD,
+                       gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // ═══ PASS 3 — Render soft particles atop the blitted scene ══════════
+    // Same camera as Pass 1 so gl_FragCoord.z values are comparable to the
+    // depth values stored in sceneFBO.depth.
+    gl.viewport(vx, 0, vw, vh);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(vx, 0, vw, vh);
+    push();
+    perspective(PI / 3, viewW / viewH, camNear, camFar);
+    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, sceneFBO);
+    pop();
+
+  } else {
+    // ═══ Original single-pass rendering (WebGL1 / no-FBO fallback) ═══════
+    gl.viewport(vx, 0, vw, vh);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(vx, 0, vw, vh);
+    gl.clearColor(30 / 255, 60 / 255, 120 / 255, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    push();
+    perspective(PI / 3, viewW / viewH, camNear, camFar);
+    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    setSceneLighting();
+    terrain.drawLandscape(s, viewW / viewH);
+    terrain.drawTrees(s);
+    terrain.drawBuildings(s);
+    enemyManager.draw(s);
+    for (let player of players) {
+      if (!player.dead && (player !== p || !firstPersonView)) shipDisplay(player.ship, player.labelColor);
+      renderProjectiles(player, s.x, s.z);
+    }
+    renderInFlightBarriers(s.x, s.z);
+    particleSystem.render(s.x, s.z);
+    if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
+    pop();
   }
-  renderInFlightBarriers(s.x, s.z);  // Environment-owned in-flight barrier cubes
-  particleSystem.render(s.x, s.z);
 
-  // 3D Visual Debugging
-  if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
-
-  pop();
-
-  // Overlay HUD (2D pass on top of the 3D scene)
+  // ═══ HUD overlay (2D pass on top of 3D scene) ═══════════════════════════
   gl.clear(gl.DEPTH_BUFFER_BIT);
   drawPlayerHUD(p, pi, viewW, viewH);
   if ((isMobile || (typeof mobileController !== 'undefined' && mobileController.debug)) && numPlayers === 1 && typeof mobileController !== 'undefined') {

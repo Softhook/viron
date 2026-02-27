@@ -230,7 +230,7 @@ class ParticleSystem {
 
         let r, g, b;
         let alpha = (lifeNorm < 0.4) ? (lifeNorm / 0.4) * 255 : 255;
-        if (p.isFog) alpha *= 0.9;  // Squid ink cloud is slightly more transparent
+        if (p.isFog) alpha *= 0.35;  // Squid ink cloud is soft and diffuse
 
         if (p.isExplosion) {
           // Wave-front model: particle colour tracks its distance from the explosion origin.
@@ -276,7 +276,8 @@ class ParticleSystem {
 
         push(); translate(p.x, p.y, p.z);
         fill(r, g, b, alpha);
-        box(p.size || 8);
+        noStroke();
+        sphere((p.size || 8) / 2);
         pop();
       }
     }

@@ -191,7 +191,7 @@ function setup() {
   //
   // On mobile, skip initializing particle resources entirely.
   // When _cloudTex is non-null, render() uses the billboard path:
-  //   • rotateY + rotateX per particle  (~70 + 62 ns = ~132 ns of trig / matrix extra)
+  //   • rotateY + rotateX per particle  (~130 ns of extra trig / matrix work per particle, aggregate from benchmark-particles.js)
   //   • gl.disable(DEPTH_TEST) once per frame — on tile-based mobile GPUs
   //     (Adreno, Apple A-series, Mali) this is a tile-flush barrier that stalls
   //     the GPU for ~4–16 ms while all pending terrain tiles are resolved before
@@ -201,7 +201,7 @@ function setup() {
   // Leaving _cloudTex null routes every particle through the sphere fallback:
   //   • No orientation trig, no DEPTH_TEST toggle, no tile-flush stall.
   //   • CPU: 2.84× cheaper per particle at mobile cull radius.
-  //   • GPU: eliminates the ~4–16 ms tile-flush stall entirely.
+  //   • GPU: eliminates the ~4–16 ms-per-frame tile-flush stall (2 DEPTH_TEST toggles) entirely.
   //   • Net: recovers ~36% of the 60fps frame budget at a 200-particle load.
   //     (Measured by benchmark-particles.js — run `node benchmark-particles.js`)
   //

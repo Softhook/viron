@@ -58,7 +58,8 @@ function createPlayer(id, keys, offsetX, labelColor) {
     aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
     mobileMissilePressed: false,  // Tracks the mobile missile button edge so it fires once per tap
     lpDeaths: 0,                  // Tracks consecutive deaths on an occupied launchpad
-    designIndex: 0                // Current ship visual design index
+    designIndex: 0,               // Current ship visual design index
+    ready: false                  // Selection status for ship-select screen
   };
   resetShip(p, offsetX);
   return p;

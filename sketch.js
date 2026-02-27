@@ -277,7 +277,7 @@ function startGame(np) {
   if (window._perf) window._perf.cooldown = 0;
 
   startLevel(1);
-  gameState = 'playing';
+  gameState = 'shipselect';
 }
 
 /**
@@ -397,7 +397,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
   // Pre-compute camera parameters — shared between the opaque-scene pass and
   // the particle pass so both use identical view/projection matrices.
   let camNear = firstPersonView ? 5 : 50;
-  let camFar  = VIEW_FAR * TILE * 1.5;
+  let camFar = VIEW_FAR * TILE * 1.5;
   let cx, cy, cz, lx, ly, lz;
   if (firstPersonView) {
     // Cockpit eye looking along the ship's forward vector.
@@ -542,6 +542,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
  */
 function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
+  if (gameState === 'shipselect') { drawShipSelect(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
 
   // --- Dynamic Performance Scaling ---
@@ -985,6 +986,32 @@ function keyPressed() {
     return;
   }
 
+  if (gameState === 'shipselect') {
+    for (let p of players) {
+      if (p.id === 0) {
+        // P1 Selection (A/D or Arrows if 1P)
+        let left = (numPlayers === 1) ? (keyCode === LEFT_ARROW || keyCode === 65) : (keyCode === 65);
+        let right = (numPlayers === 1) ? (keyCode === RIGHT_ARROW || keyCode === 68) : (keyCode === 68);
+        if (left) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+        if (right) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+        if (keyCode === ENTER || keyCode === 81) p.ready = true; // Enter or Q
+      } else {
+        // P2 Selection (Arrows)
+        if (keyCode === LEFT_ARROW) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+        if (keyCode === RIGHT_ARROW) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+        if (keyCode === 190) p.ready = true; // . (period)
+      }
+    }
+
+    // Check if all players are ready
+    if (players.every(p => p.ready)) {
+      gameState = 'playing';
+      // startLevel(1) already called in startGame, but we want to ensure clean state
+      startLevel(1);
+    }
+    return;
+  }
+
   for (let p of players) {
     if (keyCode === p.keys.weaponCycle) {
       p.weaponMode = (p.weaponMode + 1) % WEAPON_MODES.length;
@@ -1018,6 +1045,29 @@ function keyPressed() {
  * Returning false prevents the default browser scroll / zoom behaviour.
  */
 function touchStarted(event) {
+  if (gameState === 'menu') { startGame(1); return false; }
+  if (gameState === 'shipselect') {
+    let vw = width / numPlayers;
+    let pIdx = floor(mouseX / vw);
+    if (pIdx >= players.length) return false;
+    let p = players[pIdx];
+    if (p.ready) return false;
+
+    let localX = mouseX % vw;
+    // Regions match hud.js button rendering
+    if (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130) {
+      p.ready = true;
+    } else if (mouseY > height / 2 - 60 && mouseY < height / 2 + 60) {
+      if (localX < 120) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+      else if (localX > vw - 120) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+    }
+
+    if (players.every(p => p.ready)) {
+      gameState = 'playing';
+      startLevel(1);
+    }
+    return false;
+  }
   if (typeof handleTouchStarted === 'function') return handleTouchStarted();
   return false;
 }
@@ -1040,6 +1090,25 @@ function mousePressed() {
 
     if (gameState === 'menu') {
       startGame(1);
+    } else if (gameState === 'shipselect') {
+      let vw = width / numPlayers;
+      let pIdx = floor(mouseX / vw);
+      if (pIdx < players.length) {
+        let p = players[pIdx];
+        if (!p.ready) {
+          let localX = mouseX % vw;
+          if (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130) {
+            p.ready = true;
+          } else if (mouseY > height / 2 - 60 && mouseY < height / 2 + 60) {
+            if (localX < 120) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+            else if (localX > vw - 120) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+          }
+          if (players.every(p => p.ready)) {
+            gameState = 'playing';
+            startLevel(1);
+          }
+        }
+      }
     } else if (gameState === 'playing') {
       if (mouseButton === CENTER) {
         if (players.length > 0 && !players[0].dead) {

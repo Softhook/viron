@@ -158,6 +158,170 @@ function drawGameOver() {
 }
 
 /**
+ * Main entry point for the Ship Select screen.
+ * Handles split-screen division if two players are present.
+ */
+function drawShipSelect() {
+  let gl = drawingContext;
+  let pxD = pixelDensity();
+
+  if (numPlayers === 1) {
+    renderShipSelectView(players[0], 0, 0, width, height, pxD);
+  } else {
+    let hw = floor(width / 2);
+    // Left view (P1)
+    renderShipSelectView(players[0], 0, 0, hw, height, pxD);
+    // Right view (P2)
+    renderShipSelectView(players[1], 1, hw, hw, height, pxD);
+
+    // Split screen divider overlay
+    setup2DViewport();
+    stroke(0, 255, 0, 180);
+    strokeWeight(2);
+    line(0, -height / 2, 0, height / 2);
+    pop();
+  }
+}
+
+/**
+ * Renders the 3D ship preview and 2D selection text for a single player viewport.
+ * @param {object} p   Player object.
+ * @param {number} pi  Player index.
+ * @param {number} vx  Viewport X.
+ * @param {number} vw  Viewport Width.
+ * @param {number} vh  Viewport Height.
+ * @param {number} pxD Pixel density.
+ */
+function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
+  let gl = drawingContext;
+  gl.viewport(vx * pxD, 0, vw * pxD, vh * pxD);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(vx * pxD, 0, vw * pxD, vh * pxD);
+
+  // Deep space background colour
+  gl.clearColor(0.01, 0.01, 0.05, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  push();
+  perspective(PI / 3, vw / vh, 1, 1000);
+  camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
+
+  // Cinematic lighting
+  directionalLight(255, 255, 255, 0.5, 1, -0.5);
+  directionalLight(120, 180, 255, -0.5, -1, 0.5); // Cool rim light
+  ambientLight(45, 45, 55);
+
+  // Rotating ship presentation
+  push();
+  rotateY(frameCount * 0.018);
+  rotateX(sin(frameCount * 0.012) * 0.15);
+  noStroke(); // Ensure no stroke for the ship preview
+  drawShipPreview(p.designIndex, p.labelColor);
+  pop();
+  pop();
+
+  // --- 2D Overlay ---
+  setup2DViewport();
+  // Adjust ortho X for the viewport slice
+  let relX = (vx + vw / 2) - width / 2;
+
+  textAlign(CENTER, TOP);
+  noStroke();
+
+  // Title
+  fill(255, 255, 255, 200);
+  textSize(28);
+  text("SELECT YOUR CRAFT", relX, -vh / 2 + 50);
+
+  // Ship Details
+  let design = SHIP_DESIGNS[p.designIndex];
+  if (design) {
+    fill(p.labelColor[0], p.labelColor[1], p.labelColor[2]);
+    textSize(48);
+    text(design.name.toUpperCase(), relX, vh / 2 - 140);
+
+    // Thrust type label
+    textSize(16);
+    fill(180);
+    let thrustType = "VTOL / HOVER";
+    if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
+    if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
+    text(thrustType, relX, vh / 2 - 165);
+  }
+
+  // Selection Hints / Mobile Buttons
+  if (isMobile && !p.ready) {
+    // Arrow buttons
+    fill(255, 40);
+    rect(relX - vw / 2 + 20, -40, 60, 80, 10);
+    rect(relX + vw / 2 - 80, -40, 60, 80, 10);
+
+    fill(255);
+    textAlign(CENTER, CENTER);
+    textSize(40);
+    text("<", relX - vw / 2 + 50, 0);
+    text(">", relX + vw / 2 - 50, 0);
+
+    // Confirm button
+    fill(p.labelColor[0], p.labelColor[1], p.labelColor[2], 120);
+    rect(relX - 120, vh / 2 - 100, 240, 60, 30);
+    fill(255);
+    textSize(22);
+    text("CONFIRM", relX, vh / 2 - 70);
+    textAlign(CENTER, TOP);
+  } else if (!p.ready) {
+    textSize(16);
+    fill(200, 200, 200, 150);
+    let hint = (pi === 0) ? "A / D TO CYCLE \u2022 ENTER TO READY" : "ARROWS TO CYCLE \u2022 . TO READY";
+    if (numPlayers === 1) hint = "LEFT / RIGHT TO CYCLE \u2022 ENTER TO START";
+    text(hint, relX, vh / 2 - 65);
+  }
+
+  // Ready State
+  if (p.ready) {
+    fill(0, 255, 0);
+    textSize(36);
+    text("READY", relX, 0);
+  }
+
+  pop();
+  gl.disable(gl.SCISSOR_TEST);
+}
+
+/**
+ * Draws the ship geometry for the ship select preview.
+ * Reuses the SHIP_DESIGNS draw functions but without the terrain shader overhead.
+ * @param {number} designIdx Index of the ship design.
+ * @param {number[]} tintColor RGB player color.
+ */
+function drawShipPreview(designIdx, tintColor) {
+  let design = SHIP_DESIGNS[designIdx];
+  if (!design) return;
+
+  let r = tintColor[0], g = tintColor[1], b = tintColor[2];
+  let dark = [r * 0.4, g * 0.4, b * 0.4];
+  let light = [lerp(r, 255, 0.4), lerp(g, 255, 0.4), lerp(b, 255, 0.4)];
+  let engineGray = [80, 80, 85];
+
+  noStroke(); // Final safety for in-game look
+
+  const drawFace = (pts, col) => {
+    fill(col[0], col[1], col[2], col[3] || 255);
+    beginShape();
+    for (let p of pts) {
+      vertex(p[0], p[1], p[2]);
+    }
+    endShape(CLOSE);
+  };
+
+  // Mock transform and ship state for the preview
+  const transform = (pt) => pt;
+  const sFake = { pitch: 0, yaw: 0 };
+
+  design.draw(drawFace, tintColor, engineGray, light, dark, false, sFake, transform);
+}
+
+/**
  * Renders the 2D HUD overlay for one player within their viewport slice.
  *
  * Displays (top-left):

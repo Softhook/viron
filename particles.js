@@ -329,8 +329,12 @@ class ParticleSystem {
   render(camX, camZ, camCX, camCY, camCZ, camNear, camFar, sceneFBO) {
     let cullSq = (CULL_DIST * 0.6) * (CULL_DIST * 0.6);
     let fogCullSq = (CULL_DIST * 0.42) * (CULL_DIST * 0.42);
-    const MAX_FOG_RENDER = 140;
+    const particleLoad = this.particles.length;
+    const renderLoadScale = particleLoad > 700 ? 0.65 : (particleLoad > 500 ? 0.8 : 1.0);
+    const MAX_FOG_RENDER = Math.floor(140 * renderLoadScale);
+    const MAX_THRUST_RENDER = Math.floor(180 * renderLoadScale);
     let fogRendered = 0;
+    let thrustRendered = 0;
     let pxD    = pixelDensity();
 
     if (this.particles.length > 0) {
@@ -358,15 +362,23 @@ class ParticleSystem {
         _softShader.setUniform('uInvViewportSize', [1 / (width * pxD), 1 / (height * pxD)]);
         _softShader.setUniform('uTransitionSize',  0.05);
       }
+      if (useBillowSprites) texture(_cloudTex);
 
-      for (let p of this.particles) {
+      for (let i = 0; i < this.particles.length; i++) {
+        let p = this.particles[i];
         if (p.isExplosion) continue;  // Handled in the explosion loop below
-        let dSq = (p.x - camX) ** 2 + (p.z - camZ) ** 2;
+        let dxC = p.x - camX;
+        let dzC = p.z - camZ;
+        let dSq = dxC * dxC + dzC * dzC;
         if (dSq > cullSq) continue;
         if (p.isFog) {
           if (dSq > fogCullSq) continue;
           if (fogRendered >= MAX_FOG_RENDER) continue;
           fogRendered++;
+        }
+        if (p.isThrust) {
+          if (thrustRendered >= MAX_THRUST_RENDER) continue;
+          thrustRendered++;
         }
 
         let lifeNorm = p.life / 255.0;
@@ -375,6 +387,7 @@ class ParticleSystem {
         let alpha    = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
         if (p.isFog) alpha *= p.isInkBurst ? 1.15 : 0.85;  // Burst clouds are much denser/darker
         if (p.isThrust) alpha *= 0.42; // Thrust smoke should stay soft/translucent
+        if (alpha <= 0.02) continue;
 
         let r, g, b;
         if (p.isFog && p.color) {
@@ -448,10 +461,8 @@ class ParticleSystem {
             _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]);
             plane(sz, sz);
           } else {
-            texture(_cloudTex);
             tint(r, g, b, alpha * 255);
             plane(sz, sz);
-            noTint();
           }
           pop();
         } else {
@@ -463,6 +474,7 @@ class ParticleSystem {
           pop();
         }
       }
+      if (useBillowSprites) noTint();
 
       if (useDepthSoftShader) resetShader();
       if (disableDepthForSoft) {

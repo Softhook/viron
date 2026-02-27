@@ -483,7 +483,10 @@ function updateShipInput(p) {
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
 
     // Emit fewer, softer smoke billows from twin engines
-    if (frameCount % 3 === 0) {
+    const totalParticles = particleSystem.particles.length;
+    const fogLoad = particleSystem.fogCount;
+    const emitEvery = totalParticles > 700 ? 5 : (totalParticles > 500 || fogLoad > 130 ? 4 : 3);
+    if (frameCount % emitEvery === 0) {
       let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
       let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
       let tLocal = (pt) => {
@@ -514,9 +517,10 @@ function updateShipInput(p) {
       } else {
         engPos = [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
       }
+      const emitChance = totalParticles > 700 ? 0.28 : (totalParticles > 500 ? 0.42 : 0.65);
 
       engPos.forEach(pos => {
-        if (random() < 0.35) return; // Keep count low for diffuse plume look
+        if (random() > emitChance) return; // Adaptive throttling under heavy particle load
         let wPos = tLocal([pos.x, pos.y, pos.z + 2]); // Particle spawn slightly behind nozzle
         particleSystem.particles.push({
           x: wPos.x, y: wPos.y, z: wPos.z,

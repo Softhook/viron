@@ -188,9 +188,13 @@ function setup() {
   // Soft-particle depth pre-pass is temporarily disabled.
   // The off-screen FBO path can produce a fully black world on some systems;
   // keep the stable single-pass renderer active until that pipeline is fixed.
-  // Still initialize particle resources so billowy sprite fallback is available.
+  // On mobile, skip initializing particle resources entirely: the billowy-sprite
+  // fallback (enabled whenever _cloudTex is non-null) requires a per-particle
+  // push/rotateY/rotateX/plane/pop cycle plus tint() which is too expensive for
+  // mobile GPUs.  Leaving _cloudTex null keeps particles on the simple sphere
+  // path which is significantly cheaper and maintains a playable frame rate.
   sceneFBO = null;
-  ParticleSystem.init();
+  if (!isMobile) ParticleSystem.init();
 
   // Suppress context menu on right-click (right mouse is used for thrust)
   document.addEventListener('contextmenu', event => event.preventDefault());

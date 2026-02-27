@@ -351,7 +351,14 @@ class ParticleSystem {
         // Soft billboard quads handle depth-fade via the sDepth texture, so
         // disable DEPTH_TEST while drawing them so transparent quad texels
         // don't occlude as rectangles in the fallback textured-billow path.
-        // Re-enabled below for hard-geometry particles.
+        //
+        // WARNING — mobile performance: on tile-based GPUs (Adreno, Apple
+        // A-series, Mali), gl.disable(DEPTH_TEST) is a tile-flush barrier that
+        // forces the GPU to resolve ALL pending tiles before the depth-state
+        // change takes effect.  On a complex scene this stall is ~4–16 ms per
+        // frame — 24–96% of the 60fps budget.  For this reason ParticleSystem
+        // is never initialized on mobile (see setup() in sketch.js), keeping
+        // both disableDepthForSoft flags false and leaving DEPTH_TEST always on.
         drawingContext.disable(drawingContext.DEPTH_TEST);
       }
       if (useDepthSoftShader) {

@@ -207,6 +207,7 @@ function createVironProfiler(cfg) {
     overlayBarrier: 0,
     overlayInfectionTiles: 0,
     overlayBarrierTiles: 0,
+    spreadSteps: 0,
     frames: 0,
   };
   let active = true;
@@ -216,7 +217,8 @@ function createVironProfiler(cfg) {
     const summary = {
       frames,
       frameMs: +(totals.frame / frames).toFixed(2),
-      spreadMs: +(totals.spread / frames).toFixed(3),
+      spreadMsPerFrame: +(totals.spread / frames).toFixed(3),
+      spreadMsPerUpdate: totals.spreadSteps ? +(totals.spread / totals.spreadSteps).toFixed(3) : 0,
       shaderMs: +(totals.shader / frames).toFixed(3),
       vironOverlayMs: +(totals.overlayInfection / frames).toFixed(3),
       vironTiles: Math.round(totals.overlayInfectionTiles / frames),
@@ -231,7 +233,7 @@ function createVironProfiler(cfg) {
     }
 
     totals.frame = totals.spread = totals.shader = 0;
-    totals.overlayInfection = totals.overlayBarrier = 0;
+    totals.overlayInfection = totals.overlayBarrier = totals.spreadSteps = 0;
     totals.overlayInfectionTiles = totals.overlayBarrierTiles = 0;
     totals.frames = 0;
     if (cfg.once) active = false;
@@ -244,6 +246,11 @@ function createVironProfiler(cfg) {
       if (!active) return;
       if (name === 'spread') totals.spread += delta;
       else if (name === 'shader') totals.shader += delta;
+    },
+    recordSpread(delta) {
+      if (!active) return;
+      totals.spread += delta;
+      totals.spreadSteps++;
     },
     recordOverlay(tag, tiles, delta) {
       if (!active) return;
@@ -265,6 +272,7 @@ function createVironProfiler(cfg) {
         overlayBarrier: totals.overlayBarrier,
         overlayInfectionTiles: totals.overlayInfectionTiles,
         overlayBarrierTiles: totals.overlayBarrierTiles,
+        spreadSteps: totals.spreadSteps,
       };
     },
     flush() {
@@ -281,10 +289,28 @@ function createVironProfiler(cfg) {
   };
 }
 
-const profilerConfig = (typeof window !== 'undefined'
-  && typeof window.VIRON_PROFILE === 'object'
-  && window.VIRON_PROFILE.enabled === true)
-  ? window.VIRON_PROFILE
-  : null;
-const vironProfiler = profilerConfig ? createVironProfiler(profilerConfig) : null;
-if (typeof window !== 'undefined') window.__vironProfiler = vironProfiler;
+function initVironProfiler() {
+  if (typeof window === 'undefined') return null;
+  const cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
+    ? window.VIRON_PROFILE
+    : null;
+  window.__vironProfiler = cfg ? createVironProfiler(cfg) : null;
+  return window.__vironProfiler;
+}
+
+function getVironProfiler() {
+  if (typeof window === 'undefined') return null;
+  const cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
+    ? window.VIRON_PROFILE
+    : null;
+  if (!window.__vironProfiler && cfg) initVironProfiler();
+  else if (window.__vironProfiler && window.__vironProfiler.config !== cfg) initVironProfiler();
+  return window.__vironProfiler;
+}
+
+initVironProfiler();
+
+if (typeof window !== 'undefined') {
+  window.initVironProfiler = initVironProfiler;
+  window.getVironProfiler = getVironProfiler;
+}

@@ -25,8 +25,6 @@ const TERRAIN_PALETTE = {
   ]
 };
 
-const TERRAIN_PROFILER = (typeof window !== 'undefined') ? window.__vironProfiler : null;
-
 // Flattened palette — normalised 0-1, built once at module load rather than
 // every frame so applyShader() never allocates a temporary array per draw call.
 // Index layout: 0-5 Inland, 6-8 Shore, 9-11 Viron (Red/Dark/Scan), 12-13 Barrier.
@@ -543,9 +541,10 @@ class Terrain {
    * @param {number} maxTx     Tile-space view bound (max X).
    * @param {number} minTz     Tile-space view bound (min Z).
    * @param {number} maxTz     Tile-space view bound (max Z).
+   * @param {string} tag       Profiler tag to label this overlay batch.
    */
-  _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz) {
-    const profiler = TERRAIN_PROFILER;
+  _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz, tag) {
+    const profiler = getVironProfiler();
     const overlayStart = profiler ? performance.now() : 0;
     let overlayCount = 0;
     let verts0 = [], verts1 = [];
@@ -589,9 +588,8 @@ class Terrain {
       for (let i = 0; i < verts1.length; i += 3) vertex(verts1[i], verts1[i + 1], verts1[i + 2]);
       endShape();
     }
-    if (profiler) {
+    if (profiler && tag) {
       const elapsed = performance.now() - overlayStart;
-      const tag = (matEven === 10 && matOdd === 11) ? 'infection' : 'barrier';
       profiler.recordOverlay(tag, overlayCount, elapsed);
     }
   }
@@ -636,7 +634,7 @@ class Terrain {
     // p5 lighting silently overrides custom shaders that don't declare lighting
     // uniforms; disable it for the terrain pass.
     noLights();
-    const profiler = TERRAIN_PROFILER;
+    const profiler = getVironProfiler();
     const shaderStart = profiler ? performance.now() : 0;
     this.applyShader();
     if (profiler) profiler.record('shader', performance.now() - shaderStart);
@@ -672,7 +670,7 @@ class Terrain {
     // ZERO altitude lookups and ZERO string operations here.
     this._drawTileOverlays(
       infection.keys(), 10, 11, -0.5,
-      cam, fovSlope, minTx, maxTx, minTz, maxTz
+      cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection'
     );
 
     // --- Barrier tile overlays ---
@@ -685,7 +683,7 @@ class Terrain {
     if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
       this._drawTileOverlays(
         barrierTiles.values(), 20, 21, -0.3,
-        cam, fovSlope, minTx, maxTx, minTz, maxTz
+        cam, fovSlope, minTx, maxTx, minTz, maxTz, 'barrier'
       );
     }
 

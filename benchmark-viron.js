@@ -6,8 +6,8 @@
  * Usage:  node benchmark-viron.js
  *
  * Output format (single line):
- *   VIRON_PROFILE[...] : {"frameMs":...,"spreadMs":...,"shaderMs":...,
- *                         "vironOverlayMs":...,"vironTiles":...}
+ *   VIRON_PROFILE[...] : {"frameMs":...,"spreadMsPerFrame":...,"spreadMsPerUpdate":...,
+ *                         "shaderMs":...,"vironOverlayMs":...,"vironTiles":...}
  */
 'use strict';
 
@@ -15,7 +15,7 @@ const express   = require('express');
 const puppeteer = require('puppeteer');
 const fs        = require('fs');
 
-const PORT = 3000;
+const PORT = process.env.VIRON_PORT ? Number(process.env.VIRON_PORT) : 0;
 const TARGET_TILES = Number(process.env.VIRON_TILES || 1500);
 const SAMPLE_FRAMES = 120;
 const MAX_INF_OVERRIDE = 5000; // Prevents instant gameover during the run
@@ -48,6 +48,7 @@ async function run() {
   });
 
   const server = app.listen(PORT, async () => {
+    const actualPort = server.address().port;
     let browser;
     try {
       const launchOpts = { headless: 'new', args: ['--no-sandbox'] };
@@ -78,16 +79,17 @@ async function run() {
           label: 'viron',
           sampleFrames,
           once: true,
-          maxInfOverride: maxInf // Avoid gameover while seeded infection is high
+          maxInfOverride: maxInf, // Avoid gameover while seeded infection is high
+          freezeSpread: true
         };
       }, SAMPLE_FRAMES, MAX_INF_OVERRIDE);
 
-      await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load', timeout: LOAD_TIMEOUT });
+      await page.goto(`http://localhost:${actualPort}/index.html`, { waitUntil: 'load', timeout: LOAD_TIMEOUT });
       await page.waitForFunction('typeof infection !== "undefined" && typeof tileKey !== "undefined"', { timeout: 8000 });
 
       // Seed a block of infected tiles away from the launchpad so the renderer
       // draws a dense set of overlays without triggering immediate gameover.
-      await page.evaluate((tileCount) => {
+      const seededCount = await page.evaluate((tileCount) => {
         startGame(1);
         gameState = 'playing';
 
@@ -103,6 +105,7 @@ async function run() {
         enemyManager.enemies = [];
         enemyManager.spawners = [];
         particleSystem.clear();
+        return infection.count;
       }, TARGET_TILES);
 
       const profStatus = await page.evaluate(() => ({
@@ -166,9 +169,10 @@ async function run() {
         process.exit(1);
       }
 
-      console.log('\n━━ Viron spread/draw profile (seeded ~' + TARGET_TILES + ' tiles) ━━');
+      console.log('\n━━ Viron spread/draw profile (seeded ' + seededCount + ' tiles) ━━');
       console.log('  frameMs:          ' + summary.frameMs + ' avg');
-      console.log('  spreadMs:         ' + summary.spreadMs + ' avg (every 5th frame)');
+      console.log('  spreadMs:         ' + summary.spreadMsPerFrame + ' avg (per frame)');
+      console.log('  spreadMs/update:  ' + summary.spreadMsPerUpdate + ' avg (when spread runs)');
       console.log('  shaderMs:         ' + summary.shaderMs + ' avg (terrain uniforms)');
       console.log('  vironOverlayMs:   ' + summary.vironOverlayMs + ' avg for ' + summary.vironTiles + ' tiles');
       console.log('  barrierOverlayMs: ' + summary.barrierOverlayMs + ' avg for ' + summary.barrierTiles + ' tiles');

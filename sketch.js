@@ -38,9 +38,6 @@ let gameFont;                      // Loaded Impact font used for all HUD / menu
 let gameState = 'menu';    // Current game mode: 'menu' | 'playing' | 'gameover'
 let gameOverReason = '';        // Human-readable reason string shown on game-over screen
 let lastAlarmTime = 0;         // millis() of the last launchpad alarm SFX (rate-limited)
-
-const SKETCH_PROFILER = (typeof window !== 'undefined') ? window.__vironProfiler : null;
-const SKETCH_PROFILER_CONFIG = SKETCH_PROFILER ? SKETCH_PROFILER.config : null;
 let gameStartTime = 0;         // millis() when the current game started
 
 let numPlayers = 1;         // 1 or 2 — set by startGame()
@@ -573,7 +570,7 @@ function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'shipselect') { drawShipSelect(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
-  const profiler = SKETCH_PROFILER;
+  const profiler = getVironProfiler();
   const frameStart = profiler ? performance.now() : 0;
 
   // --- Dynamic Performance Scaling ---
@@ -662,9 +659,7 @@ function draw() {
   for (let p of players) updateShipInput(p);
   enemyManager.update();
   for (let p of players) checkCollisions(p);
-  const spreadStart = profiler ? performance.now() : 0;
   spreadInfection();
-  if (profiler) profiler.record('spread', performance.now() - spreadStart);
   particleSystem.updatePhysics();
   for (let p of players) updateProjectilePhysics(p);
   updateBarrierPhysics();  // Environment-owned in-flight barriers
@@ -756,10 +751,13 @@ function draw() {
  *   2. All 7×7 launchpad tiles are infected (launchpad destroyed)
  */
 function spreadInfection() {
-  const profilerConfig = SKETCH_PROFILER_CONFIG;
+  const profiler = getVironProfiler();
+  const profilerConfig = profiler ? profiler.config : (typeof window !== 'undefined' ? window.VIRON_PROFILE : null);
   const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
   const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
-  if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
+  const shouldRun = frameCount % 5 === 0;
+  if (!shouldRun) return;
+  const spreadStart = profiler ? performance.now() : 0;
 
   // Game over — too much infection (fast path: no Object.keys allocation needed)
   if (infection.count >= maxInf) {
@@ -789,7 +787,10 @@ function spreadInfection() {
     return;
   }
 
-  if (freezeSpread) return;
+  if (freezeSpread) {
+    if (profiler) profiler.recordSpread(performance.now() - spreadStart);
+    return;
+  }
 
   let infObjects = infection.keys();
   // Probabilistic spread to one random orthogonal neighbour per infected tile.
@@ -845,6 +846,8 @@ function spreadInfection() {
       }
     }
   }
+
+  if (profiler) profiler.recordSpread(performance.now() - spreadStart);
 }
 
 // ---------------------------------------------------------------------------

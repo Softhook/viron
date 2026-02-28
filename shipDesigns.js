@@ -23,7 +23,7 @@ const SHIP_DESIGNS = [
         drag: 0.992,
         thrustAngle: 0,
         mass: 1.0,
-        lift: 0.008,
+        lift: 0.006,
         brakeRate: 0.96,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -52,7 +52,7 @@ const SHIP_DESIGNS = [
         drag: 0.994,
         thrustAngle: 0,
         mass: 0.8,
-        lift: 0.012,
+        lift: 0.009,
         brakeRate: 0.97,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -105,7 +105,7 @@ const SHIP_DESIGNS = [
         drag: 0.988,
         thrustAngle: 0,
         mass: 1.8,
-        lift: 0.003,
+        lift: 0.002,
         brakeRate: 0.92,
         missileCapacity: 3,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -154,7 +154,7 @@ const SHIP_DESIGNS = [
         drag: 0.985,
         thrustAngle: 0,
         mass: 1.2,
-        lift: 0.015,
+        lift: 0.011,
         brakeRate: 0.98,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -202,7 +202,7 @@ const SHIP_DESIGNS = [
         drag: 0.993,
         thrustAngle: Math.PI / 4,
         mass: 0.9,
-        lift: 0.015,
+        lift: 0.011,
         brakeRate: 0.95,
         missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -230,7 +230,7 @@ const SHIP_DESIGNS = [
         drag: 0.992,
         thrustAngle: Math.PI / 4,
         mass: 1.1,
-        lift: 0.015,
+        lift: 0.011,
         brakeRate: 0.96,
         missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -266,7 +266,7 @@ const SHIP_DESIGNS = [
         drag: 0.995,
         thrustAngle: Math.PI / 4,
         mass: 0.7,
-        lift: 0.012,
+        lift: 0.009,
         brakeRate: 0.96,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -299,7 +299,7 @@ const SHIP_DESIGNS = [
         drag: 0.992,
         thrustAngle: Math.PI / 2,
         mass: 1.0,
-        lift: 0.018,
+        lift: 0.012,
         brakeRate: 0.96,
         missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -343,7 +343,7 @@ const SHIP_DESIGNS = [
         drag: 0.996,
         thrustAngle: Math.PI / 2,
         mass: 0.6,
-        lift: 0.024,
+        lift: 0.016,
         brakeRate: 0.98,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -379,7 +379,7 @@ const SHIP_DESIGNS = [
         drag: 0.992,
         thrustAngle: Math.PI / 2,
         mass: 0.9,
-        lift: 0.020,
+        lift: 0.014,
         brakeRate: 0.97,
         missileCapacity: 3,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -427,7 +427,7 @@ const SHIP_DESIGNS = [
         drag: 0.997,
         thrustAngle: Math.PI / 2,
         mass: 0.5,
-        lift: 0.028,
+        lift: 0.010,
         brakeRate: 0.99,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {

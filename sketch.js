@@ -627,6 +627,8 @@ function draw() {
       budgetSet: false,
       nextEval: 0,              // performance.now() timestamp of next evaluation
       cooldown: 0,              // don't upgrade quality before this timestamp
+      overBudgetEvals: 0,       // consecutive eval windows that exceed reduce threshold
+      underBudgetEvals: 0,      // consecutive eval windows that satisfy restore threshold
     };
   }
   const _p = window._perf;
@@ -644,6 +646,9 @@ function draw() {
     // ms-per-frame for standard tiers: 144 / 120 / 90 / 75 / 60 / 30 Hz
     const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
     _p.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
+    // Desktop monitors above 60 Hz should not force lower view distance if the
+    // machine is otherwise delivering stable 60 fps gameplay.
+    if (!isMobile) _p.budgetMs = Math.max(_p.budgetMs, 1000 / 60);
     _p.budgetSet = true;
   }
 
@@ -658,17 +663,40 @@ function draw() {
     const sorted = Array.from(_p.buf).sort((a, b) => a - b);
     const p90ms = sorted[53];
 
-    if (p90ms > _p.budgetMs * 1.4) {
-      // 90th-percentile frame is >40% over budget → sustained jitter → reduce.
-      VIEW_NEAR = max(15, VIEW_NEAR - 2);
-      VIEW_FAR = max(20, VIEW_FAR - 2);
-      CULL_DIST = max(2000, CULL_DIST - 400);
-      _p.cooldown = _now + 4000; // 4 s before any upgrade is allowed
-    } else if (p90ms < _p.budgetMs * 1.15 && _now >= _p.cooldown) {
-      // 90th-percentile within 15% of budget AND cooldown elapsed → gradually restore.
+    // Desktop quality controller: conservative downshift, very deliberate upshift.
+    const reduceRatio = isMobile ? 1.40 : 1.55;
+    const restoreRatio = isMobile ? 1.15 : 1.08;
+    const canRestore = _now >= _p.cooldown;
+
+    if (p90ms > _p.budgetMs * reduceRatio) {
+      _p.overBudgetEvals++;
+      _p.underBudgetEvals = 0;
+    } else if (p90ms < _p.budgetMs * restoreRatio && canRestore) {
+      _p.underBudgetEvals++;
+      _p.overBudgetEvals = 0;
+    } else {
+      _p.overBudgetEvals = 0;
+      _p.underBudgetEvals = 0;
+    }
+
+    const minNear = isMobile ? 15 : 24;
+    const minFar = isMobile ? 20 : 34;
+    const minCull = isMobile ? 2000 : 4200;
+
+    if (_p.overBudgetEvals >= 2) {
+      VIEW_NEAR = max(minNear, VIEW_NEAR - 1);
+      VIEW_FAR = max(minFar, VIEW_FAR - 1);
+      CULL_DIST = max(minCull, CULL_DIST - 250);
+      _p.cooldown = _now + 6000;
+      _p.overBudgetEvals = 0;
+      _p.underBudgetEvals = 0;
+    } else if (_p.underBudgetEvals >= 3) {
       VIEW_NEAR = min(35, VIEW_NEAR + 1);
       VIEW_FAR = min(50, VIEW_FAR + 1);
-      CULL_DIST = min(6000, CULL_DIST + 200);
+      CULL_DIST = min(6000, CULL_DIST + 150);
+      _p.cooldown = _now + 4000;
+      _p.overBudgetEvals = 0;
+      _p.underBudgetEvals = 0;
     }
   }
 

@@ -222,6 +222,29 @@ class Terrain {
     // Each tile = 6 vertices × 3 floats = 18 floats.
     this._overlayBuffer0 = new Float32Array(5000 * 18);
     this._overlayBuffer1 = new Float32Array(5000 * 18);
+
+    // Smoothed fog boundary to avoid visible popping when VIEW_FAR changes.
+    this._fogFarWorldSmoothed = VIEW_FAR * TILE;
+    this._fogFrameStamp = -1;
+  }
+
+  /**
+   * Updates the fog far distance at most once per frame using exponential
+   * smoothing so quality-step changes do not visibly "pump" the fog line.
+   * @returns {number} Current smoothed fog far distance (world units).
+   */
+  _getFogFarWorld() {
+    let frame = (typeof frameCount === 'number') ? frameCount : -1;
+    if (frame === this._fogFrameStamp) return this._fogFarWorldSmoothed;
+
+    this._fogFrameStamp = frame;
+    const target = VIEW_FAR * TILE;
+    const dtMs = (typeof deltaTime === 'number' && Number.isFinite(deltaTime))
+      ? Math.max(0, Math.min(deltaTime, 100))
+      : 16.67;
+    const alpha = 1.0 - Math.exp(-dtMs / 320.0);
+    this._fogFarWorldSmoothed += (target - this._fogFarWorldSmoothed) * alpha;
+    return this._fogFarWorldSmoothed;
   }
 
   // ---------------------------------------------------------------------------
@@ -458,8 +481,9 @@ class Terrain {
    * @returns {number[]} Fog-blended RGB array.
    */
   getFogColor(col, depth) {
-    let fogEnd = VIEW_FAR * TILE + 400;
-    let fogStart = VIEW_FAR * TILE - 800;
+    const fogFar = this._getFogFarWorld();
+    let fogEnd = fogFar + 400;
+    let fogStart = fogFar - 800;
     let f = constrain(map(depth, fogStart, fogEnd, 0, 1), 0, 1);
     return [
       lerp(col[0], SKY_R, f),
@@ -482,8 +506,9 @@ class Terrain {
    */
   applyShader() {
     shader(this.shader);
+    const fogFar = this._getFogFarWorld();
     this.shader.setUniform('uTime', millis() / 1000.0);
-    this.shader.setUniform('uFogDist', [VIEW_FAR * TILE - 800, VIEW_FAR * TILE + 400]);
+    this.shader.setUniform('uFogDist', [fogFar - 800, fogFar + 400]);
     this.shader.setUniform('uFogColor', [SKY_R / 255.0, SKY_G / 255.0, SKY_B / 255.0]);
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);

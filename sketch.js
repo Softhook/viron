@@ -253,17 +253,9 @@ function setup() {
     aimAssist.enabled = isMobile;
   }
 
-  // Trees — placed with a fixed seed for a consistent world layout
-  randomSeed(42);
-  let numTrees = isMobile ? 80 : 250;
-  for (let i = 0; i < numTrees; i++) {
-    let tx = random(-5000, 5000), tz = random(-5000, 5000);
-    trees.push({
-      x: tx, z: tz,
-      y: terrain.getAltitude(tx, tz),  // Cached altitude — never changes
-      variant: floor(random(3)), trunkH: random(25, 50), canopyScale: random(1.0, 1.8)
-    });
-  }
+  // Trees are now generated procedurally from world-space noise in terrain.js.
+  // Keep the array empty so we do not maintain a global static tree map.
+  trees = [];
 
   // menuCam starts over open terrain away from the launchpad
 
@@ -1040,21 +1032,30 @@ function checkCollisions(p) {
     }
   }
 
-  // --- 6. Player bullets vs infected trees ---
-  // Only infected trees clear infection; bullets don't damage healthy trees.
+  // --- 6. Player bullets vs infected procedural trees ---
+  // Trees are generated from deterministic tile noise, so this checks nearby
+  // sample tiles around each bullet rather than iterating a global tree array.
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
-    for (let t of trees) {
-      if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 < 3600 &&
-        b.y > t.y - t.trunkH - 30 * t.canopyScale - 10 &&
-        b.y < t.y + 10) {
-        let tx = toTile(t.x), tz = toTile(t.z);
-        if (infection.tiles[tileKey(tx, tz)]) {
-          clearInfectionRadius(tx, tz);
-          p.score += 200;
-          p.bullets.splice(i, 1);
-          break;
-        }
+    let tx0 = toTile(b.x), tz0 = toTile(b.z);
+    let hit = false;
+
+    for (let tz = tz0 - 2; tz <= tz0 + 2 && !hit; tz++) {
+      for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
+        let t = terrain.tryGetProceduralTree(tx, tz);
+        if (!t) continue;
+        let ty = terrain.getAltitude(t.x, t.z);
+        if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 >= 3600) continue;
+        if (b.y <= ty - t.trunkH - 30 * t.canopyScale - 10 || b.y >= ty + 10) continue;
+
+        let k = tileKey(tx, tz);
+        if (!infection.has(k)) continue;
+
+        clearInfectionRadius(tx, tz);
+        p.score += 200;
+        p.bullets.splice(i, 1);
+        hit = true;
+        break;
       }
     }
   }

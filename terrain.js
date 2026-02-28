@@ -226,6 +226,10 @@ class Terrain {
     // Smoothed fog boundary to avoid visible popping when VIEW_FAR changes.
     this._fogFarWorldSmoothed = VIEW_FAR * TILE;
     this._fogFrameStamp = -1;
+
+    // Procedural tree chunk cache (static by world position, lazily populated).
+    this._procTreeChunkCache = new Map();
+
   }
 
   /**
@@ -297,6 +301,12 @@ class Terrain {
       const keys = this.chunkCache.keys();
       for (let i = 0; i < 250; i++) this.chunkCache.delete(keys.next().value);
     }
+
+    // Tree chunks are cheap metadata; keep more before trimming.
+    if (this._procTreeChunkCache.size > 1200) {
+      const keys = this._procTreeChunkCache.keys();
+      for (let i = 0; i < 600; i++) this._procTreeChunkCache.delete(keys.next().value);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -335,6 +345,104 @@ class Terrain {
     let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
     let halfWidth = (fwdDist > 0 ? fwdDist : 0) * cam.fovSlope + TILE * 6;
     return Math.abs(rightDist) <= halfWidth;
+  }
+
+  /** Deterministic 0..1 hash from integer tile coordinates. */
+  _treeHash01(tx, tz, salt = 0) {
+    return Math.abs(Math.sin((tx + salt * 17.0) * 12.9898 + (tz - salt * 13.0) * 78.233) * 43758.5453) % 1;
+  }
+
+  /** Returns spawn density [0..1] for a procedural tree sample point. */
+  _getProceduralTreeDensity(tx, tz) {
+    // Coarse spacing keeps total draw count low while still covering the world.
+    if ((tx & 1) !== 0 || (tz & 1) !== 0) return 0;
+
+    // Forest mask creates broad biomes; grove noise forms dense clustered woods.
+    const forest = noise(tx * 0.014 + 180.0, tz * 0.014 - 260.0);
+    if (forest < 0.36) return 0;
+
+    const grove = noise(tx * 0.052 - 90.0, tz * 0.052 + 140.0);
+    const patch = noise(tx * 0.120 + 22.0, tz * 0.120 - 38.0);
+
+    const r = this._treeHash01(tx, tz, 1.0);
+    let density = map(forest, 0.36, 1.0, 0.10, 0.52, true);
+
+    // Strong dense-core clustering with clear glades between forests.
+    if (grove < 0.28) density *= 0.08;
+    else if (grove > 0.62) density *= 1.85;
+
+    // Fine patch variation so forests feel organic, not uniform carpets.
+    if (patch < 0.30) density *= 0.55;
+    else if (patch > 0.70) density *= 1.30;
+
+    return constrain(density, 0.0, 0.78);
+  }
+
+  /**
+   * Returns true when a procedural tree should exist at this tile sample point.
+   * Uses low-frequency noise as a "forest mask" and hash noise for local variation.
+   */
+  hasProceduralTree(tx, tz) {
+    const density = this._getProceduralTreeDensity(tx, tz);
+    if (density <= 0) return false;
+    const r = this._treeHash01(tx, tz, 1.0);
+    return r < density;
+  }
+
+  /** Builds deterministic tree instance data for a tile sample point. */
+  getProceduralTree(tx, tz) {
+    const jx = (this._treeHash01(tx, tz, 2.0) - 0.5) * TILE * 0.70;
+    const jz = (this._treeHash01(tx, tz, 3.0) - 0.5) * TILE * 0.70;
+    return {
+      x: tx * TILE + TILE * 0.5 + jx,
+      z: tz * TILE + TILE * 0.5 + jz,
+      variant: floor(this._treeHash01(tx, tz, 4.0) * 3),
+      trunkH: 26 + this._treeHash01(tx, tz, 5.0) * 24,
+      canopyScale: 1.0 + this._treeHash01(tx, tz, 6.0) * 0.8
+    };
+  }
+
+  /** Returns deterministic procedural tree instance for tile sample, or null. */
+  tryGetProceduralTree(tx, tz) {
+    const density = this._getProceduralTreeDensity(tx, tz);
+    if (density <= 0) return null;
+    const r = this._treeHash01(tx, tz, 1.0);
+    if (r >= density) return null;
+    const t = this.getProceduralTree(tx, tz);
+    t.tx = tx;
+    t.tz = tz;
+    t._score = density + this._treeHash01(tx, tz, 8.0) * 0.15;
+    return t;
+  }
+
+  /**
+   * Lazily builds deterministic procedural trees for a chunk and caps per-chunk
+   * tree count to keep draw cost bounded while preserving clustered structure.
+   */
+  getProceduralTreesForChunk(cx, cz) {
+    const key = `${cx},${cz}`;
+    const cached = this._procTreeChunkCache.get(key);
+    if (cached) return cached;
+
+    const out = [];
+    const tx0 = cx * CHUNK_SIZE;
+    const tz0 = cz * CHUNK_SIZE;
+
+    for (let tz = tz0; tz < tz0 + CHUNK_SIZE; tz += 2) {
+      for (let tx = tx0; tx < tx0 + CHUNK_SIZE; tx += 2) {
+        const t = this.tryGetProceduralTree(tx, tz);
+        if (t) out.push(t);
+      }
+    }
+
+    const maxTreesPerChunk = isMobile ? 9 : 13;
+    if (out.length > maxTreesPerChunk) {
+      out.sort((a, b) => b._score - a._score);
+      out.length = maxTreesPerChunk;
+    }
+
+    this._procTreeChunkCache.set(key, out);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -808,52 +916,60 @@ class Terrain {
   drawTrees(s) {
     let treeCullDist = VIEW_FAR * TILE;
     let cullSq = treeCullDist * treeCullDist;
-    // Reuse the camera params computed in drawLandscape for this frame.
     let cam = this._cam || this.getCameraParams(s);
 
-    for (let t of trees) {
-      let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
-      if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
-      let y = t.y;  // Pre-cached at setup — no Map lookup needed
-      if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
+    let gx = toTile(s.x), gz = toTile(s.z);
+    let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
+    let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
+    let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
+    let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
 
-      push(); translate(t.x, y, t.z); noStroke();
-      let { trunkH: h, canopyScale: sc, variant: vi } = t;
-      let inf = infection.has(tileKey(toTile(t.x), toTile(t.z)));
+    noStroke();
 
-      let depth = (t.x - cam.x) * cam.fwdX + (t.z - cam.z) * cam.fwdZ;
+    for (let cz = minCz; cz <= maxCz; cz++) {
+      for (let cx = minCx; cx <= maxCx; cx++) {
+        const trees = this.getProceduralTreesForChunk(cx, cz);
+        for (let t of trees) {
+        let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
+        if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
 
-      // Trunk — slightly darker/redder when infected
-      let trCol = this.getFogColor([inf ? 80 : 100, inf ? 40 : 65, inf ? 20 : 25], depth);
-      fill(trCol[0], trCol[1], trCol[2]);
-      push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
+        let y = this.getAltitude(t.x, t.z);
+        if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
 
-      // Canopy (first layer)
-      let tv = TREE_VARIANTS[vi];
-      let c1Col = this.getFogColor(inf ? tv.infected : tv.healthy, depth);
-      fill(c1Col[0], c1Col[1], c1Col[2]);
+        push();
+        translate(t.x, y, t.z);
 
-      if (vi === 2) {
-        // Conifer: single tall cone
-        push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
-      } else {
-        let cn = tv.cones[0];
-        push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
+        let { trunkH: h, canopyScale: sc, variant: vi } = t;
+        let inf = infection.has(tileKey(t.tx, t.tz));
+        let depth = (t.x - cam.x) * cam.fwdX + (t.z - cam.z) * cam.fwdZ;
 
-        // Second canopy layer (variant 1 only)
-        if (tv.cones2) {
-          let c2Col = this.getFogColor(inf ? tv.infected2 : tv.healthy2, depth);
-          fill(c2Col[0], c2Col[1], c2Col[2]);
-          let cn2 = tv.cones2[0];
-          push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+        let trCol = this.getFogColor([inf ? 80 : 100, inf ? 40 : 65, inf ? 20 : 25], depth);
+        fill(trCol[0], trCol[1], trCol[2]);
+        push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
+
+        let tv = TREE_VARIANTS[vi];
+        let c1Col = this.getFogColor(inf ? tv.infected : tv.healthy, depth);
+        fill(c1Col[0], c1Col[1], c1Col[2]);
+
+        if (vi === 2) {
+          push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
+        } else {
+          let cn = tv.cones[0];
+          push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
+          if (tv.cones2) {
+            let c2Col = this.getFogColor(inf ? tv.infected2 : tv.healthy2, depth);
+            fill(c2Col[0], c2Col[1], c2Col[2]);
+            let cn2 = tv.cones2[0];
+            push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+          }
+        }
+
+        if (dSq < 2250000) {
+          push(); translate(0, -0.5, 8); rotateX(PI / 2); fill(0, 0, 0, 40); ellipse(0, 0, 20 * sc, 12 * sc); pop();
+        }
+        pop();
         }
       }
-
-      // Soft ground shadow for nearby trees only (performance optimisation)
-      if (dSq < 2250000) {
-        push(); translate(0, -0.5, 8); rotateX(PI / 2); fill(0, 0, 0, 40); ellipse(0, 0, 20 * sc, 12 * sc); pop();
-      }
-      pop();
     }
   }
 

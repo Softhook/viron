@@ -21,6 +21,7 @@ const PORT = process.env.RUNTIME_PORT ? Number(process.env.RUNTIME_PORT) : 0;
 
 const SCENARIOS = [
   { id: 'baseline', title: 'Baseline (default game loop)' },
+  { id: 'no-trees', title: 'Trees disabled' },
   { id: 'no-particles', title: 'Particles disabled' },
   { id: 'no-enemies', title: 'Enemies disabled' },
   { id: 'no-infection', title: 'Infection spread disabled' },
@@ -126,6 +127,8 @@ async function setupPlayableState(page, scenarioId) {
       particleSystem.updatePhysics = function () {};
       particleSystem.render = function () {};
       particleSystem.renderHardParticles = function () {};
+    } else if (id === 'no-trees') {
+      terrain.drawTrees = function () {};
     } else if (id === 'no-enemies') {
       enemyManager.enemies = [];
       enemyManager.update = function () {};

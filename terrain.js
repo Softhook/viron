@@ -185,39 +185,46 @@ void main() {
     cyberColor += vec3(0.0, 0.9, 0.8) * (ring2 * breath * 2.2 + innerGlow * breath);
   }
   
-  // Terrain-local directional lighting to restore shape/depth while noLights()
-  // is active for this shader pass.
+  // === Directional lighting — Lambert + hemisphere ambient + sky fill ===
+  //
+  // Previous design bugs fixed:
+  //   • warmKey * diffuse double-multiplied diffuse (quadratic → 2.1× at ndl=1, overexposed)
+  //   • max(lightTerm, 0.46) floor killed all shadow contrast (shadows never darker than 46%)
+  //   • Additive coolShadow+dawnFill pushed even backlit faces above 60% brightness
   vec3 n = normalize(vNormal);
-  // Keep normals upward-facing for stable daylight shading.
-  if (n.y < 0.0) n = -n;
+  if (n.y < 0.0) n = -n;  // Ensure normals point toward sky hemisphere
   float hemi = n.y * 0.5 + 0.5;
-  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
-  vec3 sunN = normalize(uSunDir);
-  float ndl = max(dot(n, sunN), 0.0);
-  float diffuse = pow(ndl, 1.25);
-  // Cinematic warm key + cool shadow fill so slopes read as shape, not haze.
-  vec3 coolShadow = vec3(0.16, 0.23, 0.36) * (1.0 - diffuse);
-  vec3 warmKey = uSunColor * (0.55 + 1.55 * diffuse);
-  // Accent steeper terrain to make ridges and valleys pop.
-  float steep = pow(1.0 - abs(n.y), 1.6);
-  vec3 ridgeAccent = vec3(0.22, 0.16, 0.10) * steep * 0.3;
 
-  // Sunrise long-shadow approximation: back-facing slopes receive an extra
-  // directional occlusion term that gets stronger as sun altitude gets lower.
+  // Hemisphere ambient: warm ground-bounce low, cool sky-dome high
+  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi) * 0.68;
+
+  vec3 sunN = normalize(uSunDir);
+  // Pure Lambert — direct sun, no quadratic distortion
+  float ndl = max(dot(n, sunN), 0.0);
+  vec3 keyLight = uSunColor * ndl;
+
+  // Sky fill — upward normals catch diffuse sky-dome light (cool at dawn).
+  // skyNdL is a softened upward term: even downward-tilted faces get 30% fill.
+  float skyNdL = clamp(n.y * 0.7 + 0.3, 0.0, 1.0);
+  vec3 skyFill = vec3(0.34, 0.44, 0.70) * skyNdL * 0.38;
+
+  // Ridge accent: warm side-lit slope highlights so ridges read against sky
+  float steep = pow(1.0 - abs(n.y), 1.8);
+  vec3 ridgeAccent = vec3(0.20, 0.14, 0.08) * steep * 0.17;
+
+  // Slope self-shadow: slopes facing away from horizontal sun project are darker,
+  // approximating terrain cast-shadow on adjacent slopes (longer at low sun).
   vec2 nXZ = normalize(vec2(n.x, n.z) + vec2(1e-5));
   vec2 sunXZ = normalize(vec2(sunN.x, sunN.z) + vec2(1e-5));
   float backFacing = max(dot(nXZ, -sunXZ), 0.0);
-  float lowSun = 1.0 - clamp(sunN.y, 0.0, 1.0);
-  float longShadow = pow(backFacing, 1.65) * lowSun * (0.58 + 0.30 * (1.0 - hemi));
+  float lowSun = 1.0 - clamp(sunN.y * 3.5, 0.0, 1.0);
+  float slopeShadow = pow(backFacing, 1.65) * lowSun * (0.55 + 0.28 * (1.0 - hemi));
 
-  // Dawn sky bounce keeps terrain readable before direct sunlight fully rises.
-  float dawnLift = 1.0 - smoothstep(0.22, 0.48, sunN.y);
-  vec3 dawnFill = vec3(0.16, 0.12, 0.10) * dawnLift;
-
-  vec3 lightTerm = ambient * 0.76 + coolShadow + warmKey * diffuse + ridgeAccent + dawnFill;
-  lightTerm *= (1.0 - longShadow * 0.48);
-  // Keep a floor for readability but low enough to preserve contrast.
-  lightTerm = max(lightTerm, vec3(0.46));
+  // Combine: ambient base + warm sun key + cool sky fill + ridge accent
+  vec3 lightTerm = ambient + keyLight + skyFill + ridgeAccent;
+  lightTerm *= (1.0 - slopeShadow * 0.44);
+  // Very low floor: allows genuine shadow darkness (~6:1 sunlit-to-shadow contrast)
+  lightTerm = max(lightTerm, vec3(0.06, 0.08, 0.13));
   vec3 litBase = baseColor * lightTerm;
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.
@@ -231,6 +238,36 @@ void main() {
   gl_FragColor = vec4(outColor, 1.0);
 }
 `;
+
+// =============================================================================
+// Shadow stencil helpers
+// Shadow polygons use a NOTEQUAL/REPLACE stencil so each screen pixel is
+// darkened at most once per viewport frame, regardless of how many shadow
+// polygons overlap it.  gl.clear(STENCIL_BUFFER_BIT) is called once at the
+// start of each viewport render (with scissor active) to reset the mask.
+// =============================================================================
+
+/**
+ * Enables stencil before drawing one shadow polygon.
+ * First shadow polygon covering a pixel writes stencil=1 and colours it;
+ * any subsequent polygon covering the same pixel is discarded by the test.
+ */
+function _beginShadowStencil() {
+  const gl = drawingContext;
+  gl.enable(gl.STENCIL_TEST);
+  gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
+  gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+  gl.stencilMask(0xFF);
+}
+
+/**
+ * Disables the stencil test after drawing one shadow polygon.
+ * Stencil values are preserved so subsequent shadow draws in the same
+ * viewport frame continue adding to the accumulated shadow mask.
+ */
+function _endShadowStencil() {
+  drawingContext.disable(drawingContext.STENCIL_TEST);
+}
 
 // =============================================================================
 // Terrain class
@@ -1045,14 +1082,16 @@ class Terrain {
     if (hull.length < 3) return;
 
     noStroke();
-    fill(0, 0, 0, alpha);
+    // Sky-tinted shadow: dark cool blue-gray (sky fill colors shadow, not pure black)
+    fill(18, 24, 42, alpha);
+    _beginShadowStencil();
     beginShape();
     for (const p of hull) {
-      // Terrain-conforming vertex placement avoids z-fighting shimmer on slopes.
-      const gy = this.getAltitude(p.x, p.z);
-      vertex(p.x, gy - 0.7, p.z);
+      // Terrain-conforming vertex: avoids z-fighting shimmer on slopes.
+      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
     }
     endShape(CLOSE);
+    _endShadowStencil();
   }
 
   /**
@@ -1060,7 +1099,7 @@ class Terrain {
    */
   _drawProjectedEllipseShadow(wx, wz, groundY, casterH, rx, rz, alpha, sun) {
     const pts = [];
-    const steps = 10;
+    const steps = 16; // Higher step count: smoother ellipse silhouette at close range
     for (let i = 0; i < steps; i++) {
       const a = (i / steps) * TWO_PI;
       pts.push({ x: Math.cos(a) * rx * 0.5, z: Math.sin(a) * rz * 0.5 });
@@ -1083,59 +1122,111 @@ class Terrain {
   }
 
   /**
-   * Draws tree shadows using component silhouettes (trunk + canopy tiers).
+   * Draws a single cached projected shadow for a tree.
+   * Hull is computed once and stored on the tree object (static geometry, fixed sun).
    */
   _drawTreeShadow(t, groundY, sun) {
-    const { trunkH: h, canopyScale: sc, variant: vi } = t;
-    // Single coherent tree shadow to avoid double/stacked ghosting.
-    if (vi === 2) {
-      this._drawProjectedEllipseShadow(t.x, t.z, groundY, h + 24 * sc, 40 * sc, 28 * sc, 30, sun);
-    } else {
-      this._drawProjectedEllipseShadow(t.x, t.z, groundY, h + 18 * sc, 34 * sc, 24 * sc, 30, sun);
+    if (!t._shadowHull) {
+      const { trunkH: h, canopyScale: sc, variant: vi } = t;
+      // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
+      const hrx = (vi === 2) ? 20 * sc : 17 * sc;
+      const hrz = (vi === 2) ? 14 * sc : 12 * sc;
+      const casterH = h + (vi === 2 ? 24 : 18) * sc;
+      const footprint = [];
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * TWO_PI;
+        footprint.push({x: Math.cos(a) * hrx, z: Math.sin(a) * hrz});
+      }
+      const shift = casterH / sun.y;
+      const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
+      const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
+      t._shadowHull = this._shadowHullXZ(base.concat(top));
     }
+    const hull = t._shadowHull;
+    if (hull.length < 3) return;
+    noStroke();
+    fill(18, 24, 42, 40);
+    _beginShadowStencil();
+    beginShape();
+    for (const p of hull) {
+      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
+    }
+    endShape(CLOSE);
+    _endShadowStencil();
   }
 
   /**
-   * Draws building shadows using per-type component silhouettes.
+   * Draws a single cached projected shadow for a building.
+   *
+   * Previous design had 2-3 overlapping draw calls per building causing:
+   *   • Composited alpha overlap (type 4 reached ~70% opacity at center — unphysical)
+   *   • 2-3× more WebGL draw calls per building per frame
+   *   • O(n log n) convex hull recomputed every frame for static geometry
+   *
+   * New design: one shadow hull per building, cached after first frame,
+   * sky-tinted dark-blue shadow color (physical: sky fill colors the shadow).
    */
   _drawBuildingShadow(b, groundY, inf, sun) {
     const bw = b.w, bh = b.h, bd = b.d;
 
-    if (b.type === 0) {
-      this._drawProjectedRectShadow(b.x, b.z, groundY, bh * 0.5, bw, bd, 40, sun);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh + bw * 0.35, bw * 0.9, bd * 0.7, 22, sun);
-      return;
-    }
-
-    if (b.type === 1) {
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.5, bw, bw * 0.85, 38, sun);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh, bw * 0.7, bw * 0.55, 20, sun);
-      return;
-    }
-
-    if (b.type === 2) {
-      this._drawProjectedRectShadow(b.x, b.z, groundY, bh * 0.25, bw * 1.5, bd * 1.5, 42, sun);
-      this._drawProjectedRectShadow(b.x + bw * 0.3, b.z - bd * 0.2, groundY, bh * 0.62, bw * 0.52, bd * 0.52, 28, sun);
-      this._drawProjectedEllipseShadow(b.x - bw * 0.4, b.z + bd * 0.4, groundY, bh, bw * 0.33, bw * 0.22, 20, sun);
-      return;
-    }
-
+    // Type 3 (floating UFO): animated caster height — cannot cache hull.
     if (b.type === 3) {
       const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
       const casterH = max(35, groundY - floatY);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 32, sun);
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun);
       return;
     }
 
-    if (b.type === 4) {
-      const alphaBase = inf ? 38 : 34;
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.08, bw * 2.2, bw * 1.9, alphaBase, sun);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.4, bw * 1.5, bw * 1.2, 24, sun);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.95, bw * 0.85, bw * 0.62, 16, sun);
-      return;
+    // Static types (0, 1, 2, 4): compute hull once, cache on the building object.
+    // Sun direction and building position are both constant, so the hull never changes.
+    if (!b._shadowHull) {
+      let footprint, casterH;
+      if (b.type === 0) {
+        // Geometric structure: rectangular shadow at full height (body + funnel)
+        const hw = bw * 0.5, hd = bd * 0.5;
+        footprint = [{x:-hw,z:-hd},{x:hw,z:-hd},{x:hw,z:hd},{x:-hw,z:hd}];
+        casterH = bh + bw * 0.35;
+      } else if (b.type === 1) {
+        // Water tower: ellipse shadow at full height (cylinder + sphere dome)
+        footprint = [];
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * TWO_PI;
+          footprint.push({x: Math.cos(a) * bw * 0.5, z: Math.sin(a) * bw * 0.425});
+        }
+        casterH = bh + bw * 0.5;
+      } else if (b.type === 2) {
+        // Industrial complex: wide rectangular shadow at full smokestack height
+        const hw = bw * 0.75, hd = bd * 0.75;
+        footprint = [{x:-hw,z:-hd},{x:hw,z:-hd},{x:hw,z:hd},{x:-hw,z:hd}];
+        casterH = bh;
+      } else {
+        // Type 4 — sentinel tower: ellipse shadow at full tower height
+        footprint = [];
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * TWO_PI;
+          footprint.push({x: Math.cos(a) * bw * 1.1, z: Math.sin(a) * bw * 0.92});
+        }
+        casterH = bh;
+      }
+      const shift = casterH / sun.y;
+      const base = footprint.map(p => ({x: b.x + p.x, z: b.z + p.z}));
+      const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
+      b._shadowHull = this._shadowHullXZ(base.concat(top));
     }
 
-    this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.5, bw * 1.5, bd * 1.5, 34, sun);
+    const hull = b._shadowHull;
+    if (hull.length < 3) return;
+    // Type 4 alpha varies with infection; others are fixed.
+    const alpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
+    noStroke();
+    fill(18, 24, 42, alpha);
+    _beginShadowStencil();
+    beginShape();
+    for (const p of hull) {
+      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
+    }
+    endShape(CLOSE);
+    _endShadowStencil();
   }
 
 

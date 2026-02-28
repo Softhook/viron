@@ -97,9 +97,13 @@ function checkMobile() {
  * Called after resetShader() so p5's built-in lighting uniforms are active again.
  */
 function setSceneLighting() {
-  // Sunrise lighting profile for stronger shape and warm highlights.
+  // Reduced ambient: allows directional lights to drive contrast instead of washing out shadows.
+  ambientLight(22, 28, 42);
+  // Warm key: directional sun at low elevation (sunrise profile).
   directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z);
-  ambientLight(42, 52, 74);
+  // Cool sky fill: diffuse sky-dome light from above fills shadow faces with atmospheric blue.
+  // Direction points mostly upward (0.96 Y) so tops of objects always receive some sky fill.
+  directionalLight(58, 72, 125, -SUN_DIR_X * 0.15, 0.96, SUN_DIR_Z * 0.15);
 }
 
 /**
@@ -248,6 +252,7 @@ function setup() {
     CULL_DIST = 3500;
     pixelDensity(1); // CAP: Modern mobile screens have 3x resolution but 1x fill-rate.
   }
+  setAttributes('stencil', true);
   createCanvas(windowWidth, windowHeight, WEBGL);
 
   // Soft-particle depth pre-pass is temporarily disabled.
@@ -512,7 +517,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(vx, 0, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
@@ -574,7 +579,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(vx, 0, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);

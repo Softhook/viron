@@ -281,13 +281,15 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   if (hull.length < 3) return;
 
   noStroke();
-  fill(0, 0, 0, alpha);
+  // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
+  fill(18, 24, 42, alpha);
+  _beginShadowStencil();
   beginShape();
   for (const p of hull) {
-    const gy = terrain.getAltitude(p.x, p.z);
-    vertex(p.x, gy - 0.7, p.z);
+    vertex(p.x, terrain.getAltitude(p.x, p.z) - 0.7, p.z);
   }
   endShape(CLOSE);
+  _endShadowStencil();
 }
 
 function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {

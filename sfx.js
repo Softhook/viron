@@ -7,6 +7,11 @@ class GameSFX {
         this.lastExplosionTime = 0;
         this.lastExplosionPos = { x: 0, y: 0, z: 0 };
         this.ctx = null;
+
+        // constant values used across methods
+        this._refDist = 180;            // reference distance for manual attenuation
+        this._zoomOffset = 520;         // offset to simulate camera zoom in 2p mode
+        this._maxManualDist = 8000;     // upper clamp for manual volume falloff
     }
 
     init() {
@@ -75,8 +80,9 @@ class GameSFX {
 
                 if (typeof players !== 'undefined' && players.length > 0) {
                     let closestIdx = -1;
+                    let numPlayers = players.length;
 
-                    for (let i = 0; i < players.length; i++) {
+                    for (let i = 0; i < numPlayers; i++) {
                         let p = players[i];
                         if (p.dead || !p.ship) continue;
                         let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
@@ -86,24 +92,27 @@ class GameSFX {
                         }
                     }
 
-                    if (minDistSq !== Infinity) {
+                    // if nobody viable, abandon the manual fallback early
+                    if (minDistSq === Infinity) {
+                        // no change to manualVol/panVal, targetNode remains as-is
+                    } else {
                         // Offset distance by ~520 units to simulate the follow-camera being zoomed out.
                         // This prevents sounds at x=0 distance from blasting the speakers at 100% volume,
                         // making split-screen volume match the feel of single-player spatial audio.
-                        let distance = Math.sqrt(minDistSq) + 520;
-                        const refDist = 180;
-                        if (distance > refDist) {
-                            manualVol = Math.pow(refDist / Math.min(distance, 8000), 1.25);
+                        let distance = Math.sqrt(minDistSq) + this._zoomOffset;
+                        if (distance > this._refDist) {
+                            manualVol = Math.pow(this._refDist / Math.min(distance, this._maxManualDist), 1.25);
                         }
 
                         // Split-screen panning: shift sound toward the listener it's closer to
-                        if (players.length === 2) {
+                        if (numPlayers === 2) {
                             panVal = (closestIdx === 0) ? -0.35 : 0.35;
                         }
                     }
                 }
 
                 // Create a utility gain/pan chain if needed
+                // if we never found a player, skip the whole manual chain
                 if (manualVol < 0.99 || panVal !== 0) {
                     let g = this.ctx.createGain();
                     g.gain.setValueAtTime(manualVol, t);
@@ -958,16 +967,17 @@ class GameSFX {
         if (!this.spatialEnabled && x !== undefined && y !== undefined && z !== undefined) {
             let minDistSq = Infinity;
             if (typeof players !== 'undefined' && players.length > 0) {
-                for (let p of players) {
+                let numPlayers = players.length;
+                for (let i = 0; i < numPlayers; i++) {
+                    let p = players[i];
                     if (p.dead || !p.ship) continue;
                     let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
                     if (dSq < minDistSq) minDistSq = dSq;
                 }
                 if (minDistSq !== Infinity) {
                     let distance = Math.sqrt(minDistSq);
-                    const refDist = 180;
-                    if (distance > refDist) {
-                        finalVol *= Math.pow(refDist / Math.min(distance, 8000), 1.25);
+                    if (distance > this._refDist) {
+                        finalVol *= Math.pow(this._refDist / Math.min(distance, this._maxManualDist), 1.25);
                     }
                 }
             }

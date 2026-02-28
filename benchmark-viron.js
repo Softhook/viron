@@ -73,7 +73,18 @@ async function run() {
       });
       page.on('pageerror', err => console.error('[pageerror]', err.message));
 
-      await page.evaluateOnNewDocument((sampleFrames, maxInf) => {
+      const IS_MOBILE = !!process.env.MOBILE;
+      if (IS_MOBILE) {
+        await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1');
+        await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+        console.log('--- Simulating Mobile Environment ---');
+      }
+
+      await page.evaluateOnNewDocument((sampleFrames, maxInf, forceMobile) => {
+        if (forceMobile) {
+          window.isMobile = true;
+          window.VIEW_FAR = 30;
+        }
         window.VIRON_PROFILE = {
           enabled: true,
           label: 'viron',
@@ -82,7 +93,7 @@ async function run() {
           maxInfOverride: maxInf, // Avoid gameover while seeded infection is high
           freezeSpread: true
         };
-      }, SAMPLE_FRAMES, MAX_INF_OVERRIDE);
+      }, SAMPLE_FRAMES, MAX_INF_OVERRIDE, IS_MOBILE);
 
       await page.goto(`http://localhost:${actualPort}/index.html`, { waitUntil: 'load', timeout: LOAD_TIMEOUT });
       await page.waitForFunction('typeof infection !== "undefined" && typeof tileKey !== "undefined"', { timeout: 8000 });

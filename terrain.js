@@ -956,7 +956,6 @@ class Terrain {
     };
 
     noStroke();
-    this._setBackfaceCulling(true);
 
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
@@ -1001,8 +1000,6 @@ class Terrain {
       }
     }
 
-    this._setBackfaceCulling(false);
-
     // Draw all projected shadows in one pass.
     noStroke();
     fill(0, 0, 0, 40);
@@ -1040,8 +1037,6 @@ class Terrain {
         b + (SKY_B - b) * f
       );
     };
-
-    this._setBackfaceCulling(true);
 
     for (let b of buildings) {
       let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
@@ -1169,8 +1164,6 @@ class Terrain {
         drawShadow(b.x, y, b.z, b.w * 1.5, b.d * 1.5);
       }
     }
-
-    this._setBackfaceCulling(false);
   }
 }
 

@@ -1,4 +1,29 @@
 // =============================================================================
+
+const HUD_WEAPON_LABELS = ['\u25CF NORMAL', '\uD83D\uDE80 MISSILE', '\u25A0 BARRIER'];
+const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
+const HUD_HINT_CACHE = Object.create(null);
+const RADAR_SCALE = 0.012;
+const RADAR_HALF = 67;
+const RADAR_TILE_RADIUS_SQ = 4200;
+
+function _getControlHintGraphic(hint, hw, h) {
+  const key = `${hint}|${hw}|${h}`;
+  let entry = HUD_HINT_CACHE[key];
+  if (entry) return entry;
+
+  const w = Math.max(8, hw);
+  const g = createGraphics(w, 24);
+  g.pixelDensity(1);
+  g.clear();
+  g.noStroke();
+  g.textAlign(CENTER, BOTTOM);
+  g.textSize(11);
+  g.fill(255, 255, 255, 120);
+  g.text(hint, w * 0.5, 20);
+  HUD_HINT_CACHE[key] = g;
+  return g;
+}
 // hud.js — HUD and menu rendering functions
 //
 // All 2D overlay rendering is handled here.  Every function that draws in 2D
@@ -407,20 +432,14 @@ function drawPlayerHUD(p, pi, hw, h) {
   let col = p.labelColor;
 
 
-  // Compute infection keys once — reused for both the stats count and the radar loop below
+  // Reused for both stats and radar loop below.
   let infKeys = infection.keys();
 
-  // Stat lines: [size, [r,g,b], text, x, y]
-  let lines = [
-    [20, [255, 255, 255], 'SCORE ' + p.score, lx, ly + 8],
-    [16, [0, 255, 0], 'ALT ' + max(0, floor(SEA - s.y)), lx, ly + 32],
-    [14, [255, 60, 60], 'VIRON ' + infKeys.length, lx, ly + 54],
-    [14, [255, 100, 100], 'ENEMIES ' + enemyManager.enemies.length, lx, ly + 72],
-    [14, [0, 200, 255], 'MISSILES ' + p.missilesRemaining, lx, ly + 90]
-  ];
-  for (let [sz, c, txt, x, y] of lines) {
-    textSize(sz); fill(c[0], c[1], c[2]); text(txt, x, y);
-  }
+  textSize(20); fill(255, 255, 255); text('SCORE ' + p.score, lx, ly + 8);
+  textSize(16); fill(0, 255, 0); text('ALT ' + max(0, floor(SEA - s.y)), lx, ly + 32);
+  textSize(14); fill(255, 60, 60); text('VIRON ' + infection.count, lx, ly + 54);
+  fill(255, 100, 100); text('ENEMIES ' + enemyManager.enemies.length, lx, ly + 72);
+  fill(0, 200, 255); text('MISSILES ' + p.missilesRemaining, lx, ly + 90);
 
   // --- Crosshair (first-person reticle — only shown in first-person mode) ---
   if (typeof firstPersonView !== 'undefined' && firstPersonView) {
@@ -457,23 +476,19 @@ function drawPlayerHUD(p, pi, hw, h) {
     let totalW = 3 * pillW + 2 * pillGap;
     let startX = -totalW / 2;
     let pillY = -h / 2 + 8;   // Near the very top of the viewport
-    const labels = ['\u25CF NORMAL', '\uD83D\uDE80 MISSILE', '\u25A0 BARRIER'];
-    const activeCols = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
-    const labelBlacks = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-
     textAlign(CENTER, TOP);
     for (let i = 0; i < 3; i++) {
       let px = startX + i * (pillW + pillGap);
       let active = (p.weaponMode === i);
       if (active) {
         // Filled pill
-        fill(activeCols[i][0], activeCols[i][1], activeCols[i][2], 230);
+        fill(HUD_WEAPON_ACTIVE_COLS[i][0], HUD_WEAPON_ACTIVE_COLS[i][1], HUD_WEAPON_ACTIVE_COLS[i][2], 230);
         noStroke();
         rect(px, pillY, pillW, pillH, 4);
         // Label in dark ink
-        fill(labelBlacks[i][0], labelBlacks[i][1], labelBlacks[i][2]);
+        fill(0, 0, 0);
         textSize(11);
-        text(labels[i], px + pillW / 2, pillY + 5);
+        text(HUD_WEAPON_LABELS[i], px + pillW / 2, pillY + 5);
       } else {
         // Outline pill
         noFill();
@@ -483,7 +498,7 @@ function drawPlayerHUD(p, pi, hw, h) {
         noStroke();
         fill(180, 180, 180, 130);
         textSize(11);
-        text(labels[i], px + pillW / 2, pillY + 5);
+        text(HUD_WEAPON_LABELS[i], px + pillW / 2, pillY + 5);
       }
     }
   }
@@ -516,57 +531,88 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
   fill(0, 150); stroke(0, 255, 0); strokeWeight(1.5);
   rectMode(CENTER);
   rect(0, 0, radarSize, radarSize);   // Radar frame
-  rotateZ(s.yaw);          // Rotate so ship forward faces up
 
-  // Viron tiles (small red squares) — use the objects computed in drawPlayerHUD
+  // Rotate radar-space points in scalar math instead of rotating the full scene.
+  let yawSin = sin(s.yaw), yawCos = cos(s.yaw);
+  const toRadarX = (x, z) => x * yawCos - z * yawSin;
+  const toRadarZ = (x, z) => x * yawSin + z * yawCos;
+
+  // Viron tiles (small red squares)
   fill(255, 60, 60, 80); noStroke();
-  // LATERIAL OPT: Cap radar tiles to 100 on desktop, 40 on mobile to avoid building 1000s of quads.
-  let tilesDrawn = 0;
   let maxRadarTiles = isMobile ? 40 : 120;
-  for (let t of infKeys) {
-    let rx = (t.tx * TILE - s.x) * 0.012, rz = (t.tz * TILE - s.z) * 0.012;
-    // Squared check — faster than building hundreds of quads and clipping them.
+  let cache = p._radarInfCache;
+  let infSample = cache && cache.frame >= frameCount - 6 && cache.srcLen === infKeys.length
+    ? cache.sample
+    : null;
+
+  if (!infSample) {
+    infSample = [];
+    const len = infKeys.length;
+    if (len > 0) {
+      // Sample at most a few hundred tiles regardless of world infection size.
+      const target = maxRadarTiles * 3;
+      const stride = Math.max(1, Math.floor(len / target));
+      const offset = (frameCount >> 1) % stride;
+      for (let i = offset; i < len && infSample.length < target; i += stride) {
+        infSample.push(infKeys[i]);
+      }
+    }
+    p._radarInfCache = { frame: frameCount, srcLen: infKeys.length, sample: infSample };
+  }
+
+  let tilesDrawn = 0;
+  for (let t of infSample) {
+    let rx = (t.tx * TILE - s.x) * RADAR_SCALE;
+    let rz = (t.tz * TILE - s.z) * RADAR_SCALE;
     if (rx * rx + rz * rz < 4200) {
-      rect(rx, rz, 2, 2);
+      rect(toRadarX(rx, rz), toRadarZ(rx, rz), 2, 2);
       tilesDrawn++;
       if (tilesDrawn >= maxRadarTiles) break;
     }
   }
 
   // Launchpad centre marker (yellow square if in radar range)
-  let lx = (420 - s.x) * 0.012, lz = (420 - s.z) * 0.012;
+  let lx = (420 - s.x) * RADAR_SCALE, lz = (420 - s.z) * RADAR_SCALE;
   if (abs(lx) < 68 && abs(lz) < 68) {
-    fill(255, 255, 0, 150); noStroke(); rect(lx, lz, 4, 4);
+    fill(255, 255, 0, 150); noStroke();
+    rect(toRadarX(lx, lz), toRadarZ(lx, lz), 4, 4);
   }
 
   // Enemy markers (square when in range, directional triangle when off-screen)
   fill(255, 0, 0); noStroke();
   for (let e of enemyManager.enemies) {
-    let rx = (e.x - s.x) * 0.012, rz = (e.z - s.z) * 0.012;
-    if (abs(rx) < 68 && abs(rz) < 68) {
-      rect(rx, rz, 3, 3);
+    let rx = (e.x - s.x) * RADAR_SCALE;
+    let rz = (e.z - s.z) * RADAR_SCALE;
+    let rrx = toRadarX(rx, rz);
+    let rrz = toRadarZ(rx, rz);
+    if (abs(rrx) < 68 && abs(rrz) < 68) {
+      rect(rrx, rrz, 3, 3);
     } else {
-      // Off-screen: draw a directional arrow clamped to the radar boundary
-      push();
-      translate(constrain(rx, -67, 67), constrain(rz, -67, 67), 0);
-      rotateZ(atan2(rz, rx));
+      // Off-screen: draw a directional arrow clamped to the radar boundary.
+      let cx = constrain(rrx, -RADAR_HALF, RADAR_HALF);
+      let cz = constrain(rrz, -RADAR_HALF, RADAR_HALF);
+      let a = atan2(rrz, rrx);
+      let ax = cos(a), az = sin(a);
+      let px = -az, pz = ax;
       fill(255, 0, 0, 180);
-      triangle(3, 0, -2, -2, -2, 2);
-      pop();
+      triangle(
+        cx + 3 * ax, cz + 3 * az,
+        cx - 2 * ax - 2 * px, cz - 2 * az - 2 * pz,
+        cx - 2 * ax + 2 * px, cz - 2 * az + 2 * pz
+      );
     }
   }
 
   // Co-op partner ship (two-player only)
   let other = players[1 - p.id];
   if (other && !other.dead) {
-    let ox = (other.ship.x - s.x) * 0.012, oz = (other.ship.z - s.z) * 0.012;
+    let ox = (other.ship.x - s.x) * RADAR_SCALE, oz = (other.ship.z - s.z) * RADAR_SCALE;
     fill(other.labelColor[0], other.labelColor[1], other.labelColor[2], 200);
     noStroke();
-    if (abs(ox) < 68 && abs(oz) < 68) rect(ox, oz, 4, 4);
+    if (abs(ox) < 68 && abs(oz) < 68) rect(toRadarX(ox, oz), toRadarZ(ox, oz), 4, 4);
   }
 
   // Own ship — always at radar centre
-  rotateZ(-s.yaw);
   fill(255, 255, 0);
   rect(0, 0, 4, 4);
   pop();
@@ -583,9 +629,7 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
 function drawControlHints(p, pi, hw, h) {
   if (isMobile) return;
   push();
-  textAlign(CENTER, BOTTOM);
-  textSize(11);
-  fill(255, 255, 255, 120);
+  imageMode(CENTER);
   let hints = '';
   if (numPlayers === 1) {
     hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click to lock mouse)';
@@ -594,6 +638,7 @@ function drawControlHints(p, pi, hw, h) {
       ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click lock)'
       : '\u2191 thrust  \u2190/\u2192 turn  ;/\' pitch  . shoot  / cycle weapon  \u2193 brake';
   }
-  text(hints, 0, h / 2 - 8);
+  const g = _getControlHintGraphic(hints, hw, h);
+  image(g, 0, h / 2 - 12);
   pop();
 }

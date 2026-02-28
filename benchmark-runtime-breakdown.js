@@ -22,6 +22,7 @@ const PORT = process.env.RUNTIME_PORT ? Number(process.env.RUNTIME_PORT) : 0;
 const SCENARIOS = [
   { id: 'baseline', title: 'Baseline (default game loop)' },
   { id: 'no-hud', title: 'HUD disabled' },
+  { id: 'no-radar', title: 'Radar disabled' },
   { id: 'no-trees', title: 'Trees disabled' },
   { id: 'no-particles', title: 'Particles disabled' },
   { id: 'no-enemies', title: 'Enemies disabled' },
@@ -130,6 +131,8 @@ async function setupPlayableState(page, scenarioId) {
       particleSystem.renderHardParticles = function () {};
     } else if (id === 'no-hud') {
       window.drawPlayerHUD = function () {};
+    } else if (id === 'no-radar') {
+      window.drawRadarForPlayer = function () {};
     } else if (id === 'no-trees') {
       terrain.drawTrees = function () {};
     } else if (id === 'no-enemies') {
@@ -195,6 +198,8 @@ async function setupPlayableState(page, scenarioId) {
     wrapFunction(window, 'renderProjectiles', 'renderProjectiles');
     wrapFunction(window, 'renderInFlightBarriers', 'renderInFlightBarriers');
     wrapFunction(window, 'drawPlayerHUD', 'drawPlayerHUD');
+    wrapFunction(window, 'drawRadarForPlayer', 'drawRadarForPlayer');
+    wrapFunction(window, 'drawControlHints', 'drawControlHints');
     wrapFunction(window, 'shipDisplay', 'shipDisplay');
 
     // Wrap draw itself to estimate total JS frame cost attributable to draw().
@@ -277,6 +282,8 @@ function formatTop(summary) {
     'renderProjectiles',
     'renderInFlightBarriers',
     'shipDisplay',
+    // drawRadarForPlayer and drawControlHints are nested under drawPlayerHUD,
+    // so only include drawPlayerHUD here to avoid double counting.
     'drawPlayerHUD'
   ];
   let rpvAttributed = 0;

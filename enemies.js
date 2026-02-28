@@ -207,7 +207,8 @@ class EnemyManager {
     if (d < 1500 && e.fireTimer > 180) {
       e.fireTimer = 0;
       // Shoot a fast upward projectile toward the player
-      particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -12, vz: 0, life: 100 });
+      // longer-lived shot so crab bullets can travel much farther
+      particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -12, vz: 0, life: 1000 });
       if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab', e.x, e.y - 10, e.z);
     }
 
@@ -309,7 +310,8 @@ class EnemyManager {
       particleSystem.enemyBullets.push({
         x: e.x, y: e.y, z: e.z,
         vx: (pvx / pd) * 10, vy: (pvy / pd) * 10, vz: (pvz / pd) * 10,
-        life: 120
+        // use long lifetime for better reach
+        life: 1000
       });
       if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y, e.z);
     }
@@ -433,7 +435,8 @@ class EnemyManager {
       let pd = mag2(target.x - e.x, target.z - e.z);
       if (pd < 1200 && e.fireTimer > 150) {
         e.fireTimer = 0;
-        particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -10, vz: 0, life: 120 });
+        // scorpion shot - keep alive for extended travel
+        particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -10, vz: 0, life: 1000 });
         if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab', e.x, e.y - 10, e.z);
       }
     }
@@ -493,7 +496,8 @@ class EnemyManager {
             vx: (bdx / bd) * 14 + random(-spread, spread) * 14,
             vy: (bdy / bd) * 14,
             vz: (bdz / bd) * 14 + random(-spread, spread) * 14,
-            life: 160
+            // colossus bullets now persist longer
+            life: 1000
           });
           if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - 240, e.z);
         }

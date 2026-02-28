@@ -150,7 +150,9 @@ function fireActiveWeapon(p) {
   else if (mode === 2) fireBarrier(p);
   else {
     // NORMAL: fire one bullet immediately (used for middle-click single shot)
-    p.bullets.push(spawnProjectile(p.ship, 25, 300));
+    // Bullet lifetime raised so a single shot will travel as far as reasonably
+    // possible before disappearing.  See updateProjectilePhysics for range.
+    p.bullets.push(spawnProjectile(p.ship, 25, 1000));
     if (typeof gameSFX !== 'undefined') gameSFX.playShot(p.ship.x, p.ship.y, p.ship.z);
   }
 }
@@ -561,16 +563,24 @@ function updateShipInput(p) {
   if (p.weaponMode === 0) {
     // NORMAL: rapid-fire bullets every 6 frames while shoot is held
     if (isShooting && frameCount % 6 === 0) {
-      p.bullets.push(spawnProjectile(s, 25, 300));
+      // extended range bullet
+      p.bullets.push(spawnProjectile(s, 25, 1000));
       if (typeof gameSFX !== 'undefined') gameSFX.playShot(s.x, s.y, s.z);
     }
     p.shootHeld = isShooting;
-  } else {
-    // MISSILE / BARRIER: fire once per press (edge-detect on shoot button)
-    if (isShooting && !p.shootHeld) {
-      if (p.weaponMode === 1) fireMissile(p);
-      else if (p.weaponMode === 2) fireBarrier(p);
+  } else if (p.weaponMode === 1) {
+    // MISSILE: edge-detect (missiles still fire only once per press)
+    if (isShooting && !p.shootHeld) fireMissile(p);
+    p.shootHeld = isShooting;
+  } else if (p.weaponMode === 2) {
+    // BARRIER: auto-repeat while held, similar cadence to normal bullets.
+    // A barrier is a heavier projectile so it doesn't need to be every frame;
+    // use the same 6-frame interval used for normal bullets.
+    if (isShooting && frameCount % 6 === 0) {
+      fireBarrier(p);
     }
+    // we still track shootHeld so that switching away from barrier resets
+    // the edge-detection state used by missiles when the mode changes.
     p.shootHeld = isShooting;
   }
 
@@ -651,7 +661,9 @@ function updateProjectilePhysics(p) {
 
     // PERFORMANCE: Only seeking for "fresh" bullets (first 30 frames)
     // and only if Aim Assist is enabled (for P1 or via 'P' toggle)
-    if (assistEnabled && b.life > 240) { // Bullets start at 300 life
+    // bullets are now created with a much longer lifetime (1000) so we
+    // still consider the first 30 frames 'fresh' for steering purposes.
+    if (assistEnabled && b.life > 240) { // Bullets start at 1000 life
       let bestTarget = null;
       let bestDot = 0.985;
       let speed = Math.hypot(b.vx, b.vy, b.vz);

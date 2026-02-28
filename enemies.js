@@ -191,7 +191,7 @@ class EnemyManager {
     let tShip = target || refShip;
 
     let dx = tShip.x - e.x, dz = tShip.z - e.z;
-    let d = Math.hypot(dx, dz);
+    let d = mag2(dx, dz);
     if (d > 0) {
       // Slow lerped steering gives the crab a clumsy, deliberate gait
       e.vx = lerp(e.vx || 0, (dx / d) * 1.2, 0.05);
@@ -219,10 +219,7 @@ class EnemyManager {
         let k = tileKey(tx, tz);
         if (infection.add(k)) {
           if (isLaunchpad(e.x, e.z)) {
-            if (millis() - lastAlarmTime > 1000) {
-              if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
-              lastAlarmTime = millis();
-            }
+            maybePlayLaunchpadAlarm();
           }
           terrain.addPulse(e.x, e.z, 1.0);  // Blue crab-type pulse ring
         }
@@ -243,7 +240,7 @@ class EnemyManager {
     let tShip = target || refShip;
 
     let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
-    let d = Math.hypot(dx, dy, dz);
+    let d = mag3(dx, dy, dz);
     let speed = 5.0;
     if (d > 0) {
       e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.1);
@@ -286,7 +283,7 @@ class EnemyManager {
     let ty = e.aggressive ? tShip.y : -600;  // Wander at high altitude
 
     let dx = tx - e.x, dy = ty - e.y, dz = tz - e.z;
-    let d = Math.hypot(dx, dy, dz);
+    let d = mag3(dx, dy, dz);
 
     let speed = 2.5;
     if (d > 0) {
@@ -308,7 +305,7 @@ class EnemyManager {
       let pvx = (dx / d) + random(-0.2, 0.2);
       let pvy = (dy / d) + random(-0.2, 0.2);
       let pvz = (dz / d) + random(-0.2, 0.2);
-      let pd = Math.hypot(pvx, pvy, pvz);
+      let pd = mag3(pvx, pvy, pvz);
       particleSystem.enemyBullets.push({
         x: e.x, y: e.y, z: e.z,
         vx: (pvx / pd) * 10, vy: (pvy / pd) * 10, vz: (pvz / pd) * 10,
@@ -404,7 +401,7 @@ class EnemyManager {
     }
 
     let dx = targetX - e.x, dz = targetZ - e.z;
-    let d = Math.hypot(dx, dz);
+    let d = mag2(dx, dz);
     if (d > 0) {
       e.vx = lerp(e.vx || 0, (dx / d) * 1.5, 0.04);
       e.vz = lerp(e.vz || 0, (dz / d) * 1.5, 0.04);
@@ -422,10 +419,7 @@ class EnemyManager {
         let k = tileKey(tx, tz);
         if (infection.add(k)) {
           if (isLaunchpad(e.x, e.z)) {
-            if (millis() - lastAlarmTime > 1000) {
-              if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
-              lastAlarmTime = millis();
-            }
+            maybePlayLaunchpadAlarm();
           }
           terrain.addPulse(e.x, e.z, 1.0);
         }
@@ -436,7 +430,7 @@ class EnemyManager {
     e.fireTimer = (e.fireTimer || 0) + 1;
     let target = findNearest(alivePlayers, e.x, e.y, e.z);
     if (target) {
-      let pd = Math.hypot(target.x - e.x, target.z - e.z);
+      let pd = mag2(target.x - e.x, target.z - e.z);
       if (pd < 1200 && e.fireTimer > 150) {
         e.fireTimer = 0;
         particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -10, vz: 0, life: 120 });
@@ -461,7 +455,7 @@ class EnemyManager {
 
     // Slow, deliberate movement toward the player
     let dx = tShip.x - e.x, dz = tShip.z - e.z;
-    let d = Math.hypot(dx, dz);
+    let d = mag2(dx, dz);
     let speed = 1.2;  // Slower than most enemies — weight of a giant
     if (d > 0) {
       e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.025);
@@ -491,7 +485,7 @@ class EnemyManager {
         e.burstCount--;
         // Re-calculate direction each burst shot (target may have moved)
         let bdx = tShip.x - e.x, bdy = tShip.y - (e.y - 240), bdz = tShip.z - e.z;
-        let bd = Math.hypot(bdx, bdy, bdz);
+        let bd = mag3(bdx, bdy, bdz);
         if (bd > 0) {
           let spread = 0.12;
           particleSystem.enemyBullets.push({
@@ -514,10 +508,7 @@ class EnemyManager {
         let k = tileKey(tx, tz);
         if (infection.add(k)) {
           if (isLaunchpad(e.x, e.z)) {
-            if (millis() - lastAlarmTime > 1000) {
-              if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
-              lastAlarmTime = millis();
-            }
+            maybePlayLaunchpadAlarm();
           }
           terrain.addPulse(e.x, e.z, 1.0);
         }
@@ -552,7 +543,7 @@ class EnemyManager {
     let tShip = target || refShip;
 
     let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
-    let d = Math.hypot(dx, dy, dz);
+    let d = mag3(dx, dy, dz);
     let speed = 3.5;
     if (d > 0) {
       e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.05);
@@ -572,7 +563,7 @@ class EnemyManager {
     if (e.inkCooldown <= 0) {
       let shouldSquirt = (d < 1500 && random() < 0.32) || random() < 0.02;
       if (shouldSquirt) {
-        let vm = Math.max(Math.hypot(e.vx || 0, e.vy || 0, e.vz || 0), 0.001);
+        let vm = Math.max(mag3(e.vx || 0, e.vy || 0, e.vz || 0), 0.001);
         let bx = -(e.vx || 0) / vm, by = -(e.vy || 0) / vm, bz = -(e.vz || 0) / vm;
         particleSystem.addFogParticle({
           x: e.x + bx * 34,
@@ -641,7 +632,7 @@ class EnemyManager {
       if (e.type === 'fighter') {
         // Align mesh to velocity direction
         let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = Math.hypot(fvX, fvY, fvZ);
+        let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
         let ec = terrain.getFogColor([255, 150, 0], depth);
@@ -735,7 +726,7 @@ class EnemyManager {
 
       } else if (e.type === 'hunter') {
         let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = Math.hypot(fvX, fvY, fvZ);
+        let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
         let hc = terrain.getFogColor([40, 255, 40], depth);
@@ -749,7 +740,7 @@ class EnemyManager {
 
       } else if (e.type === 'squid') {
         let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = Math.hypot(fvX, fvY, fvZ);
+        let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
         let sqc = terrain.getFogColor([30, 30, 35], depth);
@@ -858,7 +849,7 @@ class EnemyManager {
         let glowC = terrain.getFogColor([255, 120, 0], depth);
 
         // ---- LEGS (animated — alternating stride) ----
-        let walkSpeed = Math.hypot(e.vx || 0, e.vz || 0);
+        let walkSpeed = mag2(e.vx || 0, e.vz || 0);
         let walkCycle = frameCount * 0.08 * (walkSpeed > 0.1 ? 1 : 0) + (e.id || 0);
         for (let side = -1; side <= 1; side += 2) {
           let legPhase = walkCycle * side;

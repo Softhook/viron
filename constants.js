@@ -131,6 +131,16 @@ const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_
 /** Returns true when terrain depth y indicates a submerged tile (y ≥ SEA means underwater; WEBGL Y axis is inverted, larger values are deeper). */
 const aboveSea = y => y >= SEA - 1;
 
+/**
+ * Fast magnitude helpers used in per-frame AI/physics paths.
+ * Skip Math.hypot's overflow/underflow guards (world coords are bounded),
+ * trimming a bit of overhead in hot loops.
+ */
+/** @param {number} dx @param {number} dz @returns {number} */
+const mag2 = (dx, dz) => Math.sqrt(dx * dx + dz * dz);
+/** @param {number} dx @param {number} dy @param {number} dz @returns {number} */
+const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
+
 // =============================================================================
 // TileManager — generic container for keyed world tiles (Infection or Barriers)
 //

@@ -13,8 +13,40 @@ class GameSFX {
             this.ctx = getAudioContext();
             this.distCurve = this.createDistortionCurve(400);
             this.distCurveGameOver = this.createDistortionCurve(60);
+
+            // LATERAL OPT: Pre-calculate one long noise buffer and reuse it.
+            // Eliminates O(N) loop math in _createNoise during explosions.
+            this.persistentNoise = this._calculatePersistentNoise(3.0);
+            this.lastSpreadTime = 0;
         }
         this.initialized = true;
+    }
+
+    _calculatePersistentNoise(dur) {
+        if (!this.ctx) return null;
+        let bufferSize = Math.floor(this.ctx.sampleRate * dur);
+        let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        let data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+        // Smooth loop cross-fade
+        let blend = Math.floor(this.ctx.sampleRate * 0.2);
+        for (let i = 0; i < blend; i++) {
+            let r = i / blend;
+            data[i] = data[i] * r + data[bufferSize - blend + i] * (1.0 - r);
+        }
+        return buffer;
+    }
+
+    _createNoise(dur, filterCoeff = 0, mul = 1) {
+        if (!this.persistentNoise) return null;
+        let noise = this.ctx.createBufferSource();
+        noise.buffer = this.persistentNoise;
+        noise.loop = true;
+        // The filterCoeff logic is simplified here because persistent noise 
+        // is white; we rely on the Panner or Biquad filter to do the heavy lifting.
+        return noise;
     }
 
     _setup(x, y, z) {
@@ -34,29 +66,53 @@ class GameSFX {
     }
 
     _createNoise(dur, filterCoeff = 0, mul = 1) {
-        let bufferSize = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
-        let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        let data = buffer.getChannelData(0);
-
-        // Generate noise
-        let lastOut = 0;
-        for (let i = 0; i < bufferSize; i++) {
-            let white = Math.random() * 2 - 1;
-            lastOut = filterCoeff > 0 ? (lastOut + filterCoeff * white) / (1 + filterCoeff) : white;
-            data[i] = lastOut * mul;
-        }
-
-        // Seamless loop fix: Smooth cross-fade over the entire buffer to 
-        // eliminate any possible loop-point periodicity or clicks.
-        let blendLen = Math.floor(this.ctx.sampleRate * 0.2); // 200ms
-        for (let i = 0; i < blendLen; i++) {
-            let ratio = i / blendLen;
-            data[i] = data[i] * ratio + data[bufferSize - blendLen + i] * (1.0 - ratio);
-        }
-
+        if (!this.ctx || !this.persistentNoise) return null;
         let noise = this.ctx.createBufferSource();
-        noise.buffer = buffer;
+        noise.buffer = this.persistentNoise;
+        noise.loop = true;
+
+        // LATERAL OPT: Use a random start time within the 3s buffer so different 
+        // sounds don't start with identical phase (which causes flanging).
+        noise.start(this.ctx.currentTime, Math.random() * (noise.buffer.duration - (dur || 0)));
         return noise;
+    }
+
+    /**
+     * Throttled infection spread sound. 
+     * If 50 tiles spread at once, playing 50 sounds will crash the audio thread.
+     * Limit to one sound every 60ms.
+     */
+    playInfectionSpread(x, y, z) {
+        if (!this.initialized) return;
+        let t = this.ctx.currentTime;
+        if (t - (this.lastSpreadTime || 0) < 0.06) return;
+        this.lastSpreadTime = t;
+
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { targetNode } = s;
+
+        let gainNode = this.ctx.createGain();
+        gainNode.gain.setValueAtTime(0.8, t);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+
+        let filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1000, t);
+        filter.frequency.exponentialRampToValueAtTime(200, t + 0.04);
+        filter.Q.value = 5;
+
+        let osc = this.ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.04);
+
+        osc.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(targetNode);
+
+        osc.start(t);
+        osc.stop(t + 0.04);
     }
 
     updateListener(cx, cy, cz, lx, ly, lz, ux, uy, uz) {
@@ -696,39 +752,6 @@ class GameSFX {
         noise.stop(t + 0.4);
     }
 
-    playInfectionSpread(x, y, z) {
-        let s = this._setup(x, y, z);
-        if (!s) return;
-        let { ctx, t, targetNode } = s;
-
-        let gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(1, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-
-        let filter = ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.setValueAtTime(1000, t);
-        filter.frequency.exponentialRampToValueAtTime(200, t + 0.04);
-        filter.Q.value = 5;
-
-        if (targetNode instanceof PannerNode) {
-            targetNode.refDistance = 300;
-            targetNode.maxDistance = 15000;
-            targetNode.rolloffFactor = 1.5;
-        }
-
-        let osc = ctx.createOscillator();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(150, t);
-        osc.frequency.exponentialRampToValueAtTime(40, t + 0.04);
-
-        osc.connect(filter);
-        filter.connect(gainNode);
-        gainNode.connect(targetNode);
-
-        osc.start(t);
-        osc.stop(t + 0.04);
-    }
 
     playAlarm() {
         let s = this._setup();

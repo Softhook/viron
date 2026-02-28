@@ -17,7 +17,7 @@
 // Global game state
 // ---------------------------------------------------------------------------
 
-let trees = [], buildings = [];    // Static world objects populated in setup()
+let trees = [], buildings = [], sentinelBuildings = [];
 
 let level = 1;            // Current level number (increases on level completion)
 let currentMaxEnemies = 2;         // Max simultaneous enemies for the current level
@@ -68,21 +68,26 @@ function checkMobile() {
   const ua = navigator.userAgent;
   isAndroid = /Android/i.test(ua);
 
-  // Prioritise UA strings for standard mobile devices
+  // 1. Explicit UA check
   isMobile = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
 
-  // Modern iPads (iPadOS) on Apple Silicon report "Macintosh" in desktop mode.
-  // We identify them by checking for Mac platform/UA + multi-touch support.
-  // Since no touch-screen Macs exist (yet), this is a reliable iPad indicator.
+  // 2. Modern iPads (MacBook-like UA but touch-enabled)
   if (!isMobile && /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) {
     isMobile = true;
   }
 
-  // Fallback: if it's a touch device but NOT a desktop OS, then it's mobile
+  // 3. Fallback: Check for generic mobile/tablet indicators in Desktop View
+  if (!isMobile && /Mobile|Tablet/i.test(ua)) {
+    isMobile = true;
+  }
+
+  // 4. Fallback: Any touch device that doesn't look like a standard Desktop OS
   if (!isMobile && ('ontouchstart' in window)) {
-    const isDesktopOS = /Macintosh|Windows|Linux/i.test(ua);
+    const isDesktopOS = /Windows NT|Macintosh|Linux/i.test(ua);
     if (!isDesktopOS) isMobile = true;
   }
+
+  console.log(`[Viron] Device: ${isMobile ? 'MOBILE' : 'DESKTOP'} (UA: ${ua.slice(0, 50)}..., touch: ${navigator.maxTouchPoints})`);
 }
 
 /**
@@ -182,6 +187,7 @@ function setup() {
     VIEW_NEAR = 20;
     VIEW_FAR = 30;
     CULL_DIST = 3500;
+    pixelDensity(1); // CAP: Modern mobile screens have 3x resolution but 1x fill-rate.
   }
   createCanvas(windowWidth, windowHeight, WEBGL);
 
@@ -272,6 +278,9 @@ function setup() {
       pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / MOUNTAIN_PEAKS.length)
     });
   }
+
+  // LATERIAL OPT: Pre-process sentinels to avoid O(N) scans in the physics update.
+  sentinelBuildings = buildings.filter(b => b.type === 4);
 
   gameState = 'menu';
 }
@@ -807,8 +816,8 @@ function spreadInfection() {
 
   // Commit all new infections after the loop (avoid modifying while iterating)
   // Accelerated spread from infected sentinels — virus grows very fast around them
-  for (let b of buildings) {
-    if (b.type !== 4) continue;
+  // LATERIAL OPT: Use the pre-filtered sentinel list.
+  for (let b of sentinelBuildings) {
     let stx = toTile(b.x), stz = toTile(b.z);
     if (!infection.has(tileKey(stx, stz))) continue;  // Only when this sentinel is infected
     // Blast outward in a ~5-tile radius circle with high per-tile probability

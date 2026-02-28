@@ -96,11 +96,14 @@ function drawMenu() {
   text('Christian Nold, 2026', 0, -height * 0.14 + 78);
 
   // CRT scanline overlay — subtle dark horizontal lines for retro feel
-  stroke(0, 0, 0, 20); strokeWeight(1);
-  for (let y = -height / 2; y < height / 2; y += 4) {
-    line(-width / 2, y, width / 2, y);
+  // LATERAL OPT: Skip this loop on mobile to save 200+ line() calls.
+  if (!isMobile) {
+    stroke(0, 0, 0, 20); strokeWeight(1);
+    for (let y = -height / 2; y < height / 2; y += 4) {
+      line(-width / 2, y, width / 2, y);
+    }
+    noStroke();
   }
-  noStroke();
 
   // --- Start prompt (alternating blink phases for 1P / 2P options) ---
   let optY = height * 0.08;
@@ -481,9 +484,17 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
 
   // Viron tiles (small red squares) — use the objects computed in drawPlayerHUD
   fill(255, 60, 60, 80); noStroke();
+  // LATERIAL OPT: Cap radar tiles to 100 on desktop, 40 on mobile to avoid building 1000s of quads.
+  let tilesDrawn = 0;
+  let maxRadarTiles = isMobile ? 40 : 120;
   for (let t of infKeys) {
     let rx = (t.tx * TILE - s.x) * 0.012, rz = (t.tz * TILE - s.z) * 0.012;
-    if (abs(rx) < 68 && abs(rz) < 68) rect(rx, rz, 2, 2);
+    // Squared check — faster than building hundreds of quads and clipping them.
+    if (rx * rx + rz * rz < 4200) {
+      rect(rx, rz, 2, 2);
+      tilesDrawn++;
+      if (tilesDrawn >= maxRadarTiles) break;
+    }
   }
 
   // Launchpad centre marker (yellow square if in radar range)

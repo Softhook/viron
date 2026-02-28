@@ -64,7 +64,7 @@ void main() {
 /** Compiled soft-particle GLSL shader; null until ParticleSystem.init(). */
 let _softShader = null;
 /** 64×64 2D p5.Graphics: white radial-gradient cloud sprite. */
-let _cloudTex   = null;
+let _cloudTex = null;
 
 class ParticleSystem {
   constructor() {
@@ -91,8 +91,8 @@ class ParticleSystem {
 
   /** Empties all particle, bomb and enemy-bullet arrays. Called at level start. */
   clear() {
-    this.particles   = [];
-    this.bombs       = [];
+    this.particles = [];
+    this.bombs = [];
     this.enemyBullets = [];
     this.fogCount = 0;
   }
@@ -129,12 +129,12 @@ class ParticleSystem {
     // Used as the diffuse sprite for each billboard particle so the puff
     // looks soft and cloud-like rather than hard-edged.
     _cloudTex = createGraphics(64, 64);
-    const ctx  = _cloudTex.drawingContext;
+    const ctx = _cloudTex.drawingContext;
     const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0,    'rgba(255,255,255,0.90)');
+    grad.addColorStop(0, 'rgba(255,255,255,0.90)');
     grad.addColorStop(0.35, 'rgba(255,255,255,0.65)');
     grad.addColorStop(0.70, 'rgba(255,255,255,0.25)');
-    grad.addColorStop(1.0,  'rgba(255,255,255,0.00)');
+    grad.addColorStop(1.0, 'rgba(255,255,255,0.00)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 64, 64);
     _softShader = createShader(SOFT_PARTICLE_VERT, SOFT_PARTICLE_FRAG);
@@ -165,7 +165,7 @@ class ParticleSystem {
   addExplosion(x, y, z, baseColor, type) {
     if (typeof gameSFX !== 'undefined') {
       if (type) gameSFX.playExplosion(type === 'bomber' || type === 'mega', type, x, y, z);
-      else      gameSFX.playExplosion(baseColor === undefined || baseColor === null, '', x, y, z);
+      else gameSFX.playExplosion(baseColor === undefined || baseColor === null, '', x, y, z);
     }
 
     let isCustom = baseColor !== undefined && baseColor !== null;
@@ -177,8 +177,8 @@ class ParticleSystem {
 
       // Default fire palette: bright yellow core → orange mid → dark smoke
       let br = 255, bg = 200, bb = 50;
-      let er = 200, eg = 30,  eb = 10;
-      let sr = 40,  sg = 20,  sb = 20;
+      let er = 200, eg = 30, eb = 10;
+      let sr = 40, sg = 20, sb = 20;
 
       if (isCustom) {
         // Custom tint: blend base colour toward white for the hot core
@@ -193,8 +193,8 @@ class ParticleSystem {
         }
 
         br = constrain(rV, 0, 255); bg = constrain(gV, 0, 255); bb = constrain(bV, 0, 255);
-        er = br * 0.8;       eg = bg * 0.8;       eb = bb * 0.8;
-        sr = br * 0.3 + 10;  sg = bg * 0.3 + 10;  sb = bb * 0.3 + 10;
+        er = br * 0.8; eg = bg * 0.8; eb = bb * 0.8;
+        sr = br * 0.3 + 10; sg = bg * 0.3 + 10; sb = bb * 0.3 + 10;
       }
 
       this.particles.push({
@@ -335,7 +335,7 @@ class ParticleSystem {
     const MAX_THRUST_RENDER = Math.floor(180 * renderLoadScale);
     let fogRendered = 0;
     let thrustRendered = 0;
-    let pxD    = pixelDensity();
+    let pxD = pixelDensity();
 
     if (this.particles.length > 0) {
       noLights();  // Particles are emissive — skip directional shading
@@ -345,7 +345,7 @@ class ParticleSystem {
       // Preferred path: GLSL depth-aware soft particles when scene depth is available.
       // Fallback path: textured billow sprites (still soft, but no depth intersection fade).
       const useDepthSoftShader = (_softShader && _cloudTex && sceneFBO);
-      const useBillowSprites   = (!!_cloudTex && !useDepthSoftShader);
+      const useBillowSprites = (!!_cloudTex && !useDepthSoftShader);
       const disableDepthForSoft = useDepthSoftShader || useBillowSprites;
       if (disableDepthForSoft) {
         // Soft billboard quads handle depth-fade via the sDepth texture, so
@@ -363,11 +363,11 @@ class ParticleSystem {
       }
       if (useDepthSoftShader) {
         shader(_softShader);
-        _softShader.setUniform('sTexture',         _cloudTex);
-        _softShader.setUniform('sDepth',           sceneFBO.depth);
-        _softShader.setUniform('uCameraRange',     [camNear, camFar]);
+        _softShader.setUniform('sTexture', _cloudTex);
+        _softShader.setUniform('sDepth', sceneFBO.depth);
+        _softShader.setUniform('uCameraRange', [camNear, camFar]);
         _softShader.setUniform('uInvViewportSize', [1 / (width * pxD), 1 / (height * pxD)]);
-        _softShader.setUniform('uTransitionSize',  0.05);
+        _softShader.setUniform('uTransitionSize', 0.05);
       }
       if (useBillowSprites) texture(_cloudTex);
 
@@ -389,9 +389,9 @@ class ParticleSystem {
         }
 
         let lifeNorm = p.life / 255.0;
-        let t        = 1.0 - lifeNorm;
+        let t = 1.0 - lifeNorm;
         // Alpha in [0, 1] — fade in over the first 40 % of lifetime
-        let alpha    = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
+        let alpha = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
         if (p.isFog) alpha *= p.isInkBurst ? 1.15 : 0.85;  // Burst clouds are much denser/darker
         if (p.isThrust) alpha *= 0.42; // Thrust smoke should stay soft/translucent
         if (alpha <= 0.02) continue;
@@ -473,11 +473,13 @@ class ParticleSystem {
           }
           pop();
         } else {
-          // Fallback: unlit sphere when soft shader is unavailable
+          // Fallback: LOW-POLY unlit sphere when soft shader is unavailable (Mobile).
+          // Using detail (5,4) reduces triangles from ~700 to 40 per particle,
+          // saving over 100k vertices per frame on mobile devices.
           push();
           translate(p.x, p.y, p.z);
           fill(r, g, b, alpha * 255);
-          sphere((p.size || 8) / 2);
+          sphere((p.size || 8) / 2, 5, 4);
           pop();
         }
       }
@@ -523,10 +525,10 @@ class ParticleSystem {
       if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
 
       let lifeNorm = p.life / 255.0;
-      let t        = 1.0 - lifeNorm;
-      let alpha    = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 255 : 255;
+      let t = 1.0 - lifeNorm;
+      let alpha = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 255 : 255;
 
-      let d    = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
+      let d = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
       let wave = 1400.0 * Math.pow(t, 0.6);
       let diff = wave - d;
       if (diff < -50) continue;  // Behind wave front — skip

@@ -32,17 +32,51 @@ function findChrome() {
 
 (async function run() {
   const app = express();
-  const staticMiddleware = express.static(__dirname);
+  const ALLOWED_FILES = new Set([
+    '/index.html',
+    '/style.css',
+    '/sketch.js',
+    '/sketch.min.js',
+    '/constants.js',
+    '/terrain.js',
+    '/particles.js',
+    '/enemies.js',
+    '/player.js',
+    '/hud.js',
+    '/sfx.js',
+    '/shipDesigns.js',
+    '/aimAssist.js',
+    '/mobileControls.js',
+    '/p5.js',
+    '/p5.min.js',
+    '/p5.sound.min.js',
+    '/Impact.ttf'
+  ]);
+  const staticMiddleware = express.static(__dirname, { fallthrough: false });
   app.use((req, res, next) => {
-    if (!/\.(html|js|css|ttf|wav|mp3|ogg|png)$/i.test(req.path)) {
+    if (!ALLOWED_FILES.has(req.path)) {
       return res.status(404).end();
     }
     return staticMiddleware(req, res, next);
   });
-  const server = app.listen(PORT, async () => {
+  const server = app.listen(PORT, '127.0.0.1', async () => {
     let browser;
     try {
-      const launchOpts = { headless: 'new', args: ['--no-sandbox'] };
+      const launchOpts = {
+        headless: 'new',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-background-networking',
+          '--disable-default-apps',
+          '--no-first-run',
+          '--metrics-recording-only',
+          '--safebrowsing-disable-auto-update',
+          '--disable-sync',
+          '--disable-translate'
+        ]
+      };
       const chromePath = findChrome();
       if (chromePath) launchOpts.executablePath = chromePath;
       browser = await puppeteer.launch(launchOpts);

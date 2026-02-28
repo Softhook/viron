@@ -202,7 +202,7 @@ const SHIP_DESIGNS = [
         drag: 0.993,
         thrustAngle: Math.PI / 4,
         mass: 0.9,
-        lift: 0.010,
+        lift: 0.015,
         brakeRate: 0.95,
         missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -230,7 +230,7 @@ const SHIP_DESIGNS = [
         drag: 0.992,
         thrustAngle: Math.PI / 4,
         mass: 1.1,
-        lift: 0.009,
+        lift: 0.015,
         brakeRate: 0.96,
         missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -266,7 +266,7 @@ const SHIP_DESIGNS = [
         drag: 0.995,
         thrustAngle: Math.PI / 4,
         mass: 0.7,
-        lift: 0.005,
+        lift: 0.012,
         brakeRate: 0.96,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -299,7 +299,7 @@ const SHIP_DESIGNS = [
         drag: 0.992,
         thrustAngle: Math.PI / 2,
         mass: 1.0,
-        lift: 0.008,
+        lift: 0.018,
         brakeRate: 0.96,
         missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -343,7 +343,7 @@ const SHIP_DESIGNS = [
         drag: 0.996,
         thrustAngle: Math.PI / 2,
         mass: 0.6,
-        lift: 0.014,
+        lift: 0.024,
         brakeRate: 0.98,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -379,7 +379,7 @@ const SHIP_DESIGNS = [
         drag: 0.992,
         thrustAngle: Math.PI / 2,
         mass: 0.9,
-        lift: 0.007,
+        lift: 0.020,
         brakeRate: 0.97,
         missileCapacity: 3,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
@@ -427,7 +427,7 @@ const SHIP_DESIGNS = [
         drag: 0.997,
         thrustAngle: Math.PI / 2,
         mass: 0.5,
-        lift: 0.012,
+        lift: 0.028,
         brakeRate: 0.99,
         missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {

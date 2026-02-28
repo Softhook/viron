@@ -1,6 +1,6 @@
 // =============================================================================
 
-const HUD_WEAPON_LABELS = ['\u25CF NORMAL', '\uD83D\uDE80 MISSILE', '\u25A0 BARRIER'];
+const HUD_WEAPON_LABELS = ['NORMAL', 'MISSILE', 'BARRIER'];
 const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
 const HUD_HINT_CACHE = Object.create(null);
 const RADAR_SCALE = 0.012;
@@ -474,8 +474,8 @@ function drawPlayerHUD(p, pi, hw, h) {
   {
     let pillW = 82, pillH = 22, pillGap = 8;
     let totalW = 3 * pillW + 2 * pillGap;
-    let startX = -totalW / 2;
-    let pillY = -h / 2 + 8;   // Near the very top of the viewport
+    let startX = floor(-totalW / 2);
+    let pillY = floor(-h / 2 + 8);   // Near the very top of the viewport
     textAlign(CENTER, TOP);
     for (let i = 0; i < 3; i++) {
       let px = startX + i * (pillW + pillGap);
@@ -488,7 +488,7 @@ function drawPlayerHUD(p, pi, hw, h) {
         // Label in dark ink
         fill(0, 0, 0);
         textSize(11);
-        text(HUD_WEAPON_LABELS[i], px + pillW / 2, pillY + 5);
+        text(HUD_WEAPON_LABELS[i], floor(px + pillW / 2), pillY + 5);
       } else {
         // Outline pill
         noFill();
@@ -498,7 +498,7 @@ function drawPlayerHUD(p, pi, hw, h) {
         noStroke();
         fill(180, 180, 180, 130);
         textSize(11);
-        text(HUD_WEAPON_LABELS[i], px + pillW / 2, pillY + 5);
+        text(HUD_WEAPON_LABELS[i], floor(px + pillW / 2), pillY + 5);
       }
     }
   }

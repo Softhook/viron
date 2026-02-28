@@ -832,7 +832,7 @@ function renderInFlightBarriers(camX, camZ) {
 // ---------------------------------------------------------------------------
 
 /**
- * Renders the player's bullets (small coloured cubes) and homing missiles
+ * Renders the player's bullets (small coloured spheres) and homing missiles
  * (cyan cubes) from the perspective of the given viewport camera.
  * Objects beyond 80% of CULL_DIST are skipped.
  * @param {object} p     Player state containing bullets[] and homingMissiles[].
@@ -841,12 +841,22 @@ function renderInFlightBarriers(camX, camZ) {
  */
 function renderProjectiles(p, camX, camZ) {
   let cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
+  let bulletR = 4; // Player bullet size control (sphere radius)
+  let bulletDetailX = 4;
+  let bulletDetailY = 3;
+  let br = p.labelColor[0], bg = p.labelColor[1], bb = p.labelColor[2];
+
+  // Bullets use low-poly flat spheres for a simple explosion-like look.
+  noLights();
+  noStroke();
+  fill(br, bg, bb);
 
   for (let b of p.bullets) {
-    if ((b.x - camX) ** 2 + (b.z - camZ) ** 2 > cullSq) continue;
-    push(); translate(b.x, b.y, b.z); noStroke();
-    fill(p.labelColor[0], p.labelColor[1], p.labelColor[2]);
-    box(6);
+    let dx = b.x - camX;
+    let dz = b.z - camZ;
+    if (dx * dx + dz * dz > cullSq) continue;
+    push(); translate(b.x, b.y, b.z);
+    sphere(bulletR, bulletDetailX, bulletDetailY);
     pop();
   }
 

@@ -553,10 +553,11 @@ class ParticleSystem {
       push(); translate(b.x, b.y, b.z); noStroke(); fill(200, 50, 50); box(8, 20, 8); pop();
     }
 
-    // Enemy bullets — red spheres
+    // Enemy bullets — flat red spheres.
     noLights(); noStroke();
+    let enemyBulletR = 4; // Enemy bullet size control (sphere radius)
     for (let b of this.enemyBullets) {
-      push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(3); pop();
+      push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(enemyBulletR, 4, 3); pop();
     }
   }
 }

@@ -11,9 +11,9 @@
  */
 'use strict';
 
-const express   = require('express');
+const express = require('express');
 const puppeteer = require('puppeteer');
-const fs        = require('fs');
+const fs = require('fs');
 
 const PORT = process.env.VIRON_PORT ? Number(process.env.VIRON_PORT) : 0;
 const TARGET_TILES = Number(process.env.VIRON_TILES || 1500);
@@ -98,6 +98,8 @@ async function run() {
           for (let tx = -20; tx < 40 && added < tileCount; tx++) {
             if (tx >= 0 && tx < 7 && tz >= 0 && tz < 7) continue; // skip launchpad area
             infection.add(tileKey(tx, tz));
+            // Seed a parallel block of barriers
+            barrierTiles.set(tileKey(tx + 10, tz), { k: tileKey(tx + 10, tz), tx: tx + 10, tz: tz, verts: null });
             added++;
           }
         }

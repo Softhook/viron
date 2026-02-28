@@ -26,8 +26,8 @@ let levelComplete = false;     // True once all Viron has been cleared
 let infectionStarted = false;     // Latches to true when the first tile is infected
 
 // Barrier tile Map — mirrors `infection` but marks immune/blocked tiles.
-// Stores {k, tx, tz, verts} objects to allow vertex caching.
-let barrierTiles = new Map();
+// Stores {k, tx, tz, verts} objects using TileManager for fast iteration.
+let barrierTiles = new TileManager();
 
 // In-flight barrier projectile objects — environment state, not per-player.
 // Same structure as bullets/missiles: { x, y, z, vx, vy, vz, life }.
@@ -774,7 +774,7 @@ function spreadInfection() {
   let lpInfected = 0;
   for (let tx = 0; tx < 7; tx++) {
     for (let tz = 0; tz < 7; tz++) {
-      if (infection.tiles[tileKey(tx, tz)]) lpInfected++;
+      if (infection.has(tileKey(tx, tz))) lpInfected++;
     }
   }
   if (lpInfected >= 49) {
@@ -801,7 +801,7 @@ function spreadInfection() {
     let d = ORTHO_DIRS[floor(random(4))];
     let nx = t.tx + d[0], nz = t.tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
-    if (aboveSea(terrain.getAltitude(wx, wz)) || infection.tiles[nk]) continue;
+    if (aboveSea(terrain.getAltitude(wx, wz)) || infection.has(nk)) continue;
     freshSet.add(nk);
   }
 
@@ -810,7 +810,7 @@ function spreadInfection() {
   for (let b of buildings) {
     if (b.type !== 4) continue;
     let stx = toTile(b.x), stz = toTile(b.z);
-    if (!infection.tiles[tileKey(stx, stz)]) continue;  // Only when this sentinel is infected
+    if (!infection.has(tileKey(stx, stz))) continue;  // Only when this sentinel is infected
     // Blast outward in a ~5-tile radius circle with high per-tile probability
     for (let ddx = -SENTINEL_INFECTION_RADIUS; ddx <= SENTINEL_INFECTION_RADIUS; ddx++) {
       for (let ddz = -SENTINEL_INFECTION_RADIUS; ddz <= SENTINEL_INFECTION_RADIUS; ddz++) {
@@ -819,7 +819,7 @@ function spreadInfection() {
         let nx = stx + ddx, nz = stz + ddz;
         let nk = tileKey(nx, nz);
         let wx = nx * TILE, wz = nz * TILE;
-        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infection.tiles[nk]) {
+        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infection.has(nk)) {
           freshSet.add(nk);
         }
       }
@@ -832,7 +832,7 @@ function spreadInfection() {
     if (barrierTiles.has(nk)) continue;
 
     infection.add(nk);
-    let o = infection.tiles[nk];
+    let o = infection.tiles.get(nk);
     let wx = o.tx * TILE, wz = o.tz * TILE;
     // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
     if (typeof gameSFX !== 'undefined' && soundCount < 3) {

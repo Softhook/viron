@@ -31,9 +31,9 @@ const TERRAIN_PALETTE = {
 const TERRAIN_PALETTE_FLAT = (() => {
   let p = TERRAIN_PALETTE;
   let arr = [];
-  for (let c of p.inland)  arr.push(...c);
-  for (let c of p.shore)   arr.push(...c);
-  for (let c of p.viron)   arr.push(...c);
+  for (let c of p.inland) arr.push(...c);
+  for (let c of p.shore) arr.push(...c);
+  for (let c of p.viron) arr.push(...c);
   for (let c of p.barrier) arr.push(...c);
   return arr.map(v => v / 255.0);
 })();
@@ -214,8 +214,14 @@ class Terrain {
     // Pre-allocated uniform upload buffers — reused every frame to avoid GC churn.
     // pulseArr  : 5 pulses × 4 floats  (x, z, startTime, type)
     // glowArr   : 2 sentinels × 4 floats (x, z, radius, active)
-    this._pulseArr = new Array(20).fill(0);
-    this._glowArr  = new Array(8).fill(0);
+    this._pulseArr = new Float32Array(20);
+    this._glowArr = new Float32Array(8);
+
+    // Pre-allocated overlay buffers for batching viron/barrier quads.
+    // Fixed size based on MAX_INF (2000) with a 2x safety margin.
+    // Each tile = 6 vertices × 3 floats = 18 floats.
+    this._overlayBuffer0 = new Float32Array(5000 * 18);
+    this._overlayBuffer1 = new Float32Array(5000 * 18);
   }
 
   // ---------------------------------------------------------------------------
@@ -411,9 +417,9 @@ class Terrain {
           // Grid corners are always exact tile boundaries (fx=0, fz=0), so call
           // getGridAltitude() directly — it hits the altCache with a single Map.get()
           // and skips the bilinear interpolation logic in getAltitude().
-          let y00 = this.getGridAltitude(tx,     tz    );
-          let y10 = this.getGridAltitude(tx + 1, tz    );
-          let y01 = this.getGridAltitude(tx,     tz + 1);
+          let y00 = this.getGridAltitude(tx, tz);
+          let y10 = this.getGridAltitude(tx + 1, tz);
+          let y01 = this.getGridAltitude(tx, tz + 1);
           let y11 = this.getGridAltitude(tx + 1, tz + 1);
           let minY = Math.min(y00, y10, y01, y11);
           if (aboveSea(minY)) continue;
@@ -487,12 +493,12 @@ class Terrain {
     for (let i = 0; i < 5; i++) {
       const base = i * 4;
       if (i < this.activePulses.length) {
-        pulseArr[base]     = this.activePulses[i].x;
+        pulseArr[base] = this.activePulses[i].x;
         pulseArr[base + 1] = this.activePulses[i].z;
         pulseArr[base + 2] = this.activePulses[i].start;
         pulseArr[base + 3] = this.activePulses[i].type || 0.0;
       } else {
-        pulseArr[base]     = 0.0;
+        pulseArr[base] = 0.0;
         pulseArr[base + 1] = 0.0;
         pulseArr[base + 2] = -9999.0;  // Inactive: age never reaches 0
         pulseArr[base + 3] = 0.0;
@@ -506,12 +512,12 @@ class Terrain {
       const base = i * 4;
       if (i < this.sentinelGlows.length) {
         const g = this.sentinelGlows[i];
-        glowArr[base]     = g.x;
+        glowArr[base] = g.x;
         glowArr[base + 1] = g.z;
         glowArr[base + 2] = g.radius;
         glowArr[base + 3] = 1.0;  // active
       } else {
-        glowArr[base]     = 0.0;
+        glowArr[base] = 0.0;
         glowArr[base + 1] = 0.0;
         glowArr[base + 2] = 0.0;
         glowArr[base + 3] = 0.0;  // inactive slot
@@ -547,7 +553,11 @@ class Terrain {
     const profiler = getVironProfiler();
     const overlayStart = profiler ? performance.now() : 0;
     let overlayCount = 0;
-    let verts0 = [], verts1 = [];
+
+    // Use pre-allocated Float32Arrays to avoid per-frame GC churn.
+    const b0 = this._overlayBuffer0;
+    const b1 = this._overlayBuffer1;
+    let i0 = 0, i1 = 0;
 
     for (const t of tiles) {
       if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
@@ -560,32 +570,37 @@ class Terrain {
 
       if (!t.verts) {
         const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
+        // Vertex data is stored in a simple array; TypedArray.set() handles the conversion during copy.
         t.verts = [
-          xP,  this.getAltitude(xP,  zP)  + yOffset, zP,
-          xP1, this.getAltitude(xP1, zP)  + yOffset, zP,
-          xP,  this.getAltitude(xP,  zP1) + yOffset, zP1,
-          xP1, this.getAltitude(xP1, zP)  + yOffset, zP,
+          xP, this.getAltitude(xP, zP) + yOffset, zP,
+          xP1, this.getAltitude(xP1, zP) + yOffset, zP,
+          xP, this.getAltitude(xP, zP1) + yOffset, zP1,
+          xP1, this.getAltitude(xP1, zP) + yOffset, zP,
           xP1, this.getAltitude(xP1, zP1) + yOffset, zP1,
-          xP,  this.getAltitude(xP,  zP1) + yOffset, zP1
+          xP, this.getAltitude(xP, zP1) + yOffset, zP1
         ];
       }
 
       overlayCount++;
-      const bucket = ((t.tx + t.tz) % 2 === 0) ? verts0 : verts1;
-      const bLen = bucket.length;
-      for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
+      if (((t.tx + t.tz) % 2 === 0)) {
+        b0.set(t.verts, i0);
+        i0 += 18;
+      } else {
+        b1.set(t.verts, i1);
+        i1 += 18;
+      }
     }
 
-    if (verts0.length) {
+    if (i0 > 0) {
       fill(matEven, 0, 0, 255);
       beginShape(TRIANGLES);
-      for (let i = 0; i < verts0.length; i += 3) vertex(verts0[i], verts0[i + 1], verts0[i + 2]);
+      for (let i = 0; i < i0; i += 3) vertex(b0[i], b0[i + 1], b0[i + 2]);
       endShape();
     }
-    if (verts1.length) {
+    if (i1 > 0) {
       fill(matOdd, 0, 0, 255);
       beginShape(TRIANGLES);
-      for (let i = 0; i < verts1.length; i += 3) vertex(verts1[i], verts1[i + 1], verts1[i + 2]);
+      for (let i = 0; i < i1; i += 3) vertex(b1[i], b1[i + 1], b1[i + 2]);
       endShape();
     }
     if (profiler && tag) {

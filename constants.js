@@ -116,8 +116,11 @@ const P2_KEYS = {
 // Pure helper functions — no side-effects, no p5 calls
 // =============================================================================
 
-/** Returns a Map key string for a tile coordinate pair. */
-const tileKey = (tx, tz) => tx + ',' + tz;
+/** Returns a numeric Map key string for a tile coordinate pair.
+ * Encodes X and Z into a single positive integer: (X+10000)*20001 + (Z+10000).
+ * Safe for coordinates from -10000 to 10000.
+ */
+const tileKey = (tx, tz) => (tx + 10000) * 20001 + (tz + 10000);
 
 /** Converts a world-space coordinate to its containing tile index. */
 const toTile = v => Math.floor(v / TILE);
@@ -129,68 +132,91 @@ const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_
 const aboveSea = y => y >= SEA - 1;
 
 // =============================================================================
-// InfectionManager — single source of truth for all infected tile state
+// TileManager — generic container for keyed world tiles (Infection or Barriers)
 //
 // Centralises every read and write so the running count is always in sync
-// with the tile map.  All modules that previously accessed `infectedTiles`
-// and `infectedCount` directly now use `infection.*`.
+// with the tile map.  Uses numeric keys for O(1) Map lookups and a packed
+// Array with a swap-with-last removal technique for O(1) removal while 
+// maintaining a fast iteration list (no iterator overhead).
 // =============================================================================
-class InfectionManager {
+class TileManager {
   constructor() {
-    /**
-     * @type {Object<string,object>} Tile-key → {k, tx, tz, verts} map.
-     * READ-ONLY from outside the class.
-     */
-    this.tiles = {};
+    /** @type {Map<number,object>} Tile-key → {k, tx, tz, verts, _idx} map. */
+    this.tiles = new Map();
     /** @type {number} Running count — always in sync with this.tiles. */
     this.count = 0;
-    /** @type {object[]} Persistent list of tile objects. */
+    /** @type {object[]} Persistent array of tile objects for fast iteration. */
     this.keyList = [];
   }
 
-  /** Clears all infection state. Called at the start of each level. */
-  reset() { this.tiles = {}; this.count = 0; this.keyList = []; }
-
-  /**
-   * Marks tile key k as infected.
-   * @param {string} k  Tile key from tileKey().
-   * @returns {boolean} true if the tile was newly infected (was not already set).
-   */
-  add(k) {
-    if (this.tiles[k]) return false;
-    const comma = k.indexOf(',');
-    const tx = +k.slice(0, comma);
-    const tz = +k.slice(comma + 1);
-    const obj = { k, tx, tz, verts: null };
-    this.tiles[k] = obj;
-    this.count++;
-    this.keyList.push(obj);
-    return true;
+  /** Clears all tile state. */
+  reset() {
+    this.tiles.clear();
+    this.count = 0;
+    this.keyList.length = 0;
   }
 
   /**
-   * Removes the infection on tile key k.
-   * @param {string} k  Tile key from tileKey().
+   * Adds a tile.
+   * @param {number} k  Numeric tile key from tileKey().
+   * @returns {object|null} the newly added tile object, or null if it already existed.
+   */
+  add(k) {
+    if (this.tiles.has(k)) return null;
+    const tx = Math.floor(k / 20001) - 10000;
+    const tz = (k % 20001) - 10000;
+    const obj = { k, tx, tz, verts: null, _idx: this.keyList.length };
+    this.tiles.set(k, obj);
+    this.count++;
+    this.keyList.push(obj);
+    return obj;
+  }
+
+  /**
+   * Removes a tile by key k.
+   * @param {number} k  Numeric tile key from tileKey().
    * @returns {boolean} true if the tile existed and was removed.
    */
   remove(k) {
-    if (!this.tiles[k]) return false;
-    delete this.tiles[k];
+    const obj = this.tiles.get(k);
+    if (!obj) return false;
+
+    const idx = obj._idx;
+    const last = this.keyList[this.keyList.length - 1];
+
+    this.keyList[idx] = last;
+    last._idx = idx;
+    this.keyList.pop();
+
+    this.tiles.delete(k);
     this.count--;
-    const idx = this.keyList.findIndex(o => o.k === k);
-    if (idx !== -1) this.keyList.splice(idx, 1);
     return true;
   }
 
-  /** Returns true if tile key k is currently infected. */
-  has(k) { return !!this.tiles[k]; }
+  /** Returns true if tile key k is present. */
+  has(k) { return this.tiles.has(k); }
 
-  /** Returns the persistent array of all infected tile keys. */
+  /** Returns the tile object for key k, or undefined. */
+  get(k) { return this.tiles.get(k); }
+
+  /** Returns the persistent array of all tile objects. */
   keys() { return this.keyList; }
+
+  /** Compatibility with existing Map.values() usage (returns the array). */
+  values() { return this.keyList; }
+
+  /** Compatibility with existing Map.set() usage. */
+  set(k, v) { return this.add(k); }
+
+  /** Compatibility with existing Map.clear() usage. */
+  clear() { this.reset(); }
+
+  /** Compatibility with internal Map usage. */
+  get size() { return this.count; }
 }
 
 /** Singleton infection state shared across all modules. */
-const infection = new InfectionManager();
+const infection = new TileManager();
 
 // =============================================================================
 // Lightweight opt-in profiler (no overhead unless window.VIRON_PROFILE is set)

@@ -204,8 +204,8 @@ class AimAssist {
         // Scan 22×22 tile window — fast: mostly hash lookups + cheap vector math
         for (let tz = shipTz - 11; tz <= shipTz + 11; tz++) {
             for (let tx = shipTx - 11; tx <= shipTx + 11; tx++) {
-                let k = tx + ',' + tz;
-                if (infection.tiles[k]) {
+                let k = tileKey(tx, tz);
+                if (infection.has(k)) {
                     let vx = tx * 120 + 60 - ship.x;
                     let vy = 300 - ship.y; // Rough constant Y for fast rejection
                     let vz = tz * 120 + 60 - ship.z;
@@ -224,7 +224,8 @@ class AimAssist {
             return null;
         }
 
-        let [tx, tz] = bestTileK.split(',').map(Number);
+        const tx = Math.floor(bestTileK / 20001) - 10000;
+        const tz = (bestTileK % 20001) - 10000;
         let txPos = tx * 120 + 60, tzPos = tz * 120 + 60;
         let tyPos = terrain.getAltitude(txPos, tzPos); // Expensive — called only once
 

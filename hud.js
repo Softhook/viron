@@ -242,12 +242,12 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     // Ship Name (Largest)
     fill(p.labelColor[0], p.labelColor[1], p.labelColor[2]);
     textSize(54);
-    text(design.name.toUpperCase(), relX, vh / 2 - 225);
+    text(design.name.toUpperCase(), relX, vh / 2 - 320);
 
     // Role (Gold)
     fill(255, 200, 0);
     textSize(20);
-    text(design.role || "UNKNOWN ROLE", relX, vh / 2 - 170);
+    text(design.role || "UNKNOWN ROLE", relX, vh / 2 - 270);
 
     // Thrust type label (Subtle)
     textSize(14);
@@ -255,14 +255,45 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     let thrustType = "VTOL / HOVER";
     if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
     if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
-    text(thrustType, relX, vh / 2 - 145);
+    text(thrustType, relX, vh / 2 - 245);
 
     // Description (Body text, wrapped)
     fill(220);
     textSize(14);
     rectMode(CENTER);
-    text(design.desc || "", relX, vh / 2 - 105, vw * 0.85);
+    text(design.desc || "", relX, vh / 2 - 215, vw * 0.85);
     rectMode(CORNER);
+
+    // --- Stats Panel ---
+    let statY = vh / 2 - 195;
+    let statW = vw * 0.4;
+    let statX = relX - statW / 2;
+
+    const drawStat = (label, val, maxVal, row) => {
+      let y = statY + row * 18;
+      textAlign(RIGHT, TOP);
+      fill(180);
+      textSize(11);
+      text(label, statX - 10, y + 2);
+
+      // Bar background
+      fill(40);
+      rect(statX, y + 3, statW, 8, 2);
+      // Bar fill (using player color)
+      fill(p.labelColor[0], p.labelColor[1], p.labelColor[2], 200);
+      let fillW = map(val, 0, maxVal, 0, statW, true);
+      rect(statX, y + 3, fillW, 8, 2);
+    };
+
+    let effectiveThrust = (design.thrust || 0.45) / (design.mass || 1.0);
+    let effectiveTurn = (design.turnRate || 0.04) / (design.mass || 1.0);
+
+    drawStat("ACCEL", effectiveThrust, 1.6, 0);
+    drawStat("AGILITY", effectiveTurn, 0.12, 1);
+    drawStat("GLIDE", design.lift || 0.008, 0.02, 2);
+    drawStat("MISSILES", design.missileCapacity || 1, 5, 3);
+
+    textAlign(CENTER, TOP);
   }
 
   // Selection Hints / Mobile Buttons
@@ -290,7 +321,7 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     fill(200, 200, 200, 150);
     let hint = (pi === 0) ? "A / D TO CYCLE \u2022 ENTER TO READY" : "ARROWS TO CYCLE \u2022 . TO READY";
     if (numPlayers === 1) hint = "LEFT / RIGHT TO CYCLE \u2022 ENTER TO START";
-    text(hint, relX, vh / 2 - 65);
+    text(hint, relX, vh / 2 - 35);
   }
 
   // Ready State

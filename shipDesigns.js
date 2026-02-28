@@ -22,6 +22,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.04,
         drag: 0.992,
         thrustAngle: 0,
+        mass: 1.0,
+        lift: 0.008,
+        brakeRate: 0.96,
+        missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let nose = [0, 0, -32], tL = [-16, 6, 12], tR = [16, 6, 12], top = [0, -8, 12];
@@ -47,6 +51,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.045,
         drag: 0.994,
         thrustAngle: 0,
+        mass: 0.8,
+        lift: 0.012,
+        brakeRate: 0.97,
+        missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 // Main Fuselage (Diamond/Sleek)
@@ -96,6 +104,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.025,
         drag: 0.988,
         thrustAngle: 0,
+        mass: 1.8,
+        lift: 0.003,
+        brakeRate: 0.92,
+        missileCapacity: 3,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 // Main fuselage (blocky)
@@ -141,6 +153,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.03,
         drag: 0.985,
         thrustAngle: 0,
+        mass: 1.2,
+        lift: 0.015,
+        brakeRate: 0.98,
+        missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 // Central sphere-ish hub (octagonal)
@@ -185,6 +201,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.035,
         drag: 0.993,
         thrustAngle: Math.PI / 4,
+        mass: 0.9,
+        lift: 0.010,
+        brakeRate: 0.95,
+        missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -45], b1 = [-5, -2, 0], b2 = [5, -2, 0], b3 = [0, 3, 5];
@@ -209,6 +229,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.05,
         drag: 0.992,
         thrustAngle: Math.PI / 4,
+        mass: 1.1,
+        lift: 0.009,
+        brakeRate: 0.96,
+        missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 2, -35], mT = [0, -4, 0], mL = [-6, 0, 5], mR = [6, 0, 5], mB = [0, 4, 10];
@@ -241,6 +265,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.02,
         drag: 0.995,
         thrustAngle: Math.PI / 4,
+        mass: 0.7,
+        lift: 0.005,
+        brakeRate: 0.96,
+        missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 2, -40], l1 = [-25, 4, 15], r1 = [25, 4, 15], t1 = [0, -2, 10];
@@ -270,6 +298,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.04,
         drag: 0.992,
         thrustAngle: Math.PI / 2,
+        mass: 1.0,
+        lift: 0.008,
+        brakeRate: 0.96,
+        missileCapacity: 2,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -42];
@@ -310,6 +342,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.045,
         drag: 0.996,
         thrustAngle: Math.PI / 2,
+        mass: 0.6,
+        lift: 0.014,
+        brakeRate: 0.98,
+        missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -32], cp = [0, -5, -8], mL = [-6, 2, 5], mR = [6, 2, 5], t = [0, 4, 15], b = [0, 6, 0];
@@ -342,6 +378,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.06,
         drag: 0.992,
         thrustAngle: Math.PI / 2,
+        mass: 0.9,
+        lift: 0.007,
+        brakeRate: 0.97,
+        missileCapacity: 3,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, -2, -45], bT = [0, -8, -5], bB = [0, 6, 15], bL = [-8, 0, 5], bR = [8, 0, 5];
@@ -386,6 +426,10 @@ const SHIP_DESIGNS = [
         pitchRate: 0.035,
         drag: 0.997,
         thrustAngle: Math.PI / 2,
+        mass: 0.5,
+        lift: 0.012,
+        brakeRate: 0.99,
+        missileCapacity: 1,
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -60], neck = [0, 0, -20], base = [0, 0, 30], mT = [0, -4, 0], mB = [0, 4, 0], mL = [-4, 0, 0], mR = [4, 0, 0];

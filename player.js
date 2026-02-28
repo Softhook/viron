@@ -34,6 +34,12 @@ function getSpawnX(p) {
  */
 function resetShip(p, offsetX) {
   p.ship = { x: offsetX, y: LAUNCH_ALT, z: 420, vx: 0, vy: 0, vz: 0, pitch: 0, yaw: 0 };
+  let d = SHIP_DESIGNS[p.designIndex || 0];
+  if (d) {
+    p.missilesRemaining = d.missileCapacity || 1;
+  } else {
+    p.missilesRemaining = 1;
+  }
 }
 
 /**
@@ -435,9 +441,10 @@ function updateShipInput(p) {
   }
 
   // --- Keyboard steering ---
-  let d = SHIP_DESIGNS[p.designIndex] || { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45 };
-  let currentYawRate = d.turnRate || YAW_RATE;
-  let currentPitchRate = d.pitchRate || PITCH_RATE;
+  let d = SHIP_DESIGNS[p.designIndex] || { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };
+  let m = d.mass || 1.0;
+  let currentYawRate = (d.turnRate || YAW_RATE) / m;
+  let currentPitchRate = (d.pitchRate || PITCH_RATE) / m;
 
   if (keyIsDown(k.left)) p.ship.yaw += currentYawRate;
   if (keyIsDown(k.right)) p.ship.yaw -= currentYawRate;
@@ -473,7 +480,7 @@ function updateShipInput(p) {
   let currentDrag = d.drag || DRAG;
 
   if (fSpd > 0) {
-    let liftAccel = fSpd * LIFT_FACTOR;
+    let liftAccel = fSpd * (d.lift ?? LIFT_FACTOR);
     s.vx += ux_L * liftAccel;
     s.vy += uy_L * liftAccel;
     s.vz += uz_L * liftAccel;
@@ -483,7 +490,7 @@ function updateShipInput(p) {
   }
 
   if (isThrusting) {
-    let pw = d.thrust || 0.45;
+    let pw = (d.thrust || 0.45) / m;
     let dVec = shipUpDir(s, p.designIndex);
     s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
 
@@ -546,7 +553,8 @@ function updateShipInput(p) {
   }
 
   if (isBraking) {
-    s.vx *= 0.96; s.vy *= 0.96; s.vz *= 0.96;
+    let br = d.brakeRate ?? 0.96;
+    s.vx *= br; s.vy *= br; s.vz *= br;
   }
 
   // Fire based on selected weapon mode

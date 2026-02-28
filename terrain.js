@@ -441,6 +441,13 @@ class Terrain {
       out.length = maxTreesPerChunk;
     }
 
+    // Static world: cache expensive lookups once per tree instance.
+    for (let i = 0; i < out.length; i++) {
+      const t = out[i];
+      t.k = tileKey(t.tx, t.tz);
+      t.y = this.getAltitude(t.x, t.z);
+    }
+
     this._procTreeChunkCache.set(key, out);
     return out;
   }
@@ -917,6 +924,7 @@ class Terrain {
     let treeCullDist = VIEW_FAR * TILE;
     let cullSq = treeCullDist * treeCullDist;
     let cam = this._cam || this.getCameraParams(s);
+    const shadowQueue = [];
 
     let gx = toTile(s.x), gz = toTile(s.z);
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
@@ -933,14 +941,14 @@ class Terrain {
         let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
         if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
 
-        let y = this.getAltitude(t.x, t.z);
+        let y = t.y;
         if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
 
         push();
         translate(t.x, y, t.z);
 
         let { trunkH: h, canopyScale: sc, variant: vi } = t;
-        let inf = infection.has(tileKey(t.tx, t.tz));
+        let inf = infection.has(t.k);
         let depth = (t.x - cam.x) * cam.fwdX + (t.z - cam.z) * cam.fwdZ;
 
         let trCol = this.getFogColor([inf ? 80 : 100, inf ? 40 : 65, inf ? 20 : 25], depth);
@@ -964,12 +972,22 @@ class Terrain {
           }
         }
 
-        if (dSq < 2250000) {
-          push(); translate(0, -0.5, 8); rotateX(PI / 2); fill(0, 0, 0, 40); ellipse(0, 0, 20 * sc, 12 * sc); pop();
-        }
+        if (dSq < 1210000) shadowQueue.push([t.x, y, t.z, sc]);
         pop();
         }
       }
+    }
+
+    // Draw all projected shadows in one pass.
+    noStroke();
+    fill(0, 0, 0, 40);
+    for (let i = 0; i < shadowQueue.length; i++) {
+      const sData = shadowQueue[i];
+      push();
+      translate(sData[0], sData[1] - 0.5, sData[2] + 8);
+      rotateX(PI / 2);
+      ellipse(0, 0, 20 * sData[3], 12 * sData[3]);
+      pop();
     }
   }
 

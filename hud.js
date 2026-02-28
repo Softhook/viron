@@ -26,40 +26,7 @@
  *   7. Control hint line at the bottom
  */
 function drawMenu() {
-  // --- 3D Landscape background ---
-  let gl = drawingContext;
-  let pxD = pixelDensity();
-  gl.viewport(0, 0, width * pxD, height * pxD);
-  gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);   // sky colour
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-  push();
-  perspective(PI / 3, width / height, 50, VIEW_FAR * TILE * 1.5);
-
-  // Slowly pan the camera yaw around the landscape
-  menuCam.yaw += 0.0006;
-
-  // Camera sits 550 units "behind" the look-at point, low to the ground
-  let cx = menuCam.x + sin(menuCam.yaw) * 550;
-  let cz = menuCam.z + cos(menuCam.yaw) * 550;
-  let cy = -90;   // below horizon for dramatic low-angle view
-  camera(cx, cy, cz, menuCam.x, -10, menuCam.z, 0, 1, 0);
-
-  // Fake ship object used by terrain culling helpers
-  let fakeShip = {
-    x: menuCam.x, y: cy, z: menuCam.z,
-    yaw: menuCam.yaw, pitch: 0
-  };
-
-  setSceneLighting();
-  terrain.drawLandscape(fakeShip, width / height);
-  terrain.drawTrees(fakeShip);
-  terrain.drawBuildings(fakeShip);
-
-  pop();
-
-  // Clear depth so 2D overlays always appear on top
-  gl.clear(gl.DEPTH_BUFFER_BIT);
+  drawBackgroundLandscape();
 
   // --- 2D Overlays ---
   setup2DViewport();
@@ -161,13 +128,52 @@ function drawGameOver() {
 }
 
 /**
+ * Renders the shared 3D landscape background used by the title and selection screens.
+ * Pans the menuCam slowly around a low-altitude point in the world.
+ */
+function drawBackgroundLandscape() {
+  let gl = drawingContext;
+  let pxD = pixelDensity();
+
+  // 1. Setup viewport and clear
+  gl.viewport(0, 0, width * pxD, height * pxD);
+  gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // 2. 3D Scene drawing
+  push();
+  perspective(PI / 3, width / height, 50, VIEW_FAR * TILE * 1.5);
+
+  // Update panning animation
+  menuCam.yaw += 0.0006;
+
+  // Position camera low to the ground, panning in a circle
+  let cx = menuCam.x + sin(menuCam.yaw) * 550;
+  let cz = menuCam.z + cos(menuCam.yaw) * 550;
+  let cy = -90;
+  camera(cx, cy, cz, menuCam.x, -10, menuCam.z, 0, 1, 0);
+
+  // Fake ship for culling / terrain logic
+  let fakeShip = { x: menuCam.x, y: cy, z: menuCam.z, yaw: menuCam.yaw, pitch: 0 };
+
+  setSceneLighting();
+  terrain.drawLandscape(fakeShip, width / height);
+  terrain.drawTrees(fakeShip);
+  terrain.drawBuildings(fakeShip);
+  pop();
+
+  // 3. Reset depth for subsequent 2D/3D overlays
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+}
+
+/**
  * Main entry point for the Ship Select screen.
  * Handles split-screen division if two players are present.
  */
 function drawShipSelect() {
-  let gl = drawingContext;
-  let pxD = pixelDensity();
+  drawBackgroundLandscape();
 
+  let pxD = pixelDensity();
   if (numPlayers === 1) {
     renderShipSelectView(players[0], 0, 0, width, height, pxD);
   } else {
@@ -201,9 +207,8 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
   gl.enable(gl.SCISSOR_TEST);
   gl.scissor(vx * pxD, 0, vw * pxD, vh * pxD);
 
-  // Deep space background colour
-  gl.clearColor(0.01, 0.01, 0.05, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // Clear depth for the ship preview (background landscape is already drawn)
+  gl.clear(gl.DEPTH_BUFFER_BIT);
 
   push();
   perspective(PI / 3, vw / vh, 1, 1000);

@@ -136,7 +136,9 @@ const aboveSea = y => y >= SEA - 1;
  * Skip Math.hypot's overflow/underflow guards (world coords are bounded),
  * trimming a bit of overhead in hot loops.
  */
+/** @param {number} dx @param {number} dz @returns {number} */
 const mag2 = (dx, dz) => Math.sqrt(dx * dx + dz * dz);
+/** @param {number} dx @param {number} dy @param {number} dz @returns {number} */
 const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
 
 // =============================================================================

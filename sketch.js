@@ -132,7 +132,10 @@ function findNearest(arr, x, y, z) {
 }
 
 const ALARM_COOLDOWN_MS = 1000;
-/** Plays the launchpad alarm no more than once per cooldown window. */
+/**
+ * Plays the launchpad alarm no more than once per cooldown window.
+ * @returns {boolean} true if the alarm was played and lastAlarmTime was updated.
+ */
 function maybePlayLaunchpadAlarm() {
   const now = millis();
   if (now - lastAlarmTime < ALARM_COOLDOWN_MS) return false;

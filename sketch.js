@@ -1012,8 +1012,13 @@ function checkCollisions(p) {
           if (p.missilesRemaining > 0) p.missilesRemaining--;
           if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);
         } else {
-          // Healthy powerup — reward: gain a missile and score 500
-          p.missilesRemaining++;
+          // Healthy powerup — either missile ammo or a normal-shot pattern upgrade.
+          if (random() < 0.5) {
+            p.missilesRemaining++;
+          } else {
+            // Pick one of the non-default spread modes.
+            p.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
+          }
           p.score += 500;
           if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true, b.x, floatY, b.z);
         }

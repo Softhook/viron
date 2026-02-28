@@ -59,6 +59,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
     bullets: [],
     homingMissiles: [],
     missilesRemaining: 1,
+    normalShotMode: 'single',     // single|double|triple|spread (from powerup upgrades)
     weaponMode: 0,                // 0=NORMAL, 1=MISSILE, 2=BARRIER (index into WEAPON_MODES)
     shootHeld: false,             // Edge-detect for shoot key (prevents missile/barrier auto-repeat)
     aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
@@ -111,6 +112,47 @@ function spawnProjectile(s, power, life) {
 }
 
 /**
+ * Spawns a projectile from a temporary yaw/pitch offset relative to the ship.
+ * Used for multi-shot upgrades (double/triple/spread) without changing ship state.
+ */
+function spawnProjectileOffset(s, power, life, yawOffset, pitchOffset = 0) {
+  return spawnProjectile({
+    x: s.x, y: s.y, z: s.z,
+    vx: s.vx, vy: s.vy, vz: s.vz,
+    pitch: s.pitch + pitchOffset,
+    yaw: s.yaw + yawOffset
+  }, power, life);
+}
+
+/**
+ * Fires the player's normal weapon pattern.
+ * Pattern is controlled by p.normalShotMode and can be upgraded by powerups.
+ */
+function fireNormalPattern(p, s) {
+  const ship = s || p.ship;
+  const mode = p.normalShotMode || 'single';
+  const power = 25;
+  const life = 1000;
+
+  if (mode === 'double') {
+    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.055));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.055));
+  } else if (mode === 'triple') {
+    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.08));
+    p.bullets.push(spawnProjectile(ship, power, life));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.08));
+  } else if (mode === 'spread') {
+    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.05 + random(-0.03, 0.03)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, random(-0.025, 0.025)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.05 + random(-0.03, 0.03)));
+  } else {
+    p.bullets.push(spawnProjectile(ship, power, life));
+  }
+
+  if (typeof gameSFX !== 'undefined') gameSFX.playShot(ship.x, ship.y, ship.z);
+}
+
+/**
  * Fires a homing missile from the player's ship if missiles are available.
  * Decrements missilesRemaining, pushes the missile into homingMissiles[], and
  * plays a launch sound effect.
@@ -149,11 +191,8 @@ function fireActiveWeapon(p) {
   if (mode === 1) fireMissile(p);
   else if (mode === 2) fireBarrier(p);
   else {
-    // NORMAL: fire one bullet immediately (used for middle-click single shot)
-    // Bullet lifetime raised so a single shot will travel as far as reasonably
-    // possible before disappearing.  See updateProjectilePhysics for range.
-    p.bullets.push(spawnProjectile(p.ship, 25, 1000));
-    if (typeof gameSFX !== 'undefined') gameSFX.playShot(p.ship.x, p.ship.y, p.ship.z);
+    // NORMAL: fires based on the currently active upgrade shot pattern.
+    fireNormalPattern(p, p.ship);
   }
 }
 
@@ -563,9 +602,7 @@ function updateShipInput(p) {
   if (p.weaponMode === 0) {
     // NORMAL: rapid-fire bullets every 6 frames while shoot is held
     if (isShooting && frameCount % 6 === 0) {
-      // extended range bullet
-      p.bullets.push(spawnProjectile(s, 25, 1000));
-      if (typeof gameSFX !== 'undefined') gameSFX.playShot(s.x, s.y, s.z);
+      fireNormalPattern(p, s);
     }
     p.shootHeld = isShooting;
   } else if (p.weaponMode === 1) {

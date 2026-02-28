@@ -440,6 +440,8 @@ function drawPlayerHUD(p, pi, hw, h) {
   textSize(14); fill(255, 60, 60); text('VIRON ' + infection.count, lx, ly + 54);
   fill(255, 100, 100); text('ENEMIES ' + enemyManager.enemies.length, lx, ly + 72);
   fill(0, 200, 255); text('MISSILES ' + p.missilesRemaining, lx, ly + 90);
+  fill(220, 220, 220);
+  text('SHOT ' + (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE'), lx, ly + 108);
 
   // --- Crosshair (first-person reticle — only shown in first-person mode) ---
   if (typeof firstPersonView !== 'undefined' && firstPersonView) {
@@ -525,9 +527,15 @@ function drawPlayerHUD(p, pi, hw, h) {
 function drawRadarForPlayer(p, hw, h, infKeys) {
   let s = p.ship;
   push();
+
+  // Defensive state reset: keeps radar anchored correctly even if prior HUD
+  // code changed matrix/projection state in unexpected ways.
+  ortho(-hw / 2, hw / 2, -h / 2, h / 2, 0, 1000);
+  resetMatrix();
+
   // Position the radar in the top-right corner
   let radarSize = 150;
-  translate(hw / 2 - radarSize / 2 - 4, -h / 2 + radarSize / 2 + 4, 0);
+  translate(floor(hw / 2 - radarSize / 2 - 4), floor(-h / 2 + radarSize / 2 + 4), 0);
   fill(0, 150); stroke(0, 255, 0); strokeWeight(1.5);
   rectMode(CENTER);
   rect(0, 0, radarSize, radarSize);   // Radar frame
@@ -615,6 +623,9 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
   // Own ship — always at radar centre
   fill(255, 255, 0);
   rect(0, 0, 4, 4);
+
+  // Keep global HUD primitives on their expected rect mode.
+  rectMode(CORNER);
   pop();
 }
 

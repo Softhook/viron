@@ -87,6 +87,13 @@ const MOUSE_SMOOTHING = 0.25;   // Lerp blend factor for smoothed mouse delta (l
 
 // --- Weapon modes (index into WEAPON_MODES array) ---
 const WEAPON_MODES = ['NORMAL', 'MISSILE', 'BARRIER'];
+const NORMAL_SHOT_MODES = ['single', 'double', 'triple', 'spread'];
+const NORMAL_SHOT_MODE_LABELS = {
+  single: 'SINGLE',
+  double: 'DOUBLE',
+  triple: 'TRIPLE',
+  spread: 'SPREAD'
+};
 
 // --- Key bindings — Player 1 (WASD + Q / E / R / F) ---
 const P1_KEYS = {

@@ -45,16 +45,19 @@ const TERRAIN_VERT = `
 precision highp float;
 attribute vec3 aPosition;
 attribute vec4 aVertexColor;
+attribute vec3 aNormal;
 uniform mat4 uProjectionMatrix;
 uniform mat4 uModelViewMatrix;
 varying vec4 vColor;
 varying vec4 vWorldPos;
+varying vec3 vNormal;
 
 void main() {
   vec4 viewSpace = uModelViewMatrix * vec4(aPosition, 1.0);
   gl_Position = uProjectionMatrix * viewSpace;
   vWorldPos = vec4(aPosition, 1.0);
   vColor = aVertexColor;
+  vNormal = aNormal;
 }
 `;
 
@@ -72,6 +75,7 @@ precision mediump float;
 #endif
 varying vec4 vColor;
 varying vec4 vWorldPos;
+varying vec3 vNormal;
 uniform float uTime;
 uniform vec4 uPulses[5];
 uniform vec2 uFogDist;
@@ -81,6 +85,11 @@ uniform vec4 uSentinelGlows[2];
 uniform vec3 uPalette[14];
 uniform float uTileSize;
 uniform vec3 uFogColor;
+// Terrain-local lighting uniforms (used while p5 built-in lights are disabled).
+uniform vec3 uSunDir;
+uniform vec3 uSunColor;
+uniform vec3 uAmbientLow;
+uniform vec3 uAmbientHigh;
 
 void main() {
   // Material IDs (from R channel)
@@ -176,7 +185,43 @@ void main() {
     cyberColor += vec3(0.0, 0.9, 0.8) * (ring2 * breath * 2.2 + innerGlow * breath);
   }
   
-  vec3 outColor = baseColor + cyberColor;
+  // Terrain-local directional lighting to restore shape/depth while noLights()
+  // is active for this shader pass.
+  vec3 n = normalize(vNormal);
+  // Keep normals upward-facing for stable daylight shading.
+  if (n.y < 0.0) n = -n;
+  float hemi = n.y * 0.5 + 0.5;
+  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
+  vec3 sunN = normalize(uSunDir);
+  float ndl = max(dot(n, sunN), 0.0);
+  float diffuse = pow(ndl, 1.25);
+  // Cinematic warm key + cool shadow fill so slopes read as shape, not haze.
+  vec3 coolShadow = vec3(0.16, 0.23, 0.36) * (1.0 - diffuse);
+  vec3 warmKey = uSunColor * (0.55 + 1.55 * diffuse);
+  // Accent steeper terrain to make ridges and valleys pop.
+  float steep = pow(1.0 - abs(n.y), 1.6);
+  vec3 ridgeAccent = vec3(0.22, 0.16, 0.10) * steep * 0.3;
+
+  // Sunrise long-shadow approximation: back-facing slopes receive an extra
+  // directional occlusion term that gets stronger as sun altitude gets lower.
+  vec2 nXZ = normalize(vec2(n.x, n.z) + vec2(1e-5));
+  vec2 sunXZ = normalize(vec2(sunN.x, sunN.z) + vec2(1e-5));
+  float backFacing = max(dot(nXZ, -sunXZ), 0.0);
+  float lowSun = 1.0 - clamp(sunN.y, 0.0, 1.0);
+  float longShadow = pow(backFacing, 1.65) * lowSun * (0.58 + 0.30 * (1.0 - hemi));
+
+  // Dawn sky bounce keeps terrain readable before direct sunlight fully rises.
+  float dawnLift = 1.0 - smoothstep(0.22, 0.48, sunN.y);
+  vec3 dawnFill = vec3(0.16, 0.12, 0.10) * dawnLift;
+
+  vec3 lightTerm = ambient * 0.76 + coolShadow + warmKey * diffuse + ridgeAccent + dawnFill;
+  lightTerm *= (1.0 - longShadow * 0.48);
+  // Keep a floor for readability but low enough to preserve contrast.
+  lightTerm = max(lightTerm, vec3(0.46));
+  vec3 litBase = baseColor * lightTerm;
+
+  // Keep pulses and sentinel glows emissive so they read clearly at all times.
+  vec3 outColor = litBase + cyberColor;
   
   // Apply fog to smoothly hide chunk loading edges
   float dist = gl_FragCoord.z / gl_FragCoord.w;
@@ -572,7 +617,22 @@ class Terrain {
 
           fill(isShore ? 2 : 1, noiseVal * 255, randVal * 255, parity * 255);
 
+          // Provide explicit face normals so terrain shader lighting has
+          // stable directional data regardless of p5's internal normal path.
+          let e1x = xP1 - xP, e1y = y10 - y00, e1z = 0;
+          let e2x = 0, e2y = y01 - y00, e2z = zP1 - zP;
+          let n1x = e1y * e2z - e1z * e2y;
+          let n1y = e1z * e2x - e1x * e2z;
+          let n1z = e1x * e2y - e1y * e2x;
+          normal(n1x, n1y, n1z);
           vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
+
+          e1x = xP1 - xP1; e1y = y11 - y10; e1z = zP1 - zP;
+          e2x = xP - xP1; e2y = y01 - y10; e2z = zP1 - zP;
+          let n2x = e1y * e2z - e1z * e2y;
+          let n2y = e1z * e2x - e1x * e2z;
+          let n2z = e1x * e2y - e1y * e2x;
+          normal(n2x, n2y, n2z);
           vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
         }
       }
@@ -634,11 +694,18 @@ class Terrain {
   applyShader() {
     shader(this.shader);
     const fogFar = this._getFogFarWorld();
+    // Sunrise: low-angle sun for long shadows and stronger terrain contrast.
+    const sunDir = [SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z];
+    const sunLen = Math.hypot(sunDir[0], sunDir[1], sunDir[2]) || 1.0;
     this.shader.setUniform('uTime', millis() / 1000.0);
     this.shader.setUniform('uFogDist', [fogFar - 800, fogFar + 400]);
     this.shader.setUniform('uFogColor', [SKY_R / 255.0, SKY_G / 255.0, SKY_B / 255.0]);
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
+    this.shader.setUniform('uSunDir', [sunDir[0] / sunLen, sunDir[1] / sunLen, sunDir[2] / sunLen]);
+    this.shader.setUniform('uSunColor', [1.0, 0.74, 0.48]);
+    this.shader.setUniform('uAmbientLow', [0.12, 0.15, 0.23]);
+    this.shader.setUniform('uAmbientHigh', [0.32, 0.36, 0.46]);
 
     // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
     const pulseArr = this._pulseArr;
@@ -746,12 +813,14 @@ class Terrain {
     if (i0 > 0) {
       fill(matEven, 0, 0, 255);
       beginShape(TRIANGLES);
+      normal(0, 1, 0);
       for (let i = 0; i < i0; i += 3) vertex(b0[i], b0[i + 1], b0[i + 2]);
       endShape();
     }
     if (i1 > 0) {
       fill(matOdd, 0, 0, 255);
       beginShape(TRIANGLES);
+      normal(0, 1, 0);
       for (let i = 0; i < i1; i += 3) vertex(b1[i], b1[i + 1], b1[i + 2]);
       endShape();
     }
@@ -898,6 +967,7 @@ class Terrain {
     let sy = SEA + 3;
     fill(15, 45, 150);
     beginShape(TRIANGLES);
+    normal(0, 1, 0);
     vertex(sx0, sy, sz0); vertex(sx1, sy, sz0); vertex(sx0, sy, sz1);
     vertex(sx1, sy, sz0); vertex(sx1, sy, sz1); vertex(sx0, sy, sz1);
     endShape();
@@ -927,9 +997,153 @@ class Terrain {
 
 
   /**
+   * Computes normalized sun projection data reused by all ground shadow draws.
+   * @returns {{x:number,y:number,z:number,yaw:number,stretch:number}}
+   */
+  _getSunShadowBasis() {
+    const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1.0;
+    const sx = SUN_DIR_X / len;
+    const sy = Math.max(0.12, SUN_DIR_Y / len);
+    const sz = SUN_DIR_Z / len;
+    return { x: sx, y: sy, z: sz };
+  }
+
+  /**
+   * 2D convex hull in XZ plane for projected shadow polygons.
+   */
+  _shadowHullXZ(points) {
+    if (points.length <= 2) return points.slice();
+    const pts = points
+      .map(p => ({ x: p.x, z: p.z }))
+      .sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
+
+    const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+    const lower = [];
+    for (const p of pts) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+  }
+
+  /**
+   * Draws a cast shadow polygon from a base footprint and caster height.
+   */
+  _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun) {
+    const shift = casterH / sun.y;
+    const base = footprint.map(p => ({ x: wx + p.x, z: wz + p.z }));
+    const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
+    const hull = this._shadowHullXZ(base.concat(top));
+    if (hull.length < 3) return;
+
+    noStroke();
+    fill(0, 0, 0, alpha);
+    beginShape();
+    for (const p of hull) {
+      // Terrain-conforming vertex placement avoids z-fighting shimmer on slopes.
+      const gy = this.getAltitude(p.x, p.z);
+      vertex(p.x, gy - 0.7, p.z);
+    }
+    endShape(CLOSE);
+  }
+
+  /**
+   * Draws one projected ellipse footprint for a caster at height casterH.
+   */
+  _drawProjectedEllipseShadow(wx, wz, groundY, casterH, rx, rz, alpha, sun) {
+    const pts = [];
+    const steps = 10;
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * TWO_PI;
+      pts.push({ x: Math.cos(a) * rx * 0.5, z: Math.sin(a) * rz * 0.5 });
+    }
+    this._drawProjectedFootprintShadow(wx, wz, groundY, casterH, pts, alpha, sun);
+  }
+
+  /**
+   * Draws one projected rectangular footprint for a caster at height casterH.
+   */
+  _drawProjectedRectShadow(wx, wz, groundY, casterH, w, d, alpha, sun) {
+    const hw = w * 0.5, hd = d * 0.5;
+    const pts = [
+      { x: -hw, z: -hd },
+      { x: hw, z: -hd },
+      { x: hw, z: hd },
+      { x: -hw, z: hd }
+    ];
+    this._drawProjectedFootprintShadow(wx, wz, groundY, casterH, pts, alpha, sun);
+  }
+
+  /**
+   * Draws tree shadows using component silhouettes (trunk + canopy tiers).
+   */
+  _drawTreeShadow(t, groundY, sun) {
+    const { trunkH: h, canopyScale: sc, variant: vi } = t;
+    // Single coherent tree shadow to avoid double/stacked ghosting.
+    if (vi === 2) {
+      this._drawProjectedEllipseShadow(t.x, t.z, groundY, h + 24 * sc, 40 * sc, 28 * sc, 30, sun);
+    } else {
+      this._drawProjectedEllipseShadow(t.x, t.z, groundY, h + 18 * sc, 34 * sc, 24 * sc, 30, sun);
+    }
+  }
+
+  /**
+   * Draws building shadows using per-type component silhouettes.
+   */
+  _drawBuildingShadow(b, groundY, inf, sun) {
+    const bw = b.w, bh = b.h, bd = b.d;
+
+    if (b.type === 0) {
+      this._drawProjectedRectShadow(b.x, b.z, groundY, bh * 0.5, bw, bd, 40, sun);
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh + bw * 0.35, bw * 0.9, bd * 0.7, 22, sun);
+      return;
+    }
+
+    if (b.type === 1) {
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.5, bw, bw * 0.85, 38, sun);
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh, bw * 0.7, bw * 0.55, 20, sun);
+      return;
+    }
+
+    if (b.type === 2) {
+      this._drawProjectedRectShadow(b.x, b.z, groundY, bh * 0.25, bw * 1.5, bd * 1.5, 42, sun);
+      this._drawProjectedRectShadow(b.x + bw * 0.3, b.z - bd * 0.2, groundY, bh * 0.62, bw * 0.52, bd * 0.52, 28, sun);
+      this._drawProjectedEllipseShadow(b.x - bw * 0.4, b.z + bd * 0.4, groundY, bh, bw * 0.33, bw * 0.22, 20, sun);
+      return;
+    }
+
+    if (b.type === 3) {
+      const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
+      const casterH = max(35, groundY - floatY);
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 32, sun);
+      return;
+    }
+
+    if (b.type === 4) {
+      const alphaBase = inf ? 38 : 34;
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.08, bw * 2.2, bw * 1.9, alphaBase, sun);
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.4, bw * 1.5, bw * 1.2, 24, sun);
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.95, bw * 0.85, bw * 0.62, 16, sun);
+      return;
+    }
+
+    this._drawProjectedEllipseShadow(b.x, b.z, groundY, bh * 0.5, bw * 1.5, bd * 1.5, 34, sun);
+  }
+
+
+
+  /**
    * Draws all trees within rendering range, applying fog colour blending and
    * infection tinting.  Healthy trees are green; infected trees turn red-brown.
-   * A ground shadow ellipse is rendered for close trees (within 1500 units).
+   * Ground shadows are projected from component silhouettes (trunk + canopy tiers).
    * @param {{x,y,z,yaw}} s  Ship state (used as the view origin for culling).
    */
   drawTrees(s) {
@@ -994,22 +1208,18 @@ class Terrain {
           }
         }
 
-        if (dSq < 1210000) shadowQueue.push([t.x, y, t.z, sc]);
+        if (dSq < 1210000) shadowQueue.push(t);
         pop();
         }
       }
     }
 
-    // Draw all projected shadows in one pass.
+    // Draw projected component shadows in one pass.
+    const sun = this._getSunShadowBasis();
     noStroke();
-    fill(0, 0, 0, 40);
     for (let i = 0; i < shadowQueue.length; i++) {
-      const sData = shadowQueue[i];
-      push();
-      translate(sData[0], sData[1] - 0.5, sData[2] + 8);
-      rotateX(PI / 2);
-      ellipse(0, 0, 20 * sData[3], 12 * sData[3]);
-      pop();
+      const t = shadowQueue[i];
+      this._drawTreeShadow(t, t.y, sun);
     }
   }
 
@@ -1026,6 +1236,7 @@ class Terrain {
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
     // Reuse the camera params computed in drawLandscape for this frame.
     let cam = this._cam || this.getCameraParams(s);
+    const sun = this._getSunShadowBasis();
     const fogFar = this._getFogFarWorld();
     const fogStart = fogFar - 800;
     const fogInv = 1.0 / 1200.0; // fogEnd - fogStart = 1200
@@ -1160,9 +1371,7 @@ class Terrain {
       pop();
 
       // Ground shadow only for nearby buildings
-      if (dSq < 2250000) {
-        drawShadow(b.x, y, b.z, b.w * 1.5, b.d * 1.5);
-      }
+      if (dSq < 2250000) this._drawBuildingShadow(b, y, inf, sun);
     }
   }
 }

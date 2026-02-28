@@ -189,6 +189,7 @@ function drawBackgroundLandscape() {
 
   // 3. Reset depth for subsequent 2D/3D overlays
   gl.clear(gl.DEPTH_BUFFER_BIT);
+
 }
 
 /**

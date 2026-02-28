@@ -232,15 +232,73 @@ function shipUpDir(s, designIdx) {
  * @param {number} z       World Z of the object.
  * @param {number} w       Shadow ellipse width.
  * @param {number} h       Shadow ellipse height.
+ * @param {number} casterH Approximate caster height used to project shadow offset.
  */
-function drawShadow(x, groundY, z, w, h) {
+function _shadowSunBasis() {
+  const sunLen = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
+  return {
+    x: SUN_DIR_X / sunLen,
+    y: Math.max(0.12, SUN_DIR_Y / sunLen),
+    z: SUN_DIR_Z / sunLen
+  };
+}
+
+function _shadowHull2D(points) {
+  if (points.length <= 2) return points.slice();
+  const pts = points
+    .map(p => ({ x: p.x, z: p.z }))
+    .sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
+
+  const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw = 0, alpha = 50) {
   if (aboveSea(groundY)) return;
-  push();
-  translate(x, groundY - 0.5, z);
-  rotateX(PI / 2);
-  fill(0, 0, 0, 50);
-  ellipse(0, 0, w, h);
-  pop();
+  const sun = _shadowSunBasis();
+  const shift = casterH / sun.y;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+
+  const base = localPts.map(p => ({
+    x: x + p.x * cy + p.z * sy,
+    z: z + (-p.x * sy + p.z * cy)
+  }));
+  const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
+  const hull = _shadowHull2D(base.concat(top));
+  if (hull.length < 3) return;
+
+  noStroke();
+  fill(0, 0, 0, alpha);
+  beginShape();
+  for (const p of hull) {
+    const gy = terrain.getAltitude(p.x, p.z);
+    vertex(p.x, gy - 0.7, p.z);
+  }
+  endShape(CLOSE);
+}
+
+function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
+  const hw = w * 0.5, hh = h * 0.5;
+  const rectPts = [
+    { x: -hw, z: -hh },
+    { x: hw, z: -hh },
+    { x: hw, z: hh },
+    { x: -hw, z: hh }
+  ];
+  _drawProjectedShadowFromFootprint(x, groundY, z, rectPts, casterH, yaw, 46);
 }
 
 /**
@@ -254,20 +312,14 @@ function drawShadow(x, groundY, z, w, h) {
  */
 function drawShipShadow(x, groundY, z, yaw, alt) {
   if (aboveSea(groundY)) return;
-  let spread = max(1, (groundY - alt) * 0.012);
-  let alpha = map(groundY - alt, 0, 600, 60, 15, true);
-  push();
-  translate(x, groundY - 0.3, z);
-  rotateY(yaw);
-  noStroke();
-  fill(0, 0, 0, alpha);
-  // Triangular shadow pointing forward
-  beginShape();
-  vertex(-15 * spread, 0, 15 * spread);
-  vertex(15 * spread, 0, 15 * spread);
-  vertex(0, 0, -25 * spread);
-  endShape(CLOSE);
-  pop();
+  const casterH = max(20, groundY - alt);
+  const alpha = map(casterH, 0, 600, 62, 16, true);
+  const shipFootprint = [
+    { x: -13, z: 13 },
+    { x: 13, z: 13 },
+    { x: 0, z: -23 }
+  ];
+  _drawProjectedShadowFromFootprint(x, groundY, z, shipFootprint, casterH, yaw, alpha);
 }
 
 // ---------------------------------------------------------------------------

@@ -97,8 +97,52 @@ function checkMobile() {
  * Called after resetShader() so p5's built-in lighting uniforms are active again.
  */
 function setSceneLighting() {
-  directionalLight(240, 230, 210, 0.5, 0.8, -0.3);
-  ambientLight(60, 60, 70);
+  // Sunrise lighting profile for stronger shape and warm highlights.
+  directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z);
+  ambientLight(42, 52, 74);
+}
+
+/**
+ * Draws a sunrise sun-disc and beam wedges in world space.
+ * The sun is anchored relative to the camera so it always stays at sky distance
+ * and never intersects gameplay geometry.
+ */
+function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
+  const sunDir = createVector(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z).normalize();
+  const toSun = p5.Vector.mult(sunDir, -1).normalize();      // camera -> sun
+  const sunRayDir = sunDir.copy().normalize();               // sun -> world
+
+  // Keep the visual sun near the horizon instead of many kilometers overhead.
+  const horizToSun = createVector(toSun.x, 0, toSun.z);
+  if (horizToSun.magSq() < 1e-6) horizToSun.set(0, 0, -1);
+  horizToSun.normalize();
+  const sunHorizonDist = viewFarWorld * 0.78;
+  const sunHeight = cy - viewFarWorld * 0.09; // negative Y is upward in this world
+  const sunPos = createVector(
+    cx + horizToSun.x * sunHorizonDist,
+    sunHeight,
+    cz + horizToSun.z * sunHorizonDist
+  );
+
+  push();
+  noStroke();
+
+  // Stable additive sun glow (no beam wedges: they caused visible flicker and
+  // incorrect ray perspective in motion).
+  blendMode(ADD);
+  // Sun core + halo spheres.
+  push();
+  translate(sunPos.x, sunPos.y, sunPos.z);
+  emissiveMaterial(255, 228, 180);
+  sphere(viewFarWorld * 0.021, 16, 12);
+  fill(255, 184, 118, 80 * intensity);
+  sphere(viewFarWorld * 0.032, 16, 12);
+  fill(255, 150, 96, 40 * intensity);
+  sphere(viewFarWorld * 0.046, 14, 10);
+  pop();
+
+  blendMode(BLEND);
+  pop();
 }
 
 /**
@@ -472,6 +516,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     setSceneLighting();
     terrain.drawLandscape(s, viewW / viewH);
     terrain.drawTrees(s);
@@ -533,6 +578,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     setSceneLighting();
     terrain.drawLandscape(s, viewW / viewH);
     terrain.drawTrees(s);

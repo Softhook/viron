@@ -19,7 +19,14 @@ let VIEW_FAR = 50;            // Outer tile radius — rendered with frustum cul
 let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
-const SKY_R = 30, SKY_G = 60, SKY_B = 120;
+const SKY_R = 165, SKY_G = 128, SKY_B = 98;
+
+// --- Global sunrise light model (single source of truth) ---
+// SUN_DIR is the direction light travels from the sun into the world.
+const SUN_DIR_X = 0.92;
+const SUN_DIR_Y = 0.2;
+const SUN_DIR_Z = -0.34;
+const SUN_KEY_R = 255, SUN_KEY_G = 188, SUN_KEY_B = 122;
 
 // --- Infection spread parameters ---
 const MAX_INF = 2000;   // Total infected tile count that triggers game over

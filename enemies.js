@@ -958,12 +958,18 @@ class EnemyManager {
       }
       pop();
 
-      // Ground shadow — size varies by enemy type
-      let sSize = e.type === 'colossus' ? 200
-        : e.type === 'bomber' ? 60
-          : (e.type === 'fighter' || e.type === 'hunter') ? 25 : 40;
+      // Ground shadow — type-specific projected footprint (not a single generic circle).
+      const gy = terrain.getAltitude(e.x, e.z);
+      const casterH = max(24, gy - e.y);
+      let sw = 80, sh = 50;
+      if (e.type === 'colossus') { sw = 320; sh = 230; }
+      else if (e.type === 'bomber') { sw = 150; sh = 85; }
+      else if (e.type === 'fighter') { sw = 58; sh = 30; }
+      else if (e.type === 'hunter') { sw = 72; sh = 38; }
+      else if (e.type === 'squid') { sw = 110; sh = 72; }
+      else if (e.type === 'seeder') { sw = 68; sh = 50; }
       if (e.type !== 'crab' && e.type !== 'scorpion') {  // Ground-huggers already touch the surface
-        drawShadow(e.x, terrain.getAltitude(e.x, e.z), e.z, sSize * 2, sSize * 2);
+        drawShadow(e.x, gy, e.z, sw, sh, casterH);
       }
     }
   }

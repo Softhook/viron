@@ -135,7 +135,7 @@ const ALARM_COOLDOWN_MS = 1000;
 /** Plays the launchpad alarm no more than once per cooldown window. */
 function maybePlayLaunchpadAlarm() {
   const now = millis();
-  if (now - lastAlarmTime <= ALARM_COOLDOWN_MS) return false;
+  if (now - lastAlarmTime < ALARM_COOLDOWN_MS) return false;
   if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
   lastAlarmTime = now;
   return true;

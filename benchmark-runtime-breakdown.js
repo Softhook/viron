@@ -21,6 +21,7 @@ const PORT = process.env.RUNTIME_PORT ? Number(process.env.RUNTIME_PORT) : 0;
 
 const SCENARIOS = [
   { id: 'baseline', title: 'Baseline (default game loop)' },
+  { id: 'no-hud', title: 'HUD disabled' },
   { id: 'no-trees', title: 'Trees disabled' },
   { id: 'no-particles', title: 'Particles disabled' },
   { id: 'no-enemies', title: 'Enemies disabled' },
@@ -127,6 +128,8 @@ async function setupPlayableState(page, scenarioId) {
       particleSystem.updatePhysics = function () {};
       particleSystem.render = function () {};
       particleSystem.renderHardParticles = function () {};
+    } else if (id === 'no-hud') {
+      window.drawPlayerHUD = function () {};
     } else if (id === 'no-trees') {
       terrain.drawTrees = function () {};
     } else if (id === 'no-enemies') {
@@ -187,8 +190,11 @@ async function setupPlayableState(page, scenarioId) {
     wrapFunction(terrain, 'drawBuildings', 'terrain.drawBuildings');
     wrapFunction(enemyManager, 'draw', 'enemyManager.draw');
     wrapFunction(particleSystem, 'render', 'particleSystem.render');
+    wrapFunction(particleSystem, 'renderHardParticles', 'particleSystem.renderHardParticles');
+    wrapFunction(window, 'setSceneLighting', 'setSceneLighting');
     wrapFunction(window, 'renderProjectiles', 'renderProjectiles');
     wrapFunction(window, 'renderInFlightBarriers', 'renderInFlightBarriers');
+    wrapFunction(window, 'drawPlayerHUD', 'drawPlayerHUD');
     wrapFunction(window, 'shipDisplay', 'shipDisplay');
 
     // Wrap draw itself to estimate total JS frame cost attributable to draw().
@@ -256,8 +262,44 @@ function formatTop(summary) {
   });
 
   entries.sort((a, b) => b.perFrame - a.perFrame);
+
+  // Estimate overhead inside renderPlayerView not attributable to wrapped subcalls
+  // (viewport/scissor/clear, camera setup, matrix ops, loop/control flow, etc.).
+  const rpvTotal = (summary.stats['renderPlayerView'] || 0) / drawFrames;
+  const rpvChildren = [
+    'terrain.drawLandscape',
+    'terrain.drawTrees',
+    'terrain.drawBuildings',
+    'enemyManager.draw',
+    'particleSystem.render',
+    'particleSystem.renderHardParticles',
+    'setSceneLighting',
+    'renderProjectiles',
+    'renderInFlightBarriers',
+    'shipDisplay',
+    'drawPlayerHUD'
+  ];
+  let rpvAttributed = 0;
+  for (const k of rpvChildren) rpvAttributed += (summary.stats[k] || 0) / drawFrames;
+  const rpvUnattributed = Math.max(0, rpvTotal - rpvAttributed);
+  const rpvUnattributedPct = rpvTotal > 0 ? (rpvUnattributed / rpvTotal * 100) : 0;
+
+  entries.unshift({
+    k: 'renderPlayerView.unattributed',
+    total: rpvUnattributed * drawFrames,
+    calls: summary.counts['renderPlayerView'] || 0,
+    perFrame: rpvUnattributed,
+    pct: rpvUnattributedPct,
+  });
+
   return {
     avgDrawMs,
+    rpv: {
+      totalPerFrame: rpvTotal,
+      attributedPerFrame: rpvAttributed,
+      unattributedPerFrame: rpvUnattributed,
+      unattributedPct: rpvUnattributedPct,
+    },
     top: entries.slice(0, 10),
   };
 }
@@ -304,6 +346,9 @@ function printScenarioResult(r) {
   console.log(`  frames:        ${s.producedFrames} in ${s.elapsedMs.toFixed(0)} ms`);
   console.log(`  fps:           ${s.fps.toFixed(1)}`);
   console.log(`  avg draw() ms: ${f.avgDrawMs.toFixed(3)}`);
+  console.log(`  renderPlayerView: ${f.rpv.totalPerFrame.toFixed(3)} ms/frame`);
+  console.log(`    attributed:     ${f.rpv.attributedPerFrame.toFixed(3)} ms/frame`);
+  console.log(`    unattributed:   ${f.rpv.unattributedPerFrame.toFixed(3)} ms/frame (${f.rpv.unattributedPct.toFixed(1)}% of renderPlayerView)`);
   console.log(`  entities:      enemies=${s.enemies}, infection=${s.infectionTiles}, particles=${s.particles}`);
   console.log(`  view:          VIEW_NEAR=${s.viewNear}, VIEW_FAR=${s.viewFar}, CULL_DIST=${s.cullDist}`);
   console.log('  top contributors (ms/frame, % of draw):');

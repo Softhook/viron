@@ -607,6 +607,18 @@ class Terrain {
     ];
   }
 
+  /** Enables or disables WebGL backface culling when available. */
+  _setBackfaceCulling(enabled) {
+    const gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
+    if (!gl || !gl.enable || !gl.disable || gl.CULL_FACE === undefined) return;
+    if (enabled) {
+      gl.enable(gl.CULL_FACE);
+      if (gl.cullFace && gl.BACK !== undefined) gl.cullFace(gl.BACK);
+    } else {
+      gl.disable(gl.CULL_FACE);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Shader application
   // ---------------------------------------------------------------------------
@@ -931,8 +943,20 @@ class Terrain {
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
     let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
     let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
+    const fogFar = this._getFogFarWorld();
+    const fogStart = fogFar - 800;
+    const fogInv = 1.0 / 1200.0; // fogEnd - fogStart = 1200
+    const fillFog = (r, g, b, depth) => {
+      const f = constrain((depth - fogStart) * fogInv, 0, 1);
+      fill(
+        r + (SKY_R - r) * f,
+        g + (SKY_G - g) * f,
+        b + (SKY_B - b) * f
+      );
+    };
 
     noStroke();
+    this._setBackfaceCulling(true);
 
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
@@ -951,13 +975,12 @@ class Terrain {
         let inf = infection.has(t.k);
         let depth = (t.x - cam.x) * cam.fwdX + (t.z - cam.z) * cam.fwdZ;
 
-        let trCol = this.getFogColor([inf ? 80 : 100, inf ? 40 : 65, inf ? 20 : 25], depth);
-        fill(trCol[0], trCol[1], trCol[2]);
+        fillFog(inf ? 80 : 100, inf ? 40 : 65, inf ? 20 : 25, depth);
         push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
 
         let tv = TREE_VARIANTS[vi];
-        let c1Col = this.getFogColor(inf ? tv.infected : tv.healthy, depth);
-        fill(c1Col[0], c1Col[1], c1Col[2]);
+        let c1 = inf ? tv.infected : tv.healthy;
+        fillFog(c1[0], c1[1], c1[2], depth);
 
         if (vi === 2) {
           push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
@@ -965,8 +988,8 @@ class Terrain {
           let cn = tv.cones[0];
           push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
           if (tv.cones2) {
-            let c2Col = this.getFogColor(inf ? tv.infected2 : tv.healthy2, depth);
-            fill(c2Col[0], c2Col[1], c2Col[2]);
+            let c2 = inf ? tv.infected2 : tv.healthy2;
+            fillFog(c2[0], c2[1], c2[2], depth);
             let cn2 = tv.cones2[0];
             push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
           }
@@ -977,6 +1000,8 @@ class Terrain {
         }
       }
     }
+
+    this._setBackfaceCulling(false);
 
     // Draw all projected shadows in one pass.
     noStroke();
@@ -1004,6 +1029,19 @@ class Terrain {
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
     // Reuse the camera params computed in drawLandscape for this frame.
     let cam = this._cam || this.getCameraParams(s);
+    const fogFar = this._getFogFarWorld();
+    const fogStart = fogFar - 800;
+    const fogInv = 1.0 / 1200.0; // fogEnd - fogStart = 1200
+    const fillFog = (r, g, b, depth) => {
+      const f = constrain((depth - fogStart) * fogInv, 0, 1);
+      fill(
+        r + (SKY_R - r) * f,
+        g + (SKY_G - g) * f,
+        b + (SKY_B - b) * f
+      );
+    };
+
+    this._setBackfaceCulling(true);
 
     for (let b of buildings) {
       let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
@@ -1017,36 +1055,29 @@ class Terrain {
 
       if (b.type === 0) {
         // Geometric structure: white box body + inverted-pyramid roof funnel (turns red when infected)
-        let bc = this.getFogColor(inf ? [200, 50, 50] : [220, 220, 220], depth);
-        fill(bc[0], bc[1], bc[2]);
+        fillFog(inf ? 200 : 220, inf ? 50 : 220, inf ? 50 : 220, depth);
         push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
-        let rc = this.getFogColor(inf ? [150, 30, 30] : [220, 50, 50], depth);
-        fill(rc[0], rc[1], rc[2]);
+        fillFog(inf ? 150 : 220, inf ? 30 : 50, inf ? 30 : 50, depth);
         push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
 
       } else if (b.type === 1) {
         // Water tower: grey cylinder body + light-blue dome top
-        let bc = this.getFogColor(inf ? [200, 50, 50] : [150, 160, 170], depth);
-        fill(bc[0], bc[1], bc[2]);
+        fillFog(inf ? 200 : 150, inf ? 50 : 160, inf ? 50 : 170, depth);
         push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
-        let tc = this.getFogColor(inf ? [150, 30, 30] : [80, 180, 220], depth);
-        fill(tc[0], tc[1], tc[2]);
+        fillFog(inf ? 150 : 80, inf ? 30 : 180, inf ? 30 : 220, depth);
         push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
 
       } else if (b.type === 2) {
         // Industrial: flat wide base + offset annex + smokestack
-        let bc = this.getFogColor(inf ? [200, 50, 50] : b.col, depth);
-        fill(bc[0], bc[1], bc[2]);
+        fillFog(inf ? 200 : b.col[0], inf ? 50 : b.col[1], inf ? 50 : b.col[2], depth);
         push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
         push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
-        let sc = this.getFogColor(inf ? [120, 20, 20] : [80, 80, 80], depth);
-        fill(sc[0], sc[1], sc[2]);
+        fillFog(inf ? 120 : 80, inf ? 20 : 80, inf ? 20 : 80, depth);
         push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
 
       } else if (b.type === 3) {
         // Type 3 — floating UFO power-up: double-cone orbiting above the ground
-        let bc = this.getFogColor(inf ? [200, 50, 50] : [60, 180, 240], depth);
-        fill(bc[0], bc[1], bc[2]);
+        fillFog(inf ? 200 : 60, inf ? 50 : 180, inf ? 50 : 240, depth);
         push();
         let floatY = y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
         translate(0, floatY - y, 0);
@@ -1070,59 +1101,51 @@ class Terrain {
         // Steady ground glow is rendered by the terrain GLSL shader (uSentinelGlows).
 
         // Colours
-        let cSteel = inf ? [160, 38, 38] : [52, 68, 90];
-        let cPlinth = inf ? [130, 28, 28] : [38, 52, 72];
-        let cAccent = inf ? [200, 55, 20] : [40, 200, 185];
-        let cReactor = inf ? [255, 100, 30] : [80, 240, 215];
-        let cGlow = inf ? [220, 60, 20] : [20, 230, 210];
-        let cSpire = inf ? [240, 80, 40] : [160, 240, 255];
-
-        // Fog-blended colours
-        let fcSteel = this.getFogColor(cSteel, depth);
-        let fcPlinth = this.getFogColor(cPlinth, depth);
-        let fcAccent = this.getFogColor(cAccent, depth);
-        let fcReactor = this.getFogColor(cReactor, depth);
-        let fcGlow = this.getFogColor(cGlow, depth);
-        let fcSpire = this.getFogColor(cSpire, depth);
+        let steelR = inf ? 160 : 52, steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
+        let plinthR = inf ? 130 : 38, plinthG = inf ? 28 : 52, plinthB = inf ? 28 : 72;
+        let accentR = inf ? 200 : 40, accentG = inf ? 55 : 200, accentB = inf ? 20 : 185;
+        let reactorR = inf ? 255 : 80, reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;
+        let glowR = inf ? 220 : 20, glowG = inf ? 60 : 230, glowB = inf ? 20 : 210;
+        let spireR = inf ? 240 : 160, spireG = inf ? 80 : 240, spireB = inf ? 40 : 255;
 
         let bw = b.w;   // base width reference (40)
         let bh = b.h;   // total height reference (200)
 
         // ── 1. Wide hexagonal base plinth ───────────────────────────────
-        fill(fcPlinth[0], fcPlinth[1], fcPlinth[2]);
+        fillFog(plinthR, plinthG, plinthB, depth);
         push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
         // Plinth rim band
-        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        fillFog(accentR, accentG, accentB, depth);
         push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
 
         // ── 2. Tier 1 — wide lower section ──────────────────────────────
-        fill(fcSteel[0], fcSteel[1], fcSteel[2]);
+        fillFog(steelR, steelG, steelB, depth);
         push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
         // Tier 1 accent band
-        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        fillFog(accentR, accentG, accentB, depth);
         push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
 
         // ── 3. Tier 2 — mid section ─────────────────────────────────────
-        fill(fcSteel[0], fcSteel[1], fcSteel[2]);
+        fillFog(steelR, steelG, steelB, depth);
         push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
         // Tier 2 accent band
-        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        fillFog(accentR, accentG, accentB, depth);
         push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
 
         // ── 4. Central energy reactor sphere (mid-height) ────────────────
-        fill(fcReactor[0], fcReactor[1], fcReactor[2]);
+        fillFog(reactorR, reactorG, reactorB, depth);
         push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
 
         // ── 5. Tier 3 — upper section ────────────────────────────────────
-        fill(fcSteel[0], fcSteel[1], fcSteel[2]);
+        fillFog(steelR, steelG, steelB, depth);
         push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
         // Tier 3 accent band
-        fill(fcAccent[0], fcAccent[1], fcAccent[2]);
+        fillFog(accentR, accentG, accentB, depth);
         push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
 
         // ── 6. Pinnacle spire + rotating crown ring ──────────────────────
         // Tier 3 top = -bh*0.86. Crown ring sits right there.
-        fill(fcGlow[0], fcGlow[1], fcGlow[2]);
+        fillFog(glowR, glowG, glowB, depth);
         push();
         translate(0, -bh * 0.87, 0);
         rotateY(frameCount * 0.032 + b.x * 0.001);
@@ -1131,10 +1154,10 @@ class Terrain {
 
         // Spire cone — p5 cone() points upward by default; no PI rotation needed.
         // Centre at -bh*0.99 → base at -bh*0.87 (crown level), tip at -bh*1.11.
-        fill(fcSpire[0], fcSpire[1], fcSpire[2]);
+        fillFog(spireR, spireG, spireB, depth);
         push(); translate(0, -bh * 0.99, 0); cone(bw * 0.18, bh * 0.24, 6, 1); pop();
         // Tip ball at the very apex
-        fill(fcReactor[0], fcReactor[1], fcReactor[2]);
+        fillFog(reactorR, reactorG, reactorB, depth);
         push(); translate(0, -bh * 1.11, 0); sphere(bw * 0.08, 6, 4); pop();
         // (The ground-level energy ring glow is rendered by the terrain shader
         //  via the uSentinelGlows uniform — no 3D halo tori needed here.)
@@ -1146,6 +1169,8 @@ class Terrain {
         drawShadow(b.x, y, b.z, b.w * 1.5, b.d * 1.5);
       }
     }
+
+    this._setBackfaceCulling(false);
   }
 }
 

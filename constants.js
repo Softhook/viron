@@ -150,13 +150,25 @@ const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
 // maintaining a fast iteration list (no iterator overhead).
 // =============================================================================
 class TileManager {
-  constructor() {
+  /**
+   * @param {boolean} [withBuckets=false]  When true, tiles are also indexed into
+   *   a per-chunk bucket map (keyed by "cx,cz") so the renderer can iterate only
+   *   tiles in visible chunks instead of the entire global list.
+   */
+  constructor(withBuckets = false) {
     /** @type {Map<number,object>} Tile-key → {k, tx, tz, verts, _idx} map. */
     this.tiles = new Map();
     /** @type {number} Running count — always in sync with this.tiles. */
     this.count = 0;
     /** @type {object[]} Persistent array of tile objects for fast iteration. */
     this.keyList = [];
+    /**
+     * Optional chunk-bucket index.  null when withBuckets=false (infection).
+     * When present, keyed by "cx,cz" (CHUNK_SIZE=16 grid); value is a
+     * tile-object array using the same swap-with-last O(1) removal trick.
+     * @type {Map<string,object[]>|null}
+     */
+    this.buckets = withBuckets ? new Map() : null;
   }
 
   /** Clears all tile state. */
@@ -164,6 +176,7 @@ class TileManager {
     this.tiles.clear();
     this.count = 0;
     this.keyList.length = 0;
+    if (this.buckets !== null) this.buckets.clear();
   }
 
   /**
@@ -179,6 +192,15 @@ class TileManager {
     this.tiles.set(k, obj);
     this.count++;
     this.keyList.push(obj);
+    if (this.buckets !== null) {
+      // tx >> 4 === Math.floor(tx / 16) for all integers (arithmetic shift).
+      const bk = `${tx >> 4},${tz >> 4}`;
+      obj._bk = bk;
+      let arr = this.buckets.get(bk);
+      if (!arr) { arr = []; this.buckets.set(bk, arr); }
+      obj._bidx = arr.length;
+      arr.push(obj);
+    }
     return obj;
   }
 
@@ -197,6 +219,18 @@ class TileManager {
     this.keyList[idx] = last;
     last._idx = idx;
     this.keyList.pop();
+
+    if (this.buckets !== null && obj._bk !== undefined) {
+      const arr = this.buckets.get(obj._bk);
+      if (arr) {
+        const bidx = obj._bidx;
+        const blast = arr[arr.length - 1];
+        arr[bidx] = blast;
+        blast._bidx = bidx;
+        arr.pop();
+        if (arr.length === 0) this.buckets.delete(obj._bk);
+      }
+    }
 
     this.tiles.delete(k);
     this.count--;
@@ -226,7 +260,9 @@ class TileManager {
 }
 
 /** Singleton infection state shared across all modules. */
-const infection = new TileManager();
+// withBuckets=true: renderer iterates only tiles in visible chunks, not the
+// entire world list — same optimisation applied to barrierTiles.
+const infection = new TileManager(true);
 
 // =============================================================================
 // Lightweight opt-in profiler (no overhead unless window.VIRON_PROFILE is set)

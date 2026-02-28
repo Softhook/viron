@@ -27,7 +27,9 @@ let infectionStarted = false;     // Latches to true when the first tile is infe
 
 // Barrier tile Map — mirrors `infection` but marks immune/blocked tiles.
 // Stores {k, tx, tz, verts} objects using TileManager for fast iteration.
-let barrierTiles = new TileManager();
+// withBuckets=true: tiles are also indexed by chunk so drawLandscape only
+// iterates tiles in visible chunks instead of the entire global list.
+let barrierTiles = new TileManager(true);
 
 // In-flight barrier projectile objects — environment state, not per-player.
 // Same structure as bullets/missiles: { x, y, z, vx, vy, vz, life }.

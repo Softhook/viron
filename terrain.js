@@ -680,13 +680,27 @@ class Terrain {
     const minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
     const minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
 
-    // Build Viron tile overlays — iterate using the persistent object list.
-    // Vertex positions are pre-cached in the tile objects themselves so there are
-    // ZERO altitude lookups and ZERO string operations here.
-    this._drawTileOverlays(
-      infection.keys(), 10, 11, -0.5,
-      cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection'
-    );
+    // Build Viron tile overlays.
+    // Uses the same chunk-bucket path as barriers: iterates only tiles whose
+    // chunk overlaps the current view rectangle, so cost is O(visible tiles)
+    // regardless of how many infected tiles exist elsewhere in the world.
+    {
+      const _iBuckets = infection.buckets;
+      const _infSource = _iBuckets
+        ? (function* (b, x0, x1, z0, z1) {
+            for (let cz = z0; cz <= z1; cz++) {
+              for (let cx = x0; cx <= x1; cx++) {
+                const arr = b.get(`${cx},${cz}`);
+                if (arr) yield* arr;
+              }
+            }
+          })(infection.buckets, minCx, maxCx, minCz, maxCz)
+        : infection.keys();
+      this._drawTileOverlays(
+        _infSource, 10, 11, -0.5,
+        cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection'
+      );
+    }
 
     // --- Barrier tile overlays ---
     // Reads from the global barrierTiles Map — iterates once to cull and collect
@@ -695,9 +709,25 @@ class Terrain {
     // shape.  Calling fill() mid-shape forces p5's WEBGL renderer to flush its
     // internal vertex buffer on every colour change; with 2,000 barrier tiles
     // alternating between two colours that would be ~2,000 GPU flushes per frame.
+    //
+    // When barrierTiles.buckets is populated (always true at runtime since it is
+    // constructed with withBuckets=true), we iterate only chunk buckets that
+    // overlap the current view rectangle instead of the entire global tile list.
+    // Cost becomes O(visible tiles) regardless of total barrier count.
     if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
+      const _bBuckets = barrierTiles.buckets;
+      const _barrierSource = _bBuckets
+        ? (function* (b, x0, x1, z0, z1) {
+            for (let cz = z0; cz <= z1; cz++) {
+              for (let cx = x0; cx <= x1; cx++) {
+                const arr = b.get(`${cx},${cz}`);
+                if (arr) yield* arr;
+              }
+            }
+          })(barrierTiles.buckets, minCx, maxCx, minCz, maxCz)
+        : barrierTiles.values();
       this._drawTileOverlays(
-        barrierTiles.values(), 20, 21, -0.3,
+        _barrierSource, 20, 21, -0.3,
         cam, fovSlope, minTx, maxTx, minTz, maxTz, 'barrier'
       );
     }

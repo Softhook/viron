@@ -39,15 +39,6 @@ class GameSFX {
         return buffer;
     }
 
-    _createNoise(dur, filterCoeff = 0, mul = 1) {
-        if (!this.persistentNoise) return null;
-        let noise = this.ctx.createBufferSource();
-        noise.buffer = this.persistentNoise;
-        noise.loop = true;
-        // The filterCoeff logic is simplified here because persistent noise 
-        // is white; we rely on the Panner or Biquad filter to do the heavy lifting.
-        return noise;
-    }
 
     _setup(x, y, z) {
         this.init();
@@ -71,9 +62,21 @@ class GameSFX {
         noise.buffer = this.persistentNoise;
         noise.loop = true;
 
-        // LATERAL OPT: Use a random start time within the 3s buffer so different 
-        // sounds don't start with identical phase (which causes flanging).
-        noise.start(this.ctx.currentTime, Math.random() * (noise.buffer.duration - (dur || 0)));
+        // LATERAL OPT: Use a random start time within the 3s buffer.
+        // Because the persistent buffer is a seamless loop of white noise, 
+        // starting anywhere is safe regardless of intended duration.
+        noise.start(this.ctx.currentTime, Math.random() * noise.buffer.duration);
+
+        if (mul !== 1) {
+            let gain = this.ctx.createGain();
+            gain.gain.value = mul;
+            noise.connect(gain);
+            // LATERAL OPT: Simple proxy for .stop() so callers can treat 
+            // the returned node chain as a SourceNode.
+            gain.stop = (t) => { try { noise.stop(t); } catch (e) { } };
+            return gain;
+        }
+
         return noise;
     }
 
@@ -293,7 +296,6 @@ class GameSFX {
 
         let noise = this._createNoise(0.6, 0.05);
         noise.connect(filter);
-        noise.start(t);
         noise.stop(t + 0.6);
     }
 
@@ -375,7 +377,6 @@ class GameSFX {
 
         distortion.connect(noiseGain);
         noiseGain.connect(targetNode);
-        noise.start(t);
         noise.stop(t + dur);
     }
 
@@ -748,7 +749,6 @@ class GameSFX {
         noise.connect(filter);
         filter.connect(noiseGain);
         noiseGain.connect(targetNode);
-        noise.start(t);
         noise.stop(t + 0.4);
     }
 
@@ -848,7 +848,6 @@ class GameSFX {
             }
 
             osc.start(t);
-            noise.start(t);
 
             this.thrustNodes[id] = { osc, noise, gain, panner, filter, lastX: x, lastY: y, lastZ: z };
         }

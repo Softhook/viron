@@ -541,8 +541,12 @@ class Terrain {
    * @param {number} maxTx     Tile-space view bound (max X).
    * @param {number} minTz     Tile-space view bound (min Z).
    * @param {number} maxTz     Tile-space view bound (max Z).
+   * @param {string} tag       Profiler tag to label this overlay batch.
    */
-  _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz) {
+  _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz, tag) {
+    const profiler = getVironProfiler();
+    const overlayStart = profiler ? performance.now() : 0;
+    let overlayCount = 0;
     let verts0 = [], verts1 = [];
 
     for (const t of tiles) {
@@ -566,6 +570,7 @@ class Terrain {
         ];
       }
 
+      overlayCount++;
       const bucket = ((t.tx + t.tz) % 2 === 0) ? verts0 : verts1;
       const bLen = bucket.length;
       for (let i = 0; i < 18; i++) bucket[bLen + i] = t.verts[i];
@@ -582,6 +587,10 @@ class Terrain {
       beginShape(TRIANGLES);
       for (let i = 0; i < verts1.length; i += 3) vertex(verts1[i], verts1[i + 1], verts1[i + 2]);
       endShape();
+    }
+    if (profiler && tag) {
+      const elapsed = performance.now() - overlayStart;
+      profiler.recordOverlay(tag, overlayCount, elapsed);
     }
   }
 
@@ -625,7 +634,10 @@ class Terrain {
     // p5 lighting silently overrides custom shaders that don't declare lighting
     // uniforms; disable it for the terrain pass.
     noLights();
+    const profiler = getVironProfiler();
+    const shaderStart = profiler ? performance.now() : 0;
     this.applyShader();
+    if (profiler) profiler.record('shader', performance.now() - shaderStart);
 
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
@@ -658,7 +670,7 @@ class Terrain {
     // ZERO altitude lookups and ZERO string operations here.
     this._drawTileOverlays(
       infection.keys(), 10, 11, -0.5,
-      cam, fovSlope, minTx, maxTx, minTz, maxTz
+      cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection'
     );
 
     // --- Barrier tile overlays ---
@@ -671,7 +683,7 @@ class Terrain {
     if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
       this._drawTileOverlays(
         barrierTiles.values(), 20, 21, -0.3,
-        cam, fovSlope, minTx, maxTx, minTz, maxTz
+        cam, fovSlope, minTx, maxTx, minTz, maxTz, 'barrier'
       );
     }
 

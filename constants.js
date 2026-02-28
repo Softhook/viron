@@ -191,3 +191,126 @@ class InfectionManager {
 
 /** Singleton infection state shared across all modules. */
 const infection = new InfectionManager();
+
+// =============================================================================
+// Lightweight opt-in profiler (no overhead unless window.VIRON_PROFILE is set)
+// =============================================================================
+function createVironProfiler(cfg) {
+  if (typeof performance === 'undefined') return null;
+  const sampleFrames = cfg.sampleFrames || 180;
+  const label = cfg.label || 'default';
+  const totals = {
+    frame: 0,
+    spread: 0,
+    shader: 0,
+    overlayInfection: 0,
+    overlayBarrier: 0,
+    overlayInfectionTiles: 0,
+    overlayBarrierTiles: 0,
+    spreadSteps: 0,
+    frames: 0,
+  };
+  let active = true;
+
+  function logSummaryAndReset() {
+    const frames = Math.max(totals.frames, 1);
+    const summary = {
+      frames,
+      frameMs: +(totals.frame / frames).toFixed(2),
+      spreadMsPerFrame: +(totals.spread / frames).toFixed(3),
+      spreadMsPerUpdate: totals.spreadSteps ? +(totals.spread / totals.spreadSteps).toFixed(3) : 0,
+      shaderMs: +(totals.shader / frames).toFixed(3),
+      vironOverlayMs: +(totals.overlayInfection / frames).toFixed(3),
+      vironTiles: Math.round(totals.overlayInfectionTiles / frames),
+      barrierOverlayMs: +(totals.overlayBarrier / frames).toFixed(3),
+      barrierTiles: Math.round(totals.overlayBarrierTiles / frames),
+    };
+    const prefix = label ? `VIRON_PROFILE[${label}]` : 'VIRON_PROFILE';
+    console.log(`${prefix}:${JSON.stringify(summary)}`);
+    if (typeof window !== 'undefined') {
+      window.__profilingDone = true;
+      window.__profilingSummary = summary;
+    }
+
+    totals.frame = totals.spread = totals.shader = 0;
+    totals.overlayInfection = totals.overlayBarrier = totals.spreadSteps = 0;
+    totals.overlayInfectionTiles = totals.overlayBarrierTiles = 0;
+    totals.frames = 0;
+    if (cfg.once) active = false;
+  }
+
+  return {
+    config: cfg,
+    now: () => performance.now(),
+    record(name, delta) {
+      if (!active) return;
+      if (name === 'spread') totals.spread += delta;
+      else if (name === 'shader') totals.shader += delta;
+    },
+    recordSpread(delta) {
+      if (!active) return;
+      totals.spread += delta;
+      totals.spreadSteps++;
+    },
+    recordOverlay(tag, tiles, delta) {
+      if (!active) return;
+      if (tag === 'infection') {
+        totals.overlayInfection += delta;
+        totals.overlayInfectionTiles += tiles;
+      } else {
+        totals.overlayBarrier += delta;
+        totals.overlayBarrierTiles += tiles;
+      }
+    },
+    snapshot() {
+      return {
+        frames: totals.frames,
+        frame: totals.frame,
+        spread: totals.spread,
+        shader: totals.shader,
+        overlayInfection: totals.overlayInfection,
+        overlayBarrier: totals.overlayBarrier,
+        overlayInfectionTiles: totals.overlayInfectionTiles,
+        overlayBarrierTiles: totals.overlayBarrierTiles,
+        spreadSteps: totals.spreadSteps,
+      };
+    },
+    flush() {
+      if (!active || totals.frames === 0) return false;
+      logSummaryAndReset();
+      return true;
+    },
+    frameEnd(frameDelta) {
+      if (!active) return;
+      totals.frame += frameDelta;
+      totals.frames++;
+      if (totals.frames >= sampleFrames) logSummaryAndReset();
+    }
+  };
+}
+
+function initVironProfiler() {
+  if (typeof window === 'undefined') return null;
+  const cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
+    ? window.VIRON_PROFILE
+    : null;
+  window.__vironProfiler = cfg ? createVironProfiler(cfg) : null;
+  return window.__vironProfiler;
+}
+
+function getVironProfiler() {
+  if (typeof window === 'undefined') return null;
+  const cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
+    ? window.VIRON_PROFILE
+    : null;
+  if (!window.__vironProfiler && cfg) initVironProfiler();
+  else if (window.__vironProfiler && window.__vironProfiler.config !== cfg) initVironProfiler();
+  return window.__vironProfiler;
+}
+
+initVironProfiler();
+
+if (typeof window !== 'undefined') {
+  window.initVironProfiler = initVironProfiler;
+  window.getVironProfiler = getVironProfiler;
+}

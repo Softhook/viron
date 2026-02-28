@@ -570,6 +570,8 @@ function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'shipselect') { drawShipSelect(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
+  const profiler = getVironProfiler();
+  const frameStart = profiler ? performance.now() : 0;
 
   // --- Dynamic Performance Scaling ---
   // Approach: frame-time percentile monitor (industry-standard technique).
@@ -733,6 +735,7 @@ function draw() {
       }
     }
   }
+  if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
 
 // ---------------------------------------------------------------------------
@@ -748,10 +751,16 @@ function draw() {
  *   2. All 7×7 launchpad tiles are infected (launchpad destroyed)
  */
 function spreadInfection() {
-  if (frameCount % 5 !== 0) return;  // Throttle to once every 5 frames
+  const profiler = getVironProfiler();
+  const profilerConfig = profiler ? profiler.config : (typeof window !== 'undefined' ? window.VIRON_PROFILE : null);
+  const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
+  const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
+  const shouldRun = frameCount % 5 === 0;
+  if (!shouldRun) return;
+  const spreadStart = profiler ? performance.now() : 0;
 
   // Game over — too much infection (fast path: no Object.keys allocation needed)
-  if (infection.count >= MAX_INF) {
+  if (infection.count >= maxInf) {
     if (gameState !== 'gameover') {
       gameState = 'gameover';
       gameOverReason = 'INFECTION REACHED CRITICAL MASS';
@@ -775,6 +784,11 @@ function spreadInfection() {
       levelEndTime = millis();
       if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
     }
+    return;
+  }
+
+  if (freezeSpread) {
+    if (profiler) profiler.recordSpread(performance.now() - spreadStart);
     return;
   }
 
@@ -832,6 +846,8 @@ function spreadInfection() {
       }
     }
   }
+
+  if (profiler) profiler.recordSpread(performance.now() - spreadStart);
 }
 
 // ---------------------------------------------------------------------------

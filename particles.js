@@ -263,18 +263,12 @@ class ParticleSystem {
               }
             }
           }
-          if (hitLP && millis() - lastAlarmTime > 1000) {
-            if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
-            lastAlarmTime = millis();
-          }
+          if (hitLP) maybePlayLaunchpadAlarm();
         } else {
           // Normal bomb: infect the single tile recorded when the bomb was spawned
           if (infection.add(b.k)) {
             if (isLaunchpad(b.x, b.z)) {
-              if (millis() - lastAlarmTime > 1000) {
-                if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
-                lastAlarmTime = millis();
-              }
+              maybePlayLaunchpadAlarm();
             }
           }
         }

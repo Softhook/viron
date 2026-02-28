@@ -131,6 +131,16 @@ function findNearest(arr, x, y, z) {
   return best;
 }
 
+const ALARM_COOLDOWN_MS = 1000;
+/** Plays the launchpad alarm no more than once per cooldown window. */
+function maybePlayLaunchpadAlarm() {
+  const now = millis();
+  if (now - lastAlarmTime <= ALARM_COOLDOWN_MS) return false;
+  if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+  lastAlarmTime = now;
+  return true;
+}
+
 /**
  * Removes all infected tiles within a CLEAR_R-tile square around (tx, tz).
  * Returns the number of tiles that were cleared.
@@ -849,10 +859,7 @@ function spreadInfection() {
       soundCount++;
     }
     if (isLaunchpad(wx, wz)) {
-      if (millis() - lastAlarmTime > 1000) {
-        if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
-        lastAlarmTime = millis();
-      }
+      maybePlayLaunchpadAlarm();
     }
   }
 

@@ -7,7 +7,8 @@
     "test": "node test.js",
     "benchmark": "node benchmark-terrain.js",
     "benchmark-particles": "node benchmark-particles.js",
-    "benchmark-viron": "node benchmark-viron.js"
+    "benchmark-viron": "node benchmark-viron.js",
+    "benchmark-enemy-math": "node benchmark-enemy-math.js"
   },
   "repository": {
     "type": "git",

@@ -4,6 +4,9 @@ class GameSFX {
         this.distCurve = null;
         this.spatialEnabled = true;
         this.thrustNodes = {}; // id -> { osc, noise, gain, panner }
+        this.lastExplosionTime = 0;
+        this.lastExplosionPos = { x: 0, y: 0, z: 0 };
+        this.ctx = null;
     }
 
     init() {
@@ -11,6 +14,17 @@ class GameSFX {
         try { if (typeof userStartAudio !== 'undefined') userStartAudio(); } catch (e) { }
         if (typeof getAudioContext !== 'undefined') {
             this.ctx = getAudioContext();
+
+            // Master compressor to prevent clipping when multiple sounds (explosions, shots, engines) 
+            // overlap, especially likely in two-player mode.
+            this.master = this.ctx.createDynamicsCompressor();
+            this.master.threshold.setValueAtTime(-18, this.ctx.currentTime);
+            this.master.knee.setValueAtTime(24, this.ctx.currentTime);
+            this.master.ratio.setValueAtTime(10, this.ctx.currentTime);
+            this.master.attack.setValueAtTime(0.003, this.ctx.currentTime);
+            this.master.release.setValueAtTime(0.25, this.ctx.currentTime);
+            this.master.connect(this.ctx.destination);
+
             this.distCurve = this.createDistortionCurve(400);
             this.distCurveGameOver = this.createDistortionCurve(60);
 
@@ -44,13 +58,73 @@ class GameSFX {
         this.init();
         if (!this.ctx) return null;
         let t = this.ctx.currentTime;
-        let targetNode = this.ctx.destination;
+        let targetNode = this.master || this.ctx.destination;
 
-        if (x !== undefined && y !== undefined && z !== undefined && this.spatialEnabled) {
-            let panner = this.createSpatializer(x, y, z);
-            if (panner) {
-                panner.connect(targetNode);
-                targetNode = panner;
+        if (x !== undefined && y !== undefined && z !== undefined) {
+            if (this.spatialEnabled) {
+                let panner = this.createSpatializer(x, y, z);
+                if (panner) {
+                    panner.connect(targetNode);
+                    targetNode = panner;
+                }
+            } else {
+                // FALLBACK: Manual distance-based volume scaling and stereo separation for split-screen
+                let manualVol = 1.0;
+                let panVal = 0;
+                let minDistSq = Infinity;
+
+                if (typeof players !== 'undefined' && players.length > 0) {
+                    let closestIdx = -1;
+
+                    for (let i = 0; i < players.length; i++) {
+                        let p = players[i];
+                        if (p.dead || !p.ship) continue;
+                        let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
+                        if (dSq < minDistSq) {
+                            minDistSq = dSq;
+                            closestIdx = i;
+                        }
+                    }
+
+                    if (minDistSq !== Infinity) {
+                        // Offset distance by ~520 units to simulate the follow-camera being zoomed out.
+                        // This prevents sounds at x=0 distance from blasting the speakers at 100% volume,
+                        // making split-screen volume match the feel of single-player spatial audio.
+                        let distance = Math.sqrt(minDistSq) + 520;
+                        const refDist = 180;
+                        if (distance > refDist) {
+                            manualVol = Math.pow(refDist / Math.min(distance, 8000), 1.25);
+                        }
+
+                        // Split-screen panning: shift sound toward the listener it's closer to
+                        if (players.length === 2) {
+                            panVal = (closestIdx === 0) ? -0.35 : 0.35;
+                        }
+                    }
+                }
+
+                // Create a utility gain/pan chain if needed
+                if (manualVol < 0.99 || panVal !== 0) {
+                    let g = this.ctx.createGain();
+                    g.gain.setValueAtTime(manualVol, t);
+
+                    // FALLBACK: Manual distance-based low-pass to simulate "deepness" at range
+                    let f = this.ctx.createBiquadFilter();
+                    f.type = 'lowpass';
+                    let distFactor = (minDistSq === Infinity) ? 0 : Math.min(Math.max(0, (minDistSq - 10000) / 1000000), 1);
+                    f.frequency.setValueAtTime(20000 - (18000 * distFactor), t);
+                    g.connect(f);
+
+                    if (panVal !== 0 && this.ctx.createStereoPanner) {
+                        let p = this.ctx.createStereoPanner();
+                        p.pan.setValueAtTime(panVal, t);
+                        f.connect(p);
+                        p.connect(targetNode);
+                    } else {
+                        f.connect(targetNode);
+                    }
+                    targetNode = g;
+                }
             }
         }
         return { ctx: this.ctx, t, targetNode };
@@ -323,6 +397,20 @@ class GameSFX {
     }
 
     playExplosion(isLarge = false, type = '', x, y, z) {
+        // --- Deduplication & Rate Limiting ---
+        // Prevents redundant explosion sounds from triggering in the same frame
+        // or very close together in space/time, which can cause audio glitches.
+        let now = Date.now();
+        if (x !== undefined && z !== undefined) {
+            let dx = x - this.lastExplosionPos.x;
+            let dz = z - this.lastExplosionPos.z;
+            if (now - this.lastExplosionTime < 45 && (dx * dx + dz * dz < 2500)) {
+                return; // Suppress redundant trigger
+            }
+            this.lastExplosionTime = now;
+            this.lastExplosionPos = { x, y, z };
+        }
+
         let s = this._setup(x, y, z);
         if (!s) return;
         let { ctx, t, targetNode } = s;
@@ -344,26 +432,30 @@ class GameSFX {
             noiseFilter.frequency.setValueAtTime(2000, t);
             noiseFilter.frequency.exponentialRampToValueAtTime(500, t + dur);
         } else {
-            noiseFilter.frequency.setValueAtTime(isLarge || isBomber ? 3000 : 5000, t);
+            noiseFilter.frequency.setValueAtTime(isLarge || isBomber ? 2200 : 5000, t);
             noiseFilter.frequency.exponentialRampToValueAtTime(80, t + dur);
         }
 
         let noiseGain = ctx.createGain();
-        let initVol = isLarge ? 1.5 : (isBomber ? 1.4 : 1.0);
+        let initVol = isLarge ? (type === '' ? 1.3 : 1.5) : (isBomber ? 1.4 : 1.0);
         noiseGain.gain.setValueAtTime(initVol, t);
         noiseGain.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
         noise.connect(noiseFilter);
         noiseFilter.connect(distortion);
 
-        let freqs = isLarge || isBomber ? [110, 114, 106] : (isSquid ? [130, 135, 125] : [150, 155, 145]);
+        // Oscillators - Large explosions (players/bombers) use lower frequencies, 
+        // Squids use sawtooth for 'ripping' sound, others use highersine/triangle.
+        let freqs = isLarge || isBomber ? [90, 94, 86] : (isSquid ? [130, 135, 125] : [150, 155, 145]);
         freqs.forEach((freq, idx) => {
             let osc = ctx.createOscillator();
             let oscGain = ctx.createGain();
 
             osc.type = isSquid ? 'sawtooth' : (idx === 0 ? 'triangle' : 'sine');
             osc.frequency.setValueAtTime(freq, t);
-            osc.frequency.exponentialRampToValueAtTime(isLarge || isBomber ? 10 : (isSquid ? 5 : 20), t + dur * 0.8);
+            // End frequency: 20Hz for large, 5-20Hz for others. 
+            let endFreq = isLarge || isBomber ? 20 : (isSquid ? 5 : 20);
+            osc.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
 
             let baseGain = isLarge || isBomber ? 1.0 : (isSquid ? 0.8 : 0.6);
             oscGain.gain.setValueAtTime(baseGain, t);
@@ -807,11 +899,11 @@ class GameSFX {
             let gain = this.ctx.createGain();
             gain.gain.value = 0;
 
-            // Only spatialize engine thrust for OTHER players or enemies.
-            // For the local player (id 0), the engine drone should be non-spatialized
-            // to avoid HRTF/panning artifacts (crackling) when the ship turns rapidly.
+            // Only spatialize engine thrust for OTHER players or enemies when spatialization is enabled.
+            // For the local player (id 0), or in two-player mode where both are effectively local,
+            // the engine drone should be non-spatialized to avoid HRTF/panning artifacts (crackling).
             let panner = null;
-            if (id !== 0) {
+            if (id !== 0 && this.spatialEnabled) {
                 panner = this.createSpatializer(x, y, z);
                 if (panner) {
                     panner.panningModel = 'equalpower';
@@ -819,12 +911,17 @@ class GameSFX {
                     panner.refDistance = 200;
                     panner.rolloffFactor = 0.5;
                 }
+            } else if (!this.spatialEnabled && this.ctx.createStereoPanner) {
+                // Split-screen mode: add fixed stereo separation to help distinguish the two viewports
+                panner = this.ctx.createStereoPanner();
+                panner.pan.setValueAtTime((id === 0) ? -0.4 : 0.4, t);
             }
 
             // Low deep rumble (oscillator)
             let osc = this.ctx.createOscillator();
             osc.type = 'triangle';
-            osc.frequency.setValueAtTime(42, t);
+            // Offset frequency slightly per ID to prevent phasing/beating in mono
+            osc.frequency.setValueAtTime(42 + (id * 0.7), t);
 
             // Deep roar (noise)
             let noise = this._createNoise(5.0, 0.45, 0.4);
@@ -841,10 +938,10 @@ class GameSFX {
 
             if (panner) {
                 gain.connect(panner);
-                panner.connect(this.ctx.destination);
+                panner.connect(this.master || this.ctx.destination);
             } else {
-                // Connect local player thrust directly to output for perfect stability
-                gain.connect(this.ctx.destination);
+                // Connect local player thrust directly to master/output for perfect stability
+                gain.connect(this.master || this.ctx.destination);
             }
 
             osc.start(t);
@@ -854,10 +951,32 @@ class GameSFX {
 
         let n = this.thrustNodes[id];
         // 50ms smoothing
-        n.gain.gain.setTargetAtTime(0.22, t, 0.05);
+        let baseVol = this.spatialEnabled ? 0.22 : 0.16; // Lower base volume in 2p mode
+        let finalVol = baseVol;
 
-        // Only update panner if it exists (i.e., not the local player)
-        if (n.panner && x !== undefined) {
+        // Manual attenuation for engines in 2p mode
+        if (!this.spatialEnabled && x !== undefined && y !== undefined && z !== undefined) {
+            let minDistSq = Infinity;
+            if (typeof players !== 'undefined' && players.length > 0) {
+                for (let p of players) {
+                    if (p.dead || !p.ship) continue;
+                    let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
+                    if (dSq < minDistSq) minDistSq = dSq;
+                }
+                if (minDistSq !== Infinity) {
+                    let distance = Math.sqrt(minDistSq);
+                    const refDist = 180;
+                    if (distance > refDist) {
+                        finalVol *= Math.pow(refDist / Math.min(distance, 8000), 1.25);
+                    }
+                }
+            }
+        }
+
+        n.gain.gain.setTargetAtTime(finalVol, t, 0.05);
+
+        // Only update 3D panner position if we are in spatial mode (single player)
+        if (this.spatialEnabled && n.panner && x !== undefined) {
             let dt = 0.05;
             let distSq = (x - n.lastX) ** 2 + (y - n.lastY) ** 2 + (z - n.lastZ) ** 2;
             if (distSq > 0.1) {

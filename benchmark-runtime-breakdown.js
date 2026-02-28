@@ -29,6 +29,8 @@ const SCENARIOS = [
   { id: 'no-infection', title: 'Infection spread disabled' },
   { id: 'no-scenery', title: 'Trees/Buildings disabled' },
   { id: 'low-view', title: 'Reduced view distance (30/20/3500)' },
+  { id: 'no-lighting', title: 'Scene lighting disabled (setSceneLighting stub)' },
+  { id: 'no-shadows', title: 'Shadow polygons disabled (stencil stubs)' },
 ];
 
 function findChrome() {
@@ -150,6 +152,13 @@ async function setupPlayableState(page, scenarioId) {
       VIEW_NEAR = 20;
       VIEW_FAR = 30;
       CULL_DIST = 3500;
+    } else if (id === 'no-lighting') {
+      // Stub out the p5 ambient+directional light setup calls entirely.
+      window.setSceneLighting = function () {};
+    } else if (id === 'no-shadows') {
+      // Stub stencil helpers so no shadow polygons are drawn (trees + buildings).
+      window._beginShadowStencil = function () {};
+      window._endShadowStencil   = function () {};
     }
 
     // Function-level instrumentation.

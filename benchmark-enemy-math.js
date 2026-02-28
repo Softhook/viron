@@ -32,7 +32,13 @@ function findChrome() {
 
 (async function run() {
   const app = express();
-  app.use(express.static(__dirname));
+  const staticMiddleware = express.static(__dirname);
+  app.use((req, res, next) => {
+    if (!/\.(html|js|css|ttf|wav|mp3|ogg|png)$/i.test(req.path)) {
+      return res.status(404).end();
+    }
+    return staticMiddleware(req, res, next);
+  });
   const server = app.listen(PORT, async () => {
     let browser;
     try {

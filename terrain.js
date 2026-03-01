@@ -953,7 +953,10 @@ class Terrain {
         let halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
         if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
 
-        model(this.getChunkGeometry(cx, cz));
+        let geom = this.getChunkGeometry(cx, cz);
+        if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) {
+          model(geom);
+        }
       }
     }
 
@@ -1305,7 +1308,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (t._shadowGeom) {
+    if (t._shadowGeom && t._shadowGeom instanceof p5.Geometry && t._shadowGeom.vertices && t._shadowGeom.vertices.length > 0) {
       model(t._shadowGeom);
     }
     pop();
@@ -1406,7 +1409,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (b._shadowGeom) {
+    if (b._shadowGeom && b._shadowGeom instanceof p5.Geometry && b._shadowGeom.vertices && b._shadowGeom.vertices.length > 0) {
       model(b._shadowGeom);
     }
     pop();
@@ -1524,10 +1527,12 @@ class Terrain {
           let inf = infection.has(t.k);
           let geom = this._getTreeGeom(t, inf);
 
-          push();
-          translate(t.x, y, t.z);
-          model(geom);
-          pop();
+          if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) {
+            push();
+            translate(t.x, y, t.z);
+            model(geom);
+            pop();
+          }
 
           if (dSq < 1210000) shadowQueue.push(t);
         }
@@ -1654,10 +1659,12 @@ class Terrain {
         translate(0, floatY - y, 0);
         rotateY(frameCount * 0.01 + b.x);
         rotateZ(frameCount * 0.015 + b.z);
-        model(this._getPowerupGeom(b, inf));
+        let geom = this._getPowerupGeom(b, inf);
+        if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) model(geom);
         pop();
       } else {
-        model(this._getBuildingGeom(b, inf));
+        let bGeom = this._getBuildingGeom(b, inf);
+        if (bGeom && bGeom instanceof p5.Geometry && bGeom.vertices && bGeom.vertices.length > 0) model(bGeom);
         // Rotating crown for type 4
         if (b.type === 4) {
           const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;

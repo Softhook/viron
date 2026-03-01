@@ -211,6 +211,7 @@ function updateTimeOfDay(stepIndex) {
 const MAX_INF = 2000;   // Total infected tile count that triggers game over
 const INF_RATE = 0.01;   // Per-tile per-update probability of spreading to a neighbour
 const CLEAR_R = 3;      // Radius (in tiles) cleared by a single bullet/missile impact
+const TANK_SHELL_CLEAR_R = 7; // Radius (in tiles) cleared by a tank shell impact
 
 // --- Infection spread direction vectors (4-connected grid) ---
 const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];

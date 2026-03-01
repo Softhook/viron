@@ -1028,7 +1028,6 @@ function checkCollisions(p) {
         let hitRadSq = e.type === 'colossus' ? 160000 : 10000;
         if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < hitRadSq) {
           if (e.type === 'colossus') {
-            // Missiles deal 5 HP to the Colossus
             e.hp = (e.hp || 0) - 5;
             e.hitFlash = 20;
             p.homingMissiles.splice(i, 1);
@@ -1044,6 +1043,36 @@ function checkCollisions(p) {
             enemyManager.enemies.splice(j, 1);
             p.homingMissiles.splice(i, 1);
             p.score += 250;
+            killed = true;
+          }
+          break;
+        }
+      }
+    }
+
+    // Player tank shells vs enemy (Large hit radius)
+    if (!killed) {
+      for (let i = p.tankShells.length - 1; i >= 0; i--) {
+        let s2 = p.tankShells[i];
+        let hitRadSq = e.type === 'colossus' ? 250000 : 22500; // 500 vs 150 unit radius
+        if ((s2.x - e.x) ** 2 + (s2.y - e.y) ** 2 + (s2.z - e.z) ** 2 < hitRadSq) {
+          if (e.type === 'colossus') {
+            // Tank shells deal massive damage to Colossus
+            e.hp = (e.hp || 0) - 15;
+            e.hitFlash = 30;
+            p.tankShells.splice(i, 1);
+            p.score += 100;
+            if (e.hp <= 0) {
+              particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
+              enemyManager.enemies.splice(j, 1);
+              p.score += 2000;
+              killed = true;
+            }
+          } else {
+            particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+            enemyManager.enemies.splice(j, 1);
+            p.tankShells.splice(i, 1);
+            p.score += 300;
             killed = true;
           }
           break;
@@ -1123,6 +1152,36 @@ function checkCollisions(p) {
         p.score += 200;
         p.bullets.splice(i, 1);
         hit = true;
+        break;
+      }
+    }
+  }
+
+  // --- 7. Player tank shells vs infected procedural trees ---
+  for (let j = p.tankShells.length - 1; j >= 0; j--) {
+    let ts = p.tankShells[j];
+    let tx0 = toTile(ts.x), tz0 = toTile(ts.z);
+    let hitTree = false;
+
+    for (let tz = tz0 - 3; tz <= tz0 + 3 && !hitTree; tz++) {
+      for (let tx = tx0 - 3; tx <= tx0 + 3; tx++) {
+        let t = terrain.tryGetProceduralTree(tx, tz);
+        if (!t) continue;
+        let ty = terrain.getAltitude(t.x, t.z);
+        if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
+        if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
+
+        if (!infection.has(tileKey(tx, tz))) continue;
+
+        for (let dx = -TANK_SHELL_CLEAR_R; dx <= TANK_SHELL_CLEAR_R; dx++) {
+          for (let dz = -TANK_SHELL_CLEAR_R; dz <= TANK_SHELL_CLEAR_R; dz++) {
+            infection.remove(tileKey(tx + dx, tz + dz));
+          }
+        }
+        terrain.addPulse(ts.x, ts.z, 2.0);
+        particleSystem.addExplosion(ts.x, ts.y, ts.z);
+        p.tankShells.splice(j, 1);
+        hitTree = true;
         break;
       }
     }

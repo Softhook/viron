@@ -58,6 +58,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
     respawnTimer: 0,
     bullets: [],
     homingMissiles: [],
+    tankShells: [],
     missilesRemaining: 1,
     normalShotMode: 'single',     // single|double|triple|spread (from powerup upgrades)
     weaponMode: 0,                // 0=NORMAL, 1=MISSILE, 2=BARRIER (index into WEAPON_MODES)
@@ -153,6 +154,45 @@ function fireNormalPattern(p, s) {
 }
 
 /**
+ * Fires a heavy tank shell that follows a parabolic trajectory and explodes on
+ * impact with the ground, clearing a large area.
+ */
+function fireTankShell(p) {
+  const power = 19; // Increased from 16 for longer range
+  const life = 240; // Increased from 180 for longer flight time
+
+  // Give the shell a slight upward kick so it always arcs even at flat aim
+  const turretPitchOffset = -0.15;
+
+  // Custom spawn with ly aligned to the tank turret (-20)
+  const s = p.ship;
+  const cp = cos(s.pitch + turretPitchOffset), sp = sin(s.pitch + turretPitchOffset);
+  const cy = cos(s.yaw), sy = sin(s.yaw);
+  const fx = -cp * sy, fy = sp, fz = -cp * cy;
+
+  const lz = -45, ly = -20; // 45 units forward, 20 units UP from centre
+  const y1 = ly * cp - lz * sp;
+  const z1 = ly * sp + lz * cp;
+
+  let shell = {
+    x: s.x + z1 * sy,
+    y: s.y + y1,
+    z: s.z + z1 * cy,
+    vx: fx * power + s.vx,
+    vy: fy * power + s.vy,
+    vz: fz * power + s.vz,
+    life
+  };
+
+  p.tankShells.push(shell);
+
+  if (typeof gameSFX !== 'undefined') {
+    gameSFX.playShot(p.ship.x, p.ship.y, p.ship.z);
+    gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
+  }
+}
+
+/**
  * Fires a homing missile from the player's ship if missiles are available.
  * Decrements missilesRemaining, pushes the missile into homingMissiles[], and
  * plays a launch sound effect.
@@ -191,8 +231,14 @@ function fireActiveWeapon(p) {
   if (mode === 1) fireMissile(p);
   else if (mode === 2) fireBarrier(p);
   else {
-    // NORMAL: fires based on the currently active upgrade shot pattern.
-    fireNormalPattern(p, p.ship);
+    // NORMAL: fires based on the currently active upgrade shot pattern
+    // or the ship's specific weapon type.
+    let d = SHIP_DESIGNS[p.designIndex];
+    if (d && d.shotType === 'tank_shell') {
+      fireTankShell(p);
+    } else {
+      fireNormalPattern(p, p.ship);
+    }
   }
 }
 
@@ -793,9 +839,15 @@ function updateShipInput(p) {
 
   // Fire based on selected weapon mode (used by both types)
   if (p.weaponMode === 0) {
-    // NORMAL: rapid-fire bullets every 6 frames while shoot is held
-    if (isShooting && frameCount % 6 === 0) {
-      fireNormalPattern(p, s);
+    // NORMAL: tank shells fire slower than bullets for balance (every 24 vs 6 frames)
+    if (isShooting) {
+      let des = SHIP_DESIGNS[p.designIndex];
+      let isTank = (des && des.shotType === 'tank_shell');
+      let rate = isTank ? 15 : 6;
+      if (frameCount % rate === 0) {
+        if (isTank) fireTankShell(p);
+        else fireNormalPattern(p, s);
+      }
     }
     p.shootHeld = isShooting;
   } else if (p.weaponMode === 1) {
@@ -828,6 +880,7 @@ function killPlayer(p) {
   p.dead = true;
   p.respawnTimer = 120;  // ~2 seconds at 60 fps
   p.bullets = [];
+  p.tankShells = [];
 
   // --- "Launch Pad Taken Over" detection ---
   // If the player dies on the launch pad while an enemy is also on the pad,
@@ -866,40 +919,29 @@ function killPlayer(p) {
  */
 function updateProjectilePhysics(p) {
   // --- Bullets ---
-  // Aim assist flag is constant for the duration of this frame's bullet updates
   let assistEnabled = aimAssist.enabled;
   for (let i = p.bullets.length - 1; i >= 0; i--) {
     let b = p.bullets[i];
 
-    // PERFORMANCE: Only seeking for "fresh" bullets (first 30 frames)
-    // and only if Aim Assist is enabled (for P1 or via 'P' toggle)
-    // bullets are now created with a much longer lifetime (1000) so we
-    // still consider the first 30 frames 'fresh' for steering purposes.
-    if (assistEnabled && b.life > 240) { // Bullets start at 1000 life
+    if (assistEnabled && b.life > 240) {
       let bestTarget = null;
       let bestDot = 0.985;
       let speed = Math.hypot(b.vx, b.vy, b.vz);
 
       if (speed > 0) {
         let bDirX = b.vx / speed, bDirY = b.vy / speed, bDirZ = b.vz / speed;
-
-        // 1. Enemies (Highest priority)
         for (let e of enemyManager.enemies) {
           let dx = e.x - b.x, dy = e.y - b.y, dz = e.z - b.z;
           let dSq = dx * dx + dy * dy + dz * dz;
-
-          if (dSq < 1440000 && dSq > 400) { // 1200^2 and 20^2
+          if (dSq < 1440000 && dSq > 400) {
             let d = Math.sqrt(dSq);
             let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
             if (dot > bestDot) {
               bestDot = dot;
-              // PREDICTIVE: Seek lead position (pass pre-calculated d)
               bestTarget = aimAssist._getPredictedPos(b, e, speed, d);
             }
           }
         }
-
-        // 2. Virus (Halved frequency: check only on even frames to save CPU)
         if (!bestTarget && frameCount % 2 === 0) {
           let bTx = Math.floor(b.x / 120), bTz = Math.floor(b.z / 120);
           for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
@@ -910,7 +952,7 @@ function updateProjectilePhysics(p) {
                 let tyPos = terrain.getAltitude(txPos, tzPos);
                 let dx = txPos - b.x, dy = tyPos - b.y, dz = tzPos - b.z;
                 let dSq = dx * dx + dy * dy + dz * dz;
-                if (dSq < 360000) { // 600^2
+                if (dSq < 360000) {
                   let d = Math.sqrt(dSq);
                   let dot = (dx / d) * bDirX + (dy / d) * bDirY + (dz / d) * bDirZ;
                   if (dot > bestDot) {
@@ -939,10 +981,8 @@ function updateProjectilePhysics(p) {
     if (b.life <= 0) {
       p.bullets.splice(i, 1);
     } else if (b.y > terrain.getAltitude(b.x, b.z)) {
-      // Bullet hit terrain — attempt to clear infection
       clearInfectionAt(b.x, b.z, p);
       p.bullets.splice(i, 1);
-
     }
   }
 
@@ -950,25 +990,21 @@ function updateProjectilePhysics(p) {
   for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
     let m = p.homingMissiles[i];
     const maxSpd = 10;
-
-    // Use this player's locked aim target; fall back to nearest enemy
     let target = p.aimTarget || findNearest(enemyManager.enemies, m.x, m.y, m.z);
 
     if (target) {
-      // Predictive lead when aim assist is on; direct homing otherwise (no aimAssist overhead)
       let dest = aimAssist.enabled ? aimAssist._getPredictedPos(m, target, maxSpd) : target;
       let dx = dest.x - m.x, dy = dest.y - m.y, dz = dest.z - m.z;
       let dSq = dx * dx + dy * dy + dz * dz;
       if (dSq > 0) {
         let mg = Math.sqrt(dSq);
-        let bl = 0.12;  // Blend factor — higher = more responsive homing
+        let bl = 0.12;
         m.vx = lerp(m.vx, (dx / mg) * maxSpd, bl);
         m.vy = lerp(m.vy, (dy / mg) * maxSpd, bl);
         m.vz = lerp(m.vz, (dz / mg) * maxSpd, bl);
       }
     }
 
-    // Clamp speed to maxSpd so homing can't accelerate without limit
     let spSq = m.vx * m.vx + m.vy * m.vy + m.vz * m.vz;
     if (spSq > maxSpd * maxSpd) {
       let sp = Math.sqrt(spSq);
@@ -980,7 +1016,6 @@ function updateProjectilePhysics(p) {
     m.x += m.vx; m.y += m.vy; m.z += m.vz;
     m.life--;
 
-    // Smoke trail — one particle every other frame
     if (frameCount % 2 === 0) {
       particleSystem.particles.push({
         x: m.x, y: m.y, z: m.z,
@@ -992,7 +1027,6 @@ function updateProjectilePhysics(p) {
     let gnd = terrain.getAltitude(m.x, m.z);
     if (m.life <= 0 || m.y > gnd) {
       if (m.y > gnd) {
-        // Hit terrain — explode and attempt infection clear
         particleSystem.addExplosion(m.x, m.y, m.z);
         clearInfectionAt(m.x, m.z, p);
       }
@@ -1000,6 +1034,49 @@ function updateProjectilePhysics(p) {
     }
   }
 
+  // --- Tank Shells ---
+  for (let i = p.tankShells.length - 1; i >= 0; i--) {
+    let s = p.tankShells[i];
+    s.vy += 0.15; // Gravity
+    s.x += s.vx; s.y += s.vy; s.z += s.vz;
+    s.life--;
+
+    let g = terrain.getAltitude(s.x, s.z);
+    if (s.life <= 0 || s.y > g) {
+      // AOE Destruction of infection and enemies
+      let impactRad = TANK_SHELL_CLEAR_R * TILE;
+      let impactRadSq = impactRad * impactRad;
+
+      // Kill nearby enemies
+      for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
+        let e = enemyManager.enemies[j];
+        let dx = e.x - s.x, dy = e.y - s.y, dz = e.z - s.z;
+        if (dx * dx + dy * dy + dz * dz < impactRadSq) {
+          particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+          enemyManager.enemies.splice(j, 1);
+          p.score += 300;
+        }
+      }
+
+      for (let dx = -TANK_SHELL_CLEAR_R; dx <= TANK_SHELL_CLEAR_R; dx++) {
+        for (let dz = -TANK_SHELL_CLEAR_R; dz <= TANK_SHELL_CLEAR_R; dz++) {
+          let tx = toTile(s.x) + dx;
+          let tz = toTile(s.z) + dz;
+          let k = tileKey(tx, tz);
+          if (infection.remove(k)) {
+            p.score += 50;
+            // Note: Clearing the infection automatically reverts the procedural tree on this tile to its healthy state.
+          }
+        }
+      }
+      terrain.addPulse(s.x, s.z, 2.0);
+      if (typeof gameSFX !== 'undefined') {
+        gameSFX.setThrust(p.id, false);
+        gameSFX.playClearInfection(s.x, g, s.z);
+      }
+      p.tankShells.splice(i, 1);
+    }
+  }
 }
 
 /**
@@ -1107,6 +1184,20 @@ function renderProjectiles(p, camX, camZ) {
     box(10, 1, 4); // Horizontal fins
     box(1, 10, 4); // Vertical fins
 
+    pop();
+  }
+
+  // Draw Tank Shells
+  for (let s of p.tankShells) {
+    if ((s.x - camX) ** 2 + (s.z - camZ) ** 2 > cullSq) continue;
+    push();
+    translate(s.x, s.y, s.z);
+    // Draw as a larger, glowing grey "shell"
+    noStroke();
+    fill(100, 100, 110);
+    sphere(8, 6, 4); // Larger than bullets
+    fill(255, 150, 50, 200); // Glow
+    sphere(5, 4, 3);
     pop();
   }
 }

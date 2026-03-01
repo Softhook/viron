@@ -522,6 +522,7 @@ const SHIP_DESIGNS = [
         lift: 0.0,
         brakeRate: 0.92,
         missileCapacity: 5,
+        shotType: 'tank_shell',
         isGroundVehicle: true,
         canTravelOnWater: false,
         footprint: [{ x: -25, z: -25 }, { x: 25, z: -25 }, { x: 25, z: 25 }, { x: -25, z: 25 }],

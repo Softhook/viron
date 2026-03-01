@@ -717,14 +717,36 @@ function updateShipInput(p) {
 
   // --- Physics integration ---
   if (d.isGroundVehicle) {
-    // GROUND VEHICLE PHYSICS: Snaps to surface, moves on horizontal plane
-    s.vy = 0;
-    // Removed s.pitch = 0; to allow vertical targeting
-
-    // Snap to ground or sea surface (if hovercraft)
+    // GROUND VEHICLE PHYSICS: Dynamic suspension and jumping
+    s.y += s.vy;
     let alt = terrain.getAltitude(s.x, s.z);
     let surfaceY = d.canTravelOnWater ? Math.min(SEA, alt) : alt;
-    s.y = surfaceY - 12;
+    let groundY = surfaceY - 12;
+
+    if (s.y > groundY) {
+      // Collision/Contact with ground
+      let terrainPush = groundY - (s.y - s.vy); // Vertical displacement due to terrain slope
+      if (terrainPush < -8) {
+        // We hit a major upward slope: limited vertical kick
+        // Reduced from 0.35 to 0.18 for a much heavier, more stable feel
+        s.vy = terrainPush * (0.18 / m);
+      } else {
+        s.vy = 0;
+      }
+      s.y = groundY;
+    } else {
+      // Airborne Check: keep it 'glued' unless we have significant height OR speed
+      let speedSq = s.vx * s.vx + s.vz * s.vz;
+      let hoverHeight = groundY - s.y;
+
+      // Increased thresholds again to reduce bounciness on moderate terrain
+      if (hoverHeight < 20 && speedSq < 45) {
+        s.y = groundY;
+        s.vy = 0;
+      } else {
+        s.vy += GRAV;
+      }
+    }
 
     // Movement
     if (isThrusting) {
@@ -733,8 +755,8 @@ function updateShipInput(p) {
       s.vx += dVec.x * pw;
       s.vz += dVec.z * pw;
 
-      // Ground/Dust particles
-      if (frameCount % 4 === 0) {
+      // Ground/Dust particles (Only when touching or near ground)
+      if (frameCount % 4 === 0 && s.y > groundY - 5) {
         particleSystem.particles.push({
           x: s.x, y: s.y + 10, z: s.z,
           vx: random(-1.5, 1.5), vy: -random(1, 3), vz: random(-1.5, 1.5),

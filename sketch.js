@@ -142,11 +142,11 @@ function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
   push();
   translate(sunPos.x, sunPos.y, sunPos.z);
   emissiveMaterial(255, 228, 180);
-  sphere(viewFarWorld * 0.021, 16, 12);
+  sphere(viewFarWorld * 0.021, 32, 24);
   fill(255, 184, 118, 80 * intensity);
-  sphere(viewFarWorld * 0.032, 16, 12);
+  sphere(viewFarWorld * 0.032, 32, 24);
   fill(255, 150, 96, 40 * intensity);
-  sphere(viewFarWorld * 0.046, 14, 10);
+  sphere(viewFarWorld * 0.046, 28, 22);
   pop();
 
   blendMode(BLEND);

@@ -316,23 +316,6 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   }
   endShape(CLOSE);
   _endShadowStencil();
-
-  // Feathered penumbra (fallback path only; terrain helper already feathers).
-  const featherAlpha = alpha * getOpacityFactor(casterH) * 0.35;
-  if (featherAlpha > 0.5) {
-    const cx = hull.reduce((a, p) => a + p.x, 0) / hull.length;
-    const cz = hull.reduce((a, p) => a + p.z, 0) / hull.length;
-    const featherScale = 1.04;
-    noStroke();
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, featherAlpha);
-    beginShape();
-    for (const p of hull) {
-      const fx = cx + (p.x - cx) * featherScale;
-      const fz = cz + (p.z - cz) * featherScale;
-      vertex(fx, terrain.getAltitude(fx, fz) - 0.6, fz);
-    }
-    endShape(CLOSE);
-  }
 }
 
 function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
@@ -357,7 +340,7 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
  */
 function drawShipShadow(x, groundY, z, yaw, alt) {
   if (aboveSea(groundY)) return;
-  const casterH = max(20, alt - groundY);
+  const casterH = max(20, groundY - alt);
   const alpha = map(casterH, 0, 600, 62, 16, true);
   const shipFootprint = [
     { x: -13, z: 13 },

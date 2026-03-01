@@ -21,7 +21,7 @@ let CULL_DIST = 6000;          // Max world distance for rendering enemies / par
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
 const SKY_R = 165, SKY_G = 128, SKY_B = 98;
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
-const AMBIENT_R = 34, AMBIENT_G = 44, AMBIENT_B = 64;
+const AMBIENT_R = 40, AMBIENT_G = 52, AMBIENT_B = 72;
 
 // --- Global sunrise light model (single source of truth) ---
 // SUN_DIR is the direction light travels from the sun into the world.

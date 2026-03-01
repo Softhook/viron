@@ -275,24 +275,6 @@ function _endShadowStencil() {
   gl.disable(gl.STENCIL_TEST);
 }
 
-function _drawShadowFeather(ctx, hull, alpha) {
-  if (!hull || hull.length < 3) return;
-  const featherAlpha = alpha * 0.35;
-  if (featherAlpha <= 0.5) return;
-  const cx = hull.reduce((a, p) => a + p.x, 0) / hull.length;
-  const cz = hull.reduce((a, p) => a + p.z, 0) / hull.length;
-  const featherScale = 1.04;
-  noStroke();
-  fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, featherAlpha);
-  beginShape();
-  for (const p of hull) {
-    const fx = cx + (p.x - cx) * featherScale;
-    const fz = cz + (p.z - cz) * featherScale;
-    vertex(fx, ctx.getAltitude(fx, fz) - 0.6, fz);
-  }
-  endShape(CLOSE);
-}
-
 // =============================================================================
 // Terrain class
 // =============================================================================
@@ -1141,7 +1123,6 @@ class Terrain {
     }
     endShape(CLOSE);
     _endShadowStencil();
-    _drawShadowFeather(this, hull, shadowAlpha);
   }
 
   /**
@@ -1204,7 +1185,6 @@ class Terrain {
     }
     endShape(CLOSE);
     _endShadowStencil();
-    _drawShadowFeather(this, hull, shadowAlpha);
   }
 
   /**
@@ -1280,7 +1260,6 @@ class Terrain {
      }
      endShape(CLOSE);
      _endShadowStencil();
-     _drawShadowFeather(this, hull, shadowAlpha);
    }
 
 

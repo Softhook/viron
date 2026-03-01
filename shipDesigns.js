@@ -479,7 +479,7 @@ const SHIP_DESIGNS = [
         isGroundVehicle: true,
         canTravelOnWater: false,
         footprint: [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: 15, z: 15 }, { x: -15, z: 15 }],
-        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
+        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform, aimTransform) {
             // Main body (Chassis)
             drawFace([[-12, -2, 15], [12, -2, 15], [12, -2, -15], [-12, -2, -15]], light); // Bottom
             drawFace([[-12, -10, 15], [12, -10, 15], [12, -10, -15], [-12, -10, -15]], light); // Top
@@ -490,6 +490,20 @@ const SHIP_DESIGNS = [
 
             // Cabin / Windshield (Facing forward)
             drawFace([[-8, -10, 0], [8, -10, 0], [8, -20, 8], [-8, -20, 8]], [200, 230, 255, 180]); // Windshield
+
+            // Jeep Gun (Tilted with aimTransform)
+            const gCol = [60, 60, 65];
+            // Small turret base (stays flat)
+            drawFace([[-4, -10, 4], [4, -10, 4], [4, -10, -4], [-4, -10, -4]], engineGray);
+            // The Gun Barrel (points with aim)
+            // We draw it relative to the ship center, but shifted to the roof (-12)
+            const gunPts = (yOff, zFront, zBack, w) => [
+                [-w, -12 + yOff, zFront], [w, -12 + yOff, zFront],
+                [w, -12 + yOff, zBack], [-w, -12 + yOff, zBack]
+            ];
+            drawFace(gunPts(-2, -25, 0, 2), gCol, aimTransform); // Top
+            drawFace(gunPts(2, -25, 0, 2), gCol, aimTransform);  // Bottom
+            drawFace([[-2, -14, -25], [2, -14, -25], [2, -10, -25], [-2, -14, -25]], light, aimTransform); // Muzzle
 
             // Wheels
             const drawWheel = (x, z) => {
@@ -526,7 +540,7 @@ const SHIP_DESIGNS = [
         isGroundVehicle: true,
         canTravelOnWater: false,
         footprint: [{ x: -25, z: -25 }, { x: 25, z: -25 }, { x: 25, z: 25 }, { x: -25, z: 25 }],
-        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
+        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform, aimTransform) {
             // Main Hull
             drawFace([[-20, -2, 25], [20, -2, 25], [20, -2, -25], [-20, -2, -25]], engineGray); // Bottom
             drawFace([[-18, -12, 25], [18, -12, 25], [18, -12, -25], [-18, -12, -25]], light); // Top
@@ -535,17 +549,15 @@ const SHIP_DESIGNS = [
             drawFace([[-20, -2, 25], [-20, -2, -25], [-18, -12, -25], [-18, -12, 25]], tintColor); // Left
             drawFace([[20, -2, 25], [20, -2, -25], [18, -12, -25], [18, -12, 25]], tintColor); // Right
 
-            // Turret
-            push();
-            drawFace([[-12, -12, 12], [12, -12, 12], [12, -12, -12], [-12, -12, -12]], engineGray); // Bottom
-            drawFace([[-10, -22, 12], [10, -22, 12], [10, -22, -12], [-10, -22, -12]], light); // Top
-            drawFace([[-12, -12, -12], [12, -12, -12], [10, -22, -12], [-10, -22, -12]], dark); // Front
+            // Turret & Cannon (Using aimTransform to follow player pitch)
+            drawFace([[-12, -12, 12], [12, -12, 12], [12, -12, -12], [-12, -12, -12]], engineGray, aimTransform); // Bottom
+            drawFace([[-10, -22, 12], [10, -22, 12], [10, -22, -12], [-10, -22, -12]], light, aimTransform); // Top
+            drawFace([[-12, -12, -12], [12, -12, -12], [10, -22, -12], [-10, -22, -12]], dark, aimTransform); // Front
 
             // Cannon (Facing forward)
-            drawFace([[-3, -21, -12], [3, -21, -12], [3, -21, -42], [-3, -21, -42]], engineGray);
-            drawFace([[-3, -15, -12], [3, -15, -12], [3, -15, -42], [-3, -15, -42]], engineGray);
-            drawFace([[-3, -21, -42], [3, -21, -42], [3, -15, -42], [-3, -15, -42]], light); // Muzzle
-            pop();
+            drawFace([[-3, -21, -12], [3, -21, -12], [3, -21, -42], [-3, -21, -42]], engineGray, aimTransform);
+            drawFace([[-3, -15, -12], [3, -15, -12], [3, -15, -42], [-3, -15, -42]], engineGray, aimTransform);
+            drawFace([[-3, -21, -42], [3, -21, -42], [3, -15, -42], [-3, -15, -42]], light, aimTransform); // Muzzle
 
             // Treads (Left/Right) - 3D Box style
             const drawTread = (side) => {
@@ -578,7 +590,7 @@ const SHIP_DESIGNS = [
         isGroundVehicle: true,
         canTravelOnWater: true,
         footprint: [{ x: -22, z: -30 }, { x: 22, z: -30 }, { x: 22, z: 30 }, { x: -22, z: 30 }],
-        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
+        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform, aimTransform) {
             // Main Skirt / Hull base
             drawFace([[-25, 0, -35], [25, 0, -35], [25, 0, 35], [-25, 0, 35]], [40, 40, 45]); // Bottom skirt
             drawFace([[-22, -8, -30], [22, -8, -30], [22, -8, 30], [-22, -8, 30]], light); // Deck
@@ -591,6 +603,19 @@ const SHIP_DESIGNS = [
 
             // Cockpit
             drawFace([[-10, -8, 5], [10, -8, 5], [8, -18, -5], [-8, -18, -5]], [180, 220, 255, 150]);
+
+            // Gun (Tilted with aimTransform)
+            const gCol = [50, 50, 55];
+            const gunPts = (side, yOff, zFront, zBack, w) => [
+                [side * 15 - w, -10 + yOff, zFront], [side * 15 + w, -10 + yOff, zFront],
+                [side * 15 + w, -10 + yOff, zBack], [side * 15 - w, -10 + yOff, zBack]
+            ];
+            // Dual side guns
+            [1, -1].forEach(side => {
+                drawFace(gunPts(side, -2, -35, -5, 2), gCol, aimTransform);
+                drawFace(gunPts(side, 2, -35, -5, 2), gCol, aimTransform);
+                drawFace([[side * 15 - 2, -12, -35], [side * 15 + 2, -12, -35], [side * 15 + 2, -8, -35], [side * 15 - 2, -8, -35]], light, aimTransform); // Tip
+            });
 
             // Rear Propulsion Fan
             drawFace([[-12, -8, -25], [12, -8, -25], [12, -25, -30], [-12, -25, -30]], engineGray); // Housing

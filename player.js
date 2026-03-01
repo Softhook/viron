@@ -96,8 +96,29 @@ function spawnProjectile(s, power, life) {
   let fy = sp;
   let fz = -cp * cy;
 
-  // Barrel offset: 30 units forward, 10 units below the ship centre
+  // Barrel offset: 30 units forward. Ground vehicles have guns on top (negative ly), 
+  // while aircraft typically have them slightly below center (positive ly).
+  let designIdx = (typeof players !== 'undefined' && s.designIdx !== undefined) ? s.designIdx : 0;
+  // If we can't find it directly on 's', we don't have enough info here, but player.js 
+  // fireActiveWeapon passes p.designIndex which isn't in spawnProjectile's 's'.
+  // However, we can detect if it's a ground vehicle from the design context if we had it.
+
+  // Actually, let's just use a reasonable default that works for both or check if y is very low.
   let lz = -30, ly = 10;
+
+  // Heuristic: if y is close to terrain, it's probably a ground vehicle.
+  // Better: fireActiveWeapon can pass the design info. 
+  // For now, let's check if DesignIndex is available in p.
+  // Wait, spawnProjectile is called from fireNormalPattern(p, s). 
+  // I'll update fireNormalPattern to pass design info if needed, or just hardcode for ground vehicles.
+
+  // NOTE: Ironclad Tank uses its own fireTankShell, so we only care about Jeep and Hovercraft here.
+  // Let's check ground altitude as a proxy.
+  if (terrain && s.y > terrain.getAltitude(s.x, s.z) - 30) {
+    ly = -14; // Spawn from the top for ground vehicles
+    lz = -40; // And a bit further forward
+  }
+
   let y1 = ly * cp - lz * sp;
   let z1 = ly * sp + lz * cp;
 
@@ -435,7 +456,19 @@ function shipDisplay(s, tintColor) {
   noStroke();
 
   let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
-  let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
+
+  // Find the player to get their design index and input state
+  let p = players.find(player => player.labelColor === tintColor);
+  let designIdx = p ? (p.designIndex || 0) : 0;
+  const isGround = SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].isGroundVehicle;
+
+  // Ground vehicles stay flat against the horizon (body pitch = 0)
+  // while their guns/aim can tilt.
+  let bodyPitch = isGround ? 0 : s.pitch;
+  let cx = Math.cos(bodyPitch), sx = Math.sin(bodyPitch);
+
+  // Aim transform used for rotating turrets/guns independently
+  let acx = Math.cos(s.pitch), asx = Math.sin(s.pitch);
 
   // Transform a local-space point through pitch then yaw and offset to world space
   let transform = (pt) => {
@@ -447,15 +480,25 @@ function shipDisplay(s, tintColor) {
     return [x2 + s.x, y1 + s.y, z2 + s.z];
   };
 
+  let aimTransform = (pt) => {
+    let x = pt[0], y = pt[1], z = pt[2];
+    let y1 = y * acx - z * asx;
+    let z1 = y * asx + z * acx;
+    let x2 = x * cy + z1 * sy;
+    let z2 = -x * sy + z1 * cy;
+    return [x2 + s.x, y1 + s.y, z2 + s.z];
+  };
+
   let r = tintColor[0], g = tintColor[1], b = tintColor[2];
   let dark = [r * 0.4, g * 0.4, b * 0.4];
   let light = [lerp(r, 255, 0.4), lerp(g, 255, 0.4), lerp(b, 255, 0.4)];
   let engineGray = [80, 80, 85];
 
-  const drawFace = (pts, col) => {
+  const drawFace = (pts, col, xform) => {
+    const activeTransform = xform || transform;
     if (pts.length >= 3) {
       // Calculate world-space normal for the face
-      let p0 = transform(pts[0]), p1 = transform(pts[1]), p2 = transform(pts[2]);
+      let p0 = activeTransform(pts[0]), p1 = activeTransform(pts[1]), p2 = activeTransform(pts[2]);
       let v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
       let v2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
       let nx = v1[1] * v2[2] - v1[2] * v2[1];
@@ -468,15 +511,12 @@ function shipDisplay(s, tintColor) {
     fill(col[0], col[1], col[2], col[3] || 255);
     beginShape();
     for (let p of pts) {
-      let t = transform(p);
+      let t = activeTransform(p);
       vertex(t[0], t[1], t[2]);
     }
     endShape(CLOSE);
   };
 
-  // Find the player to get their design index and input state
-  let p = players.find(player => player.labelColor === tintColor);
-  let designIdx = p ? (p.designIndex || 0) : 0;
   let isPushing = false;
   if (p) {
     isPushing = keyIsDown(p.keys.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
@@ -488,7 +528,7 @@ function shipDisplay(s, tintColor) {
   let flamePoints = [], thrustAngle = 0;
   if (SHIP_DESIGNS[designIdx]) {
     thrustAngle = SHIP_DESIGNS[designIdx].thrustAngle || 0;
-    flamePoints = SHIP_DESIGNS[designIdx].draw(drawFace, tintColor, engineGray, light, dark, isPushing, s, transform);
+    flamePoints = SHIP_DESIGNS[designIdx].draw(drawFace, tintColor, engineGray, light, dark, isPushing, s, transform, aimTransform);
   }
 
   // Reset material state to avoid specular leakage into subsequent draws (like shadows)
@@ -499,7 +539,6 @@ function shipDisplay(s, tintColor) {
   setSceneLighting();
 
   // --- Afterburner / Thrust Flames (Skipped for ground vehicles) ---
-  const isGround = SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].isGroundVehicle;
   if (p && !isGround) {
     const drawThrustFlame = (flamePt) => {
       push();

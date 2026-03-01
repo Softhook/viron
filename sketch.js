@@ -105,9 +105,6 @@ function setSceneLighting() {
   ambientLight(AMBIENT_R, AMBIENT_G, AMBIENT_B);
   // Warm key: directional sun at low elevation (sunrise profile).
   directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ);
-  // Cool sky fill: diffuse sky-dome light from above fills shadow faces with atmospheric blue.
-  // Direction points mostly upward (0.96 Y) so tops of objects always receive some sky fill.
-  directionalLight(58, 72, 125, -SUN_DIR_NX * 0.15, 0.96, SUN_DIR_NZ * 0.15);
 }
 
 /**

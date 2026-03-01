@@ -1108,7 +1108,7 @@ class Terrain {
    * tall sentinel buildings) are recursively subdivided to conform to
    * terrain bumps and avoid "bright chunks" caused by clipping.
    */
-  _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun, isFloating = false) {
+  _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun, isFloating = false, isBaking = false) {
     const shift = this._shadowShift(casterH, sun);
     let rawHull;
     if (isFloating) {
@@ -1121,72 +1121,92 @@ class Terrain {
     }
     if (rawHull.length < 3) return;
 
-    // 1. Subdivide the hull boundary to follow terrain curves more closely
-    const hull = [];
+    // 1. Subdivide the hull boundary into a flat array [x, z, x, z, ...] to avoid objects
+    const hullFlat = [];
     const edgeRes = TILE * 0.75;
+    const edgeResSq = edgeRes * edgeRes;
     for (let i = 0; i < rawHull.length; i++) {
       let p1 = rawHull[i], p2 = rawHull[(i + 1) % rawHull.length];
-      hull.push(p1);
-      let dSq = (p1.x - p2.x) ** 2 + (p1.z - p2.z) ** 2;
-      if (dSq > edgeRes * edgeRes) {
+      hullFlat.push(p1.x, p1.z);
+      let dx = p2.x - p1.x;
+      let dz = p2.z - p1.z;
+      let dSq = dx * dx + dz * dz;
+      if (dSq > edgeResSq) {
         let steps = Math.ceil(Math.sqrt(dSq) / edgeRes);
+        let stepScale = 1.0 / steps;
         for (let s = 1; s < steps; s++) {
-          hull.push({ x: p1.x + (p2.x - p1.x) * (s / steps), z: p1.z + (p2.z - p1.z) * (s / steps) });
+          let f = s * stepScale;
+          hullFlat.push(p1.x + dx * f, p1.z + dz * f);
         }
       }
     }
 
     // --- Triangle Fan from center with per-vertex conformal lift ---
     let cx = 0, cz = 0;
-    for (let p of hull) { cx += p.x; cz += p.z; }
-    cx /= hull.length; cz /= hull.length;
+    const numPts = hullFlat.length / 2;
+    for (let i = 0; i < hullFlat.length; i += 2) {
+      cx += hullFlat[i];
+      cz += hullFlat[i + 1];
+    }
+    cx /= numPts;
+    cz /= numPts;
 
     // Threshold tuned for robust terrain coverage; depth 5 allows precise "draping"
     const threshold = TILE * TILE * 0.4; // Tighter threshold for better geometry tracking 
     const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
+    const maxDepth = (typeof isMobile !== 'undefined' && isMobile) ? 4 : 5;
 
-    const emitTri = (p1, p2, p3, depth) => {
-      let d1 = (p1.x - p2.x) ** 2 + (p1.z - p2.z) ** 2;
-      let d2 = (p2.x - p3.x) ** 2 + (p2.z - p3.z) ** 2;
-      let d3 = (p3.x - p1.x) ** 2 + (p3.z - p1.z) ** 2;
+    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
 
-      // Depth 4/5 provides massive subdivision to conform to terrain features perfectly
-      const maxDepth = (typeof isMobile !== 'undefined' && isMobile) ? 4 : 5;
+    noStroke();
+    const shadowAlpha = alpha * this._shadowOpacityFactor(casterH);
+    // Bake the precise shadow color/alpha into the vertex colors
+    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
+
+    if (!isBaking) {
+      if (lightsWereOn) noLights();
+      _beginShadowStencil();
+    }
+
+    beginShape(TRIANGLES);
+    normal(0, 1, 0); // Always set normals so the mesh is complete and valid for WebGL shaders
+
+    // Zero-allocation inner subdivision loop
+    const emitTri = (x1, z1, x2, z2, x3, z3, depth) => {
+      let dx12 = x1 - x2, dz12 = z1 - z2;
+      let dx23 = x2 - x3, dz23 = z2 - z3;
+      let dx31 = x3 - x1, dz31 = z3 - z1;
+
+      let d1 = dx12 * dx12 + dz12 * dz12;
+      let d2 = dx23 * dx23 + dz23 * dz23;
+      let d3 = dx31 * dx31 + dz31 * dz31;
 
       if (depth < maxDepth && (d1 > threshold || d2 > threshold || d3 > threshold)) {
-        let m12 = { x: (p1.x + p2.x) * 0.5, z: (p1.z + p2.z) * 0.5 };
-        let m23 = { x: (p2.x + p3.x) * 0.5, z: (p2.z + p3.z) * 0.5 };
-        let m31 = { x: (p3.x + p1.x) * 0.5, z: (p3.z + p1.z) * 0.5 };
-        emitTri(p1, m12, m31, depth + 1);
-        emitTri(p2, m23, m12, depth + 1);
-        emitTri(p3, m31, m23, depth + 1);
-        emitTri(m12, m23, m31, depth + 1);
+        let m12x = (x1 + x2) * 0.5, m12z = (z1 + z2) * 0.5;
+        let m23x = (x2 + x3) * 0.5, m23z = (z2 + z3) * 0.5;
+        let m31x = (x3 + x1) * 0.5, m31z = (z3 + z1) * 0.5;
+        emitTri(x1, z1, m12x, m12z, m31x, m31z, depth + 1);
+        emitTri(x2, z2, m23x, m23z, m12x, m12z, depth + 1);
+        emitTri(x3, z3, m31x, m31z, m23x, m23z, depth + 1);
+        emitTri(m12x, m12z, m23x, m23z, m31x, m31z, depth + 1);
       } else {
-        vertex(p1.x, this.getAltitude(p1.x, p1.z) + liftY, p1.z);
-        vertex(p2.x, this.getAltitude(p2.x, p2.z) + liftY, p2.z);
-        vertex(p3.x, this.getAltitude(p3.x, p3.z) + liftY, p3.z);
+        vertex(x1, this.getAltitude(x1, z1) + liftY, z1);
+        vertex(x2, this.getAltitude(x2, z2) + liftY, z2);
+        vertex(x3, this.getAltitude(x3, z3) + liftY, z3);
       }
     };
 
-    noStroke();
-    // Disable lights while drawing at shadow: we don't want the sun to illuminate
-    // the floor of the shadow patch.
-    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
-    if (lightsWereOn) noLights();
-
-    const shadowAlpha = alpha * this._shadowOpacityFactor(casterH);
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-    _beginShadowStencil();
-    beginShape(TRIANGLES);
-    normal(0, 1, 0); // Keep normal state stable even if lights are off
-    let centerPt = { x: cx, z: cz };
-    for (let i = 0; i < hull.length; i++) {
-      emitTri(centerPt, hull[i], hull[(i + 1) % hull.length], 0);
+    for (let i = 0; i < numPts; i++) {
+      let idx1 = i * 2;
+      let idx2 = ((i + 1) % numPts) * 2;
+      emitTri(cx, cz, hullFlat[idx1], hullFlat[idx1 + 1], hullFlat[idx2], hullFlat[idx2 + 1], 0);
     }
-    endShape();
 
-    _endShadowStencil();
-    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
+    endShape();
+    if (!isBaking) {
+      _endShadowStencil();
+      if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
+    }
   }
 
   /**
@@ -1240,9 +1260,31 @@ class Terrain {
       }
       t._footprint = footprint;
       t._shadowCasterH = casterH;
+      t._shadowHull = true;
     }
+
     const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
-    this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false);
+
+    if (!t._shadowGeom) {
+      t._shadowGeom = buildGeometry(() => {
+        this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
+      });
+    }
+
+    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
+    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
+    if (lightsWereOn) noLights();
+    noStroke();
+    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
+
+    _beginShadowStencil();
+
+    push();
+    model(t._shadowGeom);
+    pop();
+
+    _endShadowStencil();
+    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
   }
 
   /**
@@ -1300,11 +1342,32 @@ class Terrain {
       }
       b._footprint = footprint;
       b._shadowCasterH = casterH;
+      b._shadowHull = true;
     }
 
     const casterHForOpacity = b._shadowCasterH || b.h;
     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
-    this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false);
+
+    if (!b._shadowGeom) {
+      b._shadowGeom = buildGeometry(() => {
+        this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
+      });
+    }
+
+    const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
+    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
+    if (lightsWereOn) noLights();
+    noStroke();
+    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
+
+    _beginShadowStencil();
+
+    push();
+    model(b._shadowGeom);
+    pop();
+
+    _endShadowStencil();
+    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
   }
 
 

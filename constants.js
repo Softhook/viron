@@ -46,11 +46,24 @@ const SHADOW_AMBIENT_B_SCALE = 0.6;
 const TREE_SHADOW_BASE_ALPHA = 40;
 const TREE_DEFAULT_TRUNK_HEIGHT = 40;
 
+/**
+ * Returns opacity multiplier for a shadow cast by a height `casterH`.
+ * Clamped to keep tall objects faint but never invisible.
+ * @param {number} casterH
+ * @returns {number} opacity factor in [SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX]
+ */
 const shadowOpacityFactor = (casterH) => {
   const op = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
   return constrain(op, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
 };
 
+/**
+ * Projects a caster of height `casterH` along sun direction to a ground-plane shift.
+ * Clamped so shadows cannot extend beyond the view bounds.
+ * @param {number} casterH
+ * @param {{x:number,y:number,z:number}} sun
+ * @returns {number} clamped projection shift distance
+ */
 const shadowShift = (casterH, sun) => {
   const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
   return Math.min(casterH / sun.y, maxShift);

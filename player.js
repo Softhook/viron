@@ -309,7 +309,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
 
   noStroke();
   // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
-  fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, alpha * heightFade(casterH));
+  fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, alpha * heightFade(casterH));
   _beginShadowStencil();
   beginShape();
   for (const p of hull) {

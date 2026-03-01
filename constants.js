@@ -32,13 +32,17 @@ const _SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
 const SUN_DIR_NX = SUN_DIR_X / _SUN_DIR_LEN;
 const SUN_DIR_NY = SUN_DIR_Y / _SUN_DIR_LEN;
 const SUN_DIR_NZ = SUN_DIR_Z / _SUN_DIR_LEN;
-// Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts.
+// Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
+// (grazing angles produced kilometre-long shadows and z-fighting); 0.18 keeps sunrise feel without instability.
 const SUN_DIR_MIN_Y = 0.18;
 // Shadow tuning: fades with caster height and clamps alpha floor to avoid fully disappearing tall-caster shadows.
 const SHADOW_HEIGHT_FADE_RATE = 0.0016;
 const SHADOW_HEIGHT_FADE_MIN = 0.35;
+const SHADOW_OPACITY_MAX = 1;
 // Shadow projection clamp: avoid projecting shadows past the far view plane.
 const SHADOW_MAX_VIEW_FRACTION = 0.9;
+const SHADOW_AMBIENT_RG_SCALE = 0.55;
+const SHADOW_AMBIENT_B_SCALE = 0.6;
 const SUN_KEY_R = 255, SUN_KEY_G = 188, SUN_KEY_B = 122;
 
 // --- Infection spread parameters ---

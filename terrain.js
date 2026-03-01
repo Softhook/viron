@@ -1067,7 +1067,7 @@ class Terrain {
     return this._sunShadowBasis;
   }
 
-  _shadowHeightFade(casterH) {
+  _shadowOpacityFactor(casterH) {
     return constrain(1 - casterH * SHADOW_HEIGHT_FADE_RATE, SHADOW_HEIGHT_FADE_MIN, 1);
   }
 
@@ -1113,7 +1113,7 @@ class Terrain {
     if (hull.length < 3) return;
 
     noStroke();
-    const shadowAlpha = alpha * this._shadowHeightFade(casterH);
+    const shadowAlpha = alpha * this._shadowOpacityFactor(casterH);
     // Sky-tinted shadow tied to ambient values so shaded faces and shadows stay coherent.
     fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, shadowAlpha);
     _beginShadowStencil();
@@ -1177,7 +1177,7 @@ class Terrain {
     const hull = t._shadowHull;
     if (hull.length < 3) return;
     noStroke();
-    const shadowAlpha = 40 * this._shadowHeightFade(t.trunkH || 40);
+    const shadowAlpha = 40 * this._shadowOpacityFactor(t.trunkH || 40);
     fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, shadowAlpha);
     _beginShadowStencil();
     beginShape();
@@ -1251,7 +1251,7 @@ class Terrain {
      if (hull.length < 3) return;
      // Type 4 alpha varies with infection; others are fixed.
      const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
-     const shadowAlpha = baseAlpha * this._shadowHeightFade(b.h);
+     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(b.h);
      noStroke();
      fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, shadowAlpha);
      _beginShadowStencil();

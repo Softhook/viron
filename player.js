@@ -399,6 +399,18 @@ function shipDisplay(s, tintColor) {
   let engineGray = [80, 80, 85];
 
   const drawFace = (pts, col) => {
+    if (pts.length >= 3) {
+      // Calculate world-space normal for the face
+      let p0 = transform(pts[0]), p1 = transform(pts[1]), p2 = transform(pts[2]);
+      let v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+      let v2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+      let nx = v1[1] * v2[2] - v1[2] * v2[1];
+      let ny = v1[2] * v2[0] - v1[0] * v2[2];
+      let nz = v1[0] * v2[1] - v1[1] * v2[0];
+      let mag = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (mag > 0) normal(nx / mag, ny / mag, nz / mag);
+    }
+
     fill(col[0], col[1], col[2], col[3] || 255);
     beginShape();
     for (let p of pts) {
@@ -424,6 +436,10 @@ function shipDisplay(s, tintColor) {
     thrustAngle = SHIP_DESIGNS[designIdx].thrustAngle || 0;
     flamePoints = SHIP_DESIGNS[designIdx].draw(drawFace, tintColor, engineGray, light, dark, isPushing, s, transform);
   }
+
+  // Reset material state to avoid specular leakage into subsequent draws (like shadows)
+  specularMaterial(0);
+  shininess(0);
 
   resetShader();
   setSceneLighting();

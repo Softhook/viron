@@ -259,10 +259,7 @@ function _beginShadowStencil() {
   const gl = drawingContext;
   gl.enable(gl.STENCIL_TEST);
   gl.enable(gl.POLYGON_OFFSET_FILL);
-  // Lift shadow polygons a touch toward the camera to avoid bright artefacts
-  // when crossing steep ridges, while keeping them close enough to prevent
-  // visible separation from the terrain.
-  gl.polygonOffset(-0.6, -2);
+  gl.polygonOffset(-2.0, -5.0);
   gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   gl.stencilMask(0xFF);
@@ -1107,32 +1104,89 @@ class Terrain {
 
   /**
    * Draws a cast shadow polygon from a base footprint and caster height.
+   * Small shadows are drawn as simpler polygons; large shadows (like from
+   * tall sentinel buildings) are recursively subdivided to conform to
+   * terrain bumps and avoid "bright chunks" caused by clipping.
    */
   _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun, isFloating = false) {
     const shift = this._shadowShift(casterH, sun);
-    let hull;
+    let rawHull;
     if (isFloating) {
       const top = footprint.map(p => ({ x: wx + p.x + sun.x * shift, z: wz + p.z + sun.z * shift }));
-      hull = this._shadowHullXZ(top);
+      rawHull = this._shadowHullXZ(top);
     } else {
       const base = footprint.map(p => ({ x: wx + p.x, z: wz + p.z }));
       const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
-      hull = this._shadowHullXZ(base.concat(top));
+      rawHull = this._shadowHullXZ(base.concat(top));
     }
-    if (hull.length < 3) return;
+    if (rawHull.length < 3) return;
+
+    // 1. Subdivide the hull boundary to follow terrain curves more closely
+    const hull = [];
+    const edgeRes = TILE * 0.75;
+    for (let i = 0; i < rawHull.length; i++) {
+      let p1 = rawHull[i], p2 = rawHull[(i + 1) % rawHull.length];
+      hull.push(p1);
+      let dSq = (p1.x - p2.x) ** 2 + (p1.z - p2.z) ** 2;
+      if (dSq > edgeRes * edgeRes) {
+        let steps = Math.ceil(Math.sqrt(dSq) / edgeRes);
+        for (let s = 1; s < steps; s++) {
+          hull.push({ x: p1.x + (p2.x - p1.x) * (s / steps), z: p1.z + (p2.z - p1.z) * (s / steps) });
+        }
+      }
+    }
+
+    // --- Triangle Fan from center with per-vertex conformal lift ---
+    let cx = 0, cz = 0;
+    for (let p of hull) { cx += p.x; cz += p.z; }
+    cx /= hull.length; cz /= hull.length;
+
+    // Threshold tuned for robust terrain coverage; depth 5 allows precise "draping"
+    const threshold = TILE * TILE * 0.4; // Tighter threshold for better geometry tracking 
+    const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
+
+    const emitTri = (p1, p2, p3, depth) => {
+      let d1 = (p1.x - p2.x) ** 2 + (p1.z - p2.z) ** 2;
+      let d2 = (p2.x - p3.x) ** 2 + (p2.z - p3.z) ** 2;
+      let d3 = (p3.x - p1.x) ** 2 + (p3.z - p1.z) ** 2;
+
+      // Depth 4/5 provides massive subdivision to conform to terrain features perfectly
+      const maxDepth = (typeof isMobile !== 'undefined' && isMobile) ? 4 : 5;
+
+      if (depth < maxDepth && (d1 > threshold || d2 > threshold || d3 > threshold)) {
+        let m12 = { x: (p1.x + p2.x) * 0.5, z: (p1.z + p2.z) * 0.5 };
+        let m23 = { x: (p2.x + p3.x) * 0.5, z: (p2.z + p3.z) * 0.5 };
+        let m31 = { x: (p3.x + p1.x) * 0.5, z: (p3.z + p1.z) * 0.5 };
+        emitTri(p1, m12, m31, depth + 1);
+        emitTri(p2, m23, m12, depth + 1);
+        emitTri(p3, m31, m23, depth + 1);
+        emitTri(m12, m23, m31, depth + 1);
+      } else {
+        vertex(p1.x, this.getAltitude(p1.x, p1.z) + liftY, p1.z);
+        vertex(p2.x, this.getAltitude(p2.x, p2.z) + liftY, p2.z);
+        vertex(p3.x, this.getAltitude(p3.x, p3.z) + liftY, p3.z);
+      }
+    };
 
     noStroke();
+    // Disable lights while drawing at shadow: we don't want the sun to illuminate
+    // the floor of the shadow patch.
+    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
+    if (lightsWereOn) noLights();
+
     const shadowAlpha = alpha * this._shadowOpacityFactor(casterH);
-    // Sky-tinted shadow tied to ambient values so shaded faces and shadows stay coherent.
     fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
     _beginShadowStencil();
-    beginShape();
-    for (const p of hull) {
-      // Terrain-conforming vertex: avoids z-fighting shimmer on slopes.
-      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
+    beginShape(TRIANGLES);
+    normal(0, 1, 0); // Keep normal state stable even if lights are off
+    let centerPt = { x: cx, z: cz };
+    for (let i = 0; i < hull.length; i++) {
+      emitTri(centerPt, hull[i], hull[(i + 1) % hull.length], 0);
     }
-    endShape(CLOSE);
+    endShape();
+
     _endShadowStencil();
+    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
   }
 
   /**
@@ -1184,25 +1238,11 @@ class Terrain {
         const a = (i / 16) * TWO_PI;
         footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
       }
-      const shift = this._shadowShift(casterH, sun);
-      const base = footprint.map(p => ({ x: t.x + p.x, z: t.z + p.z }));
-      const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
-      t._shadowHull = this._shadowHullXZ(base.concat(top));
+      t._footprint = footprint;
       t._shadowCasterH = casterH;
     }
-    const hull = t._shadowHull;
-    if (hull.length < 3) return;
-    noStroke();
     const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
-    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-    _beginShadowStencil();
-    beginShape();
-    for (const p of hull) {
-      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
-    }
-    endShape(CLOSE);
-    _endShadowStencil();
+    this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false);
   }
 
   /**
@@ -1258,28 +1298,13 @@ class Terrain {
         }
         casterH = bh;
       }
-      const shift = this._shadowShift(casterH, sun);
-      const base = footprint.map(p => ({ x: b.x + p.x, z: b.z + p.z }));
-      const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
-      b._shadowHull = this._shadowHullXZ(base.concat(top));
+      b._footprint = footprint;
       b._shadowCasterH = casterH;
     }
 
-    const hull = b._shadowHull;
-    if (hull.length < 3) return;
-    // Type 4 alpha varies with infection; others are fixed.
-    const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
     const casterHForOpacity = b._shadowCasterH || b.h;
-    const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
-    noStroke();
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-    _beginShadowStencil();
-    beginShape();
-    for (const p of hull) {
-      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
-    }
-    endShape(CLOSE);
-    _endShadowStencil();
+    const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
+    this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false);
   }
 
 

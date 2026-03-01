@@ -101,6 +101,11 @@ function checkMobile() {
  */
 function setSceneLighting() {
   noLights();
+  // Reset material state to avoid specular/shininess leakage from previous draws
+  specularColor(0, 0, 0);
+  specularMaterial(0);
+  shininess(0);
+
   // Reduced ambient: allows directional lights to drive contrast instead of washing out shadows.
   ambientLight(AMBIENT_R, AMBIENT_G, AMBIENT_B);
   // Warm key: directional sun at low elevation (sunrise profile).

@@ -54,8 +54,8 @@ const TREE_DEFAULT_TRUNK_HEIGHT = 40;
  * @returns {number} opacity factor in [SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX]
  */
 const shadowOpacityFactor = (casterH) => {
-  const op = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
-  return constrain(op, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
+  const rawOpacity = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
+  return constrain(rawOpacity, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
 };
 
 /**

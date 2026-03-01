@@ -1056,10 +1056,10 @@ class Terrain {
   _getSunShadowBasis() {
     const frame = typeof frameCount === 'number' ? frameCount : 0;
     if (frame !== this._sunShadowFrame) {
-      const sunY = Math.max(SUN_DIR_MIN_Y, SUN_DIR_NY);
+      const clampedSunY = Math.max(SUN_DIR_MIN_Y, SUN_DIR_NY);
       this._sunShadowBasis = {
         x: SUN_DIR_NX,
-        y: sunY,
+        y: clampedSunY,
         z: SUN_DIR_NZ
       };
       this._sunShadowFrame = frame;

@@ -33,7 +33,7 @@ const SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LEN;
 const SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LEN;
 const SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LEN;
 // Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
-// (grazing angles produced kilometre-long shadows and z-fighting); 0.18 keeps sunrise feel without instability.
+// (grazing angles produced kilometer-long shadows and z-fighting); 0.18 keeps sunrise feel without instability.
 const SUN_DIR_MIN_Y = 0.18;
 // Shadow tuning: fades with caster height and clamps alpha floor to avoid fully disappearing tall-caster shadows.
 const SHADOW_HEIGHT_FADE_RATE = 0.0016;

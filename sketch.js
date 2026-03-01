@@ -102,12 +102,9 @@ function checkMobile() {
 function setSceneLighting() {
   noLights();
   // Reduced ambient: allows directional lights to drive contrast instead of washing out shadows.
-  ambientLight(22, 28, 42);
+  ambientLight(AMBIENT_R, AMBIENT_G, AMBIENT_B);
   // Warm key: directional sun at low elevation (sunrise profile).
-  directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z);
-  // Cool sky fill: diffuse sky-dome light from above fills shadow faces with atmospheric blue.
-  // Direction points mostly upward (0.96 Y) so tops of objects always receive some sky fill.
-  directionalLight(58, 72, 125, -SUN_DIR_X * 0.15, 0.96, SUN_DIR_Z * 0.15);
+  directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ);
 }
 
 /**
@@ -142,11 +139,12 @@ function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
   push();
   translate(sunPos.x, sunPos.y, sunPos.z);
   emissiveMaterial(255, 228, 180);
-  sphere(viewFarWorld * 0.021, 16, 12);
+  const sunDetailLongitude = 40, sunDetailLatitude = 32;
+  sphere(viewFarWorld * 0.021, sunDetailLongitude, sunDetailLatitude);
   fill(255, 184, 118, 80 * intensity);
-  sphere(viewFarWorld * 0.032, 16, 12);
+  sphere(viewFarWorld * 0.032, sunDetailLongitude, sunDetailLatitude);
   fill(255, 150, 96, 40 * intensity);
-  sphere(viewFarWorld * 0.046, 14, 10);
+  sphere(viewFarWorld * 0.046, sunDetailLongitude, sunDetailLatitude);
   pop();
 
   blendMode(BLEND);

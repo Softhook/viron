@@ -20,12 +20,55 @@ let CULL_DIST = 6000;          // Max world distance for rendering enemies / par
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
 const SKY_R = 165, SKY_G = 128, SKY_B = 98;
+// Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
+const AMBIENT_R = 48, AMBIENT_G = 62, AMBIENT_B = 82;
 
 // --- Global sunrise light model (single source of truth) ---
 // SUN_DIR is the direction light travels from the sun into the world.
 const SUN_DIR_X = 0.92;
 const SUN_DIR_Y = 0.2;
 const SUN_DIR_Z = -0.34;
+const SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
+const SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LEN;
+const SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LEN;
+const SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LEN;
+// Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
+// (grazing angles produced kilometer-long shadows and z-fighting); 0.18 keeps sunrise feel without instability.
+const SUN_DIR_MIN_Y = 0.18;
+// Shadow tuning: fades with caster height and clamps alpha floor to avoid fully disappearing tall-caster shadows.
+const SHADOW_HEIGHT_FADE_RATE = 0.0016;
+const SHADOW_HEIGHT_FADE_MIN = 0.35;
+const SHADOW_OPACITY_MAX = 1;
+// Shadow projection clamp: avoid projecting shadows past the far view plane.
+const SHADOW_MAX_VIEW_FRACTION = 0.9;
+const SHADOW_AMBIENT_RG_SCALE = 0.55;
+const SHADOW_AMBIENT_B_SCALE = 0.6;
+const TREE_SHADOW_BASE_ALPHA = 40;
+const TREE_DEFAULT_TRUNK_HEIGHT = 40;
+
+/**
+ * Returns opacity multiplier for a shadow cast by a height `casterH`.
+ * Clamped to keep tall objects faint but never invisible.
+ * @param {number} casterH
+ * @returns {number} opacity factor in [SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX]
+ */
+const shadowOpacityFactor = (casterH) => {
+  const rawOpacity = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
+  return constrain(rawOpacity, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
+};
+
+/**
+ * Projects a caster of height `casterH` along sun direction to a ground-plane shift.
+ * Clamped so shadows cannot extend beyond the view bounds.
+ * @param {number} casterH
+ * @param {{x:number,y:number,z:number}} sun
+ * @returns {number} clamped projection shift distance
+ */
+const shadowShift = (casterH, sun) => {
+  // VIEW_FAR can change at runtime (quality scaling), so recompute the clamp per call.
+  const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
+  return Math.min(casterH / sun.y, maxShift);
+};
 const SUN_KEY_R = 255, SUN_KEY_G = 188, SUN_KEY_B = 122;
 
 // --- Infection spread parameters ---

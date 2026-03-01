@@ -255,6 +255,11 @@ void main() {
 function _beginShadowStencil() {
   const gl = drawingContext;
   gl.enable(gl.STENCIL_TEST);
+  gl.enable(gl.POLYGON_OFFSET_FILL);
+  // Lift shadow polygons a touch toward the camera to avoid bright artefacts
+  // when crossing steep ridges, while keeping them close enough to prevent
+  // visible separation from the terrain.
+  gl.polygonOffset(-0.6, -2);
   gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   gl.stencilMask(0xFF);
@@ -266,7 +271,9 @@ function _beginShadowStencil() {
  * viewport frame continue adding to the accumulated shadow mask.
  */
 function _endShadowStencil() {
-  drawingContext.disable(drawingContext.STENCIL_TEST);
+  const gl = drawingContext;
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.disable(gl.STENCIL_TEST);
 }
 
 // =============================================================================
@@ -311,6 +318,12 @@ class Terrain {
 
     // Procedural tree chunk cache (static by world position, lazily populated).
     this._procTreeChunkCache = new Map();
+
+    // Cached per-frame sun shadow basis so multiple shadow draws don't
+    // renormalize the same vector every call.
+    this._sunShadowBasis = { x: 0, y: 1, z: 0 };
+    this._sunShadowFrame = -Infinity;
+    this._getSunShadowBasis();
 
   }
 
@@ -1039,14 +1052,28 @@ class Terrain {
 
   /**
    * Computes normalized sun projection data reused by all ground shadow draws.
-   * @returns {{x:number,y:number,z:number,yaw:number,stretch:number}}
+   * @returns {{x:number,y:number,z:number}}
    */
   _getSunShadowBasis() {
-    const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1.0;
-    const sx = SUN_DIR_X / len;
-    const sy = Math.max(0.12, SUN_DIR_Y / len);
-    const sz = SUN_DIR_Z / len;
-    return { x: sx, y: sy, z: sz };
+    const frame = typeof frameCount === 'number' ? frameCount : 0;
+    if (frame !== this._sunShadowFrame) {
+      const clampedSunNY = Math.max(SUN_DIR_MIN_Y, SUN_DIR_NY);
+      this._sunShadowBasis = {
+        x: SUN_DIR_NX,
+        y: clampedSunNY,
+        z: SUN_DIR_NZ
+      };
+      this._sunShadowFrame = frame;
+    }
+    return this._sunShadowBasis;
+  }
+
+  _shadowOpacityFactor(casterH) {
+    return shadowOpacityFactor(casterH);
+  }
+
+  _shadowShift(casterH, sun) {
+    return shadowShift(casterH, sun);
   }
 
   /**
@@ -1079,15 +1106,16 @@ class Terrain {
    * Draws a cast shadow polygon from a base footprint and caster height.
    */
   _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun) {
-    const shift = casterH / sun.y;
+    const shift = this._shadowShift(casterH, sun);
     const base = footprint.map(p => ({ x: wx + p.x, z: wz + p.z }));
     const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
     const hull = this._shadowHullXZ(base.concat(top));
     if (hull.length < 3) return;
 
     noStroke();
-    // Sky-tinted shadow: dark cool blue-gray (sky fill colors shadow, not pure black)
-    fill(18, 24, 42, alpha);
+    const shadowAlpha = alpha * this._shadowOpacityFactor(casterH);
+    // Sky-tinted shadow tied to ambient values so shaded faces and shadows stay coherent.
+    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
     _beginShadowStencil();
     beginShape();
     for (const p of hull) {
@@ -1130,26 +1158,35 @@ class Terrain {
    * Hull is computed once and stored on the tree object (static geometry, fixed sun).
    */
   _drawTreeShadow(t, groundY, sun) {
-    if (!t._shadowHull) {
-      const { trunkH: h, canopyScale: sc, variant: vi } = t;
-      // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
-      const hrx = (vi === 2) ? 20 * sc : 17 * sc;
-      const hrz = (vi === 2) ? 14 * sc : 12 * sc;
-      const casterH = h + (vi === 2 ? 24 : 18) * sc;
-      const footprint = [];
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * TWO_PI;
-        footprint.push({x: Math.cos(a) * hrx, z: Math.sin(a) * hrz});
+      if (!t._shadowHull) {
+        const { trunkH: h, canopyScale: sc, variant: vi } = t;
+        // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
+        const hrx = (vi === 2) ? 20 * sc : 17 * sc;
+        const hrz = (vi === 2) ? 14 * sc : 12 * sc;
+        const casterH = h + (vi === 2 ? 24 : 18) * sc;
+        const trunkHalf = 2.5; // trunk box half-extent (full box size 5x5)
+        const footprint = [];
+        // Trunk footprint (merge components into one hull to avoid crescent gaps)
+        footprint.push(
+          { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
+          { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
+        );
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * TWO_PI;
+          footprint.push({x: Math.cos(a) * hrx, z: Math.sin(a) * hrz});
+        }
+        const shift = this._shadowShift(casterH, sun);
+        const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
+        const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
+        t._shadowHull = this._shadowHullXZ(base.concat(top));
+        t._shadowCasterH = casterH;
       }
-      const shift = casterH / sun.y;
-      const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
-      const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
-      t._shadowHull = this._shadowHullXZ(base.concat(top));
-    }
     const hull = t._shadowHull;
     if (hull.length < 3) return;
     noStroke();
-    fill(18, 24, 42, 40);
+    const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
+    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
+    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
     _beginShadowStencil();
     beginShape();
     for (const p of hull) {
@@ -1212,26 +1249,29 @@ class Terrain {
         }
         casterH = bh;
       }
-      const shift = casterH / sun.y;
-      const base = footprint.map(p => ({x: b.x + p.x, z: b.z + p.z}));
-      const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
-      b._shadowHull = this._shadowHullXZ(base.concat(top));
-    }
+       const shift = this._shadowShift(casterH, sun);
+       const base = footprint.map(p => ({x: b.x + p.x, z: b.z + p.z}));
+       const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
+       b._shadowHull = this._shadowHullXZ(base.concat(top));
+       b._shadowCasterH = casterH;
+     }
 
-    const hull = b._shadowHull;
-    if (hull.length < 3) return;
-    // Type 4 alpha varies with infection; others are fixed.
-    const alpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
-    noStroke();
-    fill(18, 24, 42, alpha);
-    _beginShadowStencil();
-    beginShape();
-    for (const p of hull) {
-      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
-    }
-    endShape(CLOSE);
-    _endShadowStencil();
-  }
+     const hull = b._shadowHull;
+     if (hull.length < 3) return;
+     // Type 4 alpha varies with infection; others are fixed.
+     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
+     const casterHForOpacity = b._shadowCasterH || b.h;
+     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
+     noStroke();
+     fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
+     _beginShadowStencil();
+     beginShape();
+     for (const p of hull) {
+       vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
+     }
+     endShape(CLOSE);
+     _endShadowStencil();
+   }
 
 
 

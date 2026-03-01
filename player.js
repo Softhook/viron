@@ -234,21 +234,27 @@ function shipUpDir(s, designIdx) {
  * @param {number} h       Shadow ellipse height.
  * @param {number} casterH Approximate caster height used to project shadow offset.
  */
+const _fallbackSunBasis = (() => {
+  const sunY = Math.max(SUN_DIR_MIN_Y, SUN_DIR_NY);
+  return { x: SUN_DIR_NX, y: sunY, z: SUN_DIR_NZ };
+})();
+
 function _shadowSunBasis() {
-  const sunLen = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
-  return {
-    x: SUN_DIR_X / sunLen,
-    y: Math.max(0.12, SUN_DIR_Y / sunLen),
-    z: SUN_DIR_Z / sunLen
-  };
+  // Share the same cached, normalized sun basis used by terrain shadows so
+  // player/enemy shadows align perfectly and avoid per-draw hypot cost.
+  if (terrain && typeof terrain._getSunShadowBasis === 'function') {
+    return terrain._getSunShadowBasis();
+  }
+  if (terrain && terrain._sunShadowBasis) return terrain._sunShadowBasis;
+  return _fallbackSunBasis;
 }
 
 function _shadowHull2D(points) {
   if (points.length <= 2) return points.slice();
-  const pts = points
-    .map(p => ({ x: p.x, z: p.z }))
-    .sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
-
+  if (terrain && typeof terrain._shadowHullXZ === 'function') {
+    return terrain._shadowHullXZ(points);
+  }
+  const pts = points.map(p => ({ x: p.x, z: p.z })).sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
   const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
   const lower = [];
   for (const p of pts) {
@@ -269,20 +275,40 @@ function _shadowHull2D(points) {
 function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw = 0, alpha = 50) {
   if (aboveSea(groundY)) return;
   const sun = _shadowSunBasis();
-  const shift = casterH / sun.y;
-  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const getShadowShift = (h) => {
+    if (terrain && typeof terrain._shadowShift === 'function') return terrain._shadowShift(h, sun);
+    return shadowShift(h, sun);
+  };
+  const getOpacityFactor = (h) => {
+    if (terrain && typeof terrain._shadowOpacityFactor === 'function') return terrain._shadowOpacityFactor(h);
+    return shadowOpacityFactor(h);
+  };
+  const useTerrainShadow = terrain && typeof terrain._drawProjectedFootprintShadow === 'function';
+  if (useTerrainShadow) {
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const rotated = localPts.map(p => ({
+      x: p.x * cy + p.z * sy,
+      z: -p.x * sy + p.z * cy
+    }));
+    terrain._drawProjectedFootprintShadow(x, z, groundY, casterH, rotated, alpha, sun);
+    return;
+  }
 
-  const base = localPts.map(p => ({
-    x: x + p.x * cy + p.z * sy,
-    z: z + (-p.x * sy + p.z * cy)
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const rotated = localPts.map(p => ({
+    x: p.x * cy + p.z * sy,
+    z: -p.x * sy + p.z * cy
   }));
+
+  const shift = getShadowShift(casterH);
+  const base = rotated.map(p => ({ x: x + p.x, z: z + p.z }));
   const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
   const hull = _shadowHull2D(base.concat(top));
   if (hull.length < 3) return;
 
   noStroke();
   // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
-  fill(18, 24, 42, alpha);
+  fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, alpha * getOpacityFactor(casterH));
   _beginShadowStencil();
   beginShape();
   for (const p of hull) {
@@ -313,15 +339,21 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
  * @param {number} alt     Ship current altitude Y.
  */
 function drawShipShadow(x, groundY, z, yaw, alt) {
-  if (aboveSea(groundY)) return;
-  const casterH = max(20, groundY - alt);
-  const alpha = map(casterH, 0, 600, 62, 16, true);
+  // Ground altitude is authoritative for projection; recompute if available to avoid
+  // shadows sticking directly below the ship when caller passes an imprecise value.
+  const gy = (terrain && typeof terrain.getAltitude === 'function') ? terrain.getAltitude(x, z) : groundY;
+  if (aboveSea(gy)) return;
+  // WEBGL Y axis is inverted: larger Y values are deeper. Height above ground is (groundY - alt).
+  const SHADOW_HEIGHT_THRESHOLD = 0.5;
+  const shadowHeight = max(0, gy - alt);
+  if (shadowHeight <= SHADOW_HEIGHT_THRESHOLD) return;
+  const alpha = map(shadowHeight, 0, 600, 62, 16, true);
   const shipFootprint = [
     { x: -13, z: 13 },
     { x: 13, z: 13 },
     { x: 0, z: -23 }
   ];
-  _drawProjectedShadowFromFootprint(x, groundY, z, shipFootprint, casterH, yaw, alpha);
+  _drawProjectedShadowFromFootprint(x, gy, z, shipFootprint, shadowHeight, yaw, alpha);
 }
 
 // ---------------------------------------------------------------------------

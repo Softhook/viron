@@ -337,7 +337,7 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
  * @param {number} yaw     Ship yaw (used to orient the shadow).
  * @param {number} alt     Ship current altitude Y.
  */
-function drawShipShadow(x, groundY, z, yaw, alt) {
+function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
   // Ground altitude is authoritative for projection; recompute if available to avoid
   // shadows sticking directly below the ship when caller passes an imprecise value.
   const gy = (terrain && typeof terrain.getAltitude === 'function') ? terrain.getAltitude(x, z) : groundY;
@@ -347,11 +347,16 @@ function drawShipShadow(x, groundY, z, yaw, alt) {
   const shadowHeight = max(0, gy - alt);
   if (shadowHeight <= SHADOW_HEIGHT_THRESHOLD) return;
   const alpha = map(shadowHeight, 0, 600, 62, 16, true);
-  const shipFootprint = [
+
+  let shipFootprint = [
     { x: -13, z: 13 },
     { x: 13, z: 13 },
     { x: 0, z: -23 }
   ];
+  if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].footprint) {
+    shipFootprint = SHIP_DESIGNS[designIdx].footprint;
+  }
+
   _drawProjectedShadowFromFootprint(x, gy, z, shipFootprint, shadowHeight, yaw, alpha);
 }
 
@@ -374,10 +379,6 @@ function drawShipShadow(x, groundY, z, yaw, alt) {
 function shipDisplay(s, tintColor) {
   terrain.applyShader();
   noStroke();
-
-  // Set up specular material for the ship to create highlights
-  specularMaterial(255);
-  shininess(40);
 
   let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
   let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
@@ -431,6 +432,10 @@ function shipDisplay(s, tintColor) {
   if (p) {
     const drawThrustFlame = (flamePt) => {
       push();
+      // Add a dedicated light from the camera's perspective to illuminate the back of the thrust cone
+      // This ensures the specular highlight actually catches the geometry instead of being in shadow
+      directionalLight(255, 255, 255, 0, 0, -1);
+
       // 1. Move to engine nozzle in world space
       let t = transform([flamePt.x, flamePt.y, flamePt.z]);
       translate(t[0], t[1], t[2]);
@@ -448,16 +453,20 @@ function shipDisplay(s, tintColor) {
       let h1 = 15 * power * flicker;
       push();
       translate(0, h1 / 2, 0);
-      fill(isPushing ? 200 : 80, 230, 255, isPushing ? 255 : 100);
-      cone(3 * power * flicker, h1, 6);
+      specularMaterial(255);
+      shininess(60);
+      fill(isPushing ? 200 : 80, 230, 255, isPushing ? 255 : 180);
+      cone(4 * power * flicker, h1, 8);
       pop();
 
       // Cone 2: Middle Flame
       let h2 = 30 * power * flicker;
       push();
       translate(0, h2 / 2 + 5 * power, 0); // Start slightly further out
-      fill(50, 150, 255, isPushing ? 150 : 50);
-      cone(6 * power * flicker, h2, 6);
+      specularMaterial(255);
+      shininess(40);
+      fill(50, 150, 255, isPushing ? 200 : 80);
+      cone(7 * power * flicker, h2, 8);
       pop();
 
       if (isPushing) {
@@ -465,13 +474,14 @@ function shipDisplay(s, tintColor) {
         let h3 = 50 * flicker;
         push();
         translate(0, h3 / 2 + 15, 0);
-        fill(255, 100, 0, 80);
-        cone(10 * flicker, h3, 6);
+        fill(255, 100, 0, 120);
+        cone(12 * flicker, h3, 6);
         pop();
 
         // Engine Glow Point (small highlight at nozzle)
-        fill(255, 255, 255, 200);
-        sphere(2);
+        specularMaterial(255);
+        fill(255, 255, 255);
+        sphere(3);
       }
       pop();
     };
@@ -485,7 +495,7 @@ function shipDisplay(s, tintColor) {
   setSceneLighting();
 
   let gy = terrain.getAltitude(s.x, s.z);
-  drawShipShadow(s.x, gy, s.z, s.yaw, s.y);
+  drawShipShadow(s.x, gy, s.z, s.yaw, s.y, designIdx);
 }
 
 // ---------------------------------------------------------------------------

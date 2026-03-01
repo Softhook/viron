@@ -119,6 +119,9 @@ void main() {
     float parity = (mat == 20) ? 1.0 : 0.90;
     vec3 pearlBase = uPalette[12];
     baseColor = pearlBase * parity * (0.88 + 0.12 * shimmer);
+  } else if (mat >= 250 && mat <= 251) {
+    // ── Powerup (Mat 250=Healthy, 251=Infected) ────────────────────────
+    baseColor = (mat == 250) ? vec3(60.0/255.0, 180.0/255.0, 240.0/255.0) : vec3(200.0/255.0, 50.0/255.0, 50.0/255.0);
   } else if (mat >= 1 && mat <= 2) {
     // ── Landscape (Mat 1=Inland, 2=Shore) ────────────────────────────
     // Use pre-computed Organic Tags from vColor
@@ -214,12 +217,21 @@ void main() {
   if (mat >= 10 && mat <= 21) {
     // Keep Viron and Barrier emissive in shadow so they don't turn black
     litBase = baseColor * max(lightTerm, vec3(0.85));
+  } else if (mat >= 250 && mat <= 251) {
+    // Powerups are glowing holograms but retain 3D shading
+    litBase = baseColor * max(lightTerm, vec3(0.8));
+    litBase += baseColor * 0.3; // Give it an extra emissive boost
   } else {
     litBase = baseColor * lightTerm;
   }
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.
-  vec3 outColor = litBase + cyberColor;
+  // We constrain this to ground/infection materials (mat <= 21) so that ships, trees,
+  // and floating units do not glow completely when a bomb detonates underneath them.
+  vec3 outColor = litBase;
+  if (mat <= 21) {
+    outColor += cyberColor;
+  }
   
   // Apply fog to smoothly hide chunk loading edges
   float dist = gl_FragCoord.z / gl_FragCoord.w;
@@ -1272,6 +1284,21 @@ class Terrain {
 
 
 
+  _getPowerupGeom(b, inf) {
+    const key = `pu_${(b.w).toFixed(1)}_${(b.h).toFixed(1)}_${inf}`;
+    if (!this._geoms) this._geoms = new Map();
+    if (this._geoms.has(key)) return this._geoms.get(key);
+
+    const geom = buildGeometry(() => {
+      fill(inf ? 251 : 250, inf ? 50 : 180, inf ? 50 : 240);
+      cone(b.w, b.h / 2, 4, 1);
+      rotateX(PI);
+      cone(b.w, b.h / 2, 4, 1);
+    });
+    this._geoms.set(key, geom);
+    return geom;
+  }
+
   _getTreeGeom(t, inf) {
     const { trunkH: h, canopyScale: sc, variant: vi } = t;
     const key = `tree_${vi}_${sc.toFixed(2)}_${h.toFixed(1)}_${inf}`;
@@ -1460,16 +1487,12 @@ class Terrain {
 
       if (b.type === 3) {
         // Floating UFO handles its own animation, drawn immediately rather than cached
-        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
-        fill(safeR(inf ? 200 : 60), inf ? 50 : 180, inf ? 50 : 240);
         push();
         let floatY = y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
         translate(0, floatY - y, 0);
         rotateY(frameCount * 0.01 + b.x);
         rotateZ(frameCount * 0.015 + b.z);
-        cone(b.w, b.h / 2, 4, 1);
-        rotateX(PI);
-        cone(b.w, b.h / 2, 4, 1);
+        model(this._getPowerupGeom(b, inf));
         pop();
       } else {
         model(this._getBuildingGeom(b, inf));

@@ -284,8 +284,12 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     textSize(14);
     fill(180, 180, 180, 200);
     let thrustType = "VTOL / HOVER";
-    if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
-    if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
+    if (design.isGroundVehicle) {
+      thrustType = design.canTravelOnWater ? "AMPHIBIOUS HOVERCRAFT" : "GROUND VEHICLE";
+    } else {
+      if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
+      if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
+    }
     text(thrustType, relX, vh / 2 - 245);
 
     // Description (Body text, wrapped)

@@ -26,7 +26,7 @@ const SHIP_DESIGNS = [
         lift: 0.006,
         brakeRate: 0.96,
         missileCapacity: 1,
-        footprint: [ {x: -16, z: 12}, {x: 16, z: 12}, {x: 0, z: -32} ],
+        footprint: [{ x: -16, z: 12 }, { x: 16, z: 12 }, { x: 0, z: -32 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let nose = [0, 0, -32], tL = [-16, 6, 12], tR = [16, 6, 12], top = [0, -8, 12];
@@ -56,7 +56,7 @@ const SHIP_DESIGNS = [
         lift: 0.009,
         brakeRate: 0.97,
         missileCapacity: 1,
-        footprint: [ {x: -12, z: 0}, {x: 12, z: 0}, {x: -25, z: 15}, {x: 25, z: 15}, {x: 0, z: -35}, {x: 0, z: 15} ],
+        footprint: [{ x: -12, z: 0 }, { x: 12, z: 0 }, { x: -25, z: 15 }, { x: 25, z: 15 }, { x: 0, z: -35 }, { x: 0, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 // Main Fuselage (Diamond/Sleek)
@@ -110,7 +110,7 @@ const SHIP_DESIGNS = [
         lift: 0.002,
         brakeRate: 0.92,
         missileCapacity: 3,
-        footprint: [ {x: -22, z: -20}, {x: 22, z: -20}, {x: 22, z: 15}, {x: -22, z: 15} ],
+        footprint: [{ x: -22, z: -20 }, { x: 22, z: -20 }, { x: 22, z: 15 }, { x: -22, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 // Main fuselage (blocky)
@@ -160,7 +160,7 @@ const SHIP_DESIGNS = [
         lift: 0.011,
         brakeRate: 0.98,
         missileCapacity: 1,
-        footprint: [ {x: 0, z: -25}, {x: 22, z: 12}, {x: -22, z: 12} ],
+        footprint: [{ x: 0, z: -25 }, { x: 22, z: 12 }, { x: -22, z: 12 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 // Central sphere-ish hub (octagonal)
@@ -209,7 +209,7 @@ const SHIP_DESIGNS = [
         lift: 0.011,
         brakeRate: 0.95,
         missileCapacity: 2,
-        footprint: [ {x: 0, z: -45}, {x: -8, z: 25}, {x: 8, z: 25} ],
+        footprint: [{ x: 0, z: -45 }, { x: -8, z: 25 }, { x: 8, z: 25 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -45], b1 = [-5, -2, 0], b2 = [5, -2, 0], b3 = [0, 3, 5];
@@ -238,7 +238,7 @@ const SHIP_DESIGNS = [
         lift: 0.011,
         brakeRate: 0.96,
         missileCapacity: 2,
-        footprint: [ {x: 0, z: -35}, {x: -25, z: 15}, {x: 25, z: 15}, {x: -6, z: 10}, {x: 6, z: 10} ],
+        footprint: [{ x: 0, z: -35 }, { x: -25, z: 15 }, { x: 25, z: 15 }, { x: -6, z: 10 }, { x: 6, z: 10 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 2, -35], mT = [0, -4, 0], mL = [-6, 0, 5], mR = [6, 0, 5], mB = [0, 4, 10];
@@ -275,7 +275,7 @@ const SHIP_DESIGNS = [
         lift: 0.009,
         brakeRate: 0.96,
         missileCapacity: 1,
-        footprint: [ {x: 0, z: -40}, {x: -25, z: 15}, {x: 25, z: 15} ],
+        footprint: [{ x: 0, z: -40 }, { x: -25, z: 15 }, { x: 25, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 2, -40], l1 = [-25, 4, 15], r1 = [25, 4, 15], t1 = [0, -2, 10];
@@ -309,7 +309,7 @@ const SHIP_DESIGNS = [
         lift: 0.012,
         brakeRate: 0.96,
         missileCapacity: 2,
-        footprint: [ {x: 0, z: -42}, {x: -40, z: 28}, {x: 40, z: 28}, {x: 0, z: 22} ],
+        footprint: [{ x: 0, z: -42 }, { x: -40, z: 28 }, { x: 40, z: 28 }, { x: 0, z: 22 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -42];
@@ -354,7 +354,7 @@ const SHIP_DESIGNS = [
         lift: 0.016,
         brakeRate: 0.98,
         missileCapacity: 1,
-        footprint: [ {x: 0, z: -32}, {x: -32, z: 15}, {x: 32, z: 15} ],
+        footprint: [{ x: 0, z: -32 }, { x: -32, z: 15 }, { x: 32, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -32], cp = [0, -5, -8], mL = [-6, 2, 5], mR = [6, 2, 5], t = [0, 4, 15], b = [0, 6, 0];
@@ -391,7 +391,7 @@ const SHIP_DESIGNS = [
         lift: 0.014,
         brakeRate: 0.97,
         missileCapacity: 3,
-        footprint: [ {x: 0, z: -45}, {x: -47, z: 32}, {x: 47, z: 32}, {x: 0, z: 15} ],
+        footprint: [{ x: 0, z: -45 }, { x: -47, z: 32 }, { x: 47, z: 32 }, { x: 0, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, -2, -45], bT = [0, -8, -5], bB = [0, 6, 15], bL = [-8, 0, 5], bR = [8, 0, 5];
@@ -440,7 +440,7 @@ const SHIP_DESIGNS = [
         lift: 0.010,
         brakeRate: 0.99,
         missileCapacity: 1,
-        footprint: [ {x: 0, z: -60}, {x: -35, z: -15}, {x: 35, z: -15}, {x: -9, z: 35}, {x: 9, z: 35} ],
+        footprint: [{ x: 0, z: -60 }, { x: -35, z: -15 }, { x: 35, z: -15 }, { x: -9, z: 35 }, { x: 9, z: 35 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
                 let n = [0, 0, -60], neck = [0, 0, -20], base = [0, 0, 30], mT = [0, -4, 0], mB = [0, 4, 0], mL = [-4, 0, 0], mR = [4, 0, 0];
@@ -462,5 +462,144 @@ const SHIP_DESIGNS = [
             return [{ x: 0, y: 0, z: 25 }];
         }
     },
-];
 
+    // --- Design 11: Desert Jeep ---
+    {
+        name: "Desert Jeep",
+        role: "LAND SCOUT",
+        desc: "Fast and lightweight reconnaissance vehicle. Restricted to land, but highly agile on open terrain.",
+        thrust: 0.6,
+        pitchRate: 0.04,
+        drag: 0.99,
+        thrustAngle: Math.PI / 2, // Forward thrust
+        mass: 0.7,
+        lift: 0.0,
+        brakeRate: 0.94,
+        missileCapacity: 1,
+        isGroundVehicle: true,
+        canTravelOnWater: false,
+        footprint: [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: 15, z: 15 }, { x: -15, z: 15 }],
+        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
+            // Main body (Chassis)
+            drawFace([[-12, -2, 15], [12, -2, 15], [12, -2, -15], [-12, -2, -15]], light); // Bottom
+            drawFace([[-12, -10, 15], [12, -10, 15], [12, -10, -15], [-12, -10, -15]], light); // Top
+            drawFace([[-12, -10, -15], [12, -10, -15], [12, -2, -15], [-12, -2, -15]], dark); // Front
+            drawFace([[-12, -10, 15], [12, -10, 15], [12, -2, 15], [-12, -2, 15]], dark); // Back
+            drawFace([[-12, -10, 15], [-12, -10, -15], [-12, -2, -15], [-12, -2, 15]], tintColor); // Left
+            drawFace([[12, -10, 15], [12, -10, -15], [12, -2, -15], [12, -2, 15]], tintColor); // Right
+
+            // Cabin / Windshield (Facing forward)
+            drawFace([[-8, -10, 0], [8, -10, 0], [8, -20, 8], [-8, -20, 8]], [200, 230, 255, 180]); // Windshield
+
+            // Wheels
+            const drawWheel = (x, z) => {
+                let wCol = [30, 30, 30];
+                drawFace([[x - 3, -2, z + 4], [x + 3, -2, z + 4], [x + 3, -2, z - 4], [x - 3, -2, z - 4]], wCol);
+                drawFace([[x - 3, 4, z + 4], [x + 3, 4, z + 4], [x + 3, 4, z - 4], [x - 3, 4, z - 4]], wCol);
+                drawFace([[x + 3, -2, z - 4], [x + 3, 4, z - 4], [x - 3, 4, z - 4], [x - 3, -2, z - 4]], wCol); // Front of wheel
+            };
+            drawWheel(-13, 10); drawWheel(13, 10);
+            drawWheel(-13, -10); drawWheel(13, -10);
+
+            // Headlights (Facing forward)
+            drawFace([[-10, -8, -15.1], [-6, -8, -15.1], [-6, -4, -15.1], [-10, -4, -15.1]], [255, 255, 200]);
+            drawFace([[6, -8, -15.1], [10, -8, -15.1], [10, -4, -15.1], [6, -4, -15.1]], [255, 255, 200]);
+
+            return [{ x: 0, y: -5, z: 16 }]; // Flame position (at back)
+        }
+    },
+
+    // --- Design 12: Ironclad Tank ---
+    {
+        name: "Ironclad Tank",
+        role: "HEAVY ASSAULT",
+        desc: "Slow-moving armored juggernaut. Imposing presence with high missile capacity, but restricted to land.",
+        thrust: 0.4,
+        pitchRate: 0.04,
+        drag: 0.98,
+        thrustAngle: Math.PI / 2,
+        mass: 2.5,
+        lift: 0.0,
+        brakeRate: 0.92,
+        missileCapacity: 5,
+        isGroundVehicle: true,
+        canTravelOnWater: false,
+        footprint: [{ x: -25, z: -25 }, { x: 25, z: -25 }, { x: 25, z: 25 }, { x: -25, z: 25 }],
+        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
+            // Main Hull
+            drawFace([[-20, -2, 25], [20, -2, 25], [20, -2, -25], [-20, -2, -25]], engineGray); // Bottom
+            drawFace([[-18, -12, 25], [18, -12, 25], [18, -12, -25], [-18, -12, -25]], light); // Top
+            drawFace([[-20, -2, -25], [20, -2, -25], [18, -12, -25], [-18, -12, -25]], dark); // Front
+            drawFace([[-20, -2, 25], [20, -2, 25], [18, -12, 25], [-18, -12, 25]], dark); // Back
+            drawFace([[-20, -2, 25], [-20, -2, -25], [-18, -12, -25], [-18, -12, 25]], tintColor); // Left
+            drawFace([[20, -2, 25], [20, -2, -25], [18, -12, -25], [18, -12, 25]], tintColor); // Right
+
+            // Turret
+            push();
+            drawFace([[-12, -12, 12], [12, -12, 12], [12, -12, -12], [-12, -12, -12]], engineGray); // Bottom
+            drawFace([[-10, -22, 12], [10, -22, 12], [10, -22, -12], [-10, -22, -12]], light); // Top
+            drawFace([[-12, -12, -12], [12, -12, -12], [10, -22, -12], [-10, -22, -12]], dark); // Front
+
+            // Cannon (Facing forward)
+            drawFace([[-3, -21, -12], [3, -21, -12], [3, -21, -42], [-3, -21, -42]], engineGray);
+            drawFace([[-3, -15, -12], [3, -15, -12], [3, -15, -42], [-3, -15, -42]], engineGray);
+            drawFace([[-3, -21, -42], [3, -21, -42], [3, -15, -42], [-3, -15, -42]], light); // Muzzle
+            pop();
+
+            // Treads (Left/Right) - 3D Box style
+            const drawTread = (side) => {
+                let tX = side * 22;
+                let tCol = [30, 30, 30];
+                drawFace([[tX - 5, -2, 28], [tX + 5, -2, 28], [tX + 5, -2, -28], [tX - 5, -2, -28]], tCol); // Bottom
+                drawFace([[tX - 5, 10, 28], [tX + 5, 10, 28], [tX + 5, 10, -28], [tX - 5, 10, -28]], tCol); // Top
+                drawFace([[tX - 5, -2, -28], [tX + 5, -2, -28], [tX + 5, 10, -28], [tX - 5, 10, -28]], [40, 40, 40]); // Front
+                drawFace([[tX - 5, -2, 28], [tX + 5, -2, 28], [tX + 5, 10, 28], [tX - 5, 10, 28]], [20, 20, 20]); // Back
+            };
+            drawTread(-1); drawTread(1);
+
+            return [{ x: 0, y: -8, z: 26 }];
+        }
+    },
+
+    // --- Design 13: Storm Hovercraft ---
+    {
+        name: "Storm Hovercraft",
+        role: "AMPHIBIOUS STRIKE",
+        desc: "Advanced multi-terrain craft capable of skimming over both land and sea with ease.",
+        thrust: 0.5,
+        pitchRate: 0.04,
+        drag: 0.992,
+        thrustAngle: Math.PI / 2,
+        mass: 1.2,
+        lift: 0.0,
+        brakeRate: 0.97,
+        missileCapacity: 2,
+        isGroundVehicle: true,
+        canTravelOnWater: true,
+        footprint: [{ x: -22, z: -30 }, { x: 22, z: -30 }, { x: 22, z: 30 }, { x: -22, z: 30 }],
+        draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
+            // Main Skirt / Hull base
+            drawFace([[-25, 0, -35], [25, 0, -35], [25, 0, 35], [-25, 0, 35]], [40, 40, 45]); // Bottom skirt
+            drawFace([[-22, -8, -30], [22, -8, -30], [22, -8, 30], [-22, -8, 30]], light); // Deck
+
+            // Sides connecting skirt to deck
+            drawFace([[-25, 0, 35], [25, 0, 35], [22, -8, 30], [-22, -8, 30]], dark); // Front
+            drawFace([[-25, 0, -35], [25, 0, -35], [22, -8, -30], [-22, -8, -30]], dark); // Back
+            drawFace([[-25, 0, -35], [-25, 0, 35], [-22, -8, 30], [-22, -8, -30]], tintColor); // Left
+            drawFace([[25, 0, -35], [25, 0, 35], [22, -8, 30], [22, -8, -30]], tintColor); // Right
+
+            // Cockpit
+            drawFace([[-10, -8, 5], [10, -8, 5], [8, -18, -5], [-8, -18, -5]], [180, 220, 255, 150]);
+
+            // Rear Propulsion Fan
+            drawFace([[-12, -8, -25], [12, -8, -25], [12, -25, -30], [-12, -25, -30]], engineGray); // Housing
+            // Fan blades (simplified cross)
+            let fanA = frameCount * 0.4;
+            let f1 = [cos(fanA) * 10, sin(fanA) * 10 - 16, -30.1];
+            let f2 = [-cos(fanA) * 10, -sin(fanA) * 10 - 16, -30.1];
+            drawFace([[0, -16, -30.1], f1, f2], [255, 255, 255, 100]);
+
+            return [{ x: 0, y: -16, z: -32 }];
+        }
+    }
+];

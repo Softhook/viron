@@ -208,12 +208,20 @@ function fireActiveWeapon(p) {
  * @returns {{x,y,z}}  Thrust force vector in world space.
  */
 function shipUpDir(s, designIdx) {
+  let p = s.pitch, y = s.yaw;
   let alpha = 0;
   if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[designIdx]) {
     alpha = SHIP_DESIGNS[designIdx].thrustAngle || 0;
   }
 
-  let p = s.pitch, y = s.yaw;
+  if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].isGroundVehicle) {
+    return {
+      x: -Math.sin(y),
+      y: 0,
+      z: -Math.cos(y)
+    };
+  }
+
   // Rotation of [0, -1, 0] (local up) by 'alpha' backward, then by pitch/yaw
   // Result: x = -sin(p + alpha)*sin(y), y = -cos(p + alpha), z = -sin(p + alpha)*cos(y)
   return {
@@ -444,8 +452,9 @@ function shipDisplay(s, tintColor) {
   resetShader();
   setSceneLighting();
 
-  // --- Afterburner / Thrust Flames ---
-  if (p) {
+  // --- Afterburner / Thrust Flames (Skipped for ground vehicles) ---
+  const isGround = SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].isGroundVehicle;
+  if (p && !isGround) {
     const drawThrustFlame = (flamePt) => {
       push();
       // Add a dedicated light from the camera's perspective to illuminate the back of the thrust cone
@@ -622,98 +631,167 @@ function updateShipInput(p) {
   let s = p.ship;
 
   // --- Physics integration ---
-  s.vy += GRAV;  // Gravity
+  if (d.isGroundVehicle) {
+    // GROUND VEHICLE PHYSICS: Snaps to surface, moves on horizontal plane
+    s.vy = 0;
+    // Removed s.pitch = 0; to allow vertical targeting
 
-  // --- Aerodynamic Lift ---
-  // Lift is applied along the ship's local up-vector, scaled by forward velocity.
-  // This allows ships to glide even when the engine is off.
-  let cp_L = Math.cos(s.pitch), sp_L = Math.sin(s.pitch);
-  let cy_L = Math.cos(s.yaw), sy_L = Math.sin(s.yaw);
-  let fx_L = -cp_L * sy_L, fy_L = sp_L, fz_L = -cp_L * cy_L;
-  let ux_L = -sp_L * sy_L, uy_L = -cp_L, uz_L = -sp_L * cy_L;
-  let fSpd = s.vx * fx_L + s.vy * fy_L + s.vz * fz_L;
+    // Snap to ground or sea surface (if hovercraft)
+    let alt = terrain.getAltitude(s.x, s.z);
+    let surfaceY = d.canTravelOnWater ? Math.min(SEA, alt) : alt;
+    s.y = surfaceY - 12;
 
-  let currentDrag = d.drag || DRAG;
+    // Movement
+    if (isThrusting) {
+      let pw = (d.thrust || 0.45) / m;
+      let dVec = shipUpDir(s, p.designIndex);
+      s.vx += dVec.x * pw;
+      s.vz += dVec.z * pw;
 
-  if (fSpd > 0) {
-    let liftAccel = fSpd * (d.lift ?? LIFT_FACTOR);
-    s.vx += ux_L * liftAccel;
-    s.vy += uy_L * liftAccel;
-    s.vz += uz_L * liftAccel;
-
-    // Induced Drag: Generating lift bleeds forward momentum
-    currentDrag -= (fSpd * INDUCED_DRAG * 0.01);
-  }
-
-  if (isThrusting) {
-    let pw = (d.thrust || 0.45) / m;
-    let dVec = shipUpDir(s, p.designIndex);
-    s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
-
-    // Emit fewer, softer smoke billows from twin engines
-    const totalParticles = particleSystem.particles.length;
-    const fogLoad = particleSystem.fogCount;
-    const emitEvery = totalParticles > 700 ? 5 : (totalParticles > 500 || fogLoad > 130 ? 4 : 3);
-    if (frameCount % emitEvery === 0) {
-      let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
-      let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
-      let tLocal = (pt) => {
-        let x = pt[0], y = pt[1], z = pt[2];
-        let y1 = y * cx - z * sx;
-        let z1 = y * sx + z * cx;
-        let x2 = x * cy + z1 * sy;
-        let z2 = -x * sy + z1 * cy;
-        return { x: x2 + s.x, y: y1 + s.y, z: z2 + s.z };
-      };
-
-      // Particle exhaust direction is exactly opposite of thrust force
-      let alpha = 0;
-      if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
-        alpha = SHIP_DESIGNS[p.designIndex].thrustAngle || 0;
-      }
-      const pa = s.pitch + alpha;
-      let exDir = {
-        x: Math.sin(pa) * Math.sin(s.yaw),
-        y: Math.cos(pa),
-        z: Math.sin(pa) * Math.cos(s.yaw)
-      };
-
-      // Get engine locations from the current design
-      let engPos = [];
-      if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
-        engPos = SHIP_DESIGNS[p.designIndex].draw(null);
-      } else {
-        engPos = [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
-      }
-      const emitChance = totalParticles > 700 ? 0.28 : (totalParticles > 500 ? 0.42 : 0.65);
-
-      engPos.forEach(pos => {
-        if (random() > emitChance) return; // Adaptive throttling under heavy particle load
-        let wPos = tLocal([pos.x, pos.y, pos.z + 2]); // Particle spawn slightly behind nozzle
+      // Ground/Dust particles
+      if (frameCount % 4 === 0) {
         particleSystem.particles.push({
-          x: wPos.x, y: wPos.y, z: wPos.z,
-          vx: exDir.x * random(4, 7) + random(-0.8, 0.8),
-          vy: exDir.y * random(4, 7) + random(-0.8, 0.8),
-          vz: exDir.z * random(4, 7) + random(-0.8, 0.8),
-          life: random(190, 240), decay: random(4.2, 6.0), seed: random(1.0), size: random(11, 18),
-          isThrust: true,
-          color: [random(150, 195), random(150, 195), random(150, 195)] // Soft grey smoke
+          x: s.x, y: s.y + 10, z: s.z,
+          vx: random(-1.5, 1.5), vy: -random(1, 3), vz: random(-1.5, 1.5),
+          life: random(40, 70), decay: 4, seed: random(1), size: random(6, 12),
+          color: [140, 130, 110]
         });
-      });
+      }
+    }
+
+    if (isBraking) {
+      let br = d.brakeRate ?? 0.94;
+      s.vx *= br; s.vz *= br;
+    }
+
+    // Drag (Much higher friction for ground vehicles to stop 'sliding')
+    let groundFriction = isThrusting ? 0.95 : 0.85;
+    s.vx *= groundFriction; s.vz *= groundFriction;
+
+    // Snap extremely low velocities to zero to feel responsive
+    if (Math.abs(s.vx) < 0.05) s.vx = 0;
+    if (Math.abs(s.vz) < 0.05) s.vz = 0;
+
+    s.x += s.vx; s.z += s.vz;
+
+    // Boundary check for water (Stop instead of explode)
+    let currentG = terrain.getAltitude(s.x, s.z);
+    if (!d.canTravelOnWater && currentG >= SEA - 1) {
+      s.x -= s.vx; s.z -= s.vz;
+      s.vx = 0; s.vz = 0;
+      return;
+    }
+  } else {
+    // FLYING VEHICLE PHYSICS
+    s.vy += GRAV;  // Gravity
+
+    // --- Aerodynamic Lift ---
+    let cp_L = Math.cos(s.pitch), sp_L = Math.sin(s.pitch);
+    let cy_L = Math.cos(s.yaw), sy_L = Math.sin(s.yaw);
+    let fx_L = -cp_L * sy_L, fy_L = sp_L, fz_L = -cp_L * cy_L;
+    let ux_L = -sp_L * sy_L, uy_L = -cp_L, uz_L = -sp_L * cy_L;
+    let fSpd = s.vx * fx_L + s.vy * fy_L + s.vz * fz_L;
+
+    let currentDrag = d.drag || DRAG;
+
+    if (fSpd > 0) {
+      let liftAccel = fSpd * (d.lift ?? LIFT_FACTOR);
+      s.vx += ux_L * liftAccel;
+      s.vy += uy_L * liftAccel;
+      s.vz += uz_L * liftAccel;
+
+      // Induced Drag: Generating lift bleeds forward momentum
+      currentDrag -= (fSpd * INDUCED_DRAG * 0.01);
+    }
+
+    if (isThrusting) {
+      let pw = (d.thrust || 0.45) / m;
+      let dVec = shipUpDir(s, p.designIndex);
+      s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
+
+      // Emit fewer, softer smoke billows from twin engines
+      const totalParticles = particleSystem.particles.length;
+      const fogLoad = particleSystem.fogCount;
+      const emitEvery = totalParticles > 700 ? 5 : (totalParticles > 500 || fogLoad > 130 ? 4 : 3);
+      if (frameCount % emitEvery === 0) {
+        let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+        let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
+        let tLocal = (pt) => {
+          let x = pt[0], y = pt[1], z = pt[2];
+          let y1 = y * cx - z * sx;
+          let z1 = y * sx + z * cx;
+          let x2 = x * cy + z1 * sy;
+          let z2 = -x * sy + z1 * cy;
+          return { x: x2 + s.x, y: y1 + s.y, z: z2 + s.z };
+        };
+
+        // Particle exhaust direction is exactly opposite of thrust force
+        let alpha = 0;
+        if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
+          alpha = SHIP_DESIGNS[p.designIndex].thrustAngle || 0;
+        }
+        const pa = s.pitch + alpha;
+        let exDir = {
+          x: Math.sin(pa) * Math.sin(s.yaw),
+          y: Math.cos(pa),
+          z: Math.sin(pa) * Math.cos(s.yaw)
+        };
+
+        // Get engine locations from the current design
+        let engPos = [];
+        if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
+          engPos = SHIP_DESIGNS[p.designIndex].draw(null);
+        } else {
+          engPos = [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
+        }
+        const emitChance = totalParticles > 700 ? 0.28 : (totalParticles > 500 ? 0.42 : 0.65);
+
+        engPos.forEach(pos => {
+          if (random() > emitChance) return; // Adaptive throttling under heavy particle load
+          let wPos = tLocal([pos.x, pos.y, pos.z + 2]); // Particle spawn slightly behind nozzle
+          particleSystem.particles.push({
+            x: wPos.x, y: wPos.y, z: wPos.z,
+            vx: exDir.x * random(4, 7) + random(-0.8, 0.8),
+            vy: exDir.y * random(4, 7) + random(-0.8, 0.8),
+            vz: exDir.z * random(4, 7) + random(-0.8, 0.8),
+            life: random(190, 240), decay: random(4.2, 6.0), seed: random(1.0), size: random(11, 18),
+            isThrust: true,
+            color: [random(150, 195), random(150, 195), random(150, 195)] // Soft grey smoke
+          });
+        });
+      }
+    }
+
+    if (isBraking) {
+      let br = d.brakeRate ?? 0.96;
+      s.vx *= br; s.vy *= br; s.vz *= br;
+    }
+
+    // Global air drag (Thinner Air Fix)
+    s.vx *= currentDrag; s.vy *= currentDrag; s.vz *= currentDrag;
+    s.x += s.vx; s.y += s.vy; s.z += s.vz;
+
+    let g = terrain.getAltitude(s.x, s.z);
+
+    // Sea collision — instant death
+    if (s.y > SEA - 12) {
+      killPlayer(p);
+      return;
+    }
+
+    // Terrain collision — bounce softly or kill on hard impact
+    if (s.y > g - 12) {
+      if (s.vy > 2.8) killPlayer(p);
+      else { s.y = g - 12; s.vy = 0; s.vx *= 0.8; s.vz *= 0.8; }
     }
   }
 
-  // Sustained thrust sound - update every frame for each player
+  // Sustained thrust sound - update every frame for each player (used by both types)
   if (typeof gameSFX !== 'undefined') {
     gameSFX.setThrust(p.id, isThrusting, s.x, s.y, s.z);
   }
 
-  if (isBraking) {
-    let br = d.brakeRate ?? 0.96;
-    s.vx *= br; s.vy *= br; s.vz *= br;
-  }
-
-  // Fire based on selected weapon mode
+  // Fire based on selected weapon mode (used by both types)
   if (p.weaponMode === 0) {
     // NORMAL: rapid-fire bullets every 6 frames while shoot is held
     if (isShooting && frameCount % 6 === 0) {
@@ -734,24 +812,6 @@ function updateShipInput(p) {
     // we still track shootHeld so that switching away from barrier resets
     // the edge-detection state used by missiles when the mode changes.
     p.shootHeld = isShooting;
-  }
-
-  // Global air drag (Thinner Air Fix)
-  s.vx *= currentDrag; s.vy *= currentDrag; s.vz *= currentDrag;
-  s.x += s.vx; s.y += s.vy; s.z += s.vz;
-
-  let g = terrain.getAltitude(s.x, s.z);
-
-  // Sea collision — instant death
-  if (s.y > SEA - 12) {
-    killPlayer(p);
-    return;
-  }
-
-  // Terrain collision — bounce softly or kill on hard impact
-  if (s.y > g - 12) {
-    if (s.vy > 2.8) killPlayer(p);
-    else { s.y = g - 12; s.vy = 0; s.vx *= 0.8; s.vz *= 0.8; }
   }
 }
 

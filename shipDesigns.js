@@ -7,6 +7,28 @@
 //   • draw: Geometry function that returns engine flame attachment points
 // =============================================================================
 
+
+// Geometry Helpers for enclosed faces
+const dBox = (df, cx, cy, cz, w, h, d, col, xform) => {
+    let hw=w/2, hh=h/2, hd=d/2;
+    df([[cx-hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz-hd], [cx-hw, cy+hh, cz-hd]], col, xform); // Bot (+Y)
+    df([[cx-hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Top (-Y)
+    df([[cx-hw, cy-hh, cz-hd], [cx-hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy-hh, cz-hd]], col, xform); // Front (-Z)
+    df([[cx+hw, cy-hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Back (+Z)
+    df([[cx-hw, cy-hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz-hd], [cx-hw, cy-hh, cz-hd]], col, xform); // Left (-X)
+    df([[cx+hw, cy-hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy-hh, cz+hd]], col, xform); // Right (+X)
+};
+
+const dExtrude = (df, pts, vec, col, xform) => {
+    let top = pts.map(p => [p[0] + vec[0], p[1] + vec[1], p[2] + vec[2]]);
+    df(pts, col, xform); 
+    df([...top].reverse(), col, xform); 
+    for(let i=0; i<pts.length; i++){
+        let j = (i+1)%pts.length;
+        df([pts[i], pts[j], top[j], top[i]], col, xform);
+    }
+};
+
 const SHIP_DESIGNS = [
     // =========================================================================
     // HOVER / VTOL DESIGNS (Thrust Directly Down)
@@ -34,9 +56,9 @@ const SHIP_DESIGNS = [
                 drawFace([nose, tL, top], tintColor); // Left
                 drawFace([nose, tR, top], tintColor); // Right
                 drawFace([tL, tR, top], [255, 0, 0]);        // Rear (Red)
-                drawFace([[0, -2, -10], [4, -4, 2], [-4, -4, 2]], [100, 200, 255, 180]); // Glass
+                dExtrude(drawFace, [[0, -2, -10], [4, -4, 2], [-4, -4, 2]], [0, 2, 0], [100, 200, 255, 180]); // Glass
                 // Ventral Engine Nozzle (Bottom Back)
-                drawFace([[-4, 3, 4], [4, 3, 4], [4, 3, 8], [-4, 3, 8]], [40, 40, 45]);
+                dExtrude(drawFace, [[-4, 3, 4], [4, 3, 4], [4, 3, 8], [-4, 3, 8]], [0, -2, 0], [40, 40, 45]);
             }
             return [{ x: 0, y: 3.5, z: 4 }];
         }
@@ -76,21 +98,21 @@ const SHIP_DESIGNS = [
                 drawFace([midB, rearB, rearR, midR], dark);
 
                 // Vertical Stabilizer (Tail Fin)
-                drawFace([[0, -8, 2], [0, -18, 18], [0, -4, 15]], tintColor);
+                dExtrude(drawFace, [[-0.5, -8, 2], [-0.5, -18, 18], [-0.5, -4, 15]], [1, 0, 0], tintColor);
 
                 // Wings (Small stubs)
-                drawFace([midL, [-25, 4, 10], rearL], tintColor);
-                drawFace([midR, [25, 4, 10], rearR], tintColor);
+                dExtrude(drawFace, [midL, [-25, 4, 10], rearL], [0, 1, 0], tintColor);
+                dExtrude(drawFace, [midR, [25, 4, 10], rearR], [0, 1, 0], tintColor);
 
                 // Rear Cap
                 drawFace([rearT, rearL, rearB, rearR], [255, 0, 0]);
 
                 // Cockpit
-                drawFace([[0, -8, -15], [5, -6, -5], [-5, -6, -5], [0, -9, -10]], [100, 200, 255, 200]);
-                drawFace([[0, -8, -15], [0, -9, -10], [5, -6, -5]], [255, 255, 255, 100]); // Highlight
+                dExtrude(drawFace, [[0, -8, -15], [5, -6, -5], [-5, -6, -5], [0, -9, -10]], [0, 2, 0], [100, 200, 255, 200]);
+                dExtrude(drawFace, [[0, -8, -15], [0, -9, -10], [5, -6, -5]], [0, 2, 0], [255, 255, 255, 100]); // Highlight
 
                 // Ventral Engine Nozzle
-                drawFace([[-5, 4, 5], [5, 4, 5], [5, 4, 12], [-5, 4, 12]], [40, 40, 45]);
+                dExtrude(drawFace, [[-5, 4, 5], [5, 4, 5], [5, 4, 12], [-5, 4, 12]], [0, -2, 0], [40, 40, 45]);
             }
             return [{ x: 0, y: 4.5, z: 8.5 }];
         }
@@ -128,13 +150,14 @@ const SHIP_DESIGNS = [
                 drawFace([f5, f6, f7, f8], [255, 0, 0]); // Rear (Red)
 
                 // Cockpit
-                drawFace([[0, -6, -22], [4, -5, -12], [-4, -5, -12]], [200, 250, 255, 200]);
+                dExtrude(drawFace, [[0, -6, -22], [4, -5, -12], [-4, -5, -12]], [0, 2, 0], [200, 250, 255, 200]);
 
                 // VTOL Pods
                 const drPod = (sideX, sideZ) => {
                     let px = sideX * 18, pz = sideZ * 10;
                     let p = [[-4, -4, -4], [4, -4, -4], [4, 4, -4], [-4, 4, -4], [-5, -5, 4], [5, -5, 4], [5, 5, 4], [-5, 5, 4]].map(v => [v[0] + px, v[1], v[2] + pz]);
                     for (let i = 0; i < 4; i++) drawFace([p[i], p[(i + 1) % 4], p[(i + 1) % 4 + 4], p[i + 4]], engineGray);
+                    drawFace([p[3], p[2], p[1], p[0]], engineGray); // Top
                     drawFace([p[4], p[5], p[6], p[7]], [40, 40, 45]); // Base
                 };
                 drPod(1, 1); drPod(-1, 1); drPod(1, -1); drPod(-1, -1);
@@ -179,11 +202,11 @@ const SHIP_DESIGNS = [
                 // Cap
                 drawFace([pts[0], pts[2], pts[4], pts[6], pts[8], pts[10], pts[12], pts[14]], dark);
                 // Glass top
-                drawFace([[0, -8, 0], [5, -4, 5], [-5, -4, 5], [0, -4, -7]], [100, 200, 255, 180]);
+                dExtrude(drawFace, [[0, -8, 0], [5, -4, 5], [-5, -4, 5], [0, -4, -7]], [0, 2, 0], [100, 200, 255, 180]);
                 // Outriggers
                 const drO = (a) => {
                     let c = Math.cos(a), ss = Math.sin(a);
-                    drawFace([[c * 15, 0, ss * 15], [c * 25, 2, ss * 25], [c * 22, 4, ss * 22]], engineGray);
+                    dExtrude(drawFace, [[c * 15, 0, ss * 15], [c * 25, 2, ss * 25], [c * 22, 4, ss * 22]], [0, 1, 0], engineGray);
                 };
                 for (let i = 0; i < 3; i++) drO((i / 3) * Math.PI * 2 + Math.PI / 6);
             }
@@ -216,9 +239,11 @@ const SHIP_DESIGNS = [
                 drawFace([n, b1, b2], light); drawFace([n, b1, b3], tintColor); drawFace([n, b2, b3], tintColor);
                 let r1 = [-8, 2, 25], r2 = [8, 2, 25], r3 = [0, 6, 25];
                 drawFace([b1, r1, r2, b2], dark); drawFace([b1, r1, r3, b3], tintColor); drawFace([b2, r2, r3, b3], tintColor);
+                // Fin/Wings are formed here by these panels, adding an internal seal at the back
+                drawFace([r1, r2, r3], [255, 0, 0]);
                 drawFace([r1, r2, r3], [255, 0, 0]); // Rear cap (Red)
                 // Engine
-                drawFace([[-4, 2, 25], [4, 2, 25], [4, 6, 25], [-4, 6, 25]], engineGray);
+                dExtrude(drawFace, [[-4, 2, 25.1], [4, 2, 25.1], [4, 6, 25.1], [-4, 6, 25.1]], [0, 0, 2], engineGray);
             }
             return [{ x: 0, y: 4, z: 20 }];
         }
@@ -247,13 +272,13 @@ const SHIP_DESIGNS = [
                 // Wings
                 const drW = (side) => {
                     let w1 = [side * 6, 0, 0], w2 = [side * 25, -2, 15], w3 = [side * 22, 2, 18], w4 = [side * 6, 2, 10];
-                    drawFace([w1, w2, w3, w4], tintColor);
+                    dExtrude(drawFace, [w1, w2, w3, w4], [0, 1, 0], tintColor);
                 };
                 drW(1); drW(-1);
                 // Dual Engines
                 const drE = (side) => {
                     let ex = side * 5;
-                    drawFace([[ex - 2, 2, 10], [ex + 2, 2, 10], [ex + 2, 5, 12], [ex - 2, 5, 12]], engineGray);
+                    dExtrude(drawFace, [[ex - 2, 2, 10], [ex + 2, 2, 10], [ex + 2, 5, 12], [ex - 2, 5, 12]], [0, 0, 4], engineGray);
                 };
                 drE(1); drE(-1);
             }
@@ -283,9 +308,9 @@ const SHIP_DESIGNS = [
                 drawFace([n, l1, r1], dark); // bottom
                 drawFace([l1, r1, t1], [255, 0, 0]); // back (Red)
                 // Intake
-                drawFace([[0, -2, -10], [8, 0, -5], [-8, 0, -5]], [30, 30, 35]);
+                dExtrude(drawFace, [[0, -2, -10], [8, 0, -5], [-8, 0, -5]], [0, 2, 0], [30, 30, 35]);
                 // Wide Engine
-                drawFace([[-12, 3, 14], [12, 3, 14], [12, 5, 14], [-12, 5, 14]], engineGray);
+                dExtrude(drawFace, [[-12, 3, 14], [12, 3, 14], [12, 5, 14], [-12, 5, 14]], [0, 0, 3], engineGray);
             }
             return [{ x: 0, y: 4, z: 11 }];
         }
@@ -332,9 +357,9 @@ const SHIP_DESIGNS = [
                     drawFace([p[0], p[1], p[2], p[3]], engineGray); drawFace([p[4], p[5], p[6], p[7]], engineGray);
                 };
                 drE(-13, 5, 18); drE(13, 5, 18);
-                drawFace([[-4, -4, -18], [4, -4, -18], [5, -1, -5], [-5, -1, -5]], [100, 200, 255, 180]);
-                drawFace([[-4, -4, -18], [-5, -1, -5], [-7, 0, -10]], engineGray);
-                drawFace([[4, -4, -18], [5, -1, -5], [7, 0, -10]], engineGray);
+                dExtrude(drawFace, [[-4, -4, -18], [4, -4, -18], [5, -1, -5], [-5, -1, -5]], [0, 2, 0], [100, 200, 255, 180]);
+                dExtrude(drawFace, [[-4, -4, -18], [-5, -1, -5], [-7, 0, -10]], [-1, 0, 0], engineGray);
+                dExtrude(drawFace, [[4, -4, -18], [5, -1, -5], [7, 0, -10]], [1, 0, 0], engineGray);
             }
             return [{ x: -13, y: 5, z: 18 }, { x: 13, y: 5, z: 18 }];
         }
@@ -366,12 +391,12 @@ const SHIP_DESIGNS = [
                     let rT1 = [side * 5, 1, -5], rT2 = [side * 6, 1, 12], rB1 = [side * 5, 3, -5], rB2 = [side * 6, 3, 12], tip = [side * 32, 2, 15];
                     drawFace([rT1, rT2, tip], light); drawFace([rB1, rB2, tip], dark);
                     drawFace([rT1, rB1, tip], light); drawFace([rT2, rB2, tip], dark);
-                    drawFace([[side * 15, 1.8, 0], [side * 18, 1.8, 2], [side * 20, 2, 15], [side * 17, 2, 13]], [255, 255, 255, 200]);
+                    drawFace([[side * 15, 1.7, 0], [side * 18, 1.7, 2], [side * 20, 1.9, 15], [side * 17, 1.9, 13]], [255, 255, 255, 200]); // Shift Y to avoid Z-fight
                 };
                 drW(1); drW(-1);
-                drawFace([[0, -5, -12], [3, -4, -4], [-3, -4, -4]], [100, 200, 255, 200]);
-                drawFace([[0, -5, 5], [0, -18, 18], [0, 2, 15]], tintColor);
-                drawFace([[-4, 2, 15], [4, 2, 15], [4, 5, 15], [-4, 5, 15]], engineGray);
+                dExtrude(drawFace, [[0, -5, -12], [3, -4, -4], [-3, -4, -4]], [0, 2, 0], [100, 200, 255, 200]);
+                dExtrude(drawFace, [[-0.5, -5, 5], [-0.5, -18, 18], [-0.5, 2, 15]], [1, 0, 0], tintColor);
+                dExtrude(drawFace, [[-4, 2, 15], [4, 2, 15], [4, 5, 15], [-4, 5, 15]], [0, 0, 3], engineGray);
             }
             return [{ x: 0, y: 3.5, z: 12 }];
         }
@@ -400,8 +425,8 @@ const SHIP_DESIGNS = [
                 drawFace([bT, bB, bL], [255, 0, 0]); drawFace([bT, bB, bR], [255, 0, 0]); // Rear (Red)
                 const drI = (side) => {
                     let p = [[side * 8, -4, -15], [side * 12, -2, -10], [side * 12, 4, -10], [side * 8, 4, -15]];
-                    drawFace(p, [40, 40, 45]);
-                    drawFace([p[0], p[1], [side * 12, -4, 10], [side * 8, -6, 5]], light);
+                    dExtrude(drawFace, p, [side*0.5, -2, 0], [40, 40, 45]);
+                    dExtrude(drawFace, [p[0], p[1], [side * 12, -4, 10], [side * 8, -6, 5]], [0, 1, 0], light);
                 };
                 drI(1); drI(-1);
                 const drW = (side) => {
@@ -409,8 +434,8 @@ const SHIP_DESIGNS = [
                     drawFace([rT1, rT2, tip], tintColor); drawFace([rB1, rB2, tip], dark);
                     drawFace([rT1, rB1, tip], light); drawFace([rT2, rB2, tip], dark);
                     drawFace([tip, [side * 45, -10, 35], [side * 47, 6, 32]], light);
-                    drawFace([[side * 20, 1, 10], [side * 25, 1, 12], [side * 25, 1, 18], [side * 20, 1, 16]], [255, 255, 255]);
-                    drawFace([[side * 8, 0, 5], [side * 14, 4, 20], [side * 14, 4, 25], [side * 8, 0, 10]], engineGray);
+                    drawFace([[side * 20, 0.9, 10], [side * 25, 0.9, 12], [side * 25, 0.9, 18], [side * 20, 0.9, 16]], [255, 255, 255]);
+                    dExtrude(drawFace, [[side * 8, 0, 5], [side * 14, 4, 20], [side * 14, 4, 25], [side * 8, 0, 10]], [0, 1, 0], engineGray);
                 };
                 drW(1); drW(-1);
                 const drE = (side) => {
@@ -419,8 +444,8 @@ const SHIP_DESIGNS = [
                     drawFace([p[0], p[1], p[2], p[3]], engineGray); drawFace([p[4], p[5], p[6], p[7]], engineGray);
                 };
                 drE(1); drE(-1);
-                drawFace([[0, -8, -12], [5, -6, 2], [-5, -6, 2], [0, -10, -5]], [100, 200, 255, 180]);
-                drawFace([[-6, 2, 15], [6, 2, 15], [6, 6, 15], [-6, 6, 15]], [30, 30, 35]);
+                dExtrude(drawFace, [[0, -8, -12], [5, -6, 2], [-5, -6, 2], [0, -10, -5]], [0, 2, 0], [100, 200, 255, 180]);
+                dExtrude(drawFace, [[-6, 2, 15], [6, 2, 15], [6, 6, 15], [-6, 6, 15]], [0, 0, 3], [30, 30, 35]);
             }
             return [{ x: -14, y: 4, z: 22 }, { x: 14, y: 4, z: 22 }];
         }
@@ -450,14 +475,14 @@ const SHIP_DESIGNS = [
                     let rT1 = [side * 4, -2, 5], rT2 = [side * 4, -2, 25], rB1 = [side * 4, 1, 5], rB2 = [side * 4, 1, 25], tip = [side * 35, -3, -15];
                     drawFace([rT1, rT2, tip], tintColor); drawFace([rB1, rB2, tip], dark);
                     drawFace([rT1, rB1, tip], light); drawFace([rT2, rB2, tip], dark);
-                    drawFace([[side * 15, -2, 0], [side * 18, -2, 2], [side * 18, -2.5, -5], [side * 15, -2.5, -7]], [255, 50, 50]);
+                    drawFace([[side * 15, -2.1, 0], [side * 18, -2.1, 2], [side * 18, -2.6, -5], [side * 15, -2.6, -7]], [255, 50, 50]);
                 };
                 drW(1); drW(-1);
                 let p = [[-7, -7, 0], [7, -7, 0], [7, 7, 0], [-7, 7, 0], [-9, -9, 15], [9, -9, 15], [9, 9, 15], [-9, 9, 15]].map(v => [v[0], v[1], v[2] + 20]);
                 for (let i = 0; i < 4; i++) drawFace([p[i], p[(i + 1) % 4], p[(i + 1) % 4 + 4], p[i + 4]], engineGray);
                 drawFace([p[0], p[1], p[2], p[3]], engineGray); drawFace([p[4], p[5], p[6], p[7]], [255, 0, 0]); // Rear (Red)
-                drawFace([[0, -4, -15], [2, -3, -10], [-2, -3, -10]], [200, 255, 255]);
-                drawFace([[-3, -4, 30], [3, -4, 30], [3, 4, 30], [-3, 4, 30]], engineGray);
+                dExtrude(drawFace, [[0, -4, -15], [2, -3, -10], [-2, -3, -10]], [0, 1, 0], [200, 255, 255]);
+                dExtrude(drawFace, [[-3, -4, 30], [3, -4, 30], [3, 4, 30], [-3, 4, 30]], [0, 0, 4], engineGray);
             }
             return [{ x: 0, y: 0, z: 25 }];
         }

@@ -88,75 +88,95 @@ const DAY_CYCLE = [
     sAmbL: [0.30, 0.30, 0.40],
     sAmbH: [0.60, 0.60, 0.70]
   },
-  { // 1: Morning 2 (Slightly brighter golden hour)
-    name: 'Morning 2',
-    dir: [0.90, 0.25, -0.34],
-    sky: [140, 160, 220],
-    amb: [90, 110, 140],
-    sunKey: [255, 220, 180],
-    sSun: [1.4, 1.2, 0.9],
-    sAmbL: [0.30, 0.35, 0.45],
-    sAmbH: [0.50, 0.65, 0.85]
+  { // 1: Late Morning (Subtle shift)
+    name: 'Late Morning',
+    dir: [0.85, 0.20, -0.34],
+    sky: [150, 145, 190],
+    amb: [85, 95, 125],
+    sunKey: [255, 205, 160],
+    sSun: [1.5, 1.25, 0.85],
+    sAmbL: [0.30, 0.32, 0.42],
+    sAmbH: [0.55, 0.62, 0.75]
   },
-  { // 2: Midday (Soft blue, not bleached)
+  { // 2: Midday (Keeping it muted, not bleached)
     name: 'Midday',
-    dir: [0.60, 0.35, -0.50],
-    sky: [120, 170, 230],
-    amb: [90, 110, 140],
-    sunKey: [255, 240, 220],
-    sSun: [1.2, 1.15, 1.1],
-    sAmbL: [0.25, 0.30, 0.40],
-    sAmbH: [0.45, 0.60, 0.85]
-  },
-  { // 3: Afternoon (Warm shift)
-    name: 'Afternoon',
-    dir: [-0.60, 0.35, -0.50],
-    sky: [120, 160, 220],
-    amb: [90, 110, 140],
-    sunKey: [255, 230, 200],
-    sSun: [1.3, 1.2, 1.0],
-    sAmbL: [0.30, 0.35, 0.45],
+    dir: [0.70, 0.25, -0.40],
+    sky: [140, 150, 200],
+    amb: [80, 95, 120],
+    sunKey: [255, 215, 175],
+    sSun: [1.4, 1.2, 0.9],
+    sAmbL: [0.28, 0.32, 0.45],
     sAmbH: [0.50, 0.60, 0.80]
   },
-  { // 4: Late Afternoon (Long shadows, orange hints)
+  { // 3: Afternoon
+    name: 'Afternoon',
+    dir: [-0.60, 0.25, -0.40],
+    sky: [135, 145, 195],
+    amb: [80, 95, 115],
+    sunKey: [255, 210, 170],
+    sSun: [1.4, 1.15, 0.95],
+    sAmbL: [0.30, 0.30, 0.42],
+    sAmbH: [0.52, 0.58, 0.75]
+  },
+  { // 4: Late Afternoon 
     name: 'Late Afternoon',
-    dir: [-0.90, 0.25, -0.34],
-    sky: [150, 130, 160],
-    amb: [95, 90, 120],
-    sunKey: [255, 200, 150],
-    sSun: [1.4, 1.1, 0.8],
-    sAmbL: [0.35, 0.30, 0.40],
-    sAmbH: [0.60, 0.50, 0.65]
+    dir: [-0.85, 0.20, -0.34],
+    sky: [145, 135, 180],
+    amb: [85, 90, 110],
+    sunKey: [255, 195, 150],
+    sSun: [1.5, 1.1, 0.85],
+    sAmbL: [0.32, 0.28, 0.40],
+    sAmbH: [0.58, 0.52, 0.70]
   },
-  { // 5: Sunset (Rich vibrant colours)
+  { // 5: Sunset
     name: 'Sunset',
-    dir: [-0.96, 0.12, -0.34],
-    sky: [180, 100, 80],
-    amb: [100, 70, 90],
-    sunKey: [255, 120, 60],
-    sSun: [1.9, 1.0, 0.5],
+    dir: [-0.95, 0.12, -0.34],
+    sky: [170, 110, 120],
+    amb: [90, 80, 100],
+    sunKey: [255, 140, 90],
+    sSun: [1.7, 1.0, 0.6],
     sAmbL: [0.35, 0.25, 0.35],
-    sAmbH: [0.65, 0.45, 0.45]
+    sAmbH: [0.65, 0.45, 0.55]
   },
-  { // 6: Night (Deep moody moonlit setup)
-    name: 'Night',
-    dir: [0.50, 0.25, 0.50],
-    sky: [15, 20, 35],
-    amb: [20, 25, 40],
-    sunKey: [100, 120, 180],
-    sSun: [0.5, 0.6, 0.8],
-    sAmbL: [0.10, 0.15, 0.20],
-    sAmbH: [0.20, 0.25, 0.40]
+  { // 6: Dusk
+    name: 'Dusk',
+    dir: [-0.98, 0.05, -0.34],
+    sky: [80, 50, 80],
+    amb: [50, 40, 60],
+    sunKey: [200, 100, 80],
+    sSun: [1.0, 0.7, 0.5],
+    sAmbL: [0.20, 0.15, 0.25],
+    sAmbH: [0.35, 0.30, 0.40]
   },
-  { // 7: Dawn (Deep orange/purple, very low sun)
+  { // 7: Night 1 (Clear Night)
+    name: 'Night 1',
+    dir: [0.50, 0.15, 0.50],
+    sky: [20, 25, 40],
+    amb: [25, 30, 45],
+    sunKey: [80, 100, 160],
+    sSun: [0.4, 0.5, 0.7],
+    sAmbL: [0.12, 0.15, 0.22],
+    sAmbH: [0.25, 0.28, 0.40]
+  },
+  { // 8: Night 2 (Deep Night)
+    name: 'Night 2',
+    dir: [0.70, 0.25, 0.50],
+    sky: [10, 15, 30],
+    amb: [15, 20, 35],
+    sunKey: [60, 80, 140],
+    sSun: [0.3, 0.4, 0.6],
+    sAmbL: [0.08, 0.12, 0.18],
+    sAmbH: [0.15, 0.20, 0.35]
+  },
+  { // 9: Dawn
     name: 'Dawn',
-    dir: [0.96, 0.12, -0.34],
-    sky: [190, 120, 70],
-    amb: [100, 70, 90],
-    sunKey: [255, 140, 80],
-    sSun: [2.0, 1.2, 0.6],
-    sAmbL: [0.35, 0.25, 0.35],
-    sAmbH: [0.70, 0.50, 0.40]
+    dir: [0.96, 0.08, -0.34],
+    sky: [180, 100, 90],
+    amb: [90, 60, 80],
+    sunKey: [255, 130, 80],
+    sSun: [1.8, 1.0, 0.6],
+    sAmbL: [0.35, 0.22, 0.30],
+    sAmbH: [0.65, 0.40, 0.50]
   }
 ];
 

@@ -480,44 +480,42 @@ const SHIP_DESIGNS = [
         canTravelOnWater: false,
         footprint: [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: 15, z: 15 }, { x: -15, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform, aimTransform) {
-            // Main body (Chassis)
+            // Helper for fully enclosed boxes (avoiding missing sides / inverted normals)
+            const dBox = (cx, cy, cz, w, h, d, col, xform) => {
+                let hw=w/2, hh=h/2, hd=d/2;
+                drawFace([[cx-hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz-hd], [cx-hw, cy+hh, cz-hd]], col, xform); // Bot (+Y)
+                drawFace([[cx-hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Top (-Y)
+                drawFace([[cx-hw, cy-hh, cz-hd], [cx-hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy-hh, cz-hd]], col, xform); // Front (-Z)
+                drawFace([[cx+hw, cy-hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Back (+Z)
+                drawFace([[cx-hw, cy-hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz-hd], [cx-hw, cy-hh, cz-hd]], col, xform); // Left (-X)
+                drawFace([[cx+hw, cy-hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy-hh, cz+hd]], col, xform); // Right (+X)
+            };
+
+            // Main body (Chassis) (No Z-fighting with wheels by keeping boundaries tight)
             drawFace([[-12, -2, 15], [12, -2, 15], [12, -2, -15], [-12, -2, -15]], light); // Bottom
-            drawFace([[-12, -10, 15], [12, -10, 15], [12, -10, -15], [-12, -10, -15]], light); // Top
-            drawFace([[-12, -10, -15], [12, -10, -15], [12, -2, -15], [-12, -2, -15]], dark); // Front
-            drawFace([[-12, -10, 15], [12, -10, 15], [12, -2, 15], [-12, -2, 15]], dark); // Back
-            drawFace([[-12, -10, 15], [-12, -10, -15], [-12, -2, -15], [-12, -2, 15]], tintColor); // Left
-            drawFace([[12, -10, 15], [12, -10, -15], [12, -2, -15], [12, -2, 15]], tintColor); // Right
+            drawFace([[-12, -10, -15], [12, -10, -15], [12, -10, 15], [-12, -10, 15]], light); // Top
+            drawFace([[-12, -10, -15], [-12, -2, -15], [12, -2, -15], [12, -10, -15]], dark); // Front
+            drawFace([[12, -10, 15], [12, -2, 15], [-12, -2, 15], [-12, -10, 15]], dark); // Back
+            drawFace([[-12, -10, 15], [-12, -2, 15], [-12, -2, -15], [-12, -10, -15]], tintColor); // Left
+            drawFace([[12, -10, -15], [12, -2, -15], [12, -2, 15], [12, -10, 15]], tintColor); // Right
 
             // Cabin / Windshield (Facing forward)
-            drawFace([[-8, -10, 0], [8, -10, 0], [8, -20, 8], [-8, -20, 8]], [200, 230, 255, 180]); // Windshield
+            drawFace([[-8, -10, 0], [-8, -20, 8], [8, -20, 8], [8, -10, 0]], [200, 230, 255, 180]);
 
             // Jeep Gun (Tilted with aimTransform)
             const gCol = [60, 60, 65];
-            // Small turret base (stays flat)
-            drawFace([[-4, -10, 4], [4, -10, 4], [4, -10, -4], [-4, -10, -4]], engineGray);
-            // The Gun Barrel (points with aim)
-            // We draw it relative to the ship center, but shifted to the roof (-12)
-            const gunPts = (yOff, zFront, zBack, w) => [
-                [-w, -12 + yOff, zFront], [w, -12 + yOff, zFront],
-                [w, -12 + yOff, zBack], [-w, -12 + yOff, zBack]
-            ];
-            drawFace(gunPts(-2, -25, 0, 2), gCol, aimTransform); // Top
-            drawFace(gunPts(2, -25, 0, 2), gCol, aimTransform);  // Bottom
-            drawFace([[-2, -14, -25], [2, -14, -25], [2, -10, -25], [-2, -14, -25]], light, aimTransform); // Muzzle
-
-            // Wheels
-            const drawWheel = (x, z) => {
-                let wCol = [30, 30, 30];
-                drawFace([[x - 3, -2, z + 4], [x + 3, -2, z + 4], [x + 3, -2, z - 4], [x - 3, -2, z - 4]], wCol);
-                drawFace([[x - 3, 4, z + 4], [x + 3, 4, z + 4], [x + 3, 4, z - 4], [x - 3, 4, z - 4]], wCol);
-                drawFace([[x + 3, -2, z - 4], [x + 3, 4, z - 4], [x - 3, 4, z - 4], [x - 3, -2, z - 4]], wCol); // Front of wheel
-            };
+            dBox(0, -11, 0, 8, 2, 8, engineGray); // Turret base (enclosed)
+            dBox(0, -12, -12.5, 4, 4, 25, gCol, aimTransform); // Gun Barrel (enclosed, 25 long)
+            
+            // Wheels (Slightly inset bounding box to avoid Z-fighting with hull at y=-2)
+            const wheelY = 1.1; // Extends from -1.9 to 4.1
+            const drawWheel = (x, z) => dBox(x, wheelY, z, 6, 6, 8, [30, 30, 30]);
             drawWheel(-13, 10); drawWheel(13, 10);
             drawWheel(-13, -10); drawWheel(13, -10);
 
             // Headlights (Facing forward)
-            drawFace([[-10, -8, -15.1], [-6, -8, -15.1], [-6, -4, -15.1], [-10, -4, -15.1]], [255, 255, 200]);
-            drawFace([[6, -8, -15.1], [10, -8, -15.1], [10, -4, -15.1], [6, -4, -15.1]], [255, 255, 200]);
+            drawFace([[-10, -8, -15.1], [-10, -4, -15.1], [-6, -4, -15.1], [-6, -8, -15.1]], [255, 255, 200]);
+            drawFace([[6, -8, -15.1], [6, -4, -15.1], [10, -4, -15.1], [10, -8, -15.1]], [255, 255, 200]);
 
             return [{ x: 0, y: -5, z: 16 }]; // Flame position (at back)
         }
@@ -541,34 +539,33 @@ const SHIP_DESIGNS = [
         canTravelOnWater: false,
         footprint: [{ x: -25, z: -25 }, { x: 25, z: -25 }, { x: 25, z: 25 }, { x: -25, z: 25 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform, aimTransform) {
-            // Main Hull
+            const dBox = (cx, cy, cz, w, h, d, col, xform) => {
+                let hw=w/2, hh=h/2, hd=d/2;
+                drawFace([[cx-hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz-hd], [cx-hw, cy+hh, cz-hd]], col, xform); // Bot (+Y)
+                drawFace([[cx-hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Top (-Y)
+                drawFace([[cx-hw, cy-hh, cz-hd], [cx-hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy-hh, cz-hd]], col, xform); // Front (-Z)
+                drawFace([[cx+hw, cy-hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Back (+Z)
+                drawFace([[cx-hw, cy-hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz-hd], [cx-hw, cy-hh, cz-hd]], col, xform); // Left (-X)
+                drawFace([[cx+hw, cy-hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy-hh, cz+hd]], col, xform); // Right (+X)
+            };
+
+            // Main Hull (-20 to 20, y: -12 to -2, z: -25 to 25)
             drawFace([[-20, -2, 25], [20, -2, 25], [20, -2, -25], [-20, -2, -25]], engineGray); // Bottom
-            drawFace([[-18, -12, 25], [18, -12, 25], [18, -12, -25], [-18, -12, -25]], light); // Top
-            drawFace([[-20, -2, -25], [20, -2, -25], [18, -12, -25], [-18, -12, -25]], dark); // Front
-            drawFace([[-20, -2, 25], [20, -2, 25], [18, -12, 25], [-18, -12, 25]], dark); // Back
-            drawFace([[-20, -2, 25], [-20, -2, -25], [-18, -12, -25], [-18, -12, 25]], tintColor); // Left
-            drawFace([[20, -2, 25], [20, -2, -25], [18, -12, -25], [18, -12, 25]], tintColor); // Right
+            drawFace([[-18, -12, -25], [18, -12, -25], [18, -12, 25], [-18, -12, 25]], light); // Top
+            drawFace([[-18, -12, -25], [-20, -2, -25], [20, -2, -25], [18, -12, -25]], dark); // Front
+            drawFace([[18, -12, 25], [20, -2, 25], [-20, -2, 25], [-18, -12, 25]], dark); // Back
+            drawFace([[-18, -12, 25], [-20, -2, 25], [-20, -2, -25], [-18, -12, -25]], tintColor); // Left
+            drawFace([[18, -12, -25], [20, -2, -25], [20, -2, 25], [18, -12, 25]], tintColor); // Right
 
-            // Turret & Cannon (Using aimTransform to follow player pitch)
-            drawFace([[-12, -12, 12], [12, -12, 12], [12, -12, -12], [-12, -12, -12]], engineGray, aimTransform); // Bottom
-            drawFace([[-10, -22, 12], [10, -22, 12], [10, -22, -12], [-10, -22, -12]], light, aimTransform); // Top
-            drawFace([[-12, -12, -12], [12, -12, -12], [10, -22, -12], [-10, -22, -12]], dark, aimTransform); // Front
-
-            // Cannon (Facing forward)
-            drawFace([[-3, -21, -12], [3, -21, -12], [3, -21, -42], [-3, -21, -42]], engineGray, aimTransform);
-            drawFace([[-3, -15, -12], [3, -15, -12], [3, -15, -42], [-3, -15, -42]], engineGray, aimTransform);
-            drawFace([[-3, -21, -42], [3, -21, -42], [3, -15, -42], [-3, -15, -42]], light, aimTransform); // Muzzle
+            // Turret & Cannon (Enclosed, Using aimTransform)
+            dBox(0, -17, 0, 24, 10, 24, light, aimTransform); // Turret body
+            dBox(0, -18, -27, 6, 6, 30, engineGray, aimTransform); // Cannon Barrel
 
             // Treads (Left/Right) - 3D Box style
-            const drawTread = (side) => {
-                let tX = side * 22;
-                let tCol = [30, 30, 30];
-                drawFace([[tX - 5, -2, 28], [tX + 5, -2, 28], [tX + 5, -2, -28], [tX - 5, -2, -28]], tCol); // Bottom
-                drawFace([[tX - 5, 10, 28], [tX + 5, 10, 28], [tX + 5, 10, -28], [tX - 5, 10, -28]], tCol); // Top
-                drawFace([[tX - 5, -2, -28], [tX + 5, -2, -28], [tX + 5, 10, -28], [tX - 5, 10, -28]], [40, 40, 40]); // Front
-                drawFace([[tX - 5, -2, 28], [tX + 5, -2, 28], [tX + 5, 10, 28], [tX - 5, 10, 28]], [20, 20, 20]); // Back
-            };
-            drawTread(-1); drawTread(1);
+            // Shift Y slightly down to avoid z-fighting with hull (y=-2)
+            // Treads are from y=-1.9 to 10
+            dBox(-22, 4.05, 0, 10, 11.9, 56, [30, 30, 30]);
+            dBox(22, 4.05, 0, 10, 11.9, 56, [30, 30, 30]);
 
             return [{ x: 0, y: -8, z: 26 }];
         }
@@ -591,39 +588,42 @@ const SHIP_DESIGNS = [
         canTravelOnWater: true,
         footprint: [{ x: -22, z: -30 }, { x: 22, z: -30 }, { x: 22, z: 30 }, { x: -22, z: 30 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform, aimTransform) {
+            const dBox = (cx, cy, cz, w, h, d, col, xform) => {
+                let hw=w/2, hh=h/2, hd=d/2;
+                drawFace([[cx-hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz-hd], [cx-hw, cy+hh, cz-hd]], col, xform); // Bot (+Y)
+                drawFace([[cx-hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Top (-Y)
+                drawFace([[cx-hw, cy-hh, cz-hd], [cx-hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy-hh, cz-hd]], col, xform); // Front (-Z)
+                drawFace([[cx+hw, cy-hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Back (+Z)
+                drawFace([[cx-hw, cy-hh, cz+hd], [cx-hw, cy+hh, cz+hd], [cx-hw, cy+hh, cz-hd], [cx-hw, cy-hh, cz-hd]], col, xform); // Left (-X)
+                drawFace([[cx+hw, cy-hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy-hh, cz+hd]], col, xform); // Right (+X)
+            };
+
             // Main Skirt / Hull base
-            drawFace([[-25, 0, -35], [25, 0, -35], [25, 0, 35], [-25, 0, 35]], [40, 40, 45]); // Bottom skirt
+            drawFace([[-25, 0, 35], [25, 0, 35], [25, 0, -35], [-25, 0, -35]], [40, 40, 45]); // Bottom skirt
             drawFace([[-22, -8, -30], [22, -8, -30], [22, -8, 30], [-22, -8, 30]], light); // Deck
 
             // Sides connecting skirt to deck
-            drawFace([[-25, 0, 35], [25, 0, 35], [22, -8, 30], [-22, -8, 30]], dark); // Front
-            drawFace([[-25, 0, -35], [25, 0, -35], [22, -8, -30], [-22, -8, -30]], dark); // Back
-            drawFace([[-25, 0, -35], [-25, 0, 35], [-22, -8, 30], [-22, -8, -30]], tintColor); // Left
-            drawFace([[25, 0, -35], [25, 0, 35], [22, -8, 30], [22, -8, -30]], tintColor); // Right
+            drawFace([[-22, -8, -30], [-25, 0, -35], [25, 0, -35], [22, -8, -30]], dark); // Front
+            drawFace([[22, -8, 30], [25, 0, 35], [-25, 0, 35], [-22, -8, 30]], dark); // Back
+            drawFace([[-22, -8, 30], [-25, 0, 35], [-25, 0, -35], [-22, -8, -30]], tintColor); // Left
+            drawFace([[22, -8, -30], [25, 0, -35], [25, 0, 35], [22, -8, 30]], tintColor); // Right
 
             // Cockpit
-            drawFace([[-10, -8, 5], [10, -8, 5], [8, -18, -5], [-8, -18, -5]], [180, 220, 255, 150]);
+            drawFace([[-10, -8, 5], [-8, -18, -5], [8, -18, -5], [10, -8, 5]], [180, 220, 255, 150]);
 
-            // Gun (Tilted with aimTransform)
+            // Gun (Tilted with aimTransform) - Shifted slightly up so Bottom (-8.1) avoids Deck (-8.0)
             const gCol = [50, 50, 55];
-            const gunPts = (side, yOff, zFront, zBack, w) => [
-                [side * 15 - w, -10 + yOff, zFront], [side * 15 + w, -10 + yOff, zFront],
-                [side * 15 + w, -10 + yOff, zBack], [side * 15 - w, -10 + yOff, zBack]
-            ];
-            // Dual side guns
-            [1, -1].forEach(side => {
-                drawFace(gunPts(side, -2, -35, -5, 2), gCol, aimTransform);
-                drawFace(gunPts(side, 2, -35, -5, 2), gCol, aimTransform);
-                drawFace([[side * 15 - 2, -12, -35], [side * 15 + 2, -12, -35], [side * 15 + 2, -8, -35], [side * 15 - 2, -8, -35]], light, aimTransform); // Tip
-            });
+            dBox(-15, -10.1, -20, 4, 4, 30, gCol, aimTransform);
+            dBox(15, -10.1, -20, 4, 4, 30, gCol, aimTransform);
 
-            // Rear Propulsion Fan
-            drawFace([[-12, -8, -25], [12, -8, -25], [12, -25, -30], [-12, -25, -30]], engineGray); // Housing
+            // Rear Propulsion Fan (enclosed)
+            dBox(0, -16.5, -27.5, 24, 17, 5, engineGray);
+            
             // Fan blades (simplified cross)
             let fanA = frameCount * 0.4;
-            let f1 = [cos(fanA) * 10, sin(fanA) * 10 - 16, -30.1];
-            let f2 = [-cos(fanA) * 10, -sin(fanA) * 10 - 16, -30.1];
-            drawFace([[0, -16, -30.1], f1, f2], [255, 255, 255, 100]);
+            let f1 = [Math.cos(fanA) * 10, Math.sin(fanA) * 10 - 16, -30.1];
+            let f2 = [-Math.cos(fanA) * 10, -Math.sin(fanA) * 10 - 16, -30.1];
+            drawFace([[0, -16, -30.1], f2, f1], [255, 255, 255, 100]);
 
             return [{ x: 0, y: -16, z: -32 }];
         }

@@ -275,11 +275,11 @@ function _shadowHull2D(points) {
 function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw = 0, alpha = 50) {
   if (aboveSea(groundY)) return;
   const sun = _shadowSunBasis();
-  const shiftFor = (h) => {
+  const getShadowShift = (h) => {
     if (terrain && typeof terrain._shadowShift === 'function') return terrain._shadowShift(h, sun);
     return shadowShift(h, sun);
   };
-  const heightFade = (h) => {
+  const getOpacityFactor = (h) => {
     if (terrain && typeof terrain._shadowOpacityFactor === 'function') return terrain._shadowOpacityFactor(h);
     return shadowOpacityFactor(h);
   };
@@ -300,7 +300,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
     z: -p.x * sy + p.z * cy
   }));
 
-  const shift = shiftFor(casterH);
+  const shift = getShadowShift(casterH);
   const base = rotated.map(p => ({ x: x + p.x, z: z + p.z }));
   const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
   const hull = _shadowHull2D(base.concat(top));
@@ -308,7 +308,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
 
   noStroke();
   // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
-  fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, alpha * heightFade(casterH));
+  fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, alpha * getOpacityFactor(casterH));
   _beginShadowStencil();
   beginShape();
   for (const p of hull) {

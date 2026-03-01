@@ -636,60 +636,69 @@ class Terrain {
     let cached = this.chunkCache.get(key);
     if (cached !== undefined) return cached;
 
-    let geom = buildGeometry(() => {
-      let startX = cx * CHUNK_SIZE;
-      let startZ = cz * CHUNK_SIZE;
+    if (this._isBuildingShadow) return null; // Safety: do not nest build calls
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = buildGeometry(() => {
+        let startX = cx * CHUNK_SIZE;
+        let startZ = cz * CHUNK_SIZE;
 
-      beginShape(TRIANGLES);
-      fill(34, 139, 34); // Unified Terrain Tag: Forest Green
+        beginShape(TRIANGLES);
+        fill(34, 139, 34); // Unified Terrain Tag: Forest Green
 
-      for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
-        for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
-          let xP = tx * TILE, zP = tz * TILE;
-          let xP1 = xP + TILE, zP1 = zP + TILE;
-          // Grid corners are always exact tile boundaries (fx=0, fz=0), so call
-          // getGridAltitude() directly — it hits the altCache with a single Map.get()
-          // and skips the bilinear interpolation logic in getAltitude().
-          let y00 = this.getGridAltitude(tx, tz);
-          let y10 = this.getGridAltitude(tx + 1, tz);
-          let y01 = this.getGridAltitude(tx, tz + 1);
-          let y11 = this.getGridAltitude(tx + 1, tz + 1);
-          let minY = Math.min(y00, y10, y01, y11);
-          if (aboveSea(minY)) continue;
+        for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
+          for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
+            let xP = tx * TILE, zP = tz * TILE;
+            let xP1 = xP + TILE, zP1 = zP + TILE;
+            // Grid corners are always exact tile boundaries (fx=0, fz=0), so call
+            // getGridAltitude() directly — it hits the altCache with a single Map.get()
+            // and skips the bilinear interpolation logic in getAltitude().
+            let y00 = this.getGridAltitude(tx, tz);
+            let y10 = this.getGridAltitude(tx + 1, tz);
+            let y01 = this.getGridAltitude(tx, tz + 1);
+            let y11 = this.getGridAltitude(tx + 1, tz + 1);
+            let minY = Math.min(y00, y10, y01, y11);
+            if (aboveSea(minY)) continue;
 
-          // Tag the material (R), organic noise (G), random jitter (B) and parity (A)
-          let avgY = (y00 + y10 + y01 + y11) * 0.25;
-          let isShore = (avgY > SEA - 15);
+            // Tag the material (R), organic noise (G), random jitter (B) and parity (A)
+            let avgY = (y00 + y10 + y01 + y11) * 0.25;
+            let isShore = (avgY > SEA - 15);
 
-          let noiseVal = noise(tx * 0.15, tz * 0.15);
-          let randVal = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453 % 1;
-          let parity = ((tx + tz) % 2 === 0) ? 1.0 : 0.85;
+            let noiseVal = noise(tx * 0.15, tz * 0.15);
+            let randVal = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453 % 1;
+            let parity = ((tx + tz) % 2 === 0) ? 1.0 : 0.85;
 
-          fill(isShore ? 2 : 1, noiseVal * 255, randVal * 255, parity * 255);
+            fill(isShore ? 2 : 1, noiseVal * 255, randVal * 255, parity * 255);
 
-          // Provide explicit face normals so terrain shader lighting has
-          // stable directional data regardless of p5's internal normal path.
-          let e1x = xP1 - xP, e1y = y10 - y00, e1z = 0;
-          let e2x = 0, e2y = y01 - y00, e2z = zP1 - zP;
-          let n1x = e1y * e2z - e1z * e2y;
-          let n1y = e1z * e2x - e1x * e2z;
-          let n1z = e1x * e2y - e1y * e2x;
-          normal(n1x, n1y, n1z);
-          vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
+            // Provide explicit face normals so terrain shader lighting has
+            // stable directional data regardless of p5's internal normal path.
+            let e1x = xP1 - xP, e1y = y10 - y00, e1z = 0;
+            let e2x = 0, e2y = y01 - y00, e2z = zP1 - zP;
+            let n1x = e1y * e2z - e1z * e2y;
+            let n1y = e1z * e2x - e1x * e2z;
+            let n1z = e1x * e2y - e1y * e2x;
+            normal(n1x, n1y, n1z);
+            vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
 
-          e1x = xP1 - xP1; e1y = y11 - y10; e1z = zP1 - zP;
-          e2x = xP - xP1; e2y = y01 - y10; e2z = zP1 - zP;
-          let n2x = e1y * e2z - e1z * e2y;
-          let n2y = e1z * e2x - e1x * e2z;
-          let n2z = e1x * e2y - e1y * e2x;
-          normal(n2x, n2y, n2z);
-          vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+            e1x = xP1 - xP1; e1y = y11 - y10; e1z = zP1 - zP;
+            e2x = xP - xP1; e2y = y01 - y10; e2z = zP1 - zP;
+            let n2x = e1y * e2z - e1z * e2y;
+            let n2y = e1z * e2x - e1x * e2z;
+            let n2z = e1x * e2y - e1y * e2x;
+            normal(n2x, n2y, n2z);
+            vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+          }
         }
-      }
-      endShape();
-    });
+        endShape();
+      });
+    } catch (err) {
+      console.error("[Viron] Chunk geometry build failed:", err);
+    } finally {
+      this._isBuildingShadow = false;
+    }
 
-    this.chunkCache.set(key, geom);
+    if (geom) this.chunkCache.set(key, geom);
     return geom;
   }
 
@@ -1241,6 +1250,12 @@ class Terrain {
    * Hull is computed once and stored on the tree object (static geometry, fixed sun).
    */
   _drawTreeShadow(t, groundY, sun) {
+    // If the sun has moved since we last baked this shadow, invalidate the cached 
+    // geometry so it re-builds at the new solar angle.
+    if (t._bakedSun && (t._bakedSun.x !== sun.x || t._bakedSun.y !== sun.y || t._bakedSun.z !== sun.z)) {
+      t._shadowGeom = null;
+    }
+
     if (!t._shadowHull) {
       const { trunkH: h, canopyScale: sc, variant: vi } = t;
       // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
@@ -1265,10 +1280,20 @@ class Terrain {
 
     const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
 
-    if (!t._shadowGeom) {
-      t._shadowGeom = buildGeometry(() => {
-        this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
-      });
+    if (!t._shadowGeom && !this._isBuildingShadow) {
+      if (!sun || !t._footprint) return;
+      this._isBuildingShadow = true;
+      try {
+        t._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
+        t._shadowGeom = buildGeometry(() => {
+          this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
+        });
+      } catch (err) {
+        console.error("[Viron] Shadow bake failed for tree:", err);
+        t._shadowGeom = null;
+      } finally {
+        this._isBuildingShadow = false;
+      }
     }
 
     const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
@@ -1300,6 +1325,12 @@ class Terrain {
    */
   _drawBuildingShadow(b, groundY, inf, sun) {
     const bw = b.w, bh = b.h, bd = b.d;
+
+    // If the sun has moved since we last baked this shadow, invalidate the cached 
+    // geometry so it re-builds at the new solar angle.
+    if (b._bakedSun && (b._bakedSun.x !== sun.x || b._bakedSun.y !== sun.y || b._bakedSun.z !== sun.z)) {
+      b._shadowGeom = null;
+    }
 
     // Type 3 (floating UFO): animated caster height — cannot cache hull.
     if (b.type === 3) {
@@ -1348,10 +1379,20 @@ class Terrain {
     const casterHForOpacity = b._shadowCasterH || b.h;
     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
 
-    if (!b._shadowGeom) {
-      b._shadowGeom = buildGeometry(() => {
-        this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
-      });
+    if (!b._shadowGeom && !this._isBuildingShadow) {
+      if (!sun || !b._footprint) return;
+      this._isBuildingShadow = true;
+      try {
+        b._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
+        b._shadowGeom = buildGeometry(() => {
+          this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
+        });
+      } catch (err) {
+        console.error("[Viron] Shadow bake failed for building:", err);
+        b._shadowGeom = null;
+      } finally {
+        this._isBuildingShadow = false;
+      }
     }
 
     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
@@ -1377,13 +1418,23 @@ class Terrain {
     if (!this._geoms) this._geoms = new Map();
     if (this._geoms.has(key)) return this._geoms.get(key);
 
-    const geom = buildGeometry(() => {
-      fill(inf ? 251 : 250, inf ? 50 : 180, inf ? 50 : 240);
-      cone(b.w, b.h / 2, 4, 1);
-      rotateX(PI);
-      cone(b.w, b.h / 2, 4, 1);
-    });
-    this._geoms.set(key, geom);
+    if (this._isBuildingShadow) return null;
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = buildGeometry(() => {
+        fill(inf ? 251 : 250, inf ? 50 : 180, inf ? 50 : 240);
+        cone(b.w, b.h / 2, 4, 1);
+        rotateX(PI);
+        cone(b.w, b.h / 2, 4, 1);
+      });
+    } catch (err) {
+      console.error("[Viron] Powerup geometry build failed:", err);
+    } finally {
+      this._isBuildingShadow = false;
+    }
+
+    if (geom) this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1393,32 +1444,42 @@ class Terrain {
     if (!this._geoms) this._geoms = new Map();
     if (this._geoms.has(key)) return this._geoms.get(key);
 
-    const geom = buildGeometry(() => {
-      let tv = TREE_VARIANTS[vi];
+    if (this._isBuildingShadow) return null;
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = buildGeometry(() => {
+        let tv = TREE_VARIANTS[vi];
 
-      // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
-      const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+        // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
+        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
 
-      fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
-      push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
+        fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
+        push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
 
-      let c1 = inf ? tv.infected : tv.healthy;
-      fill(safeR(c1[0]), c1[1], c1[2]);
+        let c1 = inf ? tv.infected : tv.healthy;
+        fill(safeR(c1[0]), c1[1], c1[2]);
 
-      if (vi === 2) {
-        push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
-      } else {
-        let cn = tv.cones[0];
-        push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
-        if (tv.cones2) {
-          let c2 = inf ? tv.infected2 : tv.healthy2;
-          fill(safeR(c2[0]), c2[1], c2[2]);
-          let cn2 = tv.cones2[0];
-          push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+        if (vi === 2) {
+          push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
+        } else {
+          let cn = tv.cones[0];
+          push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
+          if (tv.cones2) {
+            let c2 = inf ? tv.infected2 : tv.healthy2;
+            fill(safeR(c2[0]), c2[1], c2[2]);
+            let cn2 = tv.cones2[0];
+            push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+          }
         }
-      }
-    });
-    this._geoms.set(key, geom);
+      });
+    } catch (err) {
+      console.error("[Viron] Tree geometry build failed:", err);
+    } finally {
+      this._isBuildingShadow = false;
+    }
+
+    if (geom) this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1489,65 +1550,74 @@ class Terrain {
     if (!this._geoms) this._geoms = new Map();
     if (this._geoms.has(key)) return this._geoms.get(key);
 
-    const geom = buildGeometry(() => {
-      // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
-      const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+    if (this._isBuildingShadow) return null;
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = buildGeometry(() => {
+        // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
+        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
 
-      if (b.type === 0) {
-        fill(safeR(inf ? 200 : 220), inf ? 50 : 220, inf ? 50 : 220);
-        push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
-        fill(safeR(inf ? 150 : 220), inf ? 30 : 50, inf ? 30 : 50);
-        push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
-      } else if (b.type === 1) {
-        fill(safeR(inf ? 200 : 150), inf ? 50 : 160, inf ? 50 : 170);
-        push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
-        fill(safeR(inf ? 150 : 80), inf ? 30 : 180, inf ? 30 : 220);
-        push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
-      } else if (b.type === 2) {
-        fill(safeR(inf ? 200 : b.col[0]), inf ? 50 : b.col[1], inf ? 50 : b.col[2]);
-        push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
-        push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
-        fill(safeR(inf ? 120 : 80), inf ? 20 : 80, inf ? 20 : 80);
-        push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
-      } else if (b.type === 4) {
-        let steelR = safeR(inf ? 160 : 52), steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
-        let plinthR = safeR(inf ? 130 : 38), plinthG = inf ? 28 : 52, plinthB = inf ? 28 : 72;
-        let accentR = safeR(inf ? 200 : 40), accentG = inf ? 55 : 200, accentB = inf ? 20 : 185;
-        let reactorR = safeR(inf ? 255 : 80), reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;
-        let spireR = safeR(inf ? 240 : 160), spireG = inf ? 80 : 240, spireB = inf ? 40 : 255;
-        let bw = b.w, bh = b.h;
+        if (b.type === 0) {
+          fill(safeR(inf ? 200 : 220), inf ? 50 : 220, inf ? 50 : 220);
+          push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
+          fill(safeR(inf ? 150 : 220), inf ? 30 : 50, inf ? 30 : 50);
+          push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
+        } else if (b.type === 1) {
+          fill(safeR(inf ? 200 : 150), inf ? 50 : 160, inf ? 50 : 170);
+          push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
+          fill(safeR(inf ? 150 : 80), inf ? 30 : 180, inf ? 30 : 220);
+          push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
+        } else if (b.type === 2) {
+          fill(safeR(inf ? 200 : b.col[0]), inf ? 50 : b.col[1], inf ? 50 : b.col[2]);
+          push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
+          push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
+          fill(safeR(inf ? 120 : 80), inf ? 20 : 80, inf ? 20 : 80);
+          push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
+        } else if (b.type === 4) {
+          let steelR = safeR(inf ? 160 : 52), steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
+          let plinthR = safeR(inf ? 130 : 38), plinthG = inf ? 28 : 52, plinthB = inf ? 28 : 72;
+          let accentR = safeR(inf ? 200 : 40), accentG = inf ? 55 : 200, accentB = inf ? 20 : 185;
+          let reactorR = safeR(inf ? 255 : 80), reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;
+          let spireR = safeR(inf ? 240 : 160), spireG = inf ? 80 : 240, spireB = inf ? 40 : 255;
+          let bw = b.w, bh = b.h;
 
-        fill(plinthR, plinthG, plinthB);
-        push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
-        fill(accentR, accentG, accentB);
-        push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
+          fill(plinthR, plinthG, plinthB);
+          push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
+          fill(accentR, accentG, accentB);
+          push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
 
-        fill(steelR, steelG, steelB);
-        push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
-        fill(accentR, accentG, accentB);
-        push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
+          fill(steelR, steelG, steelB);
+          push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
+          fill(accentR, accentG, accentB);
+          push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
 
-        fill(steelR, steelG, steelB);
-        push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
-        fill(accentR, accentG, accentB);
-        push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
+          fill(steelR, steelG, steelB);
+          push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
+          fill(accentR, accentG, accentB);
+          push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
 
-        fill(reactorR, reactorG, reactorB);
-        push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
+          fill(reactorR, reactorG, reactorB);
+          push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
 
-        fill(steelR, steelG, steelB);
-        push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
-        fill(accentR, accentG, accentB);
-        push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
+          fill(steelR, steelG, steelB);
+          push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
+          fill(accentR, accentG, accentB);
+          push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
 
-        fill(spireR, spireG, spireB);
-        push(); translate(0, -bh * 0.99, 0); cone(bw * 0.18, bh * 0.24, 6, 1); pop();
-        fill(reactorR, reactorG, reactorB);
-        push(); translate(0, -bh * 1.11, 0); sphere(bw * 0.08, 6, 4); pop();
-      }
-    });
+          fill(spireR, spireG, spireB);
+          push(); translate(0, -bh * 0.99, 0); cone(bw * 0.18, bh * 0.24, 6, 1); pop();
+          fill(reactorR, reactorG, reactorB);
+          push(); translate(0, -bh * 1.11, 0); sphere(bw * 0.08, 6, 4); pop();
+        }
+      });
+    } catch (err) {
+      console.error("[Viron] Building geometry build failed:", err);
+    } finally {
+      this._isBuildingShadow = false;
+    }
 
-    this._geoms.set(key, geom);
+    if (geom) this._geoms.set(key, geom);
     return geom;
   }
 

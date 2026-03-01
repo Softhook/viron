@@ -375,6 +375,10 @@ function shipDisplay(s, tintColor) {
   terrain.applyShader();
   noStroke();
 
+  // Set up specular material for the ship to create highlights
+  specularMaterial(255);
+  shininess(40);
+
   let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
   let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
 

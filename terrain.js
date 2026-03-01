@@ -210,7 +210,13 @@ void main() {
   
   // Very low floor: allows genuine shadow darkness
   lightTerm = max(lightTerm, vec3(0.06, 0.08, 0.12));
-  vec3 litBase = baseColor * lightTerm;
+  vec3 litBase;
+  if (mat >= 10 && mat <= 21) {
+    // Keep Viron and Barrier emissive in shadow so they don't turn black
+    litBase = baseColor * max(lightTerm, vec3(0.85));
+  } else {
+    litBase = baseColor * lightTerm;
+  }
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.
   vec3 outColor = litBase + cyberColor;
@@ -738,9 +744,9 @@ class Terrain {
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
     this.shader.setUniform('uSunDir', [sunDir[0] / sunLen, sunDir[1] / sunLen, sunDir[2] / sunLen]);
-    this.shader.setUniform('uSunColor', [1.5, 1.25, 0.9]); // Increased brightness to make colors pop, slightly adjusted for warmth.
-    this.shader.setUniform('uAmbientLow', [0.35, 0.32, 0.40]); // Darkened ambient for higher shadow contrast, but not too dark
-    this.shader.setUniform('uAmbientHigh', [0.70, 0.85, 0.90]);
+    this.shader.setUniform('uSunColor', [SHADER_SUN_R, SHADER_SUN_G, SHADER_SUN_B]);
+    this.shader.setUniform('uAmbientLow', [SHADER_AMB_L_R, SHADER_AMB_L_G, SHADER_AMB_L_B]);
+    this.shader.setUniform('uAmbientHigh', [SHADER_AMB_H_R, SHADER_AMB_H_G, SHADER_AMB_H_B]);
 
     // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
     const pulseArr = this._pulseArr;

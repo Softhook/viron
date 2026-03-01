@@ -419,6 +419,11 @@ function seedInitialInfection() {
  */
 function startLevel(lvl) {
   if (typeof gameSFX !== 'undefined') gameSFX.playNewLevel();
+
+  if (typeof updateTimeOfDay === 'function') {
+    updateTimeOfDay(lvl);
+  }
+
   level = lvl;
   levelComplete = false;
   infectionStarted = false;

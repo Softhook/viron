@@ -19,19 +19,19 @@ let VIEW_FAR = 50;            // Outer tile radius — rendered with frustum cul
 let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
-const SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky
+let SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
-const AMBIENT_R = 110, AMBIENT_G = 100, AMBIENT_B = 125; // Warmer ambient
+let AMBIENT_R = 110, AMBIENT_G = 100, AMBIENT_B = 125; // Warmer ambient
 
 // --- Global sunrise light model (single source of truth) ---
 // SUN_DIR is the direction light travels from the sun into the world.
-const SUN_DIR_X = 0.96;
-const SUN_DIR_Y = 0.12;
-const SUN_DIR_Z = -0.34;
-const SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
-const SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LEN;
-const SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LEN;
-const SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LEN;
+let SUN_DIR_X = 0.96;
+let SUN_DIR_Y = 0.12;
+let SUN_DIR_Z = -0.34;
+let SUN_DIR_LEN = 1;
+let SUN_DIR_NX = 1;
+let SUN_DIR_NY = 0;
+let SUN_DIR_NZ = 0;
 // Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
 // (grazing angles produced kilometer-long shadows and z-fighting); 0.12 keeps sunrise feel without instability.
 const SUN_DIR_MIN_Y = 0.12;
@@ -70,7 +70,61 @@ const shadowShift = (casterH, sun) => {
   const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
   return Math.min(casterH / sun.y, maxShift);
 };
-const SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180;
+let SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180;
+let SHADER_SUN_R = 1.5, SHADER_SUN_G = 1.25, SHADER_SUN_B = 0.9;
+let SHADER_AMB_L_R = 0.35, SHADER_AMB_L_G = 0.32, SHADER_AMB_L_B = 0.40;
+let SHADER_AMB_H_R = 0.70, SHADER_AMB_H_G = 0.85, SHADER_AMB_H_B = 0.90;
+
+function updateTimeOfDay(level) {
+  // 6:00 is level 1, steps to 18:00 (sunset) by level 7. Loop back.
+  let timeCycle = ((level - 1) % 7);
+  let hour = 6 + timeCycle * 2;
+
+  // Sun elevation: peaks at noon (hour 12, max Y=0.9), flat at 6 and 18 (Y=0.12)
+  let t = (hour - 6) / 12.0; // 0.0 (sunrise) to 1.0 (sunset)
+  let elevationAngle = Math.PI * t;
+
+  SUN_DIR_Y = Math.max(0.12, Math.sin(elevationAngle)); // Zenith peak
+  SUN_DIR_X = Math.cos(elevationAngle);     // Traverse East to West
+  SUN_DIR_Z = -0.34; // Slight tilt
+
+  SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
+  SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LEN;
+  SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LEN;
+  SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LEN;
+
+  if (hour < 8 || hour > 16) {
+    // Sunrise/Sunset (warm, vivid oranges and purples)
+    SKY_R = 190; SKY_G = 120; SKY_B = 70;
+    AMBIENT_R = 100; AMBIENT_G = 70; AMBIENT_B = 90;
+    SUN_KEY_R = 255; SUN_KEY_G = 140; SUN_KEY_B = 80;
+
+    // Shader Uniforms matches Sunrise
+    SHADER_SUN_R = 2.0; SHADER_SUN_G = 1.2; SHADER_SUN_B = 0.6;
+    SHADER_AMB_L_R = 0.35; SHADER_AMB_L_G = 0.25; SHADER_AMB_L_B = 0.35;
+    SHADER_AMB_H_R = 0.70; SHADER_AMB_H_G = 0.50; SHADER_AMB_H_B = 0.40;
+  } else if (hour < 10 || hour > 14) {
+    // Morning/Late Afternoon (Golden hour, bright warm highlights)
+    SKY_R = 140; SKY_G = 160; SKY_B = 220;
+    AMBIENT_R = 90; AMBIENT_G = 110; AMBIENT_B = 140;
+    SUN_KEY_R = 255; SUN_KEY_G = 220; SUN_KEY_B = 180;
+
+    // Shader Uniforms matches Morning
+    SHADER_SUN_R = 1.5; SHADER_SUN_G = 1.25; SHADER_SUN_B = 0.9;
+    SHADER_AMB_L_R = 0.30; SHADER_AMB_L_G = 0.35; SHADER_AMB_L_B = 0.45;
+    SHADER_AMB_H_R = 0.50; SHADER_AMB_H_G = 0.65; SHADER_AMB_H_B = 0.85;
+  } else {
+    // High Noon (crisp blue skies, neutral strong sun)
+    SKY_R = 60; SKY_G = 120; SKY_B = 240;
+    AMBIENT_R = 60; AMBIENT_G = 90; AMBIENT_B = 150;
+    SUN_KEY_R = 250; SUN_KEY_G = 250; SUN_KEY_B = 250;
+
+    // Shader Uniforms matches Noon
+    SHADER_SUN_R = 1.3; SHADER_SUN_G = 1.3; SHADER_SUN_B = 1.4;
+    SHADER_AMB_L_R = 0.25; SHADER_AMB_L_G = 0.30; SHADER_AMB_L_B = 0.40;
+    SHADER_AMB_H_R = 0.40; SHADER_AMB_H_G = 0.60; SHADER_AMB_H_B = 0.95;
+  }
+}
 
 // --- Infection spread parameters ---
 const MAX_INF = 2000;   // Total infected tile count that triggers game over

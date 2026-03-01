@@ -234,14 +234,19 @@ function shipUpDir(s, designIdx) {
  * @param {number} h       Shadow ellipse height.
  * @param {number} casterH Approximate caster height used to project shadow offset.
  */
+const _fallbackSunBasis = (() => {
+  const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
+  return { x: SUN_DIR_X / len, y: Math.max(0.12, SUN_DIR_Y / len), z: SUN_DIR_Z / len };
+})();
+
 function _shadowSunBasis() {
   // Share the same cached, normalized sun basis used by terrain shadows so
   // player/enemy shadows align perfectly and avoid per-draw hypot cost.
   if (terrain && typeof terrain._getSunShadowBasis === 'function') {
     return terrain._getSunShadowBasis();
   }
-  const sunLen = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
-  return { x: SUN_DIR_X / sunLen, y: Math.max(0.12, SUN_DIR_Y / sunLen), z: SUN_DIR_Z / sunLen };
+  if (terrain && terrain._sunShadowBasis) return terrain._sunShadowBasis;
+  return _fallbackSunBasis;
 }
 
 function _shadowHull2D(points) {

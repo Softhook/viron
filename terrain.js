@@ -256,7 +256,9 @@ function _beginShadowStencil() {
   const gl = drawingContext;
   gl.enable(gl.STENCIL_TEST);
   gl.enable(gl.POLYGON_OFFSET_FILL);
-  gl.polygonOffset(1, 1); // Nudge shadows toward camera to avoid z-fighting flicker
+  // Slightly pull shadow polygons toward the camera so they win the depth test
+  // against the terrain and do not shimmer on slopes.
+  gl.polygonOffset(-1, -1);
   gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   gl.stencilMask(0xFF);
@@ -318,7 +320,14 @@ class Terrain {
 
     // Cached per-frame sun shadow basis so multiple shadow draws don't
     // renormalize the same vector every call.
-    this._sunShadowBasis = { x: SUN_DIR_X, y: Math.max(0.12, SUN_DIR_Y), z: SUN_DIR_Z };
+    {
+      const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1.0;
+      this._sunShadowBasis = {
+        x: SUN_DIR_X / len,
+        y: Math.max(0.12, SUN_DIR_Y / len),
+        z: SUN_DIR_Z / len
+      };
+    }
     this._sunShadowFrame = -1;
 
   }

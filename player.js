@@ -274,18 +274,23 @@ function _shadowHull2D(points) {
 
 function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw = 0, alpha = 50) {
   if (aboveSea(groundY)) return;
+  const sun = _shadowSunBasis();
+  const useTerrainShadow = terrain && typeof terrain._drawProjectedFootprintShadow === 'function';
+  if (useTerrainShadow) {
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const rotated = localPts.map(p => ({
+      x: p.x * cy + p.z * sy,
+      z: -p.x * sy + p.z * cy
+    }));
+    terrain._drawProjectedFootprintShadow(x, z, groundY, casterH, rotated, alpha, sun);
+    return;
+  }
+
   const cy = Math.cos(yaw), sy = Math.sin(yaw);
   const rotated = localPts.map(p => ({
     x: p.x * cy + p.z * sy,
     z: -p.x * sy + p.z * cy
   }));
-  const sun = _shadowSunBasis();
-
-  // Use the Terrain shadow helper for shared projection + stencil handling.
-  if (terrain && typeof terrain._drawProjectedFootprintShadow === 'function') {
-    terrain._drawProjectedFootprintShadow(x, z, groundY, casterH, rotated, alpha, sun);
-    return;
-  }
 
   const shift = casterH / sun.y;
   const base = rotated.map(p => ({ x: x + p.x, z: z + p.z }));
@@ -294,6 +299,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   if (hull.length < 3) return;
 
   noStroke();
+  // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
   fill(18, 24, 42, alpha);
   _beginShadowStencil();
   beginShape();

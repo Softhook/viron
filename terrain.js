@@ -320,15 +320,9 @@ class Terrain {
 
     // Cached per-frame sun shadow basis so multiple shadow draws don't
     // renormalize the same vector every call.
-    {
-      const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1.0;
-      this._sunShadowBasis = {
-        x: SUN_DIR_X / len,
-        y: Math.max(0.12, SUN_DIR_Y / len),
-        z: SUN_DIR_Z / len
-      };
-    }
-    this._sunShadowFrame = -1;
+    this._sunShadowBasis = { x: 0, y: 1, z: 0 };
+    this._sunShadowFrame = -Infinity;
+    this._getSunShadowBasis();
 
   }
 

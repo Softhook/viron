@@ -1051,7 +1051,7 @@ class Terrain {
 
   /**
    * Computes normalized sun projection data reused by all ground shadow draws.
-   * @returns {{x:number,y:number,z:number,yaw:number,stretch:number}}
+   * @returns {{x:number,y:number,z:number}}
    */
   _getSunShadowBasis() {
     const frame = typeof frameCount === 'number' ? frameCount : 0;

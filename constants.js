@@ -21,7 +21,7 @@ let CULL_DIST = 6000;          // Max world distance for rendering enemies / par
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
 const SKY_R = 165, SKY_G = 128, SKY_B = 98;
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
-const AMBIENT_R = 40, AMBIENT_G = 52, AMBIENT_B = 72;
+const AMBIENT_R = 48, AMBIENT_G = 62, AMBIENT_B = 82;
 
 // --- Global sunrise light model (single source of truth) ---
 // SUN_DIR is the direction light travels from the sun into the world.
@@ -41,7 +41,6 @@ const SHADOW_HEIGHT_FADE_MIN = 0.35;
 const SHADOW_OPACITY_MAX = 1;
 // Shadow projection clamp: avoid projecting shadows past the far view plane.
 const SHADOW_MAX_VIEW_FRACTION = 0.9;
-const SHADOW_MAX_SHIFT = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
 const SHADOW_AMBIENT_RG_SCALE = 0.55;
 const SHADOW_AMBIENT_B_SCALE = 0.6;
 const TREE_SHADOW_BASE_ALPHA = 40;
@@ -66,7 +65,9 @@ const shadowOpacityFactor = (casterH) => {
  * @returns {number} clamped projection shift distance
  */
 const shadowShift = (casterH, sun) => {
-  return Math.min(casterH / sun.y, SHADOW_MAX_SHIFT);
+  // VIEW_FAR can change at runtime (quality scaling), so recompute the clamp per call.
+  const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
+  return Math.min(casterH / sun.y, maxShift);
 };
 const SUN_KEY_R = 255, SUN_KEY_G = 188, SUN_KEY_B = 122;
 

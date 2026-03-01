@@ -259,7 +259,7 @@ function _beginShadowStencil() {
   // Lift shadow polygons a touch toward the camera to avoid bright artefacts
   // when crossing steep ridges, while keeping them close enough to prevent
   // visible separation from the terrain.
-  gl.polygonOffset(-0.35, -1);
+  gl.polygonOffset(-0.6, -2);
   gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   gl.stencilMask(0xFF);
@@ -1179,11 +1179,13 @@ class Terrain {
         const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
         const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
         t._shadowHull = this._shadowHullXZ(base.concat(top));
+        t._shadowCasterH = casterH;
       }
     const hull = t._shadowHull;
     if (hull.length < 3) return;
     noStroke();
-    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT);
+    const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
+    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
     fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
     _beginShadowStencil();
     beginShape();
@@ -1251,13 +1253,15 @@ class Terrain {
        const base = footprint.map(p => ({x: b.x + p.x, z: b.z + p.z}));
        const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
        b._shadowHull = this._shadowHullXZ(base.concat(top));
+       b._shadowCasterH = casterH;
      }
 
      const hull = b._shadowHull;
      if (hull.length < 3) return;
      // Type 4 alpha varies with infection; others are fixed.
      const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
-     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(b.h);
+     const casterHForOpacity = b._shadowCasterH || b.h;
+     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
      noStroke();
      fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
      _beginShadowStencil();

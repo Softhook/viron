@@ -339,10 +339,13 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
  * @param {number} alt     Ship current altitude Y.
  */
 function drawShipShadow(x, groundY, z, yaw, alt) {
-  if (aboveSea(groundY)) return;
+  // Ground altitude is authoritative for projection; recompute if available to avoid
+  // shadows sticking directly below the ship when caller passes an imprecise value.
+  const gy = (terrain && typeof terrain.getAltitude === 'function') ? terrain.getAltitude(x, z) : groundY;
+  if (aboveSea(gy)) return;
   // WEBGL Y axis is inverted: larger Y values are deeper. Height above ground is (groundY - alt).
   const SHADOW_HEIGHT_THRESHOLD = 0.5;
-  const shadowHeight = max(0, groundY - alt);
+  const shadowHeight = max(0, gy - alt);
   if (shadowHeight <= SHADOW_HEIGHT_THRESHOLD) return;
   const alpha = map(shadowHeight, 0, 600, 62, 16, true);
   const shipFootprint = [
@@ -350,7 +353,7 @@ function drawShipShadow(x, groundY, z, yaw, alt) {
     { x: 13, z: 13 },
     { x: 0, z: -23 }
   ];
-  _drawProjectedShadowFromFootprint(x, groundY, z, shipFootprint, shadowHeight, yaw, alpha);
+  _drawProjectedShadowFromFootprint(x, gy, z, shipFootprint, shadowHeight, yaw, alpha);
 }
 
 // ---------------------------------------------------------------------------

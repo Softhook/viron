@@ -235,20 +235,21 @@ function shipUpDir(s, designIdx) {
  * @param {number} casterH Approximate caster height used to project shadow offset.
  */
 function _shadowSunBasis() {
+  // Share the same cached, normalized sun basis used by terrain shadows so
+  // player/enemy shadows align perfectly and avoid per-draw hypot cost.
+  if (terrain && typeof terrain._getSunShadowBasis === 'function') {
+    return terrain._getSunShadowBasis();
+  }
   const sunLen = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
-  return {
-    x: SUN_DIR_X / sunLen,
-    y: Math.max(0.12, SUN_DIR_Y / sunLen),
-    z: SUN_DIR_Z / sunLen
-  };
+  return { x: SUN_DIR_X / sunLen, y: Math.max(0.12, SUN_DIR_Y / sunLen), z: SUN_DIR_Z / sunLen };
 }
 
 function _shadowHull2D(points) {
   if (points.length <= 2) return points.slice();
-  const pts = points
-    .map(p => ({ x: p.x, z: p.z }))
-    .sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
-
+  if (terrain && typeof terrain._shadowHullXZ === 'function') {
+    return terrain._shadowHullXZ(points);
+  }
+  const pts = points.map(p => ({ x: p.x, z: p.z })).sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
   const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
   const lower = [];
   for (const p of pts) {
@@ -268,20 +269,26 @@ function _shadowHull2D(points) {
 
 function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw = 0, alpha = 50) {
   if (aboveSea(groundY)) return;
-  const sun = _shadowSunBasis();
-  const shift = casterH / sun.y;
   const cy = Math.cos(yaw), sy = Math.sin(yaw);
-
-  const base = localPts.map(p => ({
-    x: x + p.x * cy + p.z * sy,
-    z: z + (-p.x * sy + p.z * cy)
+  const rotated = localPts.map(p => ({
+    x: p.x * cy + p.z * sy,
+    z: -p.x * sy + p.z * cy
   }));
+  const sun = _shadowSunBasis();
+
+  // Use the Terrain shadow helper for shared projection + stencil handling.
+  if (terrain && typeof terrain._drawProjectedFootprintShadow === 'function') {
+    terrain._drawProjectedFootprintShadow(x, z, groundY, casterH, rotated, alpha, sun);
+    return;
+  }
+
+  const shift = casterH / sun.y;
+  const base = rotated.map(p => ({ x: x + p.x, z: z + p.z }));
   const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
   const hull = _shadowHull2D(base.concat(top));
   if (hull.length < 3) return;
 
   noStroke();
-  // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
   fill(18, 24, 42, alpha);
   _beginShadowStencil();
   beginShape();

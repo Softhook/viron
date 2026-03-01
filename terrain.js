@@ -255,6 +255,8 @@ void main() {
 function _beginShadowStencil() {
   const gl = drawingContext;
   gl.enable(gl.STENCIL_TEST);
+  gl.enable(gl.POLYGON_OFFSET_FILL);
+  gl.polygonOffset(1, 1); // Nudge shadows toward camera to avoid z-fighting flicker
   gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   gl.stencilMask(0xFF);
@@ -266,7 +268,9 @@ function _beginShadowStencil() {
  * viewport frame continue adding to the accumulated shadow mask.
  */
 function _endShadowStencil() {
-  drawingContext.disable(drawingContext.STENCIL_TEST);
+  const gl = drawingContext;
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.disable(gl.STENCIL_TEST);
 }
 
 // =============================================================================
@@ -311,6 +315,11 @@ class Terrain {
 
     // Procedural tree chunk cache (static by world position, lazily populated).
     this._procTreeChunkCache = new Map();
+
+    // Cached per-frame sun shadow basis so multiple shadow draws don't
+    // renormalize the same vector every call.
+    this._sunShadowBasis = { x: SUN_DIR_X, y: Math.max(0.12, SUN_DIR_Y), z: SUN_DIR_Z };
+    this._sunShadowFrame = -1;
 
   }
 
@@ -1042,11 +1051,17 @@ class Terrain {
    * @returns {{x:number,y:number,z:number,yaw:number,stretch:number}}
    */
   _getSunShadowBasis() {
-    const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1.0;
-    const sx = SUN_DIR_X / len;
-    const sy = Math.max(0.12, SUN_DIR_Y / len);
-    const sz = SUN_DIR_Z / len;
-    return { x: sx, y: sy, z: sz };
+    const frame = typeof frameCount === 'number' ? frameCount : 0;
+    if (frame !== this._sunShadowFrame) {
+      const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1.0;
+      this._sunShadowBasis = {
+        x: SUN_DIR_X / len,
+        y: Math.max(0.12, SUN_DIR_Y / len),
+        z: SUN_DIR_Z / len
+      };
+      this._sunShadowFrame = frame;
+    }
+    return this._sunShadowBasis;
   }
 
   /**

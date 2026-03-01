@@ -1305,7 +1305,9 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    model(t._shadowGeom);
+    if (t._shadowGeom) {
+      model(t._shadowGeom);
+    }
     pop();
 
     _endShadowStencil();
@@ -1404,7 +1406,9 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    model(b._shadowGeom);
+    if (b._shadowGeom) {
+      model(b._shadowGeom);
+    }
     pop();
 
     _endShadowStencil();

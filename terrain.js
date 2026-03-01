@@ -1158,22 +1158,27 @@ class Terrain {
    * Hull is computed once and stored on the tree object (static geometry, fixed sun).
    */
   _drawTreeShadow(t, groundY, sun) {
-    if (!t._shadowHull) {
-      const { trunkH: h, canopyScale: sc, variant: vi } = t;
-      // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
-      const hrx = (vi === 2) ? 20 * sc : 17 * sc;
-      const hrz = (vi === 2) ? 14 * sc : 12 * sc;
-      const casterH = h + (vi === 2 ? 24 : 18) * sc;
-      const footprint = [];
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * TWO_PI;
-        footprint.push({x: Math.cos(a) * hrx, z: Math.sin(a) * hrz});
+      if (!t._shadowHull) {
+        const { trunkH: h, canopyScale: sc, variant: vi } = t;
+        // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
+        const hrx = (vi === 2) ? 20 * sc : 17 * sc;
+        const hrz = (vi === 2) ? 14 * sc : 12 * sc;
+        const casterH = h + (vi === 2 ? 24 : 18) * sc;
+        const footprint = [];
+        // Trunk footprint (merge components into one hull to avoid crescent gaps)
+        footprint.push(
+          { x: -2.5, z: -2.5 }, { x: 2.5, z: -2.5 },
+          { x: 2.5, z: 2.5 }, { x: -2.5, z: 2.5 }
+        );
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * TWO_PI;
+          footprint.push({x: Math.cos(a) * hrx, z: Math.sin(a) * hrz});
+        }
+        const shift = this._shadowShift(casterH, sun);
+        const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
+        const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
+        t._shadowHull = this._shadowHullXZ(base.concat(top));
       }
-      const shift = this._shadowShift(casterH, sun);
-      const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
-      const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
-      t._shadowHull = this._shadowHullXZ(base.concat(top));
-    }
     const hull = t._shadowHull;
     if (hull.length < 3) return;
     noStroke();

@@ -282,7 +282,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   };
   const heightFade = (h) => {
     if (terrain && typeof terrain._shadowOpacityFactor === 'function') return terrain._shadowOpacityFactor(h);
-    return constrain(1 - h * SHADOW_HEIGHT_FADE_RATE, SHADOW_HEIGHT_FADE_MIN, 1);
+    return constrain(1 - h * SHADOW_HEIGHT_FADE_RATE, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
   };
   const useTerrainShadow = terrain && typeof terrain._drawProjectedFootprintShadow === 'function';
   if (useTerrainShadow) {

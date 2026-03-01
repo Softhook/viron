@@ -1068,7 +1068,8 @@ class Terrain {
   }
 
   _shadowOpacityFactor(casterH) {
-    return constrain(1 - casterH * SHADOW_HEIGHT_FADE_RATE, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
+    const op = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
+    return constrain(op, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
   }
 
   _shadowShift(casterH, sun) {

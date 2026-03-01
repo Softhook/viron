@@ -28,10 +28,10 @@ const AMBIENT_R = 22, AMBIENT_G = 28, AMBIENT_B = 42;
 const SUN_DIR_X = 0.92;
 const SUN_DIR_Y = 0.2;
 const SUN_DIR_Z = -0.34;
-const _SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
-const SUN_DIR_NX = SUN_DIR_X / _SUN_DIR_LEN;
-const SUN_DIR_NY = SUN_DIR_Y / _SUN_DIR_LEN;
-const SUN_DIR_NZ = SUN_DIR_Z / _SUN_DIR_LEN;
+const SUN_DIR_LENGTH = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
+const SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LENGTH;
+const SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LENGTH;
+const SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LENGTH;
 // Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
 // (grazing angles produced kilometre-long shadows and z-fighting); 0.18 keeps sunrise feel without instability.
 const SUN_DIR_MIN_Y = 0.18;

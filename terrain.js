@@ -256,9 +256,10 @@ function _beginShadowStencil() {
   const gl = drawingContext;
   gl.enable(gl.STENCIL_TEST);
   gl.enable(gl.POLYGON_OFFSET_FILL);
-  // Push shadow polygons slightly into the terrain so steep ridges correctly
-  // occlude them while still avoiding z-fighting shimmer.
-  gl.polygonOffset(0.35, 1);
+  // Lift shadow polygons a touch toward the camera to avoid bright artefacts
+  // when crossing steep ridges, while keeping them close enough to prevent
+  // visible separation from the terrain.
+  gl.polygonOffset(-0.35, -1);
   gl.stencilFunc(gl.NOTEQUAL, 1, 0xFF);
   gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   gl.stencilMask(0xFF);

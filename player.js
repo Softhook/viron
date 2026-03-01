@@ -340,7 +340,7 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
  */
 function drawShipShadow(x, groundY, z, yaw, alt) {
   if (aboveSea(groundY)) return;
-  const casterH = max(20, alt - groundY);
+  const casterH = max(20, groundY - alt);
   const alpha = map(casterH, 0, 600, 62, 16, true);
   const shipFootprint = [
     { x: -13, z: 13 },

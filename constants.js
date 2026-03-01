@@ -75,55 +75,116 @@ let SHADER_SUN_R = 1.5, SHADER_SUN_G = 1.25, SHADER_SUN_B = 0.9;
 let SHADER_AMB_L_R = 0.35, SHADER_AMB_L_G = 0.32, SHADER_AMB_L_B = 0.40;
 let SHADER_AMB_H_R = 0.70, SHADER_AMB_H_G = 0.85, SHADER_AMB_H_B = 0.90;
 
-function updateTimeOfDay(level) {
-  // 6:00 is level 1, steps to 18:00 (sunset) by level 7. Loop back.
-  let timeCycle = ((level - 1) % 7);
-  let hour = 6 + timeCycle * 2;
+let currentTimeStep = 0;
 
-  // Sun elevation: peaks at noon (hour 12, max Y=0.9), flat at 6 and 18 (Y=0.12)
-  let t = (hour - 6) / 12.0; // 0.0 (sunrise) to 1.0 (sunset)
-  let elevationAngle = Math.PI * t;
+const DAY_CYCLE = [
+  { // 0: Morning 1 (Gentle warm light)
+    name: 'Morning 1',
+    dir: [0.95, 0.16, -0.34],
+    sky: [160, 140, 180],
+    amb: [90, 100, 130],
+    sunKey: [255, 200, 150],
+    sSun: [1.6, 1.3, 0.8],
+    sAmbL: [0.30, 0.30, 0.40],
+    sAmbH: [0.60, 0.60, 0.70]
+  },
+  { // 1: Morning 2 (Slightly brighter golden hour)
+    name: 'Morning 2',
+    dir: [0.90, 0.25, -0.34],
+    sky: [140, 160, 220],
+    amb: [90, 110, 140],
+    sunKey: [255, 220, 180],
+    sSun: [1.4, 1.2, 0.9],
+    sAmbL: [0.30, 0.35, 0.45],
+    sAmbH: [0.50, 0.65, 0.85]
+  },
+  { // 2: Midday (Soft blue, not bleached)
+    name: 'Midday',
+    dir: [0.60, 0.35, -0.50],
+    sky: [120, 170, 230],
+    amb: [90, 110, 140],
+    sunKey: [255, 240, 220],
+    sSun: [1.2, 1.15, 1.1],
+    sAmbL: [0.25, 0.30, 0.40],
+    sAmbH: [0.45, 0.60, 0.85]
+  },
+  { // 3: Afternoon (Warm shift)
+    name: 'Afternoon',
+    dir: [-0.60, 0.35, -0.50],
+    sky: [120, 160, 220],
+    amb: [90, 110, 140],
+    sunKey: [255, 230, 200],
+    sSun: [1.3, 1.2, 1.0],
+    sAmbL: [0.30, 0.35, 0.45],
+    sAmbH: [0.50, 0.60, 0.80]
+  },
+  { // 4: Late Afternoon (Long shadows, orange hints)
+    name: 'Late Afternoon',
+    dir: [-0.90, 0.25, -0.34],
+    sky: [150, 130, 160],
+    amb: [95, 90, 120],
+    sunKey: [255, 200, 150],
+    sSun: [1.4, 1.1, 0.8],
+    sAmbL: [0.35, 0.30, 0.40],
+    sAmbH: [0.60, 0.50, 0.65]
+  },
+  { // 5: Sunset (Rich vibrant colours)
+    name: 'Sunset',
+    dir: [-0.96, 0.12, -0.34],
+    sky: [180, 100, 80],
+    amb: [100, 70, 90],
+    sunKey: [255, 120, 60],
+    sSun: [1.9, 1.0, 0.5],
+    sAmbL: [0.35, 0.25, 0.35],
+    sAmbH: [0.65, 0.45, 0.45]
+  },
+  { // 6: Night (Deep moody moonlit setup)
+    name: 'Night',
+    dir: [0.50, 0.25, 0.50],
+    sky: [15, 20, 35],
+    amb: [20, 25, 40],
+    sunKey: [100, 120, 180],
+    sSun: [0.5, 0.6, 0.8],
+    sAmbL: [0.10, 0.15, 0.20],
+    sAmbH: [0.20, 0.25, 0.40]
+  },
+  { // 7: Dawn (Deep orange/purple, very low sun)
+    name: 'Dawn',
+    dir: [0.96, 0.12, -0.34],
+    sky: [190, 120, 70],
+    amb: [100, 70, 90],
+    sunKey: [255, 140, 80],
+    sSun: [2.0, 1.2, 0.6],
+    sAmbL: [0.35, 0.25, 0.35],
+    sAmbH: [0.70, 0.50, 0.40]
+  }
+];
 
-  SUN_DIR_Y = Math.max(0.12, Math.sin(elevationAngle)); // Zenith peak
-  SUN_DIR_X = Math.cos(elevationAngle);     // Traverse East to West
-  SUN_DIR_Z = -0.34; // Slight tilt
+function updateTimeOfDay(stepIndex) {
+  if (stepIndex === undefined) return;
+
+  // Cleanly wrap negative and out-of-bounds indices
+  currentTimeStep = ((stepIndex % DAY_CYCLE.length) + DAY_CYCLE.length) % DAY_CYCLE.length;
+  let cycle = DAY_CYCLE[currentTimeStep];
+
+  SUN_DIR_X = cycle.dir[0];
+  SUN_DIR_Y = cycle.dir[1];
+  SUN_DIR_Z = cycle.dir[2];
 
   SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
   SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LEN;
   SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LEN;
   SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LEN;
 
-  if (hour < 8 || hour > 16) {
-    // Sunrise/Sunset (warm, vivid oranges and purples)
-    SKY_R = 190; SKY_G = 120; SKY_B = 70;
-    AMBIENT_R = 100; AMBIENT_G = 70; AMBIENT_B = 90;
-    SUN_KEY_R = 255; SUN_KEY_G = 140; SUN_KEY_B = 80;
+  SKY_R = cycle.sky[0]; SKY_G = cycle.sky[1]; SKY_B = cycle.sky[2];
+  AMBIENT_R = cycle.amb[0]; AMBIENT_G = cycle.amb[1]; AMBIENT_B = cycle.amb[2];
+  SUN_KEY_R = cycle.sunKey[0]; SUN_KEY_G = cycle.sunKey[1]; SUN_KEY_B = cycle.sunKey[2];
 
-    // Shader Uniforms matches Sunrise
-    SHADER_SUN_R = 2.0; SHADER_SUN_G = 1.2; SHADER_SUN_B = 0.6;
-    SHADER_AMB_L_R = 0.35; SHADER_AMB_L_G = 0.25; SHADER_AMB_L_B = 0.35;
-    SHADER_AMB_H_R = 0.70; SHADER_AMB_H_G = 0.50; SHADER_AMB_H_B = 0.40;
-  } else if (hour < 10 || hour > 14) {
-    // Morning/Late Afternoon (Golden hour, bright warm highlights)
-    SKY_R = 140; SKY_G = 160; SKY_B = 220;
-    AMBIENT_R = 90; AMBIENT_G = 110; AMBIENT_B = 140;
-    SUN_KEY_R = 255; SUN_KEY_G = 220; SUN_KEY_B = 180;
+  SHADER_SUN_R = cycle.sSun[0]; SHADER_SUN_G = cycle.sSun[1]; SHADER_SUN_B = cycle.sSun[2];
+  SHADER_AMB_L_R = cycle.sAmbL[0]; SHADER_AMB_L_G = cycle.sAmbL[1]; SHADER_AMB_L_B = cycle.sAmbL[2];
+  SHADER_AMB_H_R = cycle.sAmbH[0]; SHADER_AMB_H_G = cycle.sAmbH[1]; SHADER_AMB_H_B = cycle.sAmbH[2];
 
-    // Shader Uniforms matches Morning
-    SHADER_SUN_R = 1.5; SHADER_SUN_G = 1.25; SHADER_SUN_B = 0.9;
-    SHADER_AMB_L_R = 0.30; SHADER_AMB_L_G = 0.35; SHADER_AMB_L_B = 0.45;
-    SHADER_AMB_H_R = 0.50; SHADER_AMB_H_G = 0.65; SHADER_AMB_H_B = 0.85;
-  } else {
-    // High Noon (crisp blue skies, neutral strong sun)
-    SKY_R = 60; SKY_G = 120; SKY_B = 240;
-    AMBIENT_R = 60; AMBIENT_G = 90; AMBIENT_B = 150;
-    SUN_KEY_R = 250; SUN_KEY_G = 250; SUN_KEY_B = 250;
-
-    // Shader Uniforms matches Noon
-    SHADER_SUN_R = 1.3; SHADER_SUN_G = 1.3; SHADER_SUN_B = 1.4;
-    SHADER_AMB_L_R = 0.25; SHADER_AMB_L_G = 0.30; SHADER_AMB_L_B = 0.40;
-    SHADER_AMB_H_R = 0.40; SHADER_AMB_H_G = 0.60; SHADER_AMB_H_B = 0.95;
-  }
+  console.log(`[Viron] Time of Day updated to: ${cycle.name} (Step ${currentTimeStep})`);
 }
 
 // --- Infection spread parameters ---

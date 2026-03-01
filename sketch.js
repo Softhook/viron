@@ -1193,6 +1193,18 @@ function keyPressed() {
       }
     }
   }
+
+  // Debug step through Day/Night Cycle (N / M keys)
+  if (key === 'n' || key === 'N') {
+    if (typeof updateTimeOfDay === 'function' && typeof currentTimeStep !== 'undefined') {
+      updateTimeOfDay(currentTimeStep - 1);
+    }
+  }
+  if (key === 'm' || key === 'M') {
+    if (typeof updateTimeOfDay === 'function' && typeof currentTimeStep !== 'undefined') {
+      updateTimeOfDay(currentTimeStep + 1);
+    }
+  }
 }
 
 /**

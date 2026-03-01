@@ -94,9 +94,13 @@ function checkMobile() {
 
 /**
  * Applies directional + ambient lighting for the 3D scene.
- * Called after resetShader() so p5's built-in lighting uniforms are active again.
+ * Calls noLights() first so it is safe to call multiple times per frame without
+ * accumulating duplicate light entries in p5's internal arrays (resetShader() does
+ * NOT clear those arrays, so repeated calls without a reset would double the light
+ * count and cost for every subsequent geometry draw).
  */
 function setSceneLighting() {
+  noLights();
   // Reduced ambient: allows directional lights to drive contrast instead of washing out shadows.
   ambientLight(22, 28, 42);
   // Warm key: directional sun at low elevation (sunrise profile).

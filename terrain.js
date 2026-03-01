@@ -1009,7 +1009,11 @@ class Terrain {
     vertex(sx1, sy, sz0); vertex(sx1, sy, sz1); vertex(sx0, sy, sz1);
     endShape();
 
-    // Restore standard lighting for subsequent non-terrain objects
+    // Exit the terrain GLSL shader and restore p5 lighting for subsequent
+    // non-terrain draw calls (trees, buildings, enemies, ships).
+    // noLights() was called at the top of this function to prevent p5's light
+    // uniforms from interfering with the custom terrain GLSL, so lights must be
+    // re-established here before returning.
     resetShader();
     setSceneLighting();
 

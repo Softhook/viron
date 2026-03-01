@@ -1164,11 +1164,12 @@ class Terrain {
         const hrx = (vi === 2) ? 20 * sc : 17 * sc;
         const hrz = (vi === 2) ? 14 * sc : 12 * sc;
         const casterH = h + (vi === 2 ? 24 : 18) * sc;
+        const trunkHalf = 2.5; // trunk box half-extent (full box size 5x5)
         const footprint = [];
         // Trunk footprint (merge components into one hull to avoid crescent gaps)
         footprint.push(
-          { x: -2.5, z: -2.5 }, { x: 2.5, z: -2.5 },
-          { x: 2.5, z: 2.5 }, { x: -2.5, z: 2.5 }
+          { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
+          { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
         );
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * TWO_PI;

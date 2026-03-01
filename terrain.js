@@ -1056,7 +1056,7 @@ class Terrain {
   _getSunShadowBasis() {
     const frame = typeof frameCount === 'number' ? frameCount : 0;
     if (frame !== this._sunShadowFrame) {
-      const sunY = Math.max(0.18, SUN_DIR_NY);
+      const sunY = Math.max(SUN_DIR_MIN_Y, SUN_DIR_NY);
       this._sunShadowBasis = {
         x: SUN_DIR_NX,
         y: sunY,
@@ -1068,11 +1068,11 @@ class Terrain {
   }
 
   _shadowHeightFade(casterH) {
-    return constrain(1 - casterH * 0.0016, 0.35, 1);
+    return constrain(1 - casterH * SHADOW_HEIGHT_FADE_RATE, SHADOW_HEIGHT_FADE_MIN, 1);
   }
 
   _shadowShift(casterH, sun) {
-    const maxShift = VIEW_FAR * TILE * 0.9;
+    const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
     return Math.min(casterH / sun.y, maxShift);
   }
 

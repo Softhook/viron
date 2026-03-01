@@ -235,7 +235,7 @@ function shipUpDir(s, designIdx) {
  * @param {number} casterH Approximate caster height used to project shadow offset.
  */
 const _fallbackSunBasis = (() => {
-  const sunY = Math.max(0.18, SUN_DIR_NY);
+  const sunY = Math.max(SUN_DIR_MIN_Y, SUN_DIR_NY);
   return { x: SUN_DIR_NX, y: sunY, z: SUN_DIR_NZ };
 })();
 
@@ -276,10 +276,14 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   if (aboveSea(groundY)) return;
   const sun = _shadowSunBasis();
   const shiftFor = (h) => {
-    const maxShift = VIEW_FAR * TILE * 0.9;
+    if (terrain && typeof terrain._shadowShift === 'function') return terrain._shadowShift(h, sun);
+    const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
     return Math.min(h / sun.y, maxShift);
   };
-  const heightFade = (h) => constrain(1 - h * 0.0016, 0.35, 1);
+  const heightFade = (h) => {
+    if (terrain && typeof terrain._shadowHeightFade === 'function') return terrain._shadowHeightFade(h);
+    return constrain(1 - h * SHADOW_HEIGHT_FADE_RATE, SHADOW_HEIGHT_FADE_MIN, 1);
+  };
   const useTerrainShadow = terrain && typeof terrain._drawProjectedFootprintShadow === 'function';
   if (useTerrainShadow) {
     const cy = Math.cos(yaw), sy = Math.sin(yaw);

@@ -1056,15 +1056,24 @@ class Terrain {
   _getSunShadowBasis() {
     const frame = typeof frameCount === 'number' ? frameCount : 0;
     if (frame !== this._sunShadowFrame) {
-      const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1.0;
+      const sunY = Math.max(0.18, SUN_DIR_NY);
       this._sunShadowBasis = {
-        x: SUN_DIR_X / len,
-        y: Math.max(0.12, SUN_DIR_Y / len),
-        z: SUN_DIR_Z / len
+        x: SUN_DIR_NX,
+        y: sunY,
+        z: SUN_DIR_NZ
       };
       this._sunShadowFrame = frame;
     }
     return this._sunShadowBasis;
+  }
+
+  _shadowHeightFade(casterH) {
+    return constrain(1 - casterH * 0.0016, 0.35, 1);
+  }
+
+  _shadowShift(casterH, sun) {
+    const maxShift = VIEW_FAR * TILE * 0.9;
+    return Math.min(casterH / sun.y, maxShift);
   }
 
   /**
@@ -1097,15 +1106,16 @@ class Terrain {
    * Draws a cast shadow polygon from a base footprint and caster height.
    */
   _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun) {
-    const shift = casterH / sun.y;
+    const shift = this._shadowShift(casterH, sun);
     const base = footprint.map(p => ({ x: wx + p.x, z: wz + p.z }));
     const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
     const hull = this._shadowHullXZ(base.concat(top));
     if (hull.length < 3) return;
 
     noStroke();
-    // Sky-tinted shadow: dark cool blue-gray (sky fill colors shadow, not pure black)
-    fill(18, 24, 42, alpha);
+    const shadowAlpha = alpha * this._shadowHeightFade(casterH);
+    // Sky-tinted shadow tied to ambient values so shaded faces and shadows stay coherent.
+    fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, shadowAlpha);
     _beginShadowStencil();
     beginShape();
     for (const p of hull) {
@@ -1159,7 +1169,7 @@ class Terrain {
         const a = (i / 16) * TWO_PI;
         footprint.push({x: Math.cos(a) * hrx, z: Math.sin(a) * hrz});
       }
-      const shift = casterH / sun.y;
+      const shift = this._shadowShift(casterH, sun);
       const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
       const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
       t._shadowHull = this._shadowHullXZ(base.concat(top));
@@ -1167,7 +1177,8 @@ class Terrain {
     const hull = t._shadowHull;
     if (hull.length < 3) return;
     noStroke();
-    fill(18, 24, 42, 40);
+    const shadowAlpha = 40 * this._shadowHeightFade(t.trunkH || 40);
+    fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, shadowAlpha);
     _beginShadowStencil();
     beginShape();
     for (const p of hull) {
@@ -1230,23 +1241,24 @@ class Terrain {
         }
         casterH = bh;
       }
-      const shift = casterH / sun.y;
-      const base = footprint.map(p => ({x: b.x + p.x, z: b.z + p.z}));
-      const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
-      b._shadowHull = this._shadowHullXZ(base.concat(top));
-    }
+       const shift = this._shadowShift(casterH, sun);
+       const base = footprint.map(p => ({x: b.x + p.x, z: b.z + p.z}));
+       const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
+       b._shadowHull = this._shadowHullXZ(base.concat(top));
+     }
 
-    const hull = b._shadowHull;
-    if (hull.length < 3) return;
-    // Type 4 alpha varies with infection; others are fixed.
-    const alpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
-    noStroke();
-    fill(18, 24, 42, alpha);
-    _beginShadowStencil();
-    beginShape();
-    for (const p of hull) {
-      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
-    }
+     const hull = b._shadowHull;
+     if (hull.length < 3) return;
+     // Type 4 alpha varies with infection; others are fixed.
+     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
+     const shadowAlpha = baseAlpha * this._shadowHeightFade(b.h);
+     noStroke();
+     fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, shadowAlpha);
+     _beginShadowStencil();
+     beginShape();
+     for (const p of hull) {
+       vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
+     }
     endShape(CLOSE);
     _endShadowStencil();
   }

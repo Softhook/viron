@@ -20,12 +20,18 @@ let CULL_DIST = 6000;          // Max world distance for rendering enemies / par
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
 const SKY_R = 165, SKY_G = 128, SKY_B = 98;
+// Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
+const AMBIENT_R = 22, AMBIENT_G = 28, AMBIENT_B = 42;
 
 // --- Global sunrise light model (single source of truth) ---
 // SUN_DIR is the direction light travels from the sun into the world.
 const SUN_DIR_X = 0.92;
 const SUN_DIR_Y = 0.2;
 const SUN_DIR_Z = -0.34;
+const _SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
+const SUN_DIR_NX = SUN_DIR_X / _SUN_DIR_LEN;
+const SUN_DIR_NY = SUN_DIR_Y / _SUN_DIR_LEN;
+const SUN_DIR_NZ = SUN_DIR_Z / _SUN_DIR_LEN;
 const SUN_KEY_R = 255, SUN_KEY_G = 188, SUN_KEY_B = 122;
 
 // --- Infection spread parameters ---

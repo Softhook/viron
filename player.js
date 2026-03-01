@@ -235,8 +235,8 @@ function shipUpDir(s, designIdx) {
  * @param {number} casterH Approximate caster height used to project shadow offset.
  */
 const _fallbackSunBasis = (() => {
-  const len = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
-  return { x: SUN_DIR_X / len, y: Math.max(0.12, SUN_DIR_Y / len), z: SUN_DIR_Z / len };
+  const sunY = Math.max(0.18, SUN_DIR_NY);
+  return { x: SUN_DIR_NX, y: sunY, z: SUN_DIR_NZ };
 })();
 
 function _shadowSunBasis() {
@@ -275,6 +275,11 @@ function _shadowHull2D(points) {
 function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw = 0, alpha = 50) {
   if (aboveSea(groundY)) return;
   const sun = _shadowSunBasis();
+  const shiftFor = (h) => {
+    const maxShift = VIEW_FAR * TILE * 0.9;
+    return Math.min(h / sun.y, maxShift);
+  };
+  const heightFade = (h) => constrain(1 - h * 0.0016, 0.35, 1);
   const useTerrainShadow = terrain && typeof terrain._drawProjectedFootprintShadow === 'function';
   if (useTerrainShadow) {
     const cy = Math.cos(yaw), sy = Math.sin(yaw);
@@ -292,7 +297,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
     z: -p.x * sy + p.z * cy
   }));
 
-  const shift = casterH / sun.y;
+  const shift = shiftFor(casterH);
   const base = rotated.map(p => ({ x: x + p.x, z: z + p.z }));
   const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
   const hull = _shadowHull2D(base.concat(top));
@@ -300,7 +305,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
 
   noStroke();
   // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
-  fill(18, 24, 42, alpha);
+  fill(AMBIENT_R * 0.55, AMBIENT_G * 0.55, AMBIENT_B * 0.6, alpha * heightFade(casterH));
   _beginShadowStencil();
   beginShape();
   for (const p of hull) {

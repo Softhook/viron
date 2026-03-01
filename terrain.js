@@ -1068,13 +1068,11 @@ class Terrain {
   }
 
   _shadowOpacityFactor(casterH) {
-    const op = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
-    return constrain(op, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
+    return shadowOpacityFactor(casterH);
   }
 
   _shadowShift(casterH, sun) {
-    const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
-    return Math.min(casterH / sun.y, maxShift);
+    return shadowShift(casterH, sun);
   }
 
   /**
@@ -1178,7 +1176,7 @@ class Terrain {
     const hull = t._shadowHull;
     if (hull.length < 3) return;
     noStroke();
-    const shadowAlpha = 40 * this._shadowOpacityFactor(t.trunkH || 40);
+    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT);
     fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
     _beginShadowStencil();
     beginShape();

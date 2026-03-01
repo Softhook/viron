@@ -28,10 +28,10 @@ const AMBIENT_R = 22, AMBIENT_G = 28, AMBIENT_B = 42;
 const SUN_DIR_X = 0.92;
 const SUN_DIR_Y = 0.2;
 const SUN_DIR_Z = -0.34;
-const SUN_DIR_LENGTH = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
-const SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LENGTH;
-const SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LENGTH;
-const SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LENGTH;
+const SUN_DIR_VECTOR_LENGTH = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
+const SUN_DIR_NX = SUN_DIR_X / SUN_DIR_VECTOR_LENGTH;
+const SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_VECTOR_LENGTH;
+const SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_VECTOR_LENGTH;
 // Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
 // (grazing angles produced kilometre-long shadows and z-fighting); 0.18 keeps sunrise feel without instability.
 const SUN_DIR_MIN_Y = 0.18;
@@ -43,6 +43,18 @@ const SHADOW_OPACITY_MAX = 1;
 const SHADOW_MAX_VIEW_FRACTION = 0.9;
 const SHADOW_AMBIENT_RG_SCALE = 0.55;
 const SHADOW_AMBIENT_B_SCALE = 0.6;
+const TREE_SHADOW_BASE_ALPHA = 40;
+const TREE_DEFAULT_TRUNK_HEIGHT = 40;
+
+const shadowOpacityFactor = (casterH) => {
+  const op = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
+  return constrain(op, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
+};
+
+const shadowShift = (casterH, sun) => {
+  const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
+  return Math.min(casterH / sun.y, maxShift);
+};
 const SUN_KEY_R = 255, SUN_KEY_G = 188, SUN_KEY_B = 122;
 
 // --- Infection spread parameters ---

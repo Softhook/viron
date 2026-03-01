@@ -277,12 +277,11 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   const sun = _shadowSunBasis();
   const shiftFor = (h) => {
     if (terrain && typeof terrain._shadowShift === 'function') return terrain._shadowShift(h, sun);
-    const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
-    return Math.min(h / sun.y, maxShift);
+    return shadowShift(h, sun);
   };
   const heightFade = (h) => {
     if (terrain && typeof terrain._shadowOpacityFactor === 'function') return terrain._shadowOpacityFactor(h);
-    return constrain(1 - h * SHADOW_HEIGHT_FADE_RATE, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
+    return shadowOpacityFactor(h);
   };
   const useTerrainShadow = terrain && typeof terrain._drawProjectedFootprintShadow === 'function';
   if (useTerrainShadow) {

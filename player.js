@@ -340,15 +340,17 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
  */
 function drawShipShadow(x, groundY, z, yaw, alt) {
   if (aboveSea(groundY)) return;
-  const casterH = Math.max(0, groundY - alt);
-  if (casterH <= 0.5) return;
-  const alpha = map(casterH, 0, 600, 62, 16, true);
+  // WEBGL Y axis is inverted: larger Y values are deeper. Height above ground is (groundY - alt).
+  const SHADOW_HEIGHT_THRESHOLD = 0.5;
+  const shadowHeight = max(0, groundY - alt);
+  if (shadowHeight <= SHADOW_HEIGHT_THRESHOLD) return;
+  const alpha = map(shadowHeight, 0, 600, 62, 16, true);
   const shipFootprint = [
     { x: -13, z: 13 },
     { x: 13, z: 13 },
     { x: 0, z: -23 }
   ];
-  _drawProjectedShadowFromFootprint(x, groundY, z, shipFootprint, casterH, yaw, alpha);
+  _drawProjectedShadowFromFootprint(x, groundY, z, shipFootprint, shadowHeight, yaw, alpha);
 }
 
 // ---------------------------------------------------------------------------

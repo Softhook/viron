@@ -290,7 +290,7 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
       x: p.x * cy + p.z * sy,
       z: -p.x * sy + p.z * cy
     }));
-    terrain._drawProjectedFootprintShadow(x, z, groundY, casterH, rotated, alpha, sun);
+    terrain._drawProjectedFootprintShadow(x, z, groundY, casterH, rotated, alpha, sun, true);
     return;
   }
 
@@ -301,9 +301,8 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   }));
 
   const shift = getShadowShift(casterH);
-  const base = rotated.map(p => ({ x: x + p.x, z: z + p.z }));
-  const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
-  const hull = _shadowHull2D(base.concat(top));
+  const top = rotated.map(p => ({ x: x + p.x + sun.x * shift, z: z + p.z + sun.z * shift }));
+  const hull = _shadowHull2D(top);
   if (hull.length < 3) return;
 
   noStroke();

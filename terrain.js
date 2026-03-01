@@ -192,39 +192,24 @@ void main() {
   //   • max(lightTerm, 0.46) floor killed all shadow contrast (shadows never darker than 46%)
   //   • Additive coolShadow+dawnFill pushed even backlit faces above 60% brightness
   vec3 n = normalize(vNormal);
-  if (n.y < 0.0) n = -n;  // Ensure normals point toward sky hemisphere
-  float hemi = n.y * 0.5 + 0.5;
+  float hemi = n.y * -0.5 + 0.5;
 
   // Hemisphere ambient: warm ground-bounce low, cool sky-dome high
-  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi) * 0.68;
+  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
 
-  vec3 sunN = normalize(uSunDir);
-  // Pure Lambert — direct sun, no quadratic distortion
-  float ndl = max(dot(n, sunN), 0.0);
+  // Invert uSunDir because the uniform stores the direction light TRAVELS.
+  // We need the vector TO the sun for the Lambert dot product to correctly shade surfaces.
+  vec3 toSun = normalize(-uSunDir);
+
+  // Pure Lambert — direct sun
+  float ndl = max(dot(n, toSun), 0.0);
   vec3 keyLight = uSunColor * ndl;
 
-  // Sky fill — upward normals catch diffuse sky-dome light (cool at dawn).
-  // skyNdL is a softened upward term: even downward-tilted faces get 30% fill.
-  float skyNdL = clamp(n.y * 0.7 + 0.3, 0.0, 1.0);
-  vec3 skyFill = vec3(0.34, 0.44, 0.70) * skyNdL * 0.38;
-
-  // Ridge accent: warm side-lit slope highlights so ridges read against sky
-  float steep = pow(1.0 - abs(n.y), 1.8);
-  vec3 ridgeAccent = vec3(0.20, 0.14, 0.08) * steep * 0.17;
-
-  // Slope self-shadow: slopes facing away from horizontal sun project are darker,
-  // approximating terrain cast-shadow on adjacent slopes (longer at low sun).
-  vec2 nXZ = normalize(vec2(n.x, n.z) + vec2(1e-5));
-  vec2 sunXZ = normalize(vec2(sunN.x, sunN.z) + vec2(1e-5));
-  float backFacing = max(dot(nXZ, -sunXZ), 0.0);
-  float lowSun = 1.0 - clamp(sunN.y * 3.5, 0.0, 1.0);
-  float slopeShadow = pow(backFacing, 1.65) * lowSun * (0.55 + 0.28 * (1.0 - hemi));
-
-  // Combine: ambient base + warm sun key + cool sky fill + ridge accent
-  vec3 lightTerm = ambient + keyLight + skyFill + ridgeAccent;
-  lightTerm *= (1.0 - slopeShadow * 0.44);
-  // Very low floor: allows genuine shadow darkness (~6:1 sunlit-to-shadow contrast)
-  lightTerm = max(lightTerm, vec3(0.06, 0.08, 0.13));
+  // Combine: brighter ambient base + warm sun key
+  vec3 lightTerm = ambient + keyLight;
+  
+  // Very low floor: allows genuine shadow darkness
+  lightTerm = max(lightTerm, vec3(0.06, 0.08, 0.12));
   vec3 litBase = baseColor * lightTerm;
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.
@@ -753,9 +738,9 @@ class Terrain {
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
     this.shader.setUniform('uSunDir', [sunDir[0] / sunLen, sunDir[1] / sunLen, sunDir[2] / sunLen]);
-    this.shader.setUniform('uSunColor', [1.0, 0.74, 0.48]);
-    this.shader.setUniform('uAmbientLow', [0.12, 0.15, 0.23]);
-    this.shader.setUniform('uAmbientHigh', [0.32, 0.36, 0.46]);
+    this.shader.setUniform('uSunColor', [1.5, 1.25, 0.9]); // Increased brightness to make colors pop, slightly adjusted for warmth.
+    this.shader.setUniform('uAmbientLow', [0.35, 0.32, 0.40]); // Darkened ambient for higher shadow contrast, but not too dark
+    this.shader.setUniform('uAmbientHigh', [0.70, 0.85, 0.90]);
 
     // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
     const pulseArr = this._pulseArr;
@@ -959,13 +944,13 @@ class Terrain {
       const _iBuckets = infection.buckets;
       const _infSource = _iBuckets
         ? (function* (b, x0, x1, z0, z1) {
-            for (let cz = z0; cz <= z1; cz++) {
-              for (let cx = x0; cx <= x1; cx++) {
-                const arr = b.get(`${cx},${cz}`);
-                if (arr) yield* arr;
-              }
+          for (let cz = z0; cz <= z1; cz++) {
+            for (let cx = x0; cx <= x1; cx++) {
+              const arr = b.get(`${cx},${cz}`);
+              if (arr) yield* arr;
             }
-          })(infection.buckets, minCx, maxCx, minCz, maxCz)
+          }
+        })(infection.buckets, minCx, maxCx, minCz, maxCz)
         : infection.keys();
       this._drawTileOverlays(
         _infSource, 10, 11, -0.5,
@@ -989,13 +974,13 @@ class Terrain {
       const _bBuckets = barrierTiles.buckets;
       const _barrierSource = _bBuckets
         ? (function* (b, x0, x1, z0, z1) {
-            for (let cz = z0; cz <= z1; cz++) {
-              for (let cx = x0; cx <= x1; cx++) {
-                const arr = b.get(`${cx},${cz}`);
-                if (arr) yield* arr;
-              }
+          for (let cz = z0; cz <= z1; cz++) {
+            for (let cx = x0; cx <= x1; cx++) {
+              const arr = b.get(`${cx},${cz}`);
+              if (arr) yield* arr;
             }
-          })(barrierTiles.buckets, minCx, maxCx, minCz, maxCz)
+          }
+        })(barrierTiles.buckets, minCx, maxCx, minCz, maxCz)
         : barrierTiles.values();
       this._drawTileOverlays(
         _barrierSource, 20, 21, -0.3,
@@ -1105,11 +1090,17 @@ class Terrain {
   /**
    * Draws a cast shadow polygon from a base footprint and caster height.
    */
-  _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun) {
+  _drawProjectedFootprintShadow(wx, wz, groundY, casterH, footprint, alpha, sun, isFloating = false) {
     const shift = this._shadowShift(casterH, sun);
-    const base = footprint.map(p => ({ x: wx + p.x, z: wz + p.z }));
-    const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
-    const hull = this._shadowHullXZ(base.concat(top));
+    let hull;
+    if (isFloating) {
+      const top = footprint.map(p => ({ x: wx + p.x + sun.x * shift, z: wz + p.z + sun.z * shift }));
+      hull = this._shadowHullXZ(top);
+    } else {
+      const base = footprint.map(p => ({ x: wx + p.x, z: wz + p.z }));
+      const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
+      hull = this._shadowHullXZ(base.concat(top));
+    }
     if (hull.length < 3) return;
 
     noStroke();
@@ -1129,20 +1120,20 @@ class Terrain {
   /**
    * Draws one projected ellipse footprint for a caster at height casterH.
    */
-  _drawProjectedEllipseShadow(wx, wz, groundY, casterH, rx, rz, alpha, sun) {
+  _drawProjectedEllipseShadow(wx, wz, groundY, casterH, rx, rz, alpha, sun, isFloating = false) {
     const pts = [];
     const steps = 16; // Higher step count: smoother ellipse silhouette at close range
     for (let i = 0; i < steps; i++) {
       const a = (i / steps) * TWO_PI;
       pts.push({ x: Math.cos(a) * rx * 0.5, z: Math.sin(a) * rz * 0.5 });
     }
-    this._drawProjectedFootprintShadow(wx, wz, groundY, casterH, pts, alpha, sun);
+    this._drawProjectedFootprintShadow(wx, wz, groundY, casterH, pts, alpha, sun, isFloating);
   }
 
   /**
    * Draws one projected rectangular footprint for a caster at height casterH.
    */
-  _drawProjectedRectShadow(wx, wz, groundY, casterH, w, d, alpha, sun) {
+  _drawProjectedRectShadow(wx, wz, groundY, casterH, w, d, alpha, sun, isFloating = false) {
     const hw = w * 0.5, hd = d * 0.5;
     const pts = [
       { x: -hw, z: -hd },
@@ -1150,7 +1141,7 @@ class Terrain {
       { x: hw, z: hd },
       { x: -hw, z: hd }
     ];
-    this._drawProjectedFootprintShadow(wx, wz, groundY, casterH, pts, alpha, sun);
+    this._drawProjectedFootprintShadow(wx, wz, groundY, casterH, pts, alpha, sun, isFloating);
   }
 
   /**
@@ -1158,29 +1149,29 @@ class Terrain {
    * Hull is computed once and stored on the tree object (static geometry, fixed sun).
    */
   _drawTreeShadow(t, groundY, sun) {
-      if (!t._shadowHull) {
-        const { trunkH: h, canopyScale: sc, variant: vi } = t;
-        // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
-        const hrx = (vi === 2) ? 20 * sc : 17 * sc;
-        const hrz = (vi === 2) ? 14 * sc : 12 * sc;
-        const casterH = h + (vi === 2 ? 24 : 18) * sc;
-        const trunkHalf = 2.5; // trunk box half-extent (full box size 5x5)
-        const footprint = [];
-        // Trunk footprint (merge components into one hull to avoid crescent gaps)
-        footprint.push(
-          { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
-          { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
-        );
-        for (let i = 0; i < 16; i++) {
-          const a = (i / 16) * TWO_PI;
-          footprint.push({x: Math.cos(a) * hrx, z: Math.sin(a) * hrz});
-        }
-        const shift = this._shadowShift(casterH, sun);
-        const base = footprint.map(p => ({x: t.x + p.x, z: t.z + p.z}));
-        const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
-        t._shadowHull = this._shadowHullXZ(base.concat(top));
-        t._shadowCasterH = casterH;
+    if (!t._shadowHull) {
+      const { trunkH: h, canopyScale: sc, variant: vi } = t;
+      // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
+      const hrx = (vi === 2) ? 20 * sc : 17 * sc;
+      const hrz = (vi === 2) ? 14 * sc : 12 * sc;
+      const casterH = h + (vi === 2 ? 24 : 18) * sc;
+      const trunkHalf = 2.5; // trunk box half-extent (full box size 5x5)
+      const footprint = [];
+      // Trunk footprint (merge components into one hull to avoid crescent gaps)
+      footprint.push(
+        { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
+        { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
+      );
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * TWO_PI;
+        footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
       }
+      const shift = this._shadowShift(casterH, sun);
+      const base = footprint.map(p => ({ x: t.x + p.x, z: t.z + p.z }));
+      const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
+      t._shadowHull = this._shadowHullXZ(base.concat(top));
+      t._shadowCasterH = casterH;
+    }
     const hull = t._shadowHull;
     if (hull.length < 3) return;
     noStroke();
@@ -1214,7 +1205,7 @@ class Terrain {
     if (b.type === 3) {
       const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
       const casterH = max(35, groundY - floatY);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun);
+      this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun, true);
       return;
     }
 
@@ -1225,65 +1216,101 @@ class Terrain {
       if (b.type === 0) {
         // Geometric structure: rectangular shadow at full height (body + funnel)
         const hw = bw * 0.5, hd = bd * 0.5;
-        footprint = [{x:-hw,z:-hd},{x:hw,z:-hd},{x:hw,z:hd},{x:-hw,z:hd}];
+        footprint = [{ x: -hw, z: -hd }, { x: hw, z: -hd }, { x: hw, z: hd }, { x: -hw, z: hd }];
         casterH = bh + bw * 0.35;
       } else if (b.type === 1) {
         // Water tower: ellipse shadow at full height (cylinder + sphere dome)
         footprint = [];
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * TWO_PI;
-          footprint.push({x: Math.cos(a) * bw * 0.5, z: Math.sin(a) * bw * 0.425});
+          footprint.push({ x: Math.cos(a) * bw * 0.5, z: Math.sin(a) * bw * 0.425 });
         }
         casterH = bh + bw * 0.5;
       } else if (b.type === 2) {
         // Industrial complex: wide rectangular shadow at full smokestack height
         const hw = bw * 0.75, hd = bd * 0.75;
-        footprint = [{x:-hw,z:-hd},{x:hw,z:-hd},{x:hw,z:hd},{x:-hw,z:hd}];
+        footprint = [{ x: -hw, z: -hd }, { x: hw, z: -hd }, { x: hw, z: hd }, { x: -hw, z: hd }];
         casterH = bh;
       } else {
         // Type 4 — sentinel tower: ellipse shadow at full tower height
         footprint = [];
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * TWO_PI;
-          footprint.push({x: Math.cos(a) * bw * 1.1, z: Math.sin(a) * bw * 0.92});
+          footprint.push({ x: Math.cos(a) * bw * 1.1, z: Math.sin(a) * bw * 0.92 });
         }
         casterH = bh;
       }
-       const shift = this._shadowShift(casterH, sun);
-       const base = footprint.map(p => ({x: b.x + p.x, z: b.z + p.z}));
-       const top  = base.map(p => ({x: p.x + sun.x * shift, z: p.z + sun.z * shift}));
-       b._shadowHull = this._shadowHullXZ(base.concat(top));
-       b._shadowCasterH = casterH;
-     }
+      const shift = this._shadowShift(casterH, sun);
+      const base = footprint.map(p => ({ x: b.x + p.x, z: b.z + p.z }));
+      const top = base.map(p => ({ x: p.x + sun.x * shift, z: p.z + sun.z * shift }));
+      b._shadowHull = this._shadowHullXZ(base.concat(top));
+      b._shadowCasterH = casterH;
+    }
 
-     const hull = b._shadowHull;
-     if (hull.length < 3) return;
-     // Type 4 alpha varies with infection; others are fixed.
-     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
-     const casterHForOpacity = b._shadowCasterH || b.h;
-     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
-     noStroke();
-     fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-     _beginShadowStencil();
-     beginShape();
-     for (const p of hull) {
-       vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
-     }
-     endShape(CLOSE);
-     _endShadowStencil();
-   }
+    const hull = b._shadowHull;
+    if (hull.length < 3) return;
+    // Type 4 alpha varies with infection; others are fixed.
+    const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
+    const casterHForOpacity = b._shadowCasterH || b.h;
+    const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
+    noStroke();
+    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
+    _beginShadowStencil();
+    beginShape();
+    for (const p of hull) {
+      vertex(p.x, this.getAltitude(p.x, p.z) - 0.7, p.z);
+    }
+    endShape(CLOSE);
+    _endShadowStencil();
+  }
 
 
+
+  _getTreeGeom(t, inf) {
+    const { trunkH: h, canopyScale: sc, variant: vi } = t;
+    const key = `tree_${vi}_${sc.toFixed(2)}_${h.toFixed(1)}_${inf}`;
+    if (!this._geoms) this._geoms = new Map();
+    if (this._geoms.has(key)) return this._geoms.get(key);
+
+    const geom = buildGeometry(() => {
+      let tv = TREE_VARIANTS[vi];
+
+      // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
+      const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+
+      fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
+      push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
+
+      let c1 = inf ? tv.infected : tv.healthy;
+      fill(safeR(c1[0]), c1[1], c1[2]);
+
+      if (vi === 2) {
+        push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
+      } else {
+        let cn = tv.cones[0];
+        push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
+        if (tv.cones2) {
+          let c2 = inf ? tv.infected2 : tv.healthy2;
+          fill(safeR(c2[0]), c2[1], c2[2]);
+          let cn2 = tv.cones2[0];
+          push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+        }
+      }
+    });
+    this._geoms.set(key, geom);
+    return geom;
+  }
 
   /**
    * Draws all trees within rendering range, applying fog colour blending and
-   * infection tinting.  Healthy trees are green; infected trees turn red-brown.
+   * infection tinting using the terrain shader and single coherent meshes.
    * Ground shadows are projected from component silhouettes (trunk + canopy tiers).
    * @param {{x,y,z,yaw}} s  Ship state (used as the view origin for culling).
    */
   drawTrees(s) {
     let treeCullDist = VIEW_FAR * TILE;
     let cullSq = treeCullDist * treeCullDist;
+    // Uses the same camera params cached by drawLandscape
     let cam = this._cam || this.getCameraParams(s);
     const shadowQueue = [];
 
@@ -1292,62 +1319,37 @@ class Terrain {
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
     let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
     let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
-    const fogFar = this._getFogFarWorld();
-    const fogStart = fogFar - 800;
-    const fogInv = 1.0 / 1200.0; // fogEnd - fogStart = 1200
-    const fillFog = (r, g, b, depth) => {
-      const f = constrain((depth - fogStart) * fogInv, 0, 1);
-      fill(
-        r + (SKY_R - r) * f,
-        g + (SKY_G - g) * f,
-        b + (SKY_B - b) * f
-      );
-    };
 
     noStroke();
+
+    // Apply terrain shader so trees inherit world fog and lighting.
+    this.applyShader();
 
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
         const trees = this.getProceduralTreesForChunk(cx, cz);
         for (let t of trees) {
-        let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
-        if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
+          let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
+          if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
 
-        let y = t.y;
-        if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
+          let y = t.y;
+          if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
 
-        push();
-        translate(t.x, y, t.z);
+          let inf = infection.has(t.k);
+          let geom = this._getTreeGeom(t, inf);
 
-        let { trunkH: h, canopyScale: sc, variant: vi } = t;
-        let inf = infection.has(t.k);
-        let depth = (t.x - cam.x) * cam.fwdX + (t.z - cam.z) * cam.fwdZ;
+          push();
+          translate(t.x, y, t.z);
+          model(geom);
+          pop();
 
-        fillFog(inf ? 80 : 100, inf ? 40 : 65, inf ? 20 : 25, depth);
-        push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
-
-        let tv = TREE_VARIANTS[vi];
-        let c1 = inf ? tv.infected : tv.healthy;
-        fillFog(c1[0], c1[1], c1[2], depth);
-
-        if (vi === 2) {
-          push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
-        } else {
-          let cn = tv.cones[0];
-          push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
-          if (tv.cones2) {
-            let c2 = inf ? tv.infected2 : tv.healthy2;
-            fillFog(c2[0], c2[1], c2[2], depth);
-            let cn2 = tv.cones2[0];
-            push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
-          }
-        }
-
-        if (dSq < 1210000) shadowQueue.push(t);
-        pop();
+          if (dSq < 1210000) shadowQueue.push(t);
         }
       }
     }
+
+    resetShader();
+    setSceneLighting();
 
     // Draw projected component shadows in one pass.
     const sun = this._getSunShadowBasis();
@@ -1358,67 +1360,102 @@ class Terrain {
     }
   }
 
+  _getBuildingGeom(b, inf) {
+    const key = (b.type === 2)
+      ? `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_${inf}_${b.col[0]}_${b.col[1]}_${b.col[2]}`
+      : `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_${inf}`;
+
+    if (!this._geoms) this._geoms = new Map();
+    if (this._geoms.has(key)) return this._geoms.get(key);
+
+    const geom = buildGeometry(() => {
+      // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
+      const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+
+      if (b.type === 0) {
+        fill(safeR(inf ? 200 : 220), inf ? 50 : 220, inf ? 50 : 220);
+        push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
+        fill(safeR(inf ? 150 : 220), inf ? 30 : 50, inf ? 30 : 50);
+        push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
+      } else if (b.type === 1) {
+        fill(safeR(inf ? 200 : 150), inf ? 50 : 160, inf ? 50 : 170);
+        push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
+        fill(safeR(inf ? 150 : 80), inf ? 30 : 180, inf ? 30 : 220);
+        push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
+      } else if (b.type === 2) {
+        fill(safeR(inf ? 200 : b.col[0]), inf ? 50 : b.col[1], inf ? 50 : b.col[2]);
+        push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
+        push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
+        fill(safeR(inf ? 120 : 80), inf ? 20 : 80, inf ? 20 : 80);
+        push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
+      } else if (b.type === 4) {
+        let steelR = safeR(inf ? 160 : 52), steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
+        let plinthR = safeR(inf ? 130 : 38), plinthG = inf ? 28 : 52, plinthB = inf ? 28 : 72;
+        let accentR = safeR(inf ? 200 : 40), accentG = inf ? 55 : 200, accentB = inf ? 20 : 185;
+        let reactorR = safeR(inf ? 255 : 80), reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;
+        let spireR = safeR(inf ? 240 : 160), spireG = inf ? 80 : 240, spireB = inf ? 40 : 255;
+        let bw = b.w, bh = b.h;
+
+        fill(plinthR, plinthG, plinthB);
+        push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
+        fill(accentR, accentG, accentB);
+        push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
+
+        fill(steelR, steelG, steelB);
+        push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
+        fill(accentR, accentG, accentB);
+        push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
+
+        fill(steelR, steelG, steelB);
+        push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
+        fill(accentR, accentG, accentB);
+        push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
+
+        fill(reactorR, reactorG, reactorB);
+        push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
+
+        fill(steelR, steelG, steelB);
+        push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
+        fill(accentR, accentG, accentB);
+        push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
+
+        fill(spireR, spireG, spireB);
+        push(); translate(0, -bh * 0.99, 0); cone(bw * 0.18, bh * 0.24, 6, 1); pop();
+        fill(reactorR, reactorG, reactorB);
+        push(); translate(0, -bh * 1.11, 0); sphere(bw * 0.08, 6, 4); pop();
+      }
+    });
+
+    this._geoms.set(key, geom);
+    return geom;
+  }
+
   /**
-   * Draws all buildings within rendering range with fog blending and infection
-   * tinting.  Four building archetypes are supported:
-   *   0 — Geometric structure (box body + inverted-pyramid roof funnel)
-   *   1 — Water tower (cylinder + dome)
-   *   2 — Industrial complex (layered boxes + smokestack)
-   *   3 — Orbiting UFO power-up (double-cone, floats above ground)
-   * @param {{x,y,z,yaw}} s  Ship state used as view origin for culling.
+   * Draws all buildings using single coherent meshes and the terrain shader.
    */
   drawBuildings(s) {
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
-    // Reuse the camera params computed in drawLandscape for this frame.
     let cam = this._cam || this.getCameraParams(s);
     const sun = this._getSunShadowBasis();
-    const fogFar = this._getFogFarWorld();
-    const fogStart = fogFar - 800;
-    const fogInv = 1.0 / 1200.0; // fogEnd - fogStart = 1200
-    const fillFog = (r, g, b, depth) => {
-      const f = constrain((depth - fogStart) * fogInv, 0, 1);
-      fill(
-        r + (SKY_R - r) * f,
-        g + (SKY_G - g) * f,
-        b + (SKY_B - b) * f
-      );
-    };
+    const shadowQueue = [];
+
+    // Apply terrain shader to natively handle fog and lighting
+    this.applyShader();
 
     for (let b of buildings) {
       let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
       if (dSq >= cullSq || !this.inFrustum(cam, b.x, b.z)) continue;
-      let y = b.y;  // Pre-cached at setup — no Map lookup needed
+      let y = b.y;
       if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
       let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
-      let depth = (b.x - cam.x) * cam.fwdX + (b.z - cam.z) * cam.fwdZ;
+
       push(); translate(b.x, y, b.z); noStroke();
 
-      if (b.type === 0) {
-        // Geometric structure: white box body + inverted-pyramid roof funnel (turns red when infected)
-        fillFog(inf ? 200 : 220, inf ? 50 : 220, inf ? 50 : 220, depth);
-        push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
-        fillFog(inf ? 150 : 220, inf ? 30 : 50, inf ? 30 : 50, depth);
-        push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
-
-      } else if (b.type === 1) {
-        // Water tower: grey cylinder body + light-blue dome top
-        fillFog(inf ? 200 : 150, inf ? 50 : 160, inf ? 50 : 170, depth);
-        push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
-        fillFog(inf ? 150 : 80, inf ? 30 : 180, inf ? 30 : 220, depth);
-        push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
-
-      } else if (b.type === 2) {
-        // Industrial: flat wide base + offset annex + smokestack
-        fillFog(inf ? 200 : b.col[0], inf ? 50 : b.col[1], inf ? 50 : b.col[2], depth);
-        push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
-        push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
-        fillFog(inf ? 120 : 80, inf ? 20 : 80, inf ? 20 : 80, depth);
-        push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
-
-      } else if (b.type === 3) {
-        // Type 3 — floating UFO power-up: double-cone orbiting above the ground
-        fillFog(inf ? 200 : 60, inf ? 50 : 180, inf ? 50 : 240, depth);
+      if (b.type === 3) {
+        // Floating UFO handles its own animation, drawn immediately rather than cached
+        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+        fill(safeR(inf ? 200 : 60), inf ? 50 : 180, inf ? 50 : 240);
         push();
         let floatY = y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
         translate(0, floatY - y, 0);
@@ -1428,85 +1465,31 @@ class Terrain {
         rotateX(PI);
         cone(b.w, b.h / 2, 4, 1);
         pop();
-
-      } else if (b.type === 4) {
-        // Sentinel: iconic multi-tiered energy tower on a mountain peak.
-        // Healthy = cold steel/cyan energy; infected = corroded red/orange.
-        // Structure layers (bottom to top):
-        //   1. Wide hexagonal base plinth
-        //   2. Tier 1 — wide lower section
-        //   3. Tier 2 — mid section (narrower)
-        //   4. Central energy reactor sphere
-        //   5. Tier 3 — upper section (narrowest)
-        //   6. Pinnacle spire + rotating crown ring
-        // Steady ground glow is rendered by the terrain GLSL shader (uSentinelGlows).
-
-        // Colours
-        let steelR = inf ? 160 : 52, steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
-        let plinthR = inf ? 130 : 38, plinthG = inf ? 28 : 52, plinthB = inf ? 28 : 72;
-        let accentR = inf ? 200 : 40, accentG = inf ? 55 : 200, accentB = inf ? 20 : 185;
-        let reactorR = inf ? 255 : 80, reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;
-        let glowR = inf ? 220 : 20, glowG = inf ? 60 : 230, glowB = inf ? 20 : 210;
-        let spireR = inf ? 240 : 160, spireG = inf ? 80 : 240, spireB = inf ? 40 : 255;
-
-        let bw = b.w;   // base width reference (40)
-        let bh = b.h;   // total height reference (200)
-
-        // ── 1. Wide hexagonal base plinth ───────────────────────────────
-        fillFog(plinthR, plinthG, plinthB, depth);
-        push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
-        // Plinth rim band
-        fillFog(accentR, accentG, accentB, depth);
-        push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
-
-        // ── 2. Tier 1 — wide lower section ──────────────────────────────
-        fillFog(steelR, steelG, steelB, depth);
-        push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
-        // Tier 1 accent band
-        fillFog(accentR, accentG, accentB, depth);
-        push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
-
-        // ── 3. Tier 2 — mid section ─────────────────────────────────────
-        fillFog(steelR, steelG, steelB, depth);
-        push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
-        // Tier 2 accent band
-        fillFog(accentR, accentG, accentB, depth);
-        push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
-
-        // ── 4. Central energy reactor sphere (mid-height) ────────────────
-        fillFog(reactorR, reactorG, reactorB, depth);
-        push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
-
-        // ── 5. Tier 3 — upper section ────────────────────────────────────
-        fillFog(steelR, steelG, steelB, depth);
-        push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
-        // Tier 3 accent band
-        fillFog(accentR, accentG, accentB, depth);
-        push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
-
-        // ── 6. Pinnacle spire + rotating crown ring ──────────────────────
-        // Tier 3 top = -bh*0.86. Crown ring sits right there.
-        fillFog(glowR, glowG, glowB, depth);
-        push();
-        translate(0, -bh * 0.87, 0);
-        rotateY(frameCount * 0.032 + b.x * 0.001);
-        torus(bw * 0.32, bw * 0.07, 14, 6);
-        pop();
-
-        // Spire cone — p5 cone() points upward by default; no PI rotation needed.
-        // Centre at -bh*0.99 → base at -bh*0.87 (crown level), tip at -bh*1.11.
-        fillFog(spireR, spireG, spireB, depth);
-        push(); translate(0, -bh * 0.99, 0); cone(bw * 0.18, bh * 0.24, 6, 1); pop();
-        // Tip ball at the very apex
-        fillFog(reactorR, reactorG, reactorB, depth);
-        push(); translate(0, -bh * 1.11, 0); sphere(bw * 0.08, 6, 4); pop();
-        // (The ground-level energy ring glow is rendered by the terrain shader
-        //  via the uSentinelGlows uniform — no 3D halo tori needed here.)
+      } else {
+        model(this._getBuildingGeom(b, inf));
+        // Rotating crown for type 4
+        if (b.type === 4) {
+          const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+          fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
+          push();
+          translate(0, -b.h * 0.87, 0);
+          rotateY(frameCount * 0.032 + b.x * 0.001);
+          torus(b.w * 0.32, b.w * 0.07, 14, 6);
+          pop();
+        }
       }
+
       pop();
 
-      // Ground shadow only for nearby buildings
-      if (dSq < 2250000) this._drawBuildingShadow(b, y, inf, sun);
+      // Defer ground shadow drawing
+      if (dSq < 2250000) shadowQueue.push({ b, y, inf });
+    }
+
+    resetShader();
+    setSceneLighting();
+
+    for (let q of shadowQueue) {
+      this._drawBuildingShadow(q.b, q.y, q.inf, sun);
     }
   }
 }

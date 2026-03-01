@@ -19,30 +19,31 @@ let VIEW_FAR = 50;            // Outer tile radius — rendered with frustum cul
 let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
-const SKY_R = 165, SKY_G = 128, SKY_B = 98;
+const SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
-const AMBIENT_R = 48, AMBIENT_G = 62, AMBIENT_B = 82;
+const AMBIENT_R = 110, AMBIENT_G = 100, AMBIENT_B = 125; // Warmer ambient
 
 // --- Global sunrise light model (single source of truth) ---
 // SUN_DIR is the direction light travels from the sun into the world.
-const SUN_DIR_X = 0.92;
-const SUN_DIR_Y = 0.2;
+const SUN_DIR_X = 0.96;
+const SUN_DIR_Y = 0.12;
 const SUN_DIR_Z = -0.34;
 const SUN_DIR_LEN = Math.hypot(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z) || 1;
 const SUN_DIR_NX = SUN_DIR_X / SUN_DIR_LEN;
 const SUN_DIR_NY = SUN_DIR_Y / SUN_DIR_LEN;
 const SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LEN;
 // Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
-// (grazing angles produced kilometer-long shadows and z-fighting); 0.18 keeps sunrise feel without instability.
-const SUN_DIR_MIN_Y = 0.18;
+// (grazing angles produced kilometer-long shadows and z-fighting); 0.12 keeps sunrise feel without instability.
+const SUN_DIR_MIN_Y = 0.12;
 // Shadow tuning: fades with caster height and clamps alpha floor to avoid fully disappearing tall-caster shadows.
 const SHADOW_HEIGHT_FADE_RATE = 0.0016;
 const SHADOW_HEIGHT_FADE_MIN = 0.35;
 const SHADOW_OPACITY_MAX = 1;
 // Shadow projection clamp: avoid projecting shadows past the far view plane.
 const SHADOW_MAX_VIEW_FRACTION = 0.9;
-const SHADOW_AMBIENT_RG_SCALE = 0.55;
-const SHADOW_AMBIENT_B_SCALE = 0.6;
+// Adjust shadow color scales to compensate for the brighter ambient constants
+const SHADOW_AMBIENT_RG_SCALE = 0.40;
+const SHADOW_AMBIENT_B_SCALE = 0.45;
 const TREE_SHADOW_BASE_ALPHA = 40;
 const TREE_DEFAULT_TRUNK_HEIGHT = 40;
 
@@ -69,7 +70,7 @@ const shadowShift = (casterH, sun) => {
   const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
   return Math.min(casterH / sun.y, maxShift);
 };
-const SUN_KEY_R = 255, SUN_KEY_G = 188, SUN_KEY_B = 122;
+const SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180;
 
 // --- Infection spread parameters ---
 const MAX_INF = 2000;   // Total infected tile count that triggers game over

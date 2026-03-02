@@ -641,9 +641,11 @@ class Terrain {
     let startX = cx * CHUNK_SIZE;
     let startZ = cz * CHUNK_SIZE;
 
-    // Pre-scan: skip buildGeometry() entirely if every tile in this chunk is above
-    // sea level.  getGridAltitude() hits altCache (a Map.get()), so this is cheap.
-    let hasSubmergedTile = false;
+    // Pre-scan: skip buildGeometry() entirely if the whole chunk is submerged.
+    // Note: aboveSea(y) returns true when a tile is submerged (WEBGL Y-axis is inverted;
+    // larger Y values are deeper underwater). We look for at least one tile whose highest
+    // corner (!aboveSea) is above sea level — that means the chunk has renderable terrain.
+    let hasRenderableTile = false;
     scanRows: for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
       for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
         let minY = Math.min(
@@ -652,11 +654,11 @@ class Terrain {
           this.getGridAltitude(tx, tz + 1),
           this.getGridAltitude(tx + 1, tz + 1)
         );
-        if (!aboveSea(minY)) { hasSubmergedTile = true; break scanRows; }
+        if (!aboveSea(minY)) { hasRenderableTile = true; break scanRows; }
       }
     }
 
-    if (!hasSubmergedTile) {
+    if (!hasRenderableTile) {
       this.chunkCache.set(key, null);
       return null;
     }

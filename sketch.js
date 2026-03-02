@@ -429,11 +429,11 @@ function startLevel(lvl) {
 
   level = lvl;
   levelComplete = false;
-  infectionStarted = false;
+  if (lvl === 1) infectionStarted = false;
   currentMaxEnemies = 1 + level;  // Enemy count scales linearly with level
 
   for (let p of players) {
-    resetShip(p, getSpawnX(p));
+    if (lvl === 1) resetShip(p, getSpawnX(p));
     p.homingMissiles = [];
     if (lvl > 1) {
       p.missilesRemaining++;   // Bonus missile for completing the previous level
@@ -448,15 +448,15 @@ function startLevel(lvl) {
   if (lvl === 1) {
     barrierTiles.reset();    // All barrier marks reset only at the start of a new game
     inFlightBarriers = [];   // Discard in-flight barriers for fresh start
+    infection.reset();
+    infectionStarted = false;
+    // Guarantee at least one infection tile is visible from the very start
+    seedInitialInfection();
   }
 
   enemyManager.clear();
   particleSystem.clear();
   terrain.activePulses = [];
-  infection.reset();
-
-  // Guarantee at least one infection tile is visible from the very start
-  seedInitialInfection();
 
   // Every 3rd level (3, 6, 9 ...) guarantees a Colossus boss alongside normal enemies
   let hasColossus = (lvl >= 3 && lvl % 3 === 0);

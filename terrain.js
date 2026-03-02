@@ -1360,6 +1360,7 @@ class Terrain {
     // geometry so it re-builds at the new solar angle.
     if (t._bakedSun && (t._bakedSun.x !== sun.x || t._bakedSun.y !== sun.y || t._bakedSun.z !== sun.z)) {
       t._shadowGeom = null;
+      t._shadowBakeFails = 0; // sun changed → fresh bake attempt; reset failure count
     }
 
     if (!t._shadowHull) {
@@ -1388,8 +1389,8 @@ class Terrain {
 
     // t._shadowGeom lifecycle:
     //   undefined  → not yet attempted
-    //   null       → invalidated by sun change; rebuild next frame
-    //   false      → built but degenerate (empty hull); skip permanently
+    //   null       → invalidated or bake failed (but not exhausted); rebuild next frame
+    //   false      → bake permanently skipped (degenerate hull or failures exhausted)
     //   p5.Geometry → valid cached shadow mesh
     if (t._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !t._footprint) return;
@@ -1401,10 +1402,14 @@ class Terrain {
         });
         // Use false (not null) for an empty result so the == null guard above
         // won't trigger a rebuild every frame for a permanently-degenerate hull.
-        t._shadowGeom = (built && built.vertices.length) ? built : false;
+        const tGeom = (built && built.vertices.length) ? built : false;
+        t._shadowGeom = tGeom;
+        if (tGeom) t._shadowBakeFails = 0;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for tree:", err);
-        t._shadowGeom = null; // null → will retry next frame
+        t._shadowBakeFails = (t._shadowBakeFails || 0) + 1;
+        // Give up after 3 failures to avoid calling buildGeometry every frame.
+        t._shadowGeom = (t._shadowBakeFails >= 3) ? false : null;
       } finally {
         this._isBuildingShadow = false;
       }
@@ -1446,6 +1451,7 @@ class Terrain {
     // geometry so it re-builds at the new solar angle.
     if (b._bakedSun && (b._bakedSun.x !== sun.x || b._bakedSun.y !== sun.y || b._bakedSun.z !== sun.z)) {
       b._shadowGeom = null;
+      b._shadowBakeFails = 0; // sun changed → fresh bake attempt; reset failure count
     }
 
     // Type 3 (floating UFO): animated caster height — cannot cache hull.
@@ -1497,8 +1503,8 @@ class Terrain {
 
     // b._shadowGeom lifecycle:
     //   undefined  → not yet attempted
-    //   null       → invalidated by sun change; rebuild next frame
-    //   false      → built but degenerate (empty hull); skip permanently
+    //   null       → invalidated or bake failed (but not exhausted); rebuild next frame
+    //   false      → bake permanently skipped (degenerate hull or failures exhausted)
     //   p5.Geometry → valid cached shadow mesh
     if (b._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !b._footprint) return;
@@ -1510,10 +1516,14 @@ class Terrain {
         });
         // Use false (not null) for an empty result so the == null guard above
         // won't trigger a rebuild every frame for a permanently-degenerate hull.
-        b._shadowGeom = (built && built.vertices.length) ? built : false;
+        const bGeom = (built && built.vertices.length) ? built : false;
+        b._shadowGeom = bGeom;
+        if (bGeom) b._shadowBakeFails = 0;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for building:", err);
-        b._shadowGeom = null; // null → will retry next frame
+        b._shadowBakeFails = (b._shadowBakeFails || 0) + 1;
+        // Give up after 3 failures to avoid calling buildGeometry every frame.
+        b._shadowGeom = (b._shadowBakeFails >= 3) ? false : null;
       } finally {
         this._isBuildingShadow = false;
       }

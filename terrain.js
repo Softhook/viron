@@ -637,13 +637,36 @@ class Terrain {
     if (cached !== undefined) return cached;
 
     if (this._isBuildingShadow) return null; // Safety: do not nest build calls
+
+    let startX = cx * CHUNK_SIZE;
+    let startZ = cz * CHUNK_SIZE;
+
+    // Pre-scan: skip buildGeometry() entirely if the whole chunk is submerged.
+    // Note: aboveSea(y) returns true when a tile is submerged (WEBGL Y-axis is inverted;
+    // larger Y values are deeper underwater). We look for at least one tile whose highest
+    // corner (!aboveSea) is above sea level — that means the chunk has renderable terrain.
+    let hasRenderableTile = false;
+    scanRows: for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
+      for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
+        let minY = Math.min(
+          this.getGridAltitude(tx, tz),
+          this.getGridAltitude(tx + 1, tz),
+          this.getGridAltitude(tx, tz + 1),
+          this.getGridAltitude(tx + 1, tz + 1)
+        );
+        if (!aboveSea(minY)) { hasRenderableTile = true; break scanRows; }
+      }
+    }
+
+    if (!hasRenderableTile) {
+      this.chunkCache.set(key, null);
+      return null;
+    }
+
     this._isBuildingShadow = true;
     let geom = null;
     try {
       geom = buildGeometry(() => {
-        let startX = cx * CHUNK_SIZE;
-        let startZ = cz * CHUNK_SIZE;
-
         beginShape(TRIANGLES);
         fill(34, 139, 34); // Unified Terrain Tag: Forest Green
 
@@ -698,7 +721,8 @@ class Terrain {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this.chunkCache.set(key, geom);
+    // Always cache (including null) so chunks are not rebuilt every frame.
+    this.chunkCache.set(key, geom);
     return geom;
   }
 
@@ -954,9 +978,7 @@ class Terrain {
         if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
 
         let geom = this.getChunkGeometry(cx, cz);
-        if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) {
-          model(geom);
-        }
+        if (geom) model(geom);
       }
     }
 
@@ -1283,21 +1305,31 @@ class Terrain {
 
     const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
 
-    if (!t._shadowGeom && !this._isBuildingShadow) {
+    // t._shadowGeom lifecycle:
+    //   undefined  → not yet attempted
+    //   null       → invalidated by sun change; rebuild next frame
+    //   false      → built but degenerate (empty hull); skip permanently
+    //   p5.Geometry → valid cached shadow mesh
+    if (t._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !t._footprint) return;
       this._isBuildingShadow = true;
       try {
         t._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        t._shadowGeom = buildGeometry(() => {
+        let built = buildGeometry(() => {
           this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
         });
+        // Use false (not null) for an empty result so the == null guard above
+        // won't trigger a rebuild every frame for a permanently-degenerate hull.
+        t._shadowGeom = (built && built.vertices.length) ? built : false;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for tree:", err);
-        t._shadowGeom = null;
+        t._shadowGeom = null; // null → will retry next frame
       } finally {
         this._isBuildingShadow = false;
       }
     }
+
+    if (!t._shadowGeom) return;
 
     const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
@@ -1308,9 +1340,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (t._shadowGeom && t._shadowGeom instanceof p5.Geometry && t._shadowGeom.vertices && t._shadowGeom.vertices.length > 0) {
-      model(t._shadowGeom);
-    }
+    model(t._shadowGeom);
     pop();
 
     _endShadowStencil();
@@ -1384,21 +1414,31 @@ class Terrain {
     const casterHForOpacity = b._shadowCasterH || b.h;
     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
 
-    if (!b._shadowGeom && !this._isBuildingShadow) {
+    // b._shadowGeom lifecycle:
+    //   undefined  → not yet attempted
+    //   null       → invalidated by sun change; rebuild next frame
+    //   false      → built but degenerate (empty hull); skip permanently
+    //   p5.Geometry → valid cached shadow mesh
+    if (b._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !b._footprint) return;
       this._isBuildingShadow = true;
       try {
         b._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        b._shadowGeom = buildGeometry(() => {
+        let built = buildGeometry(() => {
           this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
         });
+        // Use false (not null) for an empty result so the == null guard above
+        // won't trigger a rebuild every frame for a permanently-degenerate hull.
+        b._shadowGeom = (built && built.vertices.length) ? built : false;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for building:", err);
-        b._shadowGeom = null;
+        b._shadowGeom = null; // null → will retry next frame
       } finally {
         this._isBuildingShadow = false;
       }
     }
+
+    if (!b._shadowGeom) return;
 
     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
@@ -1409,9 +1449,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (b._shadowGeom && b._shadowGeom instanceof p5.Geometry && b._shadowGeom.vertices && b._shadowGeom.vertices.length > 0) {
-      model(b._shadowGeom);
-    }
+    model(b._shadowGeom);
     pop();
 
     _endShadowStencil();
@@ -1441,7 +1479,7 @@ class Terrain {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this._geoms.set(key, geom);
+    this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1486,7 +1524,7 @@ class Terrain {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this._geoms.set(key, geom);
+    this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1527,7 +1565,7 @@ class Terrain {
           let inf = infection.has(t.k);
           let geom = this._getTreeGeom(t, inf);
 
-          if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) {
+          if (geom) {
             push();
             translate(t.x, y, t.z);
             model(geom);
@@ -1626,7 +1664,7 @@ class Terrain {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this._geoms.set(key, geom);
+    this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1660,11 +1698,11 @@ class Terrain {
         rotateY(frameCount * 0.01 + b.x);
         rotateZ(frameCount * 0.015 + b.z);
         let geom = this._getPowerupGeom(b, inf);
-        if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) model(geom);
+        if (geom) model(geom);
         pop();
       } else {
         let bGeom = this._getBuildingGeom(b, inf);
-        if (bGeom && bGeom instanceof p5.Geometry && bGeom.vertices && bGeom.vertices.length > 0) model(bGeom);
+        if (bGeom) model(bGeom);
         // Rotating crown for type 4
         if (b.type === 4) {
           const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;

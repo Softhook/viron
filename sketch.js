@@ -445,8 +445,10 @@ function startLevel(lvl) {
     p.lpDeaths = 0;
   }
 
-  barrierTiles.clear();    // All barrier marks reset with each new level
-  inFlightBarriers = [];   // Discard any in-flight barriers
+  if (lvl === 1) {
+    barrierTiles.reset();    // All barrier marks reset only at the start of a new game
+    inFlightBarriers = [];   // Discard in-flight barriers for fresh start
+  }
 
   enemyManager.clear();
   particleSystem.clear();
@@ -822,7 +824,7 @@ function draw() {
   if (!levelComplete) {
     let ic = infection.count;
     if (ic > 0) infectionStarted = true;
-    if (infectionStarted && ic === 0) {
+    if ((infectionStarted && ic === 0) || (enemyManager.enemies.length === 0)) {
       levelComplete = true;
       levelEndTime = millis();
       if (typeof gameSFX !== 'undefined') gameSFX.playLevelComplete();
@@ -861,7 +863,7 @@ function spreadInfection() {
   const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
   const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
   const shouldRun = frameCount % 5 === 0;
-  if (!shouldRun) return;
+  if (!shouldRun || levelComplete) return;
   const spreadStart = profiler ? performance.now() : 0;
 
   // Game over — too much infection (fast path: no Object.keys allocation needed)

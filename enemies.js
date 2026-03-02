@@ -27,7 +27,7 @@ class EnemyManager {
 
   /** Removes all enemies. Called at the start of each level. */
   clear() {
-    this.enemies = [];
+    this.enemies.length = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -204,7 +204,8 @@ class EnemyManager {
     e.x += e.vx; e.z += e.vz;
 
     // Snap Y to the ground surface minus a small offset so the crab appears to crawl
-    e.y = terrain.getAltitude(e.x, e.z) - 10;
+    const gyC = terrain.getAltitude(e.x, e.z);
+    e.y = gyC - 10;
 
     e.fireTimer++;
     if (d < 1500 && e.fireTimer > 180) {
@@ -217,8 +218,7 @@ class EnemyManager {
 
     // Random ground infection
     if (random() < 0.02) {
-      let gy = terrain.getAltitude(e.x, e.z);
-      if (!aboveSea(gy)) {
+      if (!aboveSea(gyC)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (infection.add(k)) {
@@ -414,12 +414,12 @@ class EnemyManager {
 
     e.x += e.vx; e.z += e.vz;
     // Snap to ground surface
-    e.y = terrain.getAltitude(e.x, e.z) - 10;
+    const gyS = terrain.getAltitude(e.x, e.z);
+    e.y = gyS - 10;
 
     // Infect tiles below — triggers launchpad alarm when relevant
     if (random() < 0.025) {
-      let gy = terrain.getAltitude(e.x, e.z);
-      if (!aboveSea(gy)) {
+      if (!aboveSea(gyS)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (infection.add(k)) {
@@ -470,7 +470,8 @@ class EnemyManager {
     e.x += e.vx; e.z += e.vz;
 
     // Snap to ground surface — the Colossus always walks on land
-    e.y = terrain.getAltitude(e.x, e.z);
+    const gyCo = terrain.getAltitude(e.x, e.z);
+    e.y = gyCo;
 
     // Tick down the hit-flash timer
     if (e.hitFlash > 0) e.hitFlash--;
@@ -509,8 +510,7 @@ class EnemyManager {
 
     // --- Virus trail: infect tiles below the Colossus as it lumbers along ---
     if (random() < 0.06) {
-      let gy = terrain.getAltitude(e.x, e.z);
-      if (!aboveSea(gy)) {
+      if (!aboveSea(gyCo)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
         if (infection.add(k)) {
@@ -642,8 +642,7 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        let ec = terrain.getFogColor([255, 150, 0], depth);
-        fill(ec[0], ec[1], ec[2]);
+        terrain.fillFogColor(255, 150, 0, depth);
         beginShape(TRIANGLES);
         // Nose → left rear, nose → right rear (top and bottom faces)
         vertex(0, 0, 20); vertex(-15, 0, -15); vertex(15, 0, -15);
@@ -656,8 +655,7 @@ class EnemyManager {
       } else if (e.type === 'bomber') {
         rotateY(frameCount * 0.05);
         noStroke();
-        let bc = terrain.getFogColor([180, 20, 180], depth);
-        fill(bc[0], bc[1], bc[2]);
+        terrain.fillFogColor(180, 20, 180, depth);
         beginShape(TRIANGLES);
         // Two mirrored pyramids sharing a square equator — upper and lower halves
         vertex(0, -40, 0); vertex(-40, 0, -40); vertex(40, 0, -40);
@@ -675,11 +673,13 @@ class EnemyManager {
         let yaw = atan2(e.vx || 0, e.vz || 0);
         rotateY(yaw);
         noStroke();
-        let cc = terrain.getFogColor([200, 80, 20], depth);
-        let ccDark = terrain.getFogColor([150, 40, 10], depth);
+        // Compute fog factor once; apply to both shell and dark colours inline.
+        const fogF_c = terrain.getFogFactor(depth);
+        const ccR = lerp(200, SKY_R, fogF_c), ccG = lerp(80, SKY_G, fogF_c), ccB = lerp(20, SKY_B, fogF_c);
+        const ccDR = lerp(150, SKY_R, fogF_c), ccDG = lerp(40, SKY_G, fogF_c), ccDB = lerp(10, SKY_B, fogF_c);
 
         // Main shell and raised carapace
-        fill(cc[0], cc[1], cc[2]);
+        fill(ccR, ccG, ccB);
         push(); box(36, 16, 30); pop();
         push(); translate(0, -8, 0); box(24, 8, 20); pop();
 
@@ -691,7 +691,7 @@ class EnemyManager {
         pop();
 
         // Animated walking legs (3 per side, alternating stride)
-        fill(ccDark[0], ccDark[1], ccDark[2]);
+        fill(ccDR, ccDG, ccDB);
         let walkPhase = frameCount * 0.3 + e.id;
         for (let side = -1; side <= 1; side += 2) {
           for (let i = -1; i <= 1; i++) {
@@ -711,7 +711,7 @@ class EnemyManager {
         }
 
         // Pincers with opening/closing nip animation
-        fill(cc[0], cc[1], cc[2]);
+        fill(ccR, ccG, ccB);
         for (let side = -1; side <= 1; side += 2) {
           let pincerLift = sin(frameCount * 0.1 + e.id) * 0.1;
           push();
@@ -736,8 +736,7 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        let hc = terrain.getFogColor([40, 255, 40], depth);
-        fill(hc[0], hc[1], hc[2]);
+        terrain.fillFogColor(40, 255, 40, depth);
         // Smaller arrowhead than fighter — faster and more agile
         beginShape(TRIANGLES);
         vertex(0, 0, 30); vertex(-8, 0, -20); vertex(8, 0, -20);
@@ -750,8 +749,7 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        let sqc = terrain.getFogColor([30, 30, 35], depth);
-        fill(sqc[0], sqc[1], sqc[2]);
+        terrain.fillFogColor(30, 30, 35, depth);
 
         push();
         // Brief squeeze animation when releasing ink.
@@ -780,12 +778,14 @@ class EnemyManager {
         rotateY(yaw);
         noStroke();
 
-        let sc = terrain.getFogColor([20, 180, 120], depth);  // Main teal-green
-        let scD = terrain.getFogColor([5, 100, 60], depth);  // Dark underside
-        let scG = terrain.getFogColor([80, 255, 160], depth);  // Bright sting glow
+        // Compute fog factor once; inline lerps for each of the three colours.
+        const fogF_s = terrain.getFogFactor(depth);
+        const scR = lerp(20, SKY_R, fogF_s), scG = lerp(180, SKY_G, fogF_s), scB = lerp(120, SKY_B, fogF_s);
+        const scDR = lerp(5, SKY_R, fogF_s), scDG = lerp(100, SKY_G, fogF_s), scDB = lerp(60, SKY_B, fogF_s);
+        const scGR = lerp(80, SKY_R, fogF_s), scGG = lerp(255, SKY_G, fogF_s), scGB = lerp(160, SKY_B, fogF_s);
 
         // Main carapace — low flattened body
-        fill(sc[0], sc[1], sc[2]);
+        fill(scR, scG, scB);
         push(); box(30, 8, 26); pop();                   // Central hull
         push(); translate(0, -2, -18); box(18, 6, 12); pop();  // Rear abdomen
         push(); translate(0, -1, 14); box(14, 5, 10); pop();  // Forward head plate
@@ -796,7 +796,7 @@ class EnemyManager {
         push(); translate(6, -5, 18); box(3, 3, 3); pop();
 
         // Animated scuttling legs (3 per side)
-        fill(scD[0], scD[1], scD[2]);
+        fill(scDR, scDG, scDB);
         let walkPhase = frameCount * 0.35 + e.id;
         for (let side = -1; side <= 1; side += 2) {
           for (let i = -1; i <= 1; i++) {
@@ -813,7 +813,7 @@ class EnemyManager {
         }
 
         // Segmented raised tail (4 segments curving up and over the body)
-        fill(sc[0], sc[1], sc[2]);
+        fill(scR, scG, scB);
         push();
         translate(0, -5, -20);
         for (let i = 0; i < 4; i++) {
@@ -823,7 +823,7 @@ class EnemyManager {
           box(10 - i * 1.5, 7 - i, 6 - i);
         }
         // Sting tip — bright glowing point
-        fill(scG[0], scG[1], scG[2]);
+        fill(scGR, scGG, scGB);
         translate(0, -5, -3);
         box(4, 10, 4);
         pop();
@@ -836,24 +836,21 @@ class EnemyManager {
 
         // Colour scheme: dark charcoal body with lava-orange accents, flashes white when hit
         let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
-        let bodyBase = [40, 40, 55];
-        let bodyHit = [255, 255, 255];
-        let accentBase = [255, 60, 20];
-        let accentHit = [255, 255, 0];
 
-        let bodyR = lerp(bodyBase[0], bodyHit[0], hitT);
-        let bodyG = lerp(bodyBase[1], bodyHit[1], hitT);
-        let bodyB = lerp(bodyBase[2], bodyHit[2], hitT);
+        let bodyR = lerp(40, 255, hitT);
+        let bodyG = lerp(40, 255, hitT);
+        let bodyB = lerp(55, 255, hitT);
 
-        let accR = lerp(accentBase[0], accentHit[0], hitT);
-        let accG = lerp(accentBase[1], accentHit[1], hitT);
-        let accB = lerp(accentBase[2], accentHit[2], hitT);
+        let accR = lerp(255, 255, hitT);
+        let accG = lerp(60, 255, hitT);
+        let accB = lerp(20, 0, hitT);
 
-
-        let fc = terrain.getFogColor([bodyR, bodyG, bodyB], depth);
-        let ac = terrain.getFogColor([accR, accG, accB], depth);
-        let darkC = terrain.getFogColor([20, 20, 30], depth);
-        let glowC = terrain.getFogColor([255, 120, 0], depth);
+        // Compute fog factor once; inline lerps for all four fog-blended colours.
+        const fogF_col = terrain.getFogFactor(depth);
+        const fcR = lerp(bodyR, SKY_R, fogF_col), fcG = lerp(bodyG, SKY_G, fogF_col), fcB = lerp(bodyB, SKY_B, fogF_col);
+        const acR = lerp(accR, SKY_R, fogF_col), acG = lerp(accG, SKY_G, fogF_col), acB = lerp(accB, SKY_B, fogF_col);
+        const dkR = lerp(20, SKY_R, fogF_col), dkG = lerp(20, SKY_G, fogF_col), dkB = lerp(30, SKY_B, fogF_col);
+        const glR = lerp(255, SKY_R, fogF_col), glG = lerp(120, SKY_G, fogF_col), glB = lerp(0, SKY_B, fogF_col);
 
         // ---- LEGS (animated — alternating stride) ----
         let walkSpeed = mag2(e.vx || 0, e.vz || 0);
@@ -869,7 +866,7 @@ class EnemyManager {
           translate(side * 50, -40, 0);
 
           // Thigh — lengthened to 120
-          fill(fc[0], fc[1], fc[2]);
+          fill(fcR, fcG, fcB);
           rotateX(thighSwing);
           push(); translate(0, 60, 0); box(50, 120, 50); pop();
 
@@ -879,22 +876,22 @@ class EnemyManager {
           push(); translate(0, 60, 0); box(40, 120, 40); pop();
 
           // Foot — wide flat block
-          fill(darkC[0], darkC[1], darkC[2]);
+          fill(dkR, dkG, dkB);
           translate(0, 120, 0);
           push(); translate(0, 12, side * -6); box(60, 24, 75); pop();
           pop();
         }
 
         // ---- PELVIS / WAIST ----
-        fill(darkC[0], darkC[1], darkC[2]);
+        fill(dkR, dkG, dkB);
         push(); translate(0, -45, 0); box(130, 36, 90); pop();
 
         // ---- TORSO — massive imposing chest block ----
-        fill(fc[0], fc[1], fc[2]);
+        fill(fcR, fcG, fcB);
         push(); translate(0, -160, 0); box(160, 200, 110); pop();
 
         // ---- SHOULDERS ----
-        fill(darkC[0], darkC[1], darkC[2]);
+        fill(dkR, dkG, dkB);
         push(); translate(-105, -210, 0); box(50, 50, 65); pop();
         push(); translate(105, -210, 0); box(50, 50, 65); pop();
 
@@ -906,38 +903,38 @@ class EnemyManager {
           rotateX(armSwing);
 
           // Upper arm
-          fill(fc[0], fc[1], fc[2]);
+          fill(fcR, fcG, fcB);
           push(); translate(0, 65, 0); box(45, 120, 45); pop();
 
           // Elbow joint
-          fill(darkC[0], darkC[1], darkC[2]);
+          fill(dkR, dkG, dkB);
           push(); translate(0, 125, 0); box(40, 30, 40); pop();
 
           // Forearm
-          fill(fc[0], fc[1], fc[2]);
+          fill(fcR, fcG, fcB);
           push(); translate(0, 185, 0); box(40, 100, 40); pop();
 
           // Fist — massive brutality
-          fill(ac[0], ac[1], ac[2]);
+          fill(acR, acG, acB);
           push(); translate(0, 245, 0); box(55, 55, 55); pop();
           pop();
         }
 
         // ---- NECK ----
-        fill(darkC[0], darkC[1], darkC[2]);
+        fill(dkR, dkG, dkB);
         push(); translate(0, -270, 0); box(65, 40, 60); pop();
 
         // ---- HEAD — massive boxy skull ----
-        fill(fc[0], fc[1], fc[2]);
+        fill(fcR, fcG, fcB);
         push(); translate(0, -320, 0); box(100, 90, 100); pop();
 
         // Eye slots — glowing orange
-        fill(glowC[0], glowC[1], glowC[2]);
+        fill(glR, glG, glB);
         push(); translate(-25, -330, 51); box(25, 18, 8); pop();
         push(); translate(25, -330, 51); box(25, 18, 8); pop();
 
         // Head armour brow ridge
-        fill(darkC[0], darkC[1], darkC[2]);
+        fill(dkR, dkG, dkB);
         push(); translate(0, -348, 51); box(104, 15, 8); pop();
 
 
@@ -946,8 +943,7 @@ class EnemyManager {
         // ---- Seeder: rotating double diamond with central antenna ----
         rotateY(frameCount * 0.15); noStroke();
         for (let [yOff, col] of [[-10, [220, 30, 30]], [6, [170, 15, 15]]]) {
-          let oc = terrain.getFogColor(col, depth);
-          fill(oc[0], oc[1], oc[2]);
+          terrain.fillFogColor(col[0], col[1], col[2], depth);
           beginShape(TRIANGLES);
           vertex(0, yOff, -25); vertex(-22, 0, 0); vertex(22, 0, 0);
           vertex(0, yOff, 25); vertex(-22, 0, 0); vertex(22, 0, 0);
@@ -955,8 +951,7 @@ class EnemyManager {
           vertex(0, yOff, -25); vertex(22, 0, 0); vertex(0, yOff, 25);
           endShape();
         }
-        let cc = terrain.getFogColor([255, 60, 60], depth);
-        fill(cc[0], cc[1], cc[2]);
+        terrain.fillFogColor(255, 60, 60, depth);
         push(); translate(0, -14, 0); box(3, 14, 3); pop();  // Antenna
       }
       pop();

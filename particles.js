@@ -91,9 +91,9 @@ class ParticleSystem {
 
   /** Empties all particle, bomb and enemy-bullet arrays. Called at level start. */
   clear() {
-    this.particles = [];
-    this.bombs = [];
-    this.enemyBullets = [];
+    this.particles.length = 0;
+    this.bombs.length = 0;
+    this.enemyBullets.length = 0;
     this.fogCount = 0;
   }
 

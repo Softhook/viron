@@ -118,21 +118,19 @@ function setSceneLighting() {
  * and never intersects gameplay geometry.
  */
 function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
-  const sunDir = createVector(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z).normalize();
-  const toSun = p5.Vector.mult(sunDir, -1).normalize();      // camera -> sun
-  const sunRayDir = sunDir.copy().normalize();               // sun -> world
+  // Compute the horizontal direction toward the sun using the pre-normalized
+  // SUN_DIR constants — no p5.Vector allocations needed.
+  // toSun = -SUN_DIR_N (normalised direction from camera to sun disc)
+  const toSunX = -SUN_DIR_NX, toSunZ = -SUN_DIR_NZ;
+  const horizLen = Math.sqrt(toSunX * toSunX + toSunZ * toSunZ);
+  // Fallback to -Z if sun is directly overhead
+  const hX = horizLen > 1e-3 ? toSunX / horizLen : 0;
+  const hZ = horizLen > 1e-3 ? toSunZ / horizLen : -1;
 
-  // Keep the visual sun near the horizon instead of many kilometers overhead.
-  const horizToSun = createVector(toSun.x, 0, toSun.z);
-  if (horizToSun.magSq() < 1e-6) horizToSun.set(0, 0, -1);
-  horizToSun.normalize();
   const sunHorizonDist = viewFarWorld * 0.78;
   const sunHeight = cy - viewFarWorld * 0.09; // negative Y is upward in this world
-  const sunPos = createVector(
-    cx + horizToSun.x * sunHorizonDist,
-    sunHeight,
-    cz + horizToSun.z * sunHorizonDist
-  );
+  const sunPosX = cx + hX * sunHorizonDist;
+  const sunPosZ = cz + hZ * sunHorizonDist;
 
   push();
   noStroke();
@@ -142,7 +140,7 @@ function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
   blendMode(ADD);
   // Sun core + halo spheres.
   push();
-  translate(sunPos.x, sunPos.y, sunPos.z);
+  translate(sunPosX, sunHeight, sunPosZ);
   emissiveMaterial(255, 228, 180);
   const sunDetailLongitude = 40, sunDetailLatitude = 32;
   sphere(viewFarWorld * 0.021, sunDetailLongitude, sunDetailLatitude);

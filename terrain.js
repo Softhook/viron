@@ -637,14 +637,34 @@ class Terrain {
     if (cached !== undefined) return cached;
 
     if (this._isBuildingShadow) return null; // Safety: do not nest build calls
+
+    let startX = cx * CHUNK_SIZE;
+    let startZ = cz * CHUNK_SIZE;
+
+    // Pre-scan: skip buildGeometry() entirely if every tile in this chunk is above
+    // sea level.  getGridAltitude() hits altCache (a Map.get()), so this is cheap.
+    let hasSubmergedTile = false;
+    scanRows: for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
+      for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
+        let minY = Math.min(
+          this.getGridAltitude(tx, tz),
+          this.getGridAltitude(tx + 1, tz),
+          this.getGridAltitude(tx, tz + 1),
+          this.getGridAltitude(tx + 1, tz + 1)
+        );
+        if (!aboveSea(minY)) { hasSubmergedTile = true; break scanRows; }
+      }
+    }
+
+    if (!hasSubmergedTile) {
+      this.chunkCache.set(key, null);
+      return null;
+    }
+
     this._isBuildingShadow = true;
     let geom = null;
     try {
-      let tileCount = 0;
       geom = buildGeometry(() => {
-        let startX = cx * CHUNK_SIZE;
-        let startZ = cz * CHUNK_SIZE;
-
         beginShape(TRIANGLES);
         fill(34, 139, 34); // Unified Terrain Tag: Forest Green
 
@@ -661,8 +681,6 @@ class Terrain {
             let y11 = this.getGridAltitude(tx + 1, tz + 1);
             let minY = Math.min(y00, y10, y01, y11);
             if (aboveSea(minY)) continue;
-
-            tileCount++;
 
             // Tag the material (R), organic noise (G), random jitter (B) and parity (A)
             let avgY = (y00 + y10 + y01 + y11) * 0.25;
@@ -695,16 +713,13 @@ class Terrain {
         }
         endShape();
       });
-      // Chunks that are entirely above sea level produce no vertices.
-      // Discard the empty geometry object so model() is never called on it.
-      if (tileCount === 0) geom = null;
     } catch (err) {
       console.error("[Viron] Chunk geometry build failed:", err);
     } finally {
       this._isBuildingShadow = false;
     }
 
-    // Always cache (including null) so above-sea chunks are not rebuilt every frame.
+    // Always cache (including null) so chunks are not rebuilt every frame.
     this.chunkCache.set(key, geom);
     return geom;
   }
@@ -1288,22 +1303,31 @@ class Terrain {
 
     const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
 
-    if (!t._shadowGeom && !this._isBuildingShadow) {
+    // t._shadowGeom lifecycle:
+    //   undefined  → not yet attempted
+    //   null       → invalidated by sun change; rebuild next frame
+    //   false      → built but degenerate (empty hull); skip permanently
+    //   p5.Geometry → valid cached shadow mesh
+    if (t._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !t._footprint) return;
       this._isBuildingShadow = true;
       try {
         t._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        t._shadowGeom = buildGeometry(() => {
+        let built = buildGeometry(() => {
           this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
         });
-        if (t._shadowGeom && !t._shadowGeom.vertices.length) t._shadowGeom = null;
+        // Use false (not null) for an empty result so the == null guard above
+        // won't trigger a rebuild every frame for a permanently-degenerate hull.
+        t._shadowGeom = (built && built.vertices.length) ? built : false;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for tree:", err);
-        t._shadowGeom = null;
+        t._shadowGeom = null; // null → will retry next frame
       } finally {
         this._isBuildingShadow = false;
       }
     }
+
+    if (!t._shadowGeom) return;
 
     const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
@@ -1314,7 +1338,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (t._shadowGeom) model(t._shadowGeom);
+    model(t._shadowGeom);
     pop();
 
     _endShadowStencil();
@@ -1388,22 +1412,31 @@ class Terrain {
     const casterHForOpacity = b._shadowCasterH || b.h;
     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
 
-    if (!b._shadowGeom && !this._isBuildingShadow) {
+    // b._shadowGeom lifecycle:
+    //   undefined  → not yet attempted
+    //   null       → invalidated by sun change; rebuild next frame
+    //   false      → built but degenerate (empty hull); skip permanently
+    //   p5.Geometry → valid cached shadow mesh
+    if (b._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !b._footprint) return;
       this._isBuildingShadow = true;
       try {
         b._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        b._shadowGeom = buildGeometry(() => {
+        let built = buildGeometry(() => {
           this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
         });
-        if (b._shadowGeom && !b._shadowGeom.vertices.length) b._shadowGeom = null;
+        // Use false (not null) for an empty result so the == null guard above
+        // won't trigger a rebuild every frame for a permanently-degenerate hull.
+        b._shadowGeom = (built && built.vertices.length) ? built : false;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for building:", err);
-        b._shadowGeom = null;
+        b._shadowGeom = null; // null → will retry next frame
       } finally {
         this._isBuildingShadow = false;
       }
     }
+
+    if (!b._shadowGeom) return;
 
     const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
@@ -1414,7 +1447,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (b._shadowGeom) model(b._shadowGeom);
+    model(b._shadowGeom);
     pop();
 
     _endShadowStencil();

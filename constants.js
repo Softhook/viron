@@ -337,9 +337,10 @@ const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
 
 /**
  * Removes arr[i] in O(1) by swapping it with the last element and calling pop().
- * Safe for backward-iterating loops: the moved element was already visited at a
- * higher index, so it will not be skipped.  Always break or decrement i after
- * calling swapRemove — do not re-process the slot.
+ * Safe for backward-iterating loops (for example, `for (let i = arr.length - 1; i >= 0; i--)`):
+ * the element moved into position i came from a higher index that has already been visited,
+ * so it will not be skipped. When iterating forward, adjust your loop index or break after
+ * calling swapRemove so that you do not skip or re-process the element now at position i.
  * @param {Array} arr  The array to mutate.
  * @param {number} i   Index of the element to remove.
  */

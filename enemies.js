@@ -15,6 +15,10 @@
 //              walks on two animated legs, leaves a virus trail behind it
 // =============================================================================
 
+// Seeder double-diamond geometry: two layers, each defined by [yOffset, [r, g, b]].
+// Hoisted out of the draw loop so the nested array literal is not re-allocated every frame.
+const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
+
 class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
@@ -942,8 +946,10 @@ class EnemyManager {
       } else {
         // ---- Seeder: rotating double diamond with central antenna ----
         rotateY(frameCount * 0.15); noStroke();
-        for (let [yOff, col] of [[-10, [220, 30, 30]], [6, [170, 15, 15]]]) {
-          terrain.fillFogColor(col[0], col[1], col[2], depth);
+        for (let i = 0; i < SEEDER_LAYERS.length; i++) {
+          const layer = SEEDER_LAYERS[i];
+          const yOff = layer[0];
+          terrain.fillFogColor(layer[1], layer[2], layer[3], depth);
           beginShape(TRIANGLES);
           vertex(0, yOff, -25); vertex(-22, 0, 0); vertex(22, 0, 0);
           vertex(0, yOff, 25); vertex(-22, 0, 0); vertex(22, 0, 0);

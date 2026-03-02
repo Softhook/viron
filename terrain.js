@@ -293,6 +293,10 @@ function _endShadowStencil() {
  * This wrapper catches that situation, calls endGeometry() to flush the
  * stale geometryBuilder, and re-throws the original error so callers can
  * decide whether to retry or give up.
+ *
+ * Performance: zero per-frame overhead. Every call site is behind a cache
+ * check (chunkCache, _geoms, _shadowGeom), so _safeBuildGeometry only runs
+ * once per unique geometry, after which the cache is returned directly.
  */
 function _safeBuildGeometry(callback) {
   try {

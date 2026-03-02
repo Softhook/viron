@@ -335,6 +335,19 @@ const mag2 = (dx, dz) => Math.sqrt(dx * dx + dz * dz);
 /** @param {number} dx @param {number} dy @param {number} dz @returns {number} */
 const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
 
+/**
+ * Removes arr[i] in O(1) by swapping it with the last element and calling pop().
+ * Safe for backward-iterating loops: the moved element was already visited at a
+ * higher index, so it will not be skipped.  Always break or decrement i after
+ * calling swapRemove — do not re-process the slot.
+ * @param {Array} arr  The array to mutate.
+ * @param {number} i   Index of the element to remove.
+ */
+function swapRemove(arr, i) {
+  const last = arr.pop();
+  if (i < arr.length) arr[i] = last;
+}
+
 // =============================================================================
 // TileManager — generic container for keyed world tiles (Infection or Barriers)
 //

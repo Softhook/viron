@@ -131,7 +131,10 @@ class EnemyManager {
    * dispatches to the appropriate per-type update method.
    */
   update() {
-    let alivePlayers = players.filter(p => !p.dead).map(p => p.ship);
+    const alivePlayers = [];
+    for (let i = 0; i < players.length; i++) {
+      if (!players[i].dead) alivePlayers.push(players[i].ship);
+    }
     let refShip = alivePlayers[0] || players[0].ship;  // Fallback to P1 even if dead
 
     for (let e of this.enemies) {

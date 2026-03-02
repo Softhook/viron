@@ -554,7 +554,6 @@ class ParticleSystem {
     }
 
     // Enemy bullets — flat red spheres.
-    noLights(); noStroke();
     let enemyBulletR = 4; // Enemy bullet size control (sphere radius)
     for (let b of this.enemyBullets) {
       push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(enemyBulletR, 4, 3); pop();

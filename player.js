@@ -1040,10 +1040,10 @@ function updateProjectilePhysics(p) {
     b.x += b.vx; b.y += b.vy; b.z += b.vz;
     b.life -= 2;
     if (b.life <= 0) {
-      p.bullets.splice(i, 1);
+      swapRemove(p.bullets, i);
     } else if (b.y > terrain.getAltitude(b.x, b.z)) {
       clearInfectionAt(b.x, b.z, p);
-      p.bullets.splice(i, 1);
+      swapRemove(p.bullets, i);
     }
   }
 
@@ -1091,7 +1091,7 @@ function updateProjectilePhysics(p) {
         particleSystem.addExplosion(m.x, m.y, m.z);
         clearInfectionAt(m.x, m.z, p);
       }
-      p.homingMissiles.splice(i, 1);
+      swapRemove(p.homingMissiles, i);
     }
   }
 
@@ -1114,7 +1114,7 @@ function updateProjectilePhysics(p) {
         let dx = e.x - s.x, dy = e.y - s.y, dz = e.z - s.z;
         if (dx * dx + dy * dy + dz * dz < impactRadSq) {
           particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-          enemyManager.enemies.splice(j, 1);
+          swapRemove(enemyManager.enemies, j);
           p.score += 300;
         }
       }
@@ -1135,7 +1135,7 @@ function updateProjectilePhysics(p) {
         gameSFX.setThrust(p.id, false);
         gameSFX.playClearInfection(s.x, g, s.z);
       }
-      p.tankShells.splice(i, 1);
+      swapRemove(p.tankShells, i);
     }
   }
 }
@@ -1153,10 +1153,9 @@ function updateBarrierPhysics() {
     if (b.y >= terrain.getAltitude(b.x, b.z) || b.life <= 0) {
       if (b.life > 0) { // Landed (not expired)
         let tx = Math.floor(b.x / TILE), tz = Math.floor(b.z / TILE);
-        let k = tileKey(tx, tz);
-        if (!barrierTiles.has(k)) barrierTiles.set(k, { k, tx, tz, verts: null });
+        barrierTiles.add(tileKey(tx, tz));
       }
-      inFlightBarriers.splice(i, 1);
+      swapRemove(inFlightBarriers, i);
     }
   }
 }

@@ -110,7 +110,7 @@ async function run() {
             if (tx >= 0 && tx < 7 && tz >= 0 && tz < 7) continue; // skip launchpad area
             infection.add(tileKey(tx, tz));
             // Seed a parallel block of barriers
-            barrierTiles.set(tileKey(tx + 10, tz), { k: tileKey(tx + 10, tz), tx: tx + 10, tz: tz, verts: null });
+            barrierTiles.add(tileKey(tx + 10, tz));
             added++;
           }
         }

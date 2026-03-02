@@ -91,9 +91,9 @@ class ParticleSystem {
 
   /** Empties all particle, bomb and enemy-bullet arrays. Called at level start. */
   clear() {
-    this.particles = [];
-    this.bombs = [];
-    this.enemyBullets = [];
+    this.particles.length = 0;
+    this.bombs.length = 0;
+    this.enemyBullets.length = 0;
     this.fogCount = 0;
   }
 
@@ -554,7 +554,6 @@ class ParticleSystem {
     }
 
     // Enemy bullets — flat red spheres.
-    noLights(); noStroke();
     let enemyBulletR = 4; // Enemy bullet size control (sphere radius)
     for (let b of this.enemyBullets) {
       push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(enemyBulletR, 4, 3); pop();

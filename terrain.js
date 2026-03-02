@@ -306,6 +306,15 @@ class Terrain {
     this._pulseArr = new Float32Array(20);
     this._glowArr = new Float32Array(8);
 
+    // Pre-allocated scalar-uniform buffers — each would otherwise allocate a new JS
+    // array literal every frame inside applyShader().
+    this._uFogDistArr   = new Float32Array(2);
+    this._uFogColorArr  = new Float32Array(3);
+    this._uSunDirArr    = new Float32Array(3);
+    this._uSunColorArr  = new Float32Array(3);
+    this._uAmbLowArr    = new Float32Array(3);
+    this._uAmbHighArr   = new Float32Array(3);
+
     // Pre-allocated overlay buffers for batching viron/barrier quads.
     // Fixed size based on MAX_INF (2000) with a 2x safety margin.
     // Each tile = 6 vertices × 3 floats = 18 floats.
@@ -750,6 +759,31 @@ class Terrain {
     ];
   }
 
+  /**
+   * Returns the scalar fog blend factor [0, 1] for a given depth.
+   * Zero-allocation alternative to getFogColor() for callers that need to apply
+   * the same fog factor to multiple colours without allocating intermediate arrays.
+   * @param {number} depth  Signed forward distance from the camera.
+   * @returns {number}
+   */
+  getFogFactor(depth) {
+    const fogFar = this._getFogFarWorld();
+    return constrain(map(depth, fogFar - 800, fogFar + 400, 0, 1), 0, 1);
+  }
+
+  /**
+   * Calls p5 fill() with an RGB colour fog-blended toward the sky colour —
+   * matches the GLSL fog but emits zero intermediate array allocations.
+   * @param {number} r      Base red   [0–255].
+   * @param {number} g      Base green [0–255].
+   * @param {number} b      Base blue  [0–255].
+   * @param {number} depth  Signed forward distance from the camera.
+   */
+  fillFogColor(r, g, b, depth) {
+    const f = this.getFogFactor(depth);
+    fill(lerp(r, SKY_R, f), lerp(g, SKY_G, f), lerp(b, SKY_B, f));
+  }
+
   /** Enables or disables WebGL backface culling when available. */
   _setBackfaceCulling(enabled) {
     const gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
@@ -777,18 +811,27 @@ class Terrain {
   applyShader() {
     shader(this.shader);
     const fogFar = this._getFogFarWorld();
-    // Sunrise: low-angle sun for long shadows and stronger terrain contrast.
-    const sunDir = [SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z];
-    const sunLen = Math.hypot(sunDir[0], sunDir[1], sunDir[2]) || 1.0;
+
+    // Fill pre-allocated uniform buffers in-place — avoids allocating a new JS
+    // array literal for every setUniform() call each frame.
+    this._uFogDistArr[0]  = fogFar - 800;   this._uFogDistArr[1]  = fogFar + 400;
+    this._uFogColorArr[0] = SKY_R / 255.0;  this._uFogColorArr[1] = SKY_G / 255.0;  this._uFogColorArr[2] = SKY_B / 255.0;
+    // SUN_DIR_NX/NY/NZ are the pre-normalized sun direction constants; no temp
+    // array or Math.hypot call needed.
+    this._uSunDirArr[0]   = SUN_DIR_NX;     this._uSunDirArr[1]   = SUN_DIR_NY;     this._uSunDirArr[2]   = SUN_DIR_NZ;
+    this._uSunColorArr[0] = SHADER_SUN_R;   this._uSunColorArr[1] = SHADER_SUN_G;   this._uSunColorArr[2] = SHADER_SUN_B;
+    this._uAmbLowArr[0]   = SHADER_AMB_L_R; this._uAmbLowArr[1]   = SHADER_AMB_L_G; this._uAmbLowArr[2]   = SHADER_AMB_L_B;
+    this._uAmbHighArr[0]  = SHADER_AMB_H_R; this._uAmbHighArr[1]  = SHADER_AMB_H_G; this._uAmbHighArr[2]  = SHADER_AMB_H_B;
+
     this.shader.setUniform('uTime', millis() / 1000.0);
-    this.shader.setUniform('uFogDist', [fogFar - 800, fogFar + 400]);
-    this.shader.setUniform('uFogColor', [SKY_R / 255.0, SKY_G / 255.0, SKY_B / 255.0]);
+    this.shader.setUniform('uFogDist',     this._uFogDistArr);
+    this.shader.setUniform('uFogColor',    this._uFogColorArr);
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
-    this.shader.setUniform('uSunDir', [sunDir[0] / sunLen, sunDir[1] / sunLen, sunDir[2] / sunLen]);
-    this.shader.setUniform('uSunColor', [SHADER_SUN_R, SHADER_SUN_G, SHADER_SUN_B]);
-    this.shader.setUniform('uAmbientLow', [SHADER_AMB_L_R, SHADER_AMB_L_G, SHADER_AMB_L_B]);
-    this.shader.setUniform('uAmbientHigh', [SHADER_AMB_H_R, SHADER_AMB_H_G, SHADER_AMB_H_B]);
+    this.shader.setUniform('uSunDir',      this._uSunDirArr);
+    this.shader.setUniform('uSunColor',    this._uSunColorArr);
+    this.shader.setUniform('uAmbientLow',  this._uAmbLowArr);
+    this.shader.setUniform('uAmbientHigh', this._uAmbHighArr);
 
     // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
     const pulseArr = this._pulseArr;
@@ -872,15 +915,21 @@ class Terrain {
 
       if (!t.verts) {
         const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
-        // Vertex data is stored in a simple array; TypedArray.set() handles the conversion during copy.
-        t.verts = [
-          xP, this.getAltitude(xP, zP) + yOffset, zP,
-          xP1, this.getAltitude(xP1, zP) + yOffset, zP,
-          xP, this.getAltitude(xP, zP1) + yOffset, zP1,
-          xP1, this.getAltitude(xP1, zP) + yOffset, zP,
-          xP1, this.getAltitude(xP1, zP1) + yOffset, zP1,
-          xP, this.getAltitude(xP, zP1) + yOffset, zP1
-        ];
+        // Compute the four grid corners once — avoids the 2 duplicate calls in the
+        // original plain-array version.  Stored as Float32Array so Float32Array.set()
+        // below can use a fast typed-array memcpy instead of element-wise coercion.
+        const y00 = this.getGridAltitude(t.tx,     t.tz)     + yOffset;
+        const y10 = this.getGridAltitude(t.tx + 1, t.tz)     + yOffset;
+        const y01 = this.getGridAltitude(t.tx,     t.tz + 1) + yOffset;
+        const y11 = this.getGridAltitude(t.tx + 1, t.tz + 1) + yOffset;
+        t.verts = new Float32Array([
+          xP,  y00, zP,
+          xP1, y10, zP,
+          xP,  y01, zP1,
+          xP1, y10, zP,   // shares corner (tx+1, tz) with vertex 1
+          xP1, y11, zP1,
+          xP,  y01, zP1   // shares corner (tx, tz+1) with vertex 2
+        ]);
       }
 
       overlayCount++;
@@ -1069,13 +1118,14 @@ class Terrain {
     let mX = LAUNCH_MAX - 100;
     for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
       let mDepth = (mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ;
-      let bCol = this.getFogColor([60, 60, 60], mDepth);
-      let mCol = this.getFogColor([255, 140, 20], mDepth);
+      // Use getFogFactor() + inline lerps — both colours share the same depth so
+      // the factor only needs to be computed once per missile decoration.
+      const fogF = this.getFogFactor(mDepth);
       push();
       translate(mX, LAUNCH_ALT, mZ);
-      fill(bCol[0], bCol[1], bCol[2]);
+      fill(lerp(60, SKY_R, fogF), lerp(60, SKY_G, fogF), lerp(60, SKY_B, fogF));
       push(); translate(0, -10, 0); box(30, 20, 30); pop();          // Stand
-      fill(mCol[0], mCol[1], mCol[2]);
+      fill(lerp(255, SKY_R, fogF), lerp(140, SKY_G, fogF), lerp(20, SKY_B, fogF));
       push(); translate(0, -70, 0); rotateX(Math.PI); cone(18, 100, 4, 1); pop();  // Rocket body
       pop();
     }
@@ -1115,9 +1165,10 @@ class Terrain {
    */
   _shadowHullXZ(points) {
     if (points.length <= 2) return points.slice();
-    const pts = points
-      .map(p => ({ x: p.x, z: p.z }))
-      .sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
+    // points is already {x, z} objects (the concat result is always a fresh temp array).
+    // Sort in-place — the redundant .map(p => ({x, z})) only existed to copy objects
+    // before sorting, but that copy is unnecessary since the input is already {x, z}.
+    const pts = points.sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
 
     const cross = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
     const lower = [];

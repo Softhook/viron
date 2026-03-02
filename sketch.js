@@ -118,21 +118,19 @@ function setSceneLighting() {
  * and never intersects gameplay geometry.
  */
 function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
-  const sunDir = createVector(SUN_DIR_X, SUN_DIR_Y, SUN_DIR_Z).normalize();
-  const toSun = p5.Vector.mult(sunDir, -1).normalize();      // camera -> sun
-  const sunRayDir = sunDir.copy().normalize();               // sun -> world
+  // Compute the horizontal direction toward the sun using the pre-normalized
+  // SUN_DIR constants — no p5.Vector allocations needed.
+  // toSun = -SUN_DIR_N (normalised direction from camera to sun disc)
+  const toSunX = -SUN_DIR_NX, toSunZ = -SUN_DIR_NZ;
+  const horizLen = Math.sqrt(toSunX * toSunX + toSunZ * toSunZ);
+  // Fallback to -Z if sun is directly overhead
+  const hX = horizLen > 1e-3 ? toSunX / horizLen : 0;
+  const hZ = horizLen > 1e-3 ? toSunZ / horizLen : -1;
 
-  // Keep the visual sun near the horizon instead of many kilometers overhead.
-  const horizToSun = createVector(toSun.x, 0, toSun.z);
-  if (horizToSun.magSq() < 1e-6) horizToSun.set(0, 0, -1);
-  horizToSun.normalize();
   const sunHorizonDist = viewFarWorld * 0.78;
   const sunHeight = cy - viewFarWorld * 0.09; // negative Y is upward in this world
-  const sunPos = createVector(
-    cx + horizToSun.x * sunHorizonDist,
-    sunHeight,
-    cz + horizToSun.z * sunHorizonDist
-  );
+  const sunPosX = cx + hX * sunHorizonDist;
+  const sunPosZ = cz + hZ * sunHorizonDist;
 
   push();
   noStroke();
@@ -142,7 +140,7 @@ function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
   blendMode(ADD);
   // Sun core + halo spheres.
   push();
-  translate(sunPos.x, sunPos.y, sunPos.z);
+  translate(sunPosX, sunHeight, sunPosZ);
   emissiveMaterial(255, 228, 180);
   const sunDetailLongitude = 40, sunDetailLatitude = 32;
   sphere(viewFarWorld * 0.021, sunDetailLongitude, sunDetailLatitude);
@@ -696,7 +694,7 @@ function draw() {
   // After the first full buffer pass, detect the display refresh rate from the
   // median frame time and snap to the nearest standard tier.
   if (!_p.budgetSet && _p.full) {
-    const sorted = Array.from(_p.buf).sort((a, b) => a - b);
+    const sorted = _p.buf.slice().sort();  // Float32Array.sort() is numeric — no comparator needed
     const medMs = (sorted[29] + sorted[30]) / 2; // p50 of 60 samples (even-sized set)
     // ms-per-frame for standard tiers: 144 / 120 / 90 / 75 / 60 / 30 Hz
     const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
@@ -715,7 +713,7 @@ function draw() {
     // Thresholds form a dead zone that prevents quality bouncing:
     //   reduce  if p90 > budget × 1.40  (sustained stutter — 40% over budget)
     //   restore if p90 < budget × 1.15  (clear headroom — within 15% of budget)
-    const sorted = Array.from(_p.buf).sort((a, b) => a - b);
+    const sorted = _p.buf.slice().sort();  // Float32Array.sort() is numeric — no comparator needed
     const p90ms = sorted[53];
 
     // Desktop quality controller: conservative downshift, very deliberate upshift.
@@ -938,8 +936,8 @@ function spreadInfection() {
     // Barrier blocking: immune tiles stop infection spread
     if (barrierTiles.has(nk)) continue;
 
-    infection.add(nk);
-    let o = infection.tiles.get(nk);
+    const o = infection.add(nk);
+    if (!o) continue;  // already present (e.g. added by both spread and sentinel in same step)
     let wx = o.tx * TILE, wz = o.tz * TILE;
     // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
     if (typeof gameSFX !== 'undefined' && soundCount < 3) {
@@ -981,7 +979,7 @@ function checkCollisions(p) {
     let eb = particleSystem.enemyBullets[i];
     if ((eb.x - s.x) ** 2 + (eb.y - s.y) ** 2 + (eb.z - s.z) ** 2 < 4900) {
       killPlayer(p);
-      particleSystem.enemyBullets.splice(i, 1);
+      swapRemove(particleSystem.enemyBullets, i);
       return;
     }
   }
@@ -1002,18 +1000,18 @@ function checkCollisions(p) {
           // Damage the Colossus — bullets don't pass through the body, consume bullet
           e.hp = (e.hp || 0) - 1;
           e.hitFlash = 12;
-          p.bullets.splice(i, 1);
+          swapRemove(p.bullets, i);
           p.score += 10;  // Small score per hit
           if (e.hp <= 0) {
             particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-            enemyManager.enemies.splice(j, 1);
+            swapRemove(enemyManager.enemies, j);
             p.score += 2000;  // Big bonus for killing the boss
             killed = true;
           }
         } else {
           particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-          enemyManager.enemies.splice(j, 1);
-          p.bullets.splice(i, 1);
+          swapRemove(enemyManager.enemies, j);
+          swapRemove(p.bullets, i);
           p.score += 100;
           killed = true;
         }
@@ -1030,18 +1028,18 @@ function checkCollisions(p) {
           if (e.type === 'colossus') {
             e.hp = (e.hp || 0) - 5;
             e.hitFlash = 20;
-            p.homingMissiles.splice(i, 1);
+            swapRemove(p.homingMissiles, i);
             p.score += 50;
             if (e.hp <= 0) {
               particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-              enemyManager.enemies.splice(j, 1);
+              swapRemove(enemyManager.enemies, j);
               p.score += 2000;
               killed = true;
             }
           } else {
             particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-            enemyManager.enemies.splice(j, 1);
-            p.homingMissiles.splice(i, 1);
+            swapRemove(enemyManager.enemies, j);
+            swapRemove(p.homingMissiles, i);
             p.score += 250;
             killed = true;
           }
@@ -1060,18 +1058,18 @@ function checkCollisions(p) {
             // Tank shells deal massive damage to Colossus
             e.hp = (e.hp || 0) - 15;
             e.hitFlash = 30;
-            p.tankShells.splice(i, 1);
+            swapRemove(p.tankShells, i);
             p.score += 100;
             if (e.hp <= 0) {
               particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-              enemyManager.enemies.splice(j, 1);
+              swapRemove(enemyManager.enemies, j);
               p.score += 2000;
               killed = true;
             }
           } else {
             particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-            enemyManager.enemies.splice(j, 1);
-            p.tankShells.splice(i, 1);
+            swapRemove(enemyManager.enemies, j);
+            swapRemove(p.tankShells, i);
             p.score += 300;
             killed = true;
           }
@@ -1114,7 +1112,7 @@ function checkCollisions(p) {
           p.score += 500;
           if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true, b.x, floatY, b.z);
         }
-        buildings.splice(i, 1);  // Consume the powerup
+        buildings.splice(i, 1);  // Consume the powerup — splice OK (no further iteration after this)
 
         // Spawn a burst of colour-coded particles at the collection point
         for (let j = 0; j < 20; j++) {
@@ -1150,7 +1148,7 @@ function checkCollisions(p) {
 
         clearInfectionRadius(tx, tz);
         p.score += 200;
-        p.bullets.splice(i, 1);
+        swapRemove(p.bullets, i);
         hit = true;
         break;
       }
@@ -1180,7 +1178,7 @@ function checkCollisions(p) {
         }
         terrain.addPulse(ts.x, ts.z, 2.0);
         particleSystem.addExplosion(ts.x, ts.y, ts.z);
-        p.tankShells.splice(j, 1);
+        swapRemove(p.tankShells, j);
         hitTree = true;
         break;
       }

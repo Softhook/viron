@@ -310,3 +310,128 @@ console.log(`  Altitude cache hit               ${(t4_cold / t4_hit).toFixed(0)}
 console.log(`  Frustum culling math             ${((t5_tile/1_000_000)*1e6).toFixed(0)} ns/tile — negligible frame cost`);
 console.log('');
 
+// ===========================================================================
+// 6. Refactor improvements: swap-and-pop vs splice, typed-array sort, loop vs filter/map
+//
+// These are the hot-path improvements made in the current refactor:
+//   a) Float32Array.slice().sort() vs Array.from().sort() for the perf monitor
+//   b) Swap-and-pop O(1) vs Array.splice O(n) for projectile removal in checkCollisions
+//   c) Plain loop vs filter().map() for building alive-player list each frame
+//   d) infection.add() return value vs tiles.get() (avoids redundant Map lookup)
+// ===========================================================================
+
+console.log('━━━ 6. Refactor hot-path improvements ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  Improvements made in this refactor to eliminate allocation waste and');
+console.log('  O(n) removals from per-frame hot paths.\n');
+
+// --- 6a. Float32Array.slice().sort() vs Array.from().sort() ---
+console.log('  (a) Performance monitor: Float32Array.sort() vs Array.from().sort()\n');
+console.log('      The 60-sample frame-time buffer is sorted every 2 s to derive p50/p90.');
+console.log('      Array.from() boxes each float into a heap-allocated Number object.\n');
+
+const perfBuf = new Float32Array(60);
+for (let i = 0; i < 60; i++) perfBuf[i] = 16 + (i % 7) * 0.3;
+
+const t6a_old = bench('OLD — Array.from(buf).sort((a,b) => a-b) ', () => {
+  const sorted = Array.from(perfBuf).sort((a, b) => a - b);
+  _sink = sorted[53]; // p90
+}, 500_000);
+
+const t6a_new = bench('NEW — buf.slice().sort()                  ', () => {
+  const sorted = perfBuf.slice().sort(); // Float32Array.sort() is numeric, no comparator
+  _sink = sorted[53]; // p90
+}, 500_000);
+
+console.log(`\n  Speedup: ${(t6a_old / t6a_new).toFixed(2)}×  (${((t6a_old - t6a_new) / 500_000 * 1e6).toFixed(0)} ns saved per sort)\n`);
+
+// --- 6b. swap-and-pop O(1) vs Array.splice O(n) ---
+console.log('  (b) Projectile removal: swap-and-pop O(1) vs Array.splice O(n)\n');
+console.log('      checkCollisions() removes bullets/missiles on hit.');
+console.log('      splice(i,1) shifts all elements after i — O(n). swap-and-pop is O(1).\n');
+
+function makeProjectileArray(n) {
+  return Array.from({ length: n }, (_, i) => ({ x: i * 10, y: -100, z: i * 10, life: 200 }));
+}
+
+// Backward iteration: remove the element at a random index from a fresh copy each iteration.
+const PROJ_N = 50;
+
+const t6b_old = bench('OLD — Array.splice(i, 1)   — 50-elem array', () => {
+  const arr = makeProjectileArray(PROJ_N);
+  const i = arr.length >> 1; // remove middle element
+  arr.splice(i, 1);
+  _sink = arr.length;
+}, 100_000);
+
+const t6b_new = bench('NEW — swap-and-pop O(1)    — 50-elem array', () => {
+  const arr = makeProjectileArray(PROJ_N);
+  const i = arr.length >> 1;
+  const last = arr.pop();
+  if (i < arr.length) arr[i] = last;
+  _sink = arr.length;
+}, 100_000);
+
+console.log(`\n  Speedup: ${(t6b_old / t6b_new).toFixed(2)}×  per hit removal\n`);
+
+// --- 6c. Loop vs filter/map for alive-player list ---
+console.log('  (c) EnemyManager.update(): loop vs filter().map() for alive-player list\n');
+console.log('      Called every frame. filter() + map() allocate two temporary arrays.\n');
+
+const fakePlayers = [
+  { dead: false, ship: { x: 420, y: -100, z: 420 } },
+  { dead: true,  ship: { x: 300, y: -80,  z: 300 } }
+];
+
+const t6c_old = bench('OLD — players.filter(p => !p.dead).map(p => p.ship)', () => {
+  const alive = fakePlayers.filter(p => !p.dead).map(p => p.ship);
+  _sink = alive.length;
+}, 1_000_000);
+
+const t6c_new = bench('NEW — plain loop into local array                   ', () => {
+  const alive = [];
+  for (let i = 0; i < fakePlayers.length; i++) {
+    if (!fakePlayers[i].dead) alive.push(fakePlayers[i].ship);
+  }
+  _sink = alive.length;
+}, 1_000_000);
+
+console.log(`\n  Speedup: ${(t6c_old / t6c_new).toFixed(2)}×  per frame  (eliminates two temp array allocations)\n`);
+
+// --- 6d. infection.add() return value vs tiles.get() ---
+console.log('  (d) spreadInfection(): infection.add() return value vs tiles.get()\n');
+console.log('      After infection.add(nk), calling tiles.get(nk) is a redundant Map lookup.\n');
+
+// Simulate TileManager-like add + optional get
+const fakeMap = new Map();
+const fakeList = [];
+for (let i = 0; i < 10; i++) {
+  const obj = { k: i, tx: i, tz: i, _idx: i };
+  fakeMap.set(i, obj);
+  fakeList.push(obj);
+}
+
+const t6d_old = bench('OLD — map.set(k, obj) then map.get(k) for coordinate', (i) => {
+  const k = i % 10;
+  fakeMap.set(k, fakeList[k]);
+  const o = fakeMap.get(k);  // redundant lookup
+  _sink = o.tx;
+}, 1_000_000);
+
+const t6d_new = bench('NEW — use add() return value directly               ', (i) => {
+  const k = i % 10;
+  const o = fakeList[k]; // add() returns the object; no second map.get() needed
+  fakeMap.set(k, o);
+  _sink = o.tx;
+}, 1_000_000);
+
+console.log(`\n  Speedup: ${(t6d_old / t6d_new).toFixed(2)}×  per new infection tile (avoids second Map lookup)\n`);
+
+console.log('━━━ Section 6 Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  Fix                                          Measured speedup');
+console.log('  ──────────────────────────────────────────── ─────────────────────────────');
+console.log(`  Float32Array.sort() vs Array.from().sort()   ${(t6a_old / t6a_new).toFixed(2)}× per perf-monitor eval`);
+console.log(`  Swap-and-pop vs splice (50-elem array)       ${(t6b_old / t6b_new).toFixed(2)}× per hit collision`);
+console.log(`  Loop vs filter().map() (alive-player list)   ${(t6c_old / t6c_new).toFixed(2)}× per frame`);
+console.log(`  add() return vs tiles.get() (infection)      ${(t6d_old / t6d_new).toFixed(2)}× per new infection tile`);
+console.log('');
+

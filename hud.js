@@ -549,9 +549,15 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
   let yawSin = sin(s.yaw), yawCos = cos(s.yaw);
   const toRadarX = (x, z) => x * yawCos - z * yawSin;
   const toRadarZ = (x, z) => x * yawSin + z * yawCos;
+  const clampToRadarEdge = (x, z, half) => {
+    const ax = abs(x), az = abs(z);
+    if (ax <= half && az <= half) return { x, z, off: false };
+    const scale = max(ax / half, az / half);
+    return { x: x / scale, z: z / scale, off: true };
+  };
 
-  // Viron tiles (small red squares)
-  fill(255, 60, 60, 80); noStroke();
+  // Viron tiles (high-contrast bright red markers)
+  noStroke();
   let maxRadarTiles = isMobile ? 40 : 120;
   let cache = p._radarInfCache;
   let infSample = cache && cache.frame >= frameCount - 6 && cache.srcLen === infKeys.length
@@ -562,11 +568,11 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
     infSample = [];
     const len = infKeys.length;
     if (len > 0) {
-      // Sample at most a few hundred tiles regardless of world infection size.
+      // Keep radar infection markers stable: deterministic sampling with no
+      // frame-based offset, so the marker pattern does not animate.
       const target = maxRadarTiles * 3;
       const stride = Math.max(1, Math.floor(len / target));
-      const offset = (frameCount >> 1) % stride;
-      for (let i = offset; i < len && infSample.length < target; i += stride) {
+      for (let i = 0; i < len && infSample.length < target; i += stride) {
         infSample.push(infKeys[i]);
       }
     }
@@ -577,11 +583,26 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
   for (let t of infSample) {
     let rx = (t.tx * TILE - s.x) * RADAR_SCALE;
     let rz = (t.tz * TILE - s.z) * RADAR_SCALE;
-    if (rx * rx + rz * rz < 4200) {
-      rect(toRadarX(rx, rz), toRadarZ(rx, rz), 2, 2);
-      tilesDrawn++;
-      if (tilesDrawn >= maxRadarTiles) break;
+    let rrx = toRadarX(rx, rz);
+    let rrz = toRadarZ(rx, rz);
+    const clamped = clampToRadarEdge(rrx, rrz, RADAR_HALF);
+    if (!clamped.off) {
+      fill(255, 50, 50, 235);
+      rect(clamped.x, clamped.z, 3, 3);
+    } else {
+      // Off-radar infection: clamp to edge and draw a small directional wedge.
+      const a = atan2(rrz, rrx);
+      const ax = cos(a), az = sin(a);
+      const px = -az, pz = ax;
+      fill(255, 80, 80, 245);
+      triangle(
+        clamped.x + 3 * ax, clamped.z + 3 * az,
+        clamped.x - 2 * ax - 2 * px, clamped.z - 2 * az - 2 * pz,
+        clamped.x - 2 * ax + 2 * px, clamped.z - 2 * az + 2 * pz
+      );
     }
+    tilesDrawn++;
+    if (tilesDrawn >= maxRadarTiles) break;
   }
 
   // Launchpad centre marker (yellow square if in radar range)
@@ -592,26 +613,25 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
   }
 
   // Enemy markers (square when in range, directional triangle when off-screen)
-  fill(255, 0, 0); noStroke();
+  fill(170, 255, 50); noStroke();
   for (let e of enemyManager.enemies) {
     let rx = (e.x - s.x) * RADAR_SCALE;
     let rz = (e.z - s.z) * RADAR_SCALE;
     let rrx = toRadarX(rx, rz);
     let rrz = toRadarZ(rx, rz);
-    if (abs(rrx) < 68 && abs(rrz) < 68) {
-      rect(rrx, rrz, 3, 3);
+    const clamped = clampToRadarEdge(rrx, rrz, RADAR_HALF);
+    if (!clamped.off) {
+      rect(clamped.x, clamped.z, 3, 3);
     } else {
       // Off-screen: draw a directional arrow clamped to the radar boundary.
-      let cx = constrain(rrx, -RADAR_HALF, RADAR_HALF);
-      let cz = constrain(rrz, -RADAR_HALF, RADAR_HALF);
       let a = atan2(rrz, rrx);
       let ax = cos(a), az = sin(a);
       let px = -az, pz = ax;
-      fill(255, 0, 0, 180);
+      fill(200, 255, 90, 210);
       triangle(
-        cx + 3 * ax, cz + 3 * az,
-        cx - 2 * ax - 2 * px, cz - 2 * az - 2 * pz,
-        cx - 2 * ax + 2 * px, cz - 2 * az + 2 * pz
+        clamped.x + 3 * ax, clamped.z + 3 * az,
+        clamped.x - 2 * ax - 2 * px, clamped.z - 2 * az - 2 * pz,
+        clamped.x - 2 * ax + 2 * px, clamped.z - 2 * az + 2 * pz
       );
     }
   }

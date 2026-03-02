@@ -1034,11 +1034,9 @@ class Terrain {
     const minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
     const minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
 
-    // Build Viron tile overlays.
-    // Uses the same chunk-bucket path as barriers: iterates only tiles whose
-    // chunk overlaps the current view rectangle, so cost is O(visible tiles)
-    // regardless of how many infected tiles exist elsewhere in the world.
-    {
+    // Build Viron tile overlays for the full visible tile range.
+    // All infection tiles that pass normal view/frustum tests remain drawable.
+    if (infection.count > 0) {
       const _iBuckets = infection.buckets;
       const _infSource = _iBuckets
         ? (function* (b, x0, x1, z0, z1) {

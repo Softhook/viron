@@ -1546,9 +1546,13 @@ class Terrain {
     try {
       geom = _safeBuildGeometry(() => {
         fill(inf ? 251 : 250, inf ? 50 : 180, inf ? 50 : 240);
+        push();
         cone(b.w, b.h / 2, 4, 1);
+        pop();
+        push();
         rotateX(PI);
         cone(b.w, b.h / 2, 4, 1);
+        pop();
       });
     } catch (err) {
       console.error("[Viron] Powerup geometry build failed:", err);

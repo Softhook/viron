@@ -640,6 +640,7 @@ class Terrain {
     this._isBuildingShadow = true;
     let geom = null;
     try {
+      let tileCount = 0;
       geom = buildGeometry(() => {
         let startX = cx * CHUNK_SIZE;
         let startZ = cz * CHUNK_SIZE;
@@ -660,6 +661,8 @@ class Terrain {
             let y11 = this.getGridAltitude(tx + 1, tz + 1);
             let minY = Math.min(y00, y10, y01, y11);
             if (aboveSea(minY)) continue;
+
+            tileCount++;
 
             // Tag the material (R), organic noise (G), random jitter (B) and parity (A)
             let avgY = (y00 + y10 + y01 + y11) * 0.25;
@@ -692,13 +695,17 @@ class Terrain {
         }
         endShape();
       });
+      // Chunks that are entirely above sea level produce no vertices.
+      // Discard the empty geometry object so model() is never called on it.
+      if (tileCount === 0) geom = null;
     } catch (err) {
       console.error("[Viron] Chunk geometry build failed:", err);
     } finally {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this.chunkCache.set(key, geom);
+    // Always cache (including null) so above-sea chunks are not rebuilt every frame.
+    this.chunkCache.set(key, geom);
     return geom;
   }
 
@@ -954,9 +961,7 @@ class Terrain {
         if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
 
         let geom = this.getChunkGeometry(cx, cz);
-        if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) {
-          model(geom);
-        }
+        if (geom) model(geom);
       }
     }
 
@@ -1291,6 +1296,7 @@ class Terrain {
         t._shadowGeom = buildGeometry(() => {
           this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
         });
+        if (t._shadowGeom && !t._shadowGeom.vertices.length) t._shadowGeom = null;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for tree:", err);
         t._shadowGeom = null;
@@ -1308,9 +1314,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (t._shadowGeom && t._shadowGeom instanceof p5.Geometry && t._shadowGeom.vertices && t._shadowGeom.vertices.length > 0) {
-      model(t._shadowGeom);
-    }
+    if (t._shadowGeom) model(t._shadowGeom);
     pop();
 
     _endShadowStencil();
@@ -1392,6 +1396,7 @@ class Terrain {
         b._shadowGeom = buildGeometry(() => {
           this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
         });
+        if (b._shadowGeom && !b._shadowGeom.vertices.length) b._shadowGeom = null;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for building:", err);
         b._shadowGeom = null;
@@ -1409,9 +1414,7 @@ class Terrain {
     _beginShadowStencil();
 
     push();
-    if (b._shadowGeom && b._shadowGeom instanceof p5.Geometry && b._shadowGeom.vertices && b._shadowGeom.vertices.length > 0) {
-      model(b._shadowGeom);
-    }
+    if (b._shadowGeom) model(b._shadowGeom);
     pop();
 
     _endShadowStencil();
@@ -1441,7 +1444,7 @@ class Terrain {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this._geoms.set(key, geom);
+    this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1486,7 +1489,7 @@ class Terrain {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this._geoms.set(key, geom);
+    this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1527,7 +1530,7 @@ class Terrain {
           let inf = infection.has(t.k);
           let geom = this._getTreeGeom(t, inf);
 
-          if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) {
+          if (geom) {
             push();
             translate(t.x, y, t.z);
             model(geom);
@@ -1626,7 +1629,7 @@ class Terrain {
       this._isBuildingShadow = false;
     }
 
-    if (geom) this._geoms.set(key, geom);
+    this._geoms.set(key, geom);
     return geom;
   }
 
@@ -1660,11 +1663,11 @@ class Terrain {
         rotateY(frameCount * 0.01 + b.x);
         rotateZ(frameCount * 0.015 + b.z);
         let geom = this._getPowerupGeom(b, inf);
-        if (geom && geom instanceof p5.Geometry && geom.vertices && geom.vertices.length > 0) model(geom);
+        if (geom) model(geom);
         pop();
       } else {
         let bGeom = this._getBuildingGeom(b, inf);
-        if (bGeom && bGeom instanceof p5.Geometry && bGeom.vertices && bGeom.vertices.length > 0) model(bGeom);
+        if (bGeom) model(bGeom);
         // Rotating crown for type 4
         if (b.type === 4) {
           const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;

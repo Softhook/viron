@@ -440,13 +440,13 @@ function drawPlayerHUD(p, pi, hw, h) {
   // Reused for both stats and radar loop below.
   let infKeys = infection.keys();
 
-  textSize(20); fill(255, 255, 255); text('SCORE ' + p.score, lx, ly + 8);
-  textSize(16); fill(0, 255, 0); text('ALT ' + max(0, floor(SEA - s.y)), lx, ly + 32);
-  textSize(14); fill(255, 60, 60); text('VIRON ' + infection.count, lx, ly + 54);
-  fill(255, 100, 100); text('ENEMIES ' + enemyManager.enemies.length, lx, ly + 72);
-  fill(0, 200, 255); text('MISSILES ' + p.missilesRemaining, lx, ly + 90);
-  fill(220, 220, 220);
-  text('SHOT ' + (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE'), lx, ly + 108);
+  let vx = lx + 80; // value column X offset
+  textSize(20); fill(255, 255, 255); text('SCORE', lx, ly + 8); text(p.score, vx, ly + 8);
+  textSize(16); fill(0, 255, 0); text('ALT', lx, ly + 32); text(max(0, floor(SEA - s.y)), vx, ly + 32);
+  textSize(14); fill(255, 60, 60); text('VIRON', lx, ly + 54); text(infection.count, vx, ly + 54);
+  fill(255, 100, 100); text('ENEMIES', lx, ly + 72); text(enemyManager.enemies.length, vx, ly + 72);
+  fill(0, 200, 255); text('MISSILES', lx, ly + 90); text(p.missilesRemaining, vx, ly + 90);
+  fill(220, 220, 220); text('SHOT', lx, ly + 108); text((NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE'), vx, ly + 108);
 
   // --- Crosshair (first-person reticle — only shown in first-person mode) ---
   if (typeof firstPersonView !== 'undefined' && firstPersonView) {
@@ -558,51 +558,48 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
 
   // Viron tiles (high-contrast bright red markers)
   noStroke();
-  let maxRadarTiles = isMobile ? 40 : 120;
-  let cache = p._radarInfCache;
-  let infSample = cache && cache.frame >= frameCount - 6 && cache.srcLen === infKeys.length
-    ? cache.sample
-    : null;
 
-  if (!infSample) {
-    infSample = [];
-    const len = infKeys.length;
-    if (len > 0) {
-      // Keep radar infection markers stable: deterministic sampling with no
-      // frame-based offset, so the marker pattern does not animate.
-      const target = maxRadarTiles * 3;
-      const stride = Math.max(1, Math.floor(len / target));
-      for (let i = 0; i < len && infSample.length < target; i += stride) {
-        infSample.push(infKeys[i]);
-      }
-    }
-    p._radarInfCache = { frame: frameCount, srcLen: infKeys.length, sample: infSample };
-  }
-
-  let tilesDrawn = 0;
-  for (let t of infSample) {
+  let inRadar = [];
+  let offRadar = [];
+  for (let t of infKeys) {
     let rx = (t.tx * TILE - s.x) * RADAR_SCALE;
     let rz = (t.tz * TILE - s.z) * RADAR_SCALE;
     let rrx = toRadarX(rx, rz);
     let rrz = toRadarZ(rx, rz);
     const clamped = clampToRadarEdge(rrx, rrz, RADAR_HALF);
     if (!clamped.off) {
-      fill(255, 50, 50, 235);
-      rect(clamped.x, clamped.z, 3, 3);
+      inRadar.push(clamped.x, clamped.z);
     } else {
-      // Off-radar infection: clamp to edge and draw a small directional wedge.
       const a = atan2(rrz, rrx);
       const ax = cos(a), az = sin(a);
       const px = -az, pz = ax;
-      fill(255, 80, 80, 245);
-      triangle(
+      offRadar.push(
         clamped.x + 3 * ax, clamped.z + 3 * az,
         clamped.x - 2 * ax - 2 * px, clamped.z - 2 * az - 2 * pz,
         clamped.x - 2 * ax + 2 * px, clamped.z - 2 * az + 2 * pz
       );
     }
-    tilesDrawn++;
-    if (tilesDrawn >= maxRadarTiles) break;
+  }
+
+  if (inRadar.length > 0) {
+    fill(255, 50, 50, 235);
+    beginShape(QUADS);
+    for (let i = 0; i < inRadar.length; i += 2) {
+      let cx = inRadar[i], cz = inRadar[i + 1];
+      vertex(cx - 1.5, cz - 1.5); vertex(cx + 1.5, cz - 1.5);
+      vertex(cx + 1.5, cz + 1.5); vertex(cx - 1.5, cz + 1.5);
+    }
+    endShape();
+  }
+  if (offRadar.length > 0) {
+    fill(255, 80, 80, 245);
+    beginShape(TRIANGLES);
+    for (let i = 0; i < offRadar.length; i += 6) {
+      vertex(offRadar[i], offRadar[i + 1]);
+      vertex(offRadar[i + 2], offRadar[i + 3]);
+      vertex(offRadar[i + 4], offRadar[i + 5]);
+    }
+    endShape();
   }
 
   // Launchpad centre marker (yellow square if in radar range)
@@ -612,8 +609,9 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
     rect(toRadarX(lx, lz), toRadarZ(lx, lz), 4, 4);
   }
 
-  // Enemy markers (square when in range, directional triangle when off-screen)
-  fill(170, 255, 50); noStroke();
+  // Enemy markers
+  let inEnemy = [];
+  let offEnemy = [];
   for (let e of enemyManager.enemies) {
     let rx = (e.x - s.x) * RADAR_SCALE;
     let rz = (e.z - s.z) * RADAR_SCALE;
@@ -621,19 +619,38 @@ function drawRadarForPlayer(p, hw, h, infKeys) {
     let rrz = toRadarZ(rx, rz);
     const clamped = clampToRadarEdge(rrx, rrz, RADAR_HALF);
     if (!clamped.off) {
-      rect(clamped.x, clamped.z, 3, 3);
+      inEnemy.push(clamped.x, clamped.z);
     } else {
-      // Off-screen: draw a directional arrow clamped to the radar boundary.
       let a = atan2(rrz, rrx);
       let ax = cos(a), az = sin(a);
       let px = -az, pz = ax;
-      fill(200, 255, 90, 210);
-      triangle(
+      offEnemy.push(
         clamped.x + 3 * ax, clamped.z + 3 * az,
         clamped.x - 2 * ax - 2 * px, clamped.z - 2 * az - 2 * pz,
         clamped.x - 2 * ax + 2 * px, clamped.z - 2 * az + 2 * pz
       );
     }
+  }
+
+  if (inEnemy.length > 0) {
+    fill(170, 255, 50); noStroke();
+    beginShape(QUADS);
+    for (let i = 0; i < inEnemy.length; i += 2) {
+      let cx = inEnemy[i], cz = inEnemy[i + 1];
+      vertex(cx - 1.5, cz - 1.5); vertex(cx + 1.5, cz - 1.5);
+      vertex(cx + 1.5, cz + 1.5); vertex(cx - 1.5, cz + 1.5);
+    }
+    endShape();
+  }
+  if (offEnemy.length > 0) {
+    fill(200, 255, 90, 210); noStroke();
+    beginShape(TRIANGLES);
+    for (let i = 0; i < offEnemy.length; i += 6) {
+      vertex(offEnemy[i], offEnemy[i + 1]);
+      vertex(offEnemy[i + 2], offEnemy[i + 3]);
+      vertex(offEnemy[i + 4], offEnemy[i + 5]);
+    }
+    endShape();
   }
 
   // Co-op partner ship (two-player only)

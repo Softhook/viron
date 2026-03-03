@@ -294,6 +294,10 @@ function _endShadowStencil() {
  * stale geometryBuilder, and re-throws the original error so callers can
  * decide whether to retry or give up.
  *
+ * If endGeometry() itself throws (e.g. finish()/pop() fails for any reason),
+ * we fall back to directly resetting _renderer.geometryBuilder so the state
+ * is always clean regardless of what went wrong.
+ *
  * Performance: zero per-frame overhead. Every call site is behind a cache
  * check (chunkCache, _geoms, _shadowGeom), so _safeBuildGeometry only runs
  * once per unique geometry, after which the cache is returned directly.
@@ -302,8 +306,22 @@ function _safeBuildGeometry(callback) {
   try {
     return buildGeometry(callback);
   } catch (err) {
-    // Reset p5's geometryBuilder so future calls are not poisoned.
-    try { endGeometry(); } catch (_ignored) { /* already cleared or never set */ }
+    // Primary recovery: call endGeometry() to flush the stale geometryBuilder.
+    let cleared = false;
+    try { endGeometry(); cleared = true; } catch (_ignored) { /* already cleared or never set */ }
+
+    // Belt-and-suspenders: if endGeometry() threw before it could set
+    // geometryBuilder = undefined (e.g. finish()/pop() failed), force-clear
+    // it directly so future buildGeometry() calls are never poisoned.
+    if (!cleared) {
+      try {
+        if (typeof _renderer !== 'undefined' && _renderer && _renderer.geometryBuilder) {
+          _renderer.geometryBuilder = undefined;
+          // Balance the push() that GeometryBuilder constructor called.
+          try { pop(); } catch (_e) {}
+        }
+      } catch (_ignored2) {}
+    }
     throw err;
   }
 }
@@ -1271,6 +1289,19 @@ class Terrain {
     const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
     const maxDepth = (typeof isMobile !== 'undefined' && isMobile) ? 4 : 5;
 
+    // Hard cap on emitted triangles to prevent push.apply overflowing V8's
+    // call-stack argument limit (~65 536).  p5's addGeometry uses
+    //   push.apply(dest, _toConsumableArray(array))
+    // which passes every element as a C-stack argument.  The largest array is
+    // vertexColors at 4 values per vertex, so the safe ceiling is:
+    //   MAX_SHADOW_TRIS * 3 vertices * 4 color-values < 65 536
+    //   → MAX_SHADOW_TRIS < 5 461
+    // Using 5 000 gives 15 000 vertices / 60 000 vertexColors — comfortably safe.
+    // triCount is a closure variable intentionally shared across all recursive
+    // emitTri calls — this is the standard single-threaded JS accumulator pattern.
+    const MAX_SHADOW_TRIS = 5000;
+    let triCount = 0;
+
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
 
     noStroke();
@@ -1288,6 +1319,12 @@ class Terrain {
 
     // Zero-allocation inner subdivision loop
     const emitTri = (x1, z1, x2, z2, x3, z3, depth) => {
+      if (triCount >= MAX_SHADOW_TRIS) {
+        // Cap reached: shadow is partially drawn but safe. This only occurs for
+        // extreme configurations (very tall building + very low sun angle) and
+        // is far preferable to a RangeError crashing all geometry caching.
+        return;
+      }
       let dx12 = x1 - x2, dz12 = z1 - z2;
       let dx23 = x2 - x3, dz23 = z2 - z3;
       let dx31 = x3 - x1, dz31 = z3 - z1;
@@ -1305,6 +1342,7 @@ class Terrain {
         emitTri(x3, z3, m31x, m31z, m23x, m23z, depth + 1);
         emitTri(m12x, m12z, m23x, m23z, m31x, m31z, depth + 1);
       } else {
+        triCount++;
         vertex(x1, this.getAltitude(x1, z1) + liftY, z1);
         vertex(x2, this.getAltitude(x2, z2) + liftY, z2);
         vertex(x3, this.getAltitude(x3, z3) + liftY, z3);

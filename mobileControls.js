@@ -73,11 +73,11 @@ class MobileController {
             let dy = this.joyPos.y - this.joyCenter.y;
             let distSq = dx * dx + dy * dy;
 
-            if (distSq > 100) {
+            if (distSq > 25) {
                 let d = Math.sqrt(distSq);
-                let speedFactor = Math.min(1, (d - 10) / 60);
+                let speedFactor = Math.min(1, (d - 5) / 50);
                 inputs.yawDelta = -(dx / d) * yawRate * speedFactor;
-                inputs.pitchDelta = -(dy / d) * pitchRate * speedFactor * 0.5;
+                inputs.pitchDelta = -(dy / d) * pitchRate * speedFactor * 1.5;
                 if (distSq > 4000) isSwipingHard = true;
             }
         }

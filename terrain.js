@@ -1168,7 +1168,7 @@ class Terrain {
       );
     }
 
-    // Static sea plane — a single flat quad at SEA + 3 covering the visible area.
+    // Static sea plane — a single flat quad at SEA covering the visible area.
     // No per-vertex sine calculations; all four corners share the same Y so there
     // is no per-frame geometry work beyond issuing the two-triangle draw call.
     // The sea is drawn while the terrain shader is still active so it receives the
@@ -1179,17 +1179,29 @@ class Terrain {
     // sets the deep-blue base colour directly.  The surface normal uses (0, -1, 0) —
     // the correct upward-facing orientation in WEBGL's Y-inverted coordinate system —
     // so the sea receives proper sun and sky-dome lighting instead of only dark ambient.
+    //
+    // sy = SEA (not SEA+3): placing the plane exactly at sea surface level ensures that
+    // all submerged terrain vertices (Y > SEA) are behind the sea in the depth buffer.
+    // The previous SEA+3 offset allowed vertices at Y=200–202 to win depth tests and
+    // show through the sea, causing the flickering reported on mobile.  Polygon offset
+    // (-1,-4) gives the sea a tiny depth advantage at the exact shore boundary where
+    // terrain triangles intersect the sea surface, preventing residual Z-fighting
+    // without affecting any above-water geometry (which is always closer to the camera).
     let seaSize = VIEW_FAR * TILE * 1.5;
     let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
     let sx0 = seaCx - seaSize, sx1 = seaCx + seaSize;
     let sz0 = seaCz - seaSize, sz1 = seaCz + seaSize;
-    let sy = SEA + 3;
+    let sy = SEA;
+    const gl = drawingContext;
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(-1.0, -4.0);
     fill(30, 45, 150);
     beginShape(TRIANGLES);
     normal(0, -1, 0);
     vertex(sx0, sy, sz0); vertex(sx1, sy, sz0); vertex(sx0, sy, sz1);
     vertex(sx1, sy, sz0); vertex(sx1, sy, sz1); vertex(sx0, sy, sz1);
     endShape();
+    gl.disable(gl.POLYGON_OFFSET_FILL);
 
     // Exit the terrain GLSL shader and restore p5 lighting for subsequent
     // non-terrain draw calls (trees, buildings, enemies, ships).

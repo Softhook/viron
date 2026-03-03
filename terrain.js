@@ -474,24 +474,30 @@ class Terrain {
    * @param {{x,y,z,yaw,pitch}} s  Ship state object.
    * @param {boolean} [firstPerson=false]  True when in cockpit (first-person) view;
    *   the camera sits at the ship rather than 550 units behind it.
-   * @returns {{x,z,fwdX,fwdZ}}
+   * @returns {{x,z,fwdX,fwdZ,pitch}}
    */
   getCameraParams(s, firstPerson = false) {
     let fwdX = -sin(s.yaw), fwdZ = -cos(s.yaw);
     return firstPerson
-      ? { x: s.x, z: s.z, fwdX, fwdZ }          // Cockpit: eye at ship position
-      : { x: s.x - fwdX * 550, z: s.z - fwdZ * 550, fwdX, fwdZ };  // Chase cam: 550 units behind
+      ? { x: s.x, z: s.z, fwdX, fwdZ, pitch: s.pitch }          // Cockpit: eye at ship position
+      : { x: s.x - fwdX * 550, z: s.z - fwdZ * 550, fwdX, fwdZ, pitch: s.pitch };  // Chase cam: 550 units behind
   }
 
   /**
    * Broad frustum test — returns false for world objects that are clearly
    * behind the camera or beyond the horizontal field of view.
-   * @param {{x,z,fwdX,fwdZ,fovSlope}} cam  Camera descriptor from getCameraParams() with
-   *                                          fovSlope pre-computed by drawLandscape().
+   *
+   * When `cam.skipFrustum` is true (cockpit view at steep downward pitch) the
+   * yaw-based forward vector no longer describes what is visible on the ground
+   * plane, so every object within the caller's distance budget is accepted.
+   *
+   * @param {{x,z,fwdX,fwdZ,fovSlope,skipFrustum}} cam  Camera descriptor from
+   *   getCameraParams() with fovSlope and skipFrustum pre-computed by drawLandscape().
    * @param {number} tx  World-space X to test.
    * @param {number} tz  World-space Z to test.
    */
   inFrustum(cam, tx, tz) {
+    if (cam.skipFrustum) return true;
     let dx = tx - cam.x, dz = tz - cam.z;
     let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
     if (fwdDist < -TILE * 5) return false;
@@ -1052,6 +1058,15 @@ class Terrain {
     // The +0.3 padding ensures objects at oblique angles are never incorrectly culled.
     // viewAspect must match the value passed to perspective() so culling is accurate.
     cam.fovSlope = 0.57735 * viewAspect + 0.3;  // Attached to cam so inFrustum() reuses it
+
+    // In cockpit (first-person) view the camera pitch can exceed 45° downward.
+    // At that angle the yaw-based horizontal forward vector no longer correctly
+    // describes what is visible on the ground plane, so the directional frustum
+    // tests would incorrectly cull chunks/trees/buildings that are visible below
+    // the camera.  Setting skipFrustum bypasses those checks and relies solely on
+    // the VIEW_FAR distance budget to limit what is drawn.
+    cam.skipFrustum = firstPerson && Math.abs(cam.pitch) > Math.PI / 4;
+
     this._cam = cam;
 
     let fovSlope = cam.fovSlope;
@@ -1075,14 +1090,18 @@ class Terrain {
         // Full frustum cull at chunk level — skip chunks behind OR to the sides.
         // Uses the chunk centre with a one-chunk lateral margin so no
         // partially-visible edge chunk is accidentally dropped.
-        let chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
-        let chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
-        let dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
-        let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
-        if (fwdDist < -chunkHalf) continue;   // More than one chunk behind
-        let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
-        let halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
-        if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
+        // Skipped when cam.skipFrustum is set (cockpit view at steep pitch) because
+        // the yaw-based forward vector does not reflect the true visible area then.
+        if (!cam.skipFrustum) {
+          let chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
+          let chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
+          let dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
+          let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
+          if (fwdDist < -chunkHalf) continue;   // More than one chunk behind
+          let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
+          let halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
+          if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
+        }
 
         let geom = this.getChunkGeometry(cx, cz);
         if (geom) model(geom);

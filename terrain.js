@@ -323,9 +323,9 @@ function _safeBuildGeometry(callback) {
         if (typeof _renderer !== 'undefined' && _renderer && _renderer.geometryBuilder) {
           _renderer.geometryBuilder = undefined;
           // Balance the push() that GeometryBuilder constructor called.
-          try { pop(); } catch (_e) {}
+          try { pop(); } catch (_e) { }
         }
-      } catch (_ignored2) {}
+      } catch (_ignored2) { }
     }
     throw err;
   }
@@ -363,12 +363,12 @@ class Terrain {
 
     // Pre-allocated scalar-uniform buffers — each would otherwise allocate a new JS
     // array literal every frame inside applyShader().
-    this._uFogDistArr   = new Float32Array(2);
-    this._uFogColorArr  = new Float32Array(3);
-    this._uSunDirArr    = new Float32Array(3);
-    this._uSunColorArr  = new Float32Array(3);
-    this._uAmbLowArr    = new Float32Array(3);
-    this._uAmbHighArr   = new Float32Array(3);
+    this._uFogDistArr = new Float32Array(2);
+    this._uFogColorArr = new Float32Array(3);
+    this._uSunDirArr = new Float32Array(3);
+    this._uSunColorArr = new Float32Array(3);
+    this._uAmbLowArr = new Float32Array(3);
+    this._uAmbHighArr = new Float32Array(3);
 
     // Pre-allocated overlay buffers for batching viron/barrier quads.
     // Fixed size based on MAX_INF (2000) with a 2x safety margin.
@@ -874,23 +874,23 @@ class Terrain {
 
     // Fill pre-allocated uniform buffers in-place — avoids allocating a new JS
     // array literal for every setUniform() call each frame.
-    this._uFogDistArr[0]  = fogFar - 800;   this._uFogDistArr[1]  = fogFar + 400;
-    this._uFogColorArr[0] = SKY_R / 255.0;  this._uFogColorArr[1] = SKY_G / 255.0;  this._uFogColorArr[2] = SKY_B / 255.0;
+    this._uFogDistArr[0] = fogFar - 800; this._uFogDistArr[1] = fogFar + 400;
+    this._uFogColorArr[0] = SKY_R / 255.0; this._uFogColorArr[1] = SKY_G / 255.0; this._uFogColorArr[2] = SKY_B / 255.0;
     // SUN_DIR_NX/NY/NZ are the pre-normalized sun direction constants; no temp
     // array or Math.hypot call needed.
-    this._uSunDirArr[0]   = SUN_DIR_NX;     this._uSunDirArr[1]   = SUN_DIR_NY;     this._uSunDirArr[2]   = SUN_DIR_NZ;
-    this._uSunColorArr[0] = SHADER_SUN_R;   this._uSunColorArr[1] = SHADER_SUN_G;   this._uSunColorArr[2] = SHADER_SUN_B;
-    this._uAmbLowArr[0]   = SHADER_AMB_L_R; this._uAmbLowArr[1]   = SHADER_AMB_L_G; this._uAmbLowArr[2]   = SHADER_AMB_L_B;
-    this._uAmbHighArr[0]  = SHADER_AMB_H_R; this._uAmbHighArr[1]  = SHADER_AMB_H_G; this._uAmbHighArr[2]  = SHADER_AMB_H_B;
+    this._uSunDirArr[0] = SUN_DIR_NX; this._uSunDirArr[1] = SUN_DIR_NY; this._uSunDirArr[2] = SUN_DIR_NZ;
+    this._uSunColorArr[0] = SHADER_SUN_R; this._uSunColorArr[1] = SHADER_SUN_G; this._uSunColorArr[2] = SHADER_SUN_B;
+    this._uAmbLowArr[0] = SHADER_AMB_L_R; this._uAmbLowArr[1] = SHADER_AMB_L_G; this._uAmbLowArr[2] = SHADER_AMB_L_B;
+    this._uAmbHighArr[0] = SHADER_AMB_H_R; this._uAmbHighArr[1] = SHADER_AMB_H_G; this._uAmbHighArr[2] = SHADER_AMB_H_B;
 
     this.shader.setUniform('uTime', millis() / 1000.0);
-    this.shader.setUniform('uFogDist',     this._uFogDistArr);
-    this.shader.setUniform('uFogColor',    this._uFogColorArr);
+    this.shader.setUniform('uFogDist', this._uFogDistArr);
+    this.shader.setUniform('uFogColor', this._uFogColorArr);
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
-    this.shader.setUniform('uSunDir',      this._uSunDirArr);
-    this.shader.setUniform('uSunColor',    this._uSunColorArr);
-    this.shader.setUniform('uAmbientLow',  this._uAmbLowArr);
+    this.shader.setUniform('uSunDir', this._uSunDirArr);
+    this.shader.setUniform('uSunColor', this._uSunColorArr);
+    this.shader.setUniform('uAmbientLow', this._uAmbLowArr);
     this.shader.setUniform('uAmbientHigh', this._uAmbHighArr);
 
     // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
@@ -980,17 +980,17 @@ class Terrain {
         // Compute the four grid corners once — avoids the 2 duplicate calls in the
         // original plain-array version.  Stored as Float32Array so Float32Array.set()
         // below can use a fast typed-array memcpy instead of element-wise coercion.
-        const y00 = this.getGridAltitude(t.tx,     t.tz)     + yOffset;
-        const y10 = this.getGridAltitude(t.tx + 1, t.tz)     + yOffset;
-        const y01 = this.getGridAltitude(t.tx,     t.tz + 1) + yOffset;
+        const y00 = this.getGridAltitude(t.tx, t.tz) + yOffset;
+        const y10 = this.getGridAltitude(t.tx + 1, t.tz) + yOffset;
+        const y01 = this.getGridAltitude(t.tx, t.tz + 1) + yOffset;
         const y11 = this.getGridAltitude(t.tx + 1, t.tz + 1) + yOffset;
         t.verts = new Float32Array([
-          xP,  y00, zP,
+          xP, y00, zP,
           xP1, y10, zP,
-          xP,  y01, zP1,
+          xP, y01, zP1,
           xP1, y10, zP,   // shares corner (tx+1, tz) with vertex 1
           xP1, y11, zP1,
-          xP,  y01, zP1   // shares corner (tx, tz+1) with vertex 2
+          xP, y01, zP1   // shares corner (tx, tz+1) with vertex 2
         ]);
       }
 
@@ -1680,7 +1680,7 @@ class Terrain {
         let tv = TREE_VARIANTS[vi];
 
         // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
-        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
 
         fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
         push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
@@ -1786,7 +1786,7 @@ class Terrain {
     try {
       geom = _safeBuildGeometry(() => {
         // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
-        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
 
         if (b.type === 0) {
           fill(safeR(inf ? 200 : 220), inf ? 50 : 220, inf ? 50 : 220);
@@ -1888,7 +1888,7 @@ class Terrain {
         if (bGeom) model(bGeom);
         // Rotating crown for type 4
         if (b.type === 4) {
-          const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21) ? r + 1 : r;
+          const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
           fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
           push();
           translate(0, -b.h * 0.87, 0);

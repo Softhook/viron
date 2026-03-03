@@ -257,7 +257,7 @@ const TREE_VARIANTS = [
   { infected: [180, 30, 20], healthy: [25, 130, 20], cones: [[12, 45, 20]] },
   // Variant 1: Two-tier layered tree
   {
-    infected: [190, 35, 25], healthy: [30, 145, 25], cones: [[22, 28, 10]],
+    infected: [190, 35, 25], healthy: [32, 145, 25], cones: [[22, 28, 10]],
     infected2: [150, 20, 15], healthy2: [25, 120, 20], cones2: [[15, 22, 28]]
   },
   // Variant 2: Tall conifer / pine

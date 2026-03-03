@@ -1755,7 +1755,7 @@ class Terrain {
             pop();
           }
 
-          if (dSq < 1210000) shadowQueue.push(t);
+          if (dSq < 9000000) shadowQueue.push(t);
         }
       }
     }

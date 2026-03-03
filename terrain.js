@@ -119,6 +119,11 @@ void main() {
     float parity = (mat == 20) ? 1.0 : 0.90;
     vec3 pearlBase = uPalette[12];
     baseColor = pearlBase * parity * (0.88 + 0.12 * shimmer);
+  } else if (mat == 30) {
+    // ── Sea plane (Mat 30) ────────────────────────────────────────────
+    // Fixed deep-blue base colour, unaffected by shockwave pulse effects
+    // (mat 30 > 21 so it is excluded from the cyberColor accumulation below).
+    baseColor = vec3(15.0/255.0, 45.0/255.0, 150.0/255.0);
   } else if (mat >= 250 && mat <= 251) {
     // ── Powerup (Mat 250=Healthy, 251=Infected) ────────────────────────
     baseColor = (mat == 250) ? vec3(60.0/255.0, 180.0/255.0, 240.0/255.0) : vec3(200.0/255.0, 50.0/255.0, 50.0/255.0);
@@ -1168,16 +1173,20 @@ class Terrain {
     // is no per-frame geometry work beyond issuing the two-triangle draw call.
     // The sea is drawn while the terrain shader is still active so it receives the
     // same fog blending that hides terrain chunk pop-in at the view boundary.
-    // mat = int(15 * 255/255 + 0.5) = 15, which matches no material branch in the
-    // shader, so vColor.rgb falls through as the raw sea blue — this is intentional.
+    // mat = 30 — the sea uses a dedicated material ID outside the [0, 21] range so
+    // it is never affected by shockwave pulse (cyberColor) effects; those effects are
+    // restricted to mat <= 21 (ground/infection materials).  The GLSL mat == 30 branch
+    // sets the deep-blue base colour directly.  The surface normal uses (0, -1, 0) —
+    // the correct upward-facing orientation in WEBGL's Y-inverted coordinate system —
+    // so the sea receives proper sun and sky-dome lighting instead of only dark ambient.
     let seaSize = VIEW_FAR * TILE * 1.5;
     let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
     let sx0 = seaCx - seaSize, sx1 = seaCx + seaSize;
     let sz0 = seaCz - seaSize, sz1 = seaCz + seaSize;
     let sy = SEA + 3;
-    fill(15, 45, 150);
+    fill(30, 45, 150);
     beginShape(TRIANGLES);
-    normal(0, 1, 0);
+    normal(0, -1, 0);
     vertex(sx0, sy, sz0); vertex(sx1, sy, sz0); vertex(sx0, sy, sz1);
     vertex(sx1, sy, sz0); vertex(sx1, sy, sz1); vertex(sx0, sy, sz1);
     endShape();

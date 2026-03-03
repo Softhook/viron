@@ -31,6 +31,7 @@ const SCENARIOS = [
   { id: 'low-view', title: 'Reduced view distance (30/20/3500)' },
   { id: 'no-lighting', title: 'Scene lighting disabled (setSceneLighting stub)' },
   { id: 'no-shadows', title: 'Shadow polygons disabled (stencil stubs)' },
+  { id: 'cockpit-mode', title: 'Cockpit Mode (First Person)' },
 ];
 
 function findChrome() {
@@ -128,37 +129,39 @@ async function setupPlayableState(page, scenarioId) {
     // Apply scenario toggles.
     if (id === 'no-particles') {
       particleSystem.clear();
-      particleSystem.updatePhysics = function () {};
-      particleSystem.render = function () {};
-      particleSystem.renderHardParticles = function () {};
+      particleSystem.updatePhysics = function () { };
+      particleSystem.render = function () { };
+      particleSystem.renderHardParticles = function () { };
     } else if (id === 'no-hud') {
-      window.drawPlayerHUD = function () {};
+      window.drawPlayerHUD = function () { };
     } else if (id === 'no-radar') {
-      window.drawRadarForPlayer = function () {};
+      window.drawRadarForPlayer = function () { };
     } else if (id === 'no-trees') {
-      terrain.drawTrees = function () {};
+      terrain.drawTrees = function () { };
     } else if (id === 'no-enemies') {
       enemyManager.enemies = [];
-      enemyManager.update = function () {};
-      enemyManager.draw = function () {};
+      enemyManager.update = function () { };
+      enemyManager.draw = function () { };
     } else if (id === 'no-infection') {
       infection.reset();
       barrierTiles.clear();
-      spreadInfection = function () {};
+      spreadInfection = function () { };
     } else if (id === 'no-scenery') {
-      terrain.drawTrees = function () {};
-      terrain.drawBuildings = function () {};
+      terrain.drawTrees = function () { };
+      terrain.drawBuildings = function () { };
     } else if (id === 'low-view') {
       VIEW_NEAR = 20;
       VIEW_FAR = 30;
       CULL_DIST = 3500;
     } else if (id === 'no-lighting') {
       // Stub out the p5 ambient+directional light setup calls entirely.
-      window.setSceneLighting = function () {};
+      window.setSceneLighting = function () { };
     } else if (id === 'no-shadows') {
       // Stub stencil helpers so no shadow polygons are drawn (trees + buildings).
-      window._beginShadowStencil = function () {};
-      window._endShadowStencil   = function () {};
+      window._beginShadowStencil = function () { };
+      window._endShadowStencil = function () { };
+    } else if (id === 'cockpit-mode') {
+      firstPersonView = true;
     }
 
     // Function-level instrumentation.

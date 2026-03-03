@@ -1036,6 +1036,7 @@ class Terrain {
    * @param {number} viewAspect    viewW / viewH of the actual WebGL viewport — must
    *                               match the aspect passed to p5's perspective() so
    *                               frustum culling matches what the camera sees.
+   * @param {boolean} [firstPerson=false]  Whether to render from a first-person camera.
    */
   drawLandscape(s, viewAspect, firstPerson = false) {
     let gx = toTile(s.x), gz = toTile(s.z);

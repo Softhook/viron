@@ -535,7 +535,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
     drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     setSceneLighting();
-    terrain.drawLandscape(s, viewW / viewH);
+    terrain.drawLandscape(s, viewW / viewH, firstPersonView);
     terrain.drawTrees(s);
     terrain.drawBuildings(s);
     enemyManager.draw(s);
@@ -597,7 +597,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
     drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     setSceneLighting();
-    terrain.drawLandscape(s, viewW / viewH);
+    terrain.drawLandscape(s, viewW / viewH, firstPersonView);
     terrain.drawTrees(s);
     terrain.drawBuildings(s);
     enemyManager.draw(s);

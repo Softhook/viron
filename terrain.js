@@ -472,16 +472,15 @@ class Terrain {
    * from the player's ship position and yaw.  Used for frustum culling and
    * fog-depth calculations without needing access to the p5 camera object.
    * @param {{x,y,z,yaw,pitch}} s  Ship state object.
+   * @param {boolean} [firstPerson=false]  True when in cockpit (first-person) view;
+   *   the camera sits at the ship rather than 550 units behind it.
    * @returns {{x,z,fwdX,fwdZ}}
    */
-  getCameraParams(s) {
+  getCameraParams(s, firstPerson = false) {
     let fwdX = -sin(s.yaw), fwdZ = -cos(s.yaw);
-    return {
-      x: s.x - fwdX * 550,  // Camera sits 550 units behind the ship
-      z: s.z - fwdZ * 550,
-      fwdX,
-      fwdZ
-    };
+    return firstPerson
+      ? { x: s.x, z: s.z, fwdX, fwdZ }          // Cockpit: eye at ship position
+      : { x: s.x - fwdX * 550, z: s.z - fwdZ * 550, fwdX, fwdZ };  // Chase cam: 550 units behind
   }
 
   /**
@@ -992,6 +991,11 @@ class Terrain {
       }
     }
 
+    const _gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
+    if (_gl && i0 + i1 > 0) {
+      _gl.enable(_gl.POLYGON_OFFSET_FILL);
+      _gl.polygonOffset(-1.0, -2.0);
+    }
     if (i0 > 0) {
       fill(matEven, 0, 0, 255);
       beginShape(TRIANGLES);
@@ -1005,6 +1009,9 @@ class Terrain {
       normal(0, 1, 0);
       for (let i = 0; i < i1; i += 3) vertex(b1[i], b1[i + 1], b1[i + 2]);
       endShape();
+    }
+    if (_gl && i0 + i1 > 0) {
+      _gl.disable(_gl.POLYGON_OFFSET_FILL);
     }
     if (profiler && tag) {
       const elapsed = performance.now() - overlayStart;
@@ -1029,14 +1036,15 @@ class Terrain {
    * @param {number} viewAspect    viewW / viewH of the actual WebGL viewport — must
    *                               match the aspect passed to p5's perspective() so
    *                               frustum culling matches what the camera sees.
+   * @param {boolean} [firstPerson=false]  Whether to render from a first-person camera.
    */
-  drawLandscape(s, viewAspect) {
+  drawLandscape(s, viewAspect, firstPerson = false) {
     let gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
     // Compute camera params once and cache on the instance so drawTrees,
     // drawBuildings and enemies.draw reuse the same values this frame.
-    let cam = this.getCameraParams(s);
+    let cam = this.getCameraParams(s, firstPerson);
 
     // Pre-compute FOV slope once — used for chunk culling, infected-tile culling,
     // and inFrustum() calls in drawTrees/drawBuildings.

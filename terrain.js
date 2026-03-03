@@ -1289,13 +1289,17 @@ class Terrain {
     const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
     const maxDepth = (typeof isMobile !== 'undefined' && isMobile) ? 4 : 5;
 
-    // Hard cap on emitted triangles to prevent RangeError from p5's push.apply
-    // when huge shadows (tall buildings, low sun) would produce hundreds of
-    // thousands of subdivided triangles.  20 000 triangles (~60 k vertices) is
-    // well within the safe range while still producing smooth shadow draping.
+    // Hard cap on emitted triangles to prevent push.apply overflowing V8's
+    // call-stack argument limit (~65 536).  p5's addGeometry uses
+    //   push.apply(dest, _toConsumableArray(array))
+    // which passes every element as a C-stack argument.  The largest array is
+    // vertexColors at 4 values per vertex, so the safe ceiling is:
+    //   MAX_SHADOW_TRIS * 3 vertices * 4 color-values < 65 536
+    //   → MAX_SHADOW_TRIS < 5 461
+    // Using 5 000 gives 15 000 vertices / 60 000 vertexColors — comfortably safe.
     // triCount is a closure variable intentionally shared across all recursive
     // emitTri calls — this is the standard single-threaded JS accumulator pattern.
-    const MAX_SHADOW_TRIS = 20000;
+    const MAX_SHADOW_TRIS = 5000;
     let triCount = 0;
 
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');

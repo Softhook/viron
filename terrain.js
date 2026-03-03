@@ -964,9 +964,11 @@ class Terrain {
 
       const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
       const tdx = tcx - cam.x, tdz = tcz - cam.z;
-      const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
-      if (tFwd < -TILE * 2) continue;
-      if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
+      if (!cam.skipFrustum) {
+        const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
+        if (tFwd < -TILE * 2) continue;
+        if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
+      }
 
       if (!t.verts) {
         const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;

@@ -252,27 +252,23 @@ void main() {
     outColor += cyberColor;
   }
   
-  // Fresnel Rim Lighting
-  // Nv points from surface to camera. V points from surface to camera.
-  vec3 Nv = normalize(vViewNormal);
+  // --- Fresnel Rim Lighting ---
+  // V points from surface to camera in view space. Nv is the surface normal in view space.
   vec3 V = normalize(-vViewPos);
-  float fresnel = 1.0 - max(dot(Nv, V), 0.0);
+  float fresnel = 1.0 - max(dot(normalize(vViewNormal), V), 0.0);
+  fresnel *= fresnel; // pow(fresnel, 2.0) -> fast square
   
-  // Use a softer power so the edge isn't a harsh metallic line
-  fresnel = pow(fresnel, 2.0);
-  
-  // Modulate rim by the sun Lambert, so surfaces facing away from the sun don't get a bright rim.
+  // Mask 1: Sun direction (Lambert ndl). Only rim-light the sun-facing side.
   float litMask = smoothstep(0.0, 0.2, ndl);
   
-  // For organic materials (terrain/trees), pure white/fog color additive rim light looks like 
-  // specular reflection on metal. By multiplying the rim color by the object's baseColor,
-  // we simulate diffuse rim lighting / subsurface scattering which looks much softer.
-  vec3 rim = uFogColor * fresnel * litMask;
+  // Mask 2: Ambient Hemisphere (vNormal.y). Only rim-light top-facing surfaces (so bottoms aren't rim-lit).
+  // vNormal interpolation can un-normalize it slightly, but for a fast Y-mask, the raw varying is close enough.
+  float rimMask = smoothstep(-0.2, 0.5, vNormal.y);
   
-  // Modulate rim strongly by the ambient light hemisphere (so bottom faces aren't rim-lit brightly)
-  float rimMask = smoothstep(-0.2, 0.5, normalize(vNormal).y);
-  
-  outColor += baseColor * rim * rimMask * (mat == 30 ? 3.0 : 1.2);
+  // Combine masks. Organic materials (terrain/trees) use diffuse rim (multiply by baseColor),
+  // Sea Plane (mat 30) gets a strong, sharper specular-like rim.
+  vec3 rim = uFogColor * fresnel * litMask * rimMask;
+  outColor += baseColor * rim * (mat == 30 ? 3.0 : 1.2);
 
   // Apply fog to smoothly hide chunk loading edges
   float dist = gl_FragCoord.z / gl_FragCoord.w;

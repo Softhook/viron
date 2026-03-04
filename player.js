@@ -505,7 +505,18 @@ function shipDisplay(s, tintColor) {
       let ny = v1[2] * v2[0] - v1[0] * v2[2];
       let nz = v1[0] * v2[1] - v1[1] * v2[0];
       let mag = Math.sqrt(nx * nx + ny * ny + nz * nz);
-      if (mag > 0) normal(nx / mag, ny / mag, nz / mag);
+      if (mag > 0) {
+        nx /= mag; ny /= mag; nz /= mag;
+        // Dynamically fix inconsistent winding orders (some faces CCW, some CW)
+        // Ensure the normal always points AWAY from the ship's center.
+        let cx = (p0[0] + p1[0] + p2[0]) / 3, cy = (p0[1] + p1[1] + p2[1]) / 3, cz = (p0[2] + p1[2] + p2[2]) / 3;
+        let cCenter = activeTransform([0, 0, 0]);
+        let dirX = cx - cCenter[0], dirY = cy - cCenter[1], dirZ = cz - cCenter[2];
+        if (nx * dirX + ny * dirY + nz * dirZ < 0) {
+          nx = -nx; ny = -ny; nz = -nz;
+        }
+        normal(nx, ny, nz);
+      }
     }
 
     fill(col[0], col[1], col[2], col[3] || 255);

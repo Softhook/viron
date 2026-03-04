@@ -261,14 +261,25 @@ void main() {
   // Mask 1: Sun direction (Lambert ndl). Only rim-light the sun-facing side.
   float litMask = smoothstep(0.0, 0.2, ndl);
   
-  // Mask 2: Ambient Hemisphere (vNormal.y). Only rim-light top-facing surfaces (so bottoms aren't rim-lit).
+  // Mask 2: Ambient Hemisphere (-vNormal.y). Only rim-light top-facing surfaces (so bottoms aren't rim-lit).
+  // In p5.js coordinates, -Y is UP. So a top-facing plane has vNormal.y = -1.0.
   // vNormal interpolation can un-normalize it slightly, but for a fast Y-mask, the raw varying is close enough.
-  float rimMask = smoothstep(-0.2, 0.5, vNormal.y);
+  float rimMask = smoothstep(-0.2, 0.5, -vNormal.y);
   
   // Combine masks. Organic materials (terrain/trees) use diffuse rim (multiply by baseColor),
   // Sea Plane (mat 30) gets a strong, sharper specular-like rim.
+  // Ships and Powerups (mat above 30, or completely different ranges) should also just get 
+  // specular additive rims.
   vec3 rim = uFogColor * fresnel * litMask * rimMask;
-  outColor += baseColor * rim * (mat == 30 ? 3.0 : 1.2);
+  if (mat == 30) {
+    outColor += baseColor * rim * 3.0;
+  } else if (mat >= 1 && mat <= 21) {
+    // Terrain / Trees / Infection: Soft diffuse rim
+    outColor += baseColor * rim * 1.2;
+  } else {
+    // Ships (default colors, mat usually >21 but not 250) and Powerups (250/251): Harder specular rim
+    outColor += rim * 0.7; // Additive, not multiplied by baseColor, so dark ships get bright edges
+  }
 
   // Apply fog to smoothly hide chunk loading edges
   float dist = gl_FragCoord.z / gl_FragCoord.w;

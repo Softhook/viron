@@ -633,7 +633,16 @@ class EnemyManager {
       let ny = v1[2] * v2[0] - v1[0] * v2[2];
       let nz = v1[0] * v2[1] - v1[1] * v2[0];
       let m = Math.sqrt(nx * nx + ny * ny + nz * nz);
-      if (m > 0) normal(nx / m, ny / m, nz / m);
+      if (m > 0) {
+        nx /= m; ny /= m; nz /= m;
+        let cx = (p0[0] + p1[0] + p2[0]) / 3;
+        let cy = (p0[1] + p1[1] + p2[1]) / 3;
+        let cz = (p0[2] + p1[2] + p2[2]) / 3;
+        if (nx * cx + ny * cy + nz * cz < 0) {
+          nx = -nx; ny = -ny; nz = -nz;
+        }
+        normal(nx, ny, nz);
+      }
       vertex(p0[0], p0[1], p0[2]);
       vertex(p1[0], p1[1], p1[2]);
       vertex(p2[0], p2[1], p2[2]);

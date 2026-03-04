@@ -419,7 +419,7 @@ class EnemyManager {
     e.x += e.vx; e.z += e.vz;
     // Snap to ground surface
     const gyS = terrain.getAltitude(e.x, e.z);
-    e.y = gyS - 10;
+    e.y = gyS - 20;
 
     // Infect tiles below — triggers launchpad alarm when relevant
     if (random() < 0.025) {
@@ -739,39 +739,86 @@ class EnemyManager {
         const scR = 22, scG = 180, scB = 120;
         const scDR = 6, scDG = 100, scDB = 60;
         const scGR = 80, scGG = 255, scGB = 160;
+
+        // Main body + Armor plates
         fill(scR, scG, scB);
-        push(); box(30, 8, 26); pop();
-        push(); translate(0, -2, -18); box(18, 6, 12); pop();
-        push(); translate(0, -1, 14); box(14, 5, 10); pop();
-        fill(80, 255, 80);
+        push(); box(30, 10, 26); pop();
+        fill(scDR, scDG, scDB);
+        push(); translate(0, -5, 2); box(24, 2, 20); pop(); // Primary plate
+        push(); translate(0, -4, -8); box(20, 2, 10); pop(); // secondary plate
+
+        // Head/Front
+        fill(scR, scG, scB);
+        push(); translate(0, -1, 14); box(18, 6, 12); pop();
+        fill(80, 255, 80); // Eyes
         push(); translate(-6, -5, 18); box(3, 3, 3); pop();
         push(); translate(6, -5, 18); box(3, 3, 3); pop();
-        fill(scDR, scDG, scDB);
-        let walkPhase = frameCount * 0.35 + e.id;
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // Large Articulated Pincers - Moved bits higher to clear ground
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        fill(scR, scG, scB);
         for (let side = -1; side <= 1; side += 2) {
-          for (let i = -1; i <= 1; i++) {
-            let lp = walkPhase + i * PI / 3 * side;
-            let lift = max(0, sin(lp)) * 0.5;
+          let pPhase = frameCount * 0.1 + e.id * side;
+          push();
+          translate(side * 12, -4, 16); // Lifted from Y:0 to Y:-4
+          rotateY(side * 0.4 + sin(pPhase) * 0.2);
+          translate(side * 8, 0, 6); box(16, 6, 6); // Arm 1
+          translate(side * 8, 0, 6);
+          rotateY(side * -0.8 + cos(pPhase) * 0.3);
+          translate(side * 10, 0, 6); box(20, 8, 10); // Claw base
+          // Pincer nips
+          let nip = abs(sin(frameCount * 0.2 + e.id * 2)) * 0.4;
+          push(); translate(side * 6, 0, 4); rotateY(side * nip); translate(side * 6, 0, 0); box(12, 5, 3); pop();
+          push(); translate(side * 6, 0, -4); rotateY(side * -nip); translate(side * 6, 0, 0); box(12, 5, 3); pop();
+          pop();
+        }
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // Articulated legs (8 legs / 4 pairs with metachronal wave)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        fill(scDR, scDG, scDB);
+        let walkSpeed = mag2(e.vx || 0, e.vz || 0);
+        // Slowed down from 0.4 to 0.15; only animate if actually moving
+        let animationSpeed = walkSpeed > 0.1 ? 0.15 : 0;
+        let walkPhase = frameCount * animationSpeed + e.id;
+        for (let side = -1; side <= 1; side += 2) {
+          for (let i = 0; i < 4; i++) {
+            // Ripple gait: back-to-front metachronal wave. 
+            // i=0 is front, i=3 is back. To make back lead, we add phase as we go back.
+            let lp = walkPhase + i * 0.8 + (side > 0 ? PI : 0);
+            let lift = max(0, sin(lp));
             let stride = cos(lp);
             push();
-            translate(side * 15, 2, i * 8);
-            rotateZ(side * (-0.15 - lift * 0.35));
-            rotateY(stride * 0.25);
-            translate(side * 8, 0, 0); box(16, 4, 4);
+            // Space 4 legs along the body from middle to back
+            translate(side * 15, 2, 8 - i * 11);
+            rotateZ(side * (-0.2 - lift * 0.4));
+            rotateY(stride * 0.35); // Horizontal stride
+            // Thigh
+            translate(side * 8, -1, 0); box(16, 5, 5);
+            // Shin
+            translate(side * 8, 0, 0);
+            rotateZ(side * 1.1 + lift * 0.5);
+            translate(side * 10, 0, 0); box(22, 4, 4);
             pop();
           }
         }
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // Refined Segmented Tail + Stinger
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         fill(scR, scG, scB);
-        push(); translate(0, -5, -20);
-        for (let i = 0; i < 4; i++) {
-          let wave = sin(frameCount * 0.08 + e.id + i * 0.6) * 0.06;
-          rotateX(-0.45 + wave);
-          translate(0, -7, -3);
-          box(10 - i * 1.5, 7 - i, 6 - i);
+        push(); translate(0, -5, -15);
+        for (let i = 0; i < 6; i++) {
+          let wave = sin(frameCount * 0.1 + e.id + i * 0.5) * 0.1;
+          rotateX(-0.35 + wave);
+          translate(0, -7, -4);
+          box(14 - i * 2, 8 - i, 8 - i);
         }
-        fill(scGR, scGG, scGB);
-        translate(0, -5, -3);
-        box(4, 10, 4);
+        fill(scGR, scGG, scGB); // Stinger glowing tip
+        translate(0, -6, -3);
+        rotateX(-0.6);
+        box(5, 12, 5);
         pop();
       } else if (e.type === 'colossus') {
         let yaw = atan2(e.vx || 0, e.vz || 0);

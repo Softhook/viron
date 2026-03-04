@@ -864,45 +864,58 @@ class EnemyManager {
         noStroke();
         fill(255, 150, 0); // Primary orange
 
-        // Main body (elongated diamond/fish shape)
+        // thickened body (faceted diamond)
         beginShape(TRIANGLES);
-        // Nose to mid-body
+        // Nose (tip) at [0,0,25]
+        // Front facets (thickened midpoint)
         drawTri([0, 0, 25], [-8, 0, 0], [0, 8, 0]);   // Top left
         drawTri([0, 0, 25], [8, 0, 0], [0, 8, 0]);    // Top right
         drawTri([0, 0, 25], [-8, 0, 0], [0, -8, 0]);  // Bottom left
         drawTri([0, 0, 25], [8, 0, 0], [0, -8, 0]);   // Bottom right
 
-        // Mid-body to rear
+        // Rear facets (taper to back)
         drawTri([-8, 0, 0], [0, 0, -15], [0, 8, 0]);  // Top left
         drawTri([8, 0, 0], [0, 0, -15], [0, 8, 0]);   // Top right
         drawTri([-8, 0, 0], [0, 0, -15], [0, -8, 0]); // Bottom left
         drawTri([8, 0, 0], [0, 0, -15], [0, -8, 0]);  // Bottom right
         endShape();
 
-        // Dorsal fin (top)
+        // 3D Dorsal fin (top) - triangular prism
         fill(255, 100, 0);
         beginShape(TRIANGLES);
-        drawTri([0, 8, 5], [0, 18, -10], [0, 8, -12]);
+        // Left face
+        drawTri([-1, 8, 5], [-1, 18, -10], [-1, 8, -12]);
+        // Right face
+        drawTri([1, 8, 5], [1, 18, -10], [1, 8, -12]);
+        // Front connecting face
+        drawTri([-1, 8, 5], [1, 8, 5], [0, 18, -10]);
+        // Rear edge (thin) - not strictly needed if we just draw the faces
         endShape();
 
-        // Pectoral fins (sides)
+        // 3D Pectoral fins (sides) - wedge shapes
         fill(255, 180, 50);
         let finWarp = sin(frameCount * 0.15 + e.id) * 0.2;
         beginShape(TRIANGLES);
-        // Left fin
+        // Left fin - top face
         drawTri([-8, 0, 5], [-22, -2, -8 + finWarp * 10], [-8, 0, -10]);
-        // Right fin
+        // Left fin - bottom face (offset slightly)
+        drawTri([-8, -2, 5], [-22, -2, -8 + finWarp * 10], [-8, -2, -10]);
+        // Right fin - top face
         drawTri([8, 0, 5], [22, -2, -8 + finWarp * 10], [8, 0, -10]);
+        // Right fin - bottom face
+        drawTri([8, -2, 5], [22, -2, -8 + finWarp * 10], [8, -2, -10]);
         endShape();
 
-        // Animated Tail
+        // 3D Animated Tail
         let tailSwing = sin(frameCount * 0.2 + e.id) * 12;
         fill(255, 80, 0);
         beginShape(TRIANGLES);
-        // Upper tail lobe
-        drawTri([0, 0, -15], [tailSwing, 15, -35], [0, 0, -22]);
-        // Lower tail lobe
-        drawTri([0, 0, -15], [tailSwing, -15, -35], [0, 0, -22]);
+        // Upper tail lobe (3D wedge)
+        drawTri([-1, 0, -15], [tailSwing, 15, -35], [-1, 0, -22]); // left
+        drawTri([1, 0, -15], [tailSwing, 15, -35], [1, 0, -22]);  // right
+        // Lower tail lobe (3D wedge)
+        drawTri([-1, 0, -15], [tailSwing, -15, -35], [-1, 0, -22]); // left
+        drawTri([1, 0, -15], [tailSwing, -15, -35], [1, 0, -22]);  // right
         endShape();
       } else if (e.type === 'bomber') {
         rotateY(frameCount * 0.05);
@@ -925,7 +938,7 @@ class EnemyManager {
         noStroke();
         fill(40, 255, 40); // Primary green
 
-        // Tapered body
+        // Tapered body (solid volume)
         beginShape(TRIANGLES);
         // Beak to mid
         drawTri([0, 0, 25], [-5, 0, 5], [0, 5, 5]);  // Top left
@@ -937,20 +950,27 @@ class EnemyManager {
         drawTri([5, 0, 5], [0, 0, -15], [0, 5, 5]);  // Top right
         endShape();
 
-        // Wings with flapping animation
+        // 3D Wings with flapping animation (airfoil volumes)
         let flap = sin(frameCount * 0.3 + e.id) * 20;
         fill(30, 200, 30);
         beginShape(TRIANGLES);
-        // Left wing
+        // Left wing - top face
         drawTri([-5, 0, 5], [-35, flap, -10], [-5, 0, -5]);
-        // Right wing
+        // Left wing - bottom face (offset slightly)
+        drawTri([-5, -1, 5], [-35, flap - 1, -10], [-5, -1, -5]);
+        // Right wing - top face
         drawTri([5, 0, 5], [35, flap, -10], [5, 0, -5]);
+        // Right wing - bottom face
+        drawTri([5, -1, 5], [35, flap - 1, -10], [5, -1, -5]);
         endShape();
 
-        // Tail feathers
+        // 3D Tail feathers (wedge volume)
         fill(20, 150, 20);
         beginShape(TRIANGLES);
+        // top face
         drawTri([0, 0, -15], [-12, 0, -30], [12, 0, -30]);
+        // bottom face
+        drawTri([0, -1, -15], [-12, -1, -30], [12, -1, -30]);
         endShape();
       } else {
         // Seeder

@@ -118,19 +118,19 @@ function setSceneLighting() {
  * and never intersects gameplay geometry.
  */
 function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
-  // Compute the horizontal direction toward the sun using the pre-normalized
+  // Compute the direction toward the sun using the pre-normalized
   // SUN_DIR constants — no p5.Vector allocations needed.
   // toSun = -SUN_DIR_N (normalised direction from camera to sun disc)
-  const toSunX = -SUN_DIR_NX, toSunZ = -SUN_DIR_NZ;
-  const horizLen = Math.sqrt(toSunX * toSunX + toSunZ * toSunZ);
-  // Fallback to -Z if sun is directly overhead
-  const hX = horizLen > 1e-3 ? toSunX / horizLen : 0;
-  const hZ = horizLen > 1e-3 ? toSunZ / horizLen : -1;
+  const toSunX = -SUN_DIR_NX, toSunY = -SUN_DIR_NY, toSunZ = -SUN_DIR_NZ;
 
-  const sunHorizonDist = viewFarWorld * 0.78;
-  const sunHeight = cy - viewFarWorld * 0.09; // negative Y is upward in this world
-  const sunPosX = cx + hX * sunHorizonDist;
-  const sunPosZ = cz + hZ * sunHorizonDist;
+  // Push the sun far back so it renders behind all terrain (viewFarWorld),
+  // but remains within the camera far plane (viewFarWorld * 1.5).
+  // Maintaining its position relative to the camera (cx, cy, cz) is what gives it
+  // mathematically perfect zero-parallax.
+  const sunDist = viewFarWorld * 1.4;
+  const sunPosX = cx + toSunX * sunDist;
+  const sunHeight = cy + toSunY * sunDist; // negative Y is upward
+  const sunPosZ = cz + toSunZ * sunDist;
 
   push();
   noStroke();
@@ -141,13 +141,14 @@ function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
   // Sun core + halo spheres.
   push();
   translate(sunPosX, sunHeight, sunPosZ);
-  emissiveMaterial(255, 228, 180);
+  emissiveMaterial(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B);
+  // Scaled up by 1.4 / 0.78 ≈ 1.8 to maintain visual size at the new huge distance
   const sunDetailLongitude = 40, sunDetailLatitude = 32;
-  sphere(viewFarWorld * 0.021, sunDetailLongitude, sunDetailLatitude);
-  fill(255, 184, 118, 80 * intensity);
-  sphere(viewFarWorld * 0.032, sunDetailLongitude, sunDetailLatitude);
-  fill(255, 150, 96, 40 * intensity);
-  sphere(viewFarWorld * 0.046, sunDetailLongitude, sunDetailLatitude);
+  sphere(viewFarWorld * 0.038, sunDetailLongitude, sunDetailLatitude);
+  fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 80 * intensity);
+  sphere(viewFarWorld * 0.057, sunDetailLongitude, sunDetailLatitude);
+  fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 40 * intensity);
+  sphere(viewFarWorld * 0.083, sunDetailLongitude, sunDetailLatitude);
   pop();
 
   blendMode(BLEND);

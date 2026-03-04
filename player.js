@@ -506,16 +506,11 @@ function shipDisplay(s, tintColor) {
       let nz = v1[0] * v2[1] - v1[1] * v2[0];
       let mag = Math.sqrt(nx * nx + ny * ny + nz * nz);
       if (mag > 0) {
-        nx /= mag; ny /= mag; nz /= mag;
-        // Dynamically fix inconsistent winding orders (some faces CCW, some CW)
-        // Ensure the normal always points AWAY from the ship's center.
-        let cx = (p0[0] + p1[0] + p2[0]) / 3, cy = (p0[1] + p1[1] + p2[1]) / 3, cz = (p0[2] + p1[2] + p2[2]) / 3;
-        let cCenter = activeTransform([0, 0, 0]);
-        let dirX = cx - cCenter[0], dirY = cy - cCenter[1], dirZ = cz - cCenter[2];
-        if (nx * dirX + ny * dirY + nz * dirZ < 0) {
-          nx = -nx; ny = -ny; nz = -nz;
-        }
-        normal(nx, ny, nz);
+        // The drawFace pts are pre-transformed to world space via activeTransform().
+        // Cross product v1 × v2 gives the face normal; we always pass it as-is.
+        // For the ship geometry in shipDesigns.js, triangles are consistently wound
+        // CCW when viewed from outside, so this gives an outward-pointing normal.
+        normal(nx / mag, ny / mag, nz / mag);
       }
     }
 

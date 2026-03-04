@@ -154,7 +154,8 @@ void main() {
     // on the far edge of the launchpad (the old 0.01 offset = 1.2 world units
     // was large enough to cause a visible seam at the launchpad boundary).
     vec2 tPos = floor(vWorldPos.xz / uTileSize + 0.001);
-    if (tPos.x >= 0.0 && tPos.x < 7.0 && tPos.y >= 0.0 && tPos.y < 7.0) {
+    bool isLaunchpadFrag = (tPos.x >= 0.0 && tPos.x < 7.0 && tPos.y >= 0.0 && tPos.y < 7.0);
+    if (isLaunchpadFrag) {
       baseColor = vec3(1.0);
     } else {
       if (mat == 2) { // Shore
@@ -224,7 +225,11 @@ void main() {
   vec3 toSun = normalize(-uSunDir);
 
   // Pure Lambert — direct sun
-  float ndl = max(dot(n, toSun), 0.0);
+  // ndl    = one-sided Lambert for terrain/landscape (backs go dark — correct for solid ground)
+  // ndlAbs = two-sided Lambert for ships/enemies — handles inconsistent vertex winding gracefully
+  //          An inverted normal shows the same shading as the front face, not black.
+  float ndl    = max(dot(n, toSun), 0.0);
+  float ndlAbs = abs(dot(n, toSun));
   vec3 keyLight = uSunColor * ndl;
 
   // Combine: brighter ambient base + warm sun key
@@ -240,8 +245,15 @@ void main() {
     // Powerups are glowing holograms but retain 3D shading
     litBase = baseColor * max(lightTerm, vec3(0.8));
     litBase += baseColor * 0.3; // Give it an extra emissive boost
-  } else {
+  } else if (mat >= 1 && mat <= 2) {
+    // Terrain (landscape): one-sided Lambert — back faces are genuinely underground, so black is fine
     litBase = baseColor * lightTerm;
+  } else {
+    // Ships, trees, enemies: use two-sided Lambert (abs) so winding order inconsistencies
+    // don't produce completely black faces. A flipped normal gives the same luminance as its twin.
+    vec3 shipKeyLight = uSunColor * ndlAbs;
+    vec3 shipLightTerm = max(ambient + shipKeyLight, vec3(0.15, 0.18, 0.22));
+    litBase = baseColor * shipLightTerm;
   }
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.
@@ -266,19 +278,24 @@ void main() {
   // vNormal interpolation can un-normalize it slightly, but for a fast Y-mask, the raw varying is close enough.
   float rimMask = smoothstep(-0.2, 0.5, -vNormal.y);
   
-  // Combine masks. Organic materials (terrain/trees) use diffuse rim (multiply by baseColor),
-  // Sea Plane (mat 30) gets a strong, sharper specular-like rim.
-  // Ships and Powerups (mat above 30, or completely different ranges) should also just get 
-  // specular additive rims.
+  // Combine rim masks. Skip rim on launchpad (already white — would over-saturate).
+  // Use a fast world-position check duplicated from the launchpad branch above.
+  vec2 tPosRim = floor(vWorldPos.xz / uTileSize + 0.001);
+  bool skipRim = (mat >= 1 && mat <= 2) &&
+                 (tPosRim.x >= 0.0 && tPosRim.x < 7.0 &&
+                  tPosRim.y >= 0.0 && tPosRim.y < 7.0);
+
   vec3 rim = uFogColor * fresnel * litMask * rimMask;
-  if (mat == 30) {
-    outColor += baseColor * rim * 3.0;
-  } else if (mat >= 1 && mat <= 21) {
-    // Terrain / Trees / Infection: Soft diffuse rim
-    outColor += baseColor * rim * 1.2;
-  } else {
-    // Ships (default colors, mat usually >21 but not 250) and Powerups (250/251): Harder specular rim
-    outColor += rim * 0.7; // Additive, not multiplied by baseColor, so dark ships get bright edges
+  if (!skipRim) {
+    if (mat == 30) {
+      outColor += baseColor * rim * 3.0;
+    } else if (mat >= 1 && mat <= 21) {
+      // Terrain / Trees / Infection: Soft diffuse rim
+      outColor += baseColor * rim * 1.2;
+    } else {
+      // Ships and Powerups: Harder specular rim
+      outColor += rim * 0.7;
+    }
   }
 
   // Apply fog to smoothly hide chunk loading edges

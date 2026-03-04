@@ -633,91 +633,47 @@ class EnemyManager {
       let ny = v1[2] * v2[0] - v1[0] * v2[2];
       let nz = v1[0] * v2[1] - v1[1] * v2[0];
       let m = Math.sqrt(nx * nx + ny * ny + nz * nz);
-      if (m > 0) {
-        nx /= m; ny /= m; nz /= m;
-        let cx = (p0[0] + p1[0] + p2[0]) / 3;
-        let cy = (p0[1] + p1[1] + p2[1]) / 3;
-        let cz = (p0[2] + p1[2] + p2[2]) / 3;
-        if (nx * cx + ny * cy + nz * cz < 0) {
-          nx = -nx; ny = -ny; nz = -nz;
-        }
-        normal(nx, ny, nz);
-      }
+      if (m > 0) normal(nx / m, ny / m, nz / m);
       vertex(p0[0], p0[1], p0[2]);
       vertex(p1[0], p1[1], p1[2]);
       vertex(p2[0], p2[1], p2[2]);
     };
 
-    terrain.applyShader();
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // PASS 1: Box/cylinder-based enemies — p5 default shader so fill() colors work.
+    // p5.js box() and cylinder() do NOT pass the current fill() as aVertexColor
+    // when a custom shader is active; the vertex color buffer retains its baked-in
+    // default (often black/white), making the entity appear black. These enemies
+    // are therefore drawn BEFORE applying the terrain shader.
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    setSceneLighting();
+
     for (let e of this.enemies) {
-      // Colossus gets an extra-generous cull distance so it's always visible
       let localCullSq = (e.type === 'colossus') ? (CULL_DIST * 1.5) ** 2 : cullSq;
       if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > localCullSq) continue;
 
-      let depth = (e.x - cam.x) * cam.fwdX + (e.z - cam.z) * cam.fwdZ;
+      const isBoxEnemy = (e.type === 'crab' || e.type === 'scorpion' ||
+        e.type === 'squid' || e.type === 'colossus');
+      if (!isBoxEnemy) continue;
 
       push(); translate(e.x, e.y, e.z);
-
-      // Crabs are drawn 10 units lower so their body appears to rest on the ground
       if (e.type === 'crab') translate(0, -10, 0);
-
       scale(2);
 
-      if (e.type === 'fighter') {
-        // Align mesh to velocity direction
-        let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = mag3(fvX, fvY, fvZ);
-        if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
-        noStroke();
-        fill(255, 150, 0);
-        beginShape(TRIANGLES);
-        // Nose → left rear, nose → right rear (top and bottom faces)
-        drawTri([0, 0, 20], [-15, 0, -15], [15, 0, -15]);
-        drawTri([0, 0, 20], [-15, 0, -15], [0, -10, 0]);
-        drawTri([0, 0, 20], [15, 0, -15], [0, -10, 0]);
-        drawTri([0, 0, 20], [-15, 0, -15], [0, 10, 0]);
-        drawTri([0, 0, 20], [15, 0, -15], [0, 10, 0]);
-        endShape();
-
-      } else if (e.type === 'bomber') {
-        rotateY(frameCount * 0.05);
-        noStroke();
-        fill(180, 20, 180);
-        beginShape(TRIANGLES);
-        // Two mirrored pyramids sharing a square equator — upper and lower halves
-        drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
-        drawTri([0, -40, 0], [-40, 0, 40], [40, 0, 40]);
-        drawTri([0, -40, 0], [-40, 0, -40], [-40, 0, 40]);
-        drawTri([0, -40, 0], [40, 0, -40], [40, 0, 40]);
-        drawTri([0, 40, 0], [-40, 0, -40], [40, 0, -40]);
-        drawTri([0, 40, 0], [-40, 0, 40], [40, 0, 40]);
-        drawTri([0, 40, 0], [-40, 0, -40], [-40, 0, 40]);
-        drawTri([0, 40, 0], [40, 0, -40], [40, 0, 40]);
-        endShape();
-
-      } else if (e.type === 'crab') {
-        // ---- Detailed articulated crab body ----
+      if (e.type === 'crab') {
         let yaw = atan2(e.vx || 0, e.vz || 0);
         rotateY(yaw);
         noStroke();
-        // Compute fog factor once; apply to both shell and dark colours inline.
-        // With terrain shader, we don't need manual fog mixing, but we do need the base colors
         const ccR = 200, ccG = 80, ccB = 20;
         const ccDR = 150, ccDG = 40, ccDB = 10;
-
-        // Main shell and raised carapace
         fill(ccR, ccG, ccB);
         push(); box(36, 16, 30); pop();
         push(); translate(0, -8, 0); box(24, 8, 20); pop();
-
-        // Eye stalks
         push();
-        fill(10, 10, 10);
+        fill(12, 12, 12);
         translate(-8, -10, 15); box(4, 8, 4);
         translate(16, 0, 0); box(4, 8, 4);
         pop();
-
-        // Animated walking legs (3 per side, alternating stride)
         fill(ccDR, ccDG, ccDB);
         let walkPhase = frameCount * 0.3 + e.id;
         for (let side = -1; side <= 1; side += 2) {
@@ -729,15 +685,13 @@ class EnemyManager {
             translate(side * 16, 0, i * 10);
             rotateZ(side * (-0.2 - lift * 0.4));
             rotateY(stride * 0.3);
-            translate(side * 10, -3, 0); box(20, 6, 6);  // Upper segment
+            translate(side * 10, -3, 0); box(20, 6, 6);
             translate(side * 8, 0, 0);
             rotateZ(side * 0.8);
-            translate(side * 10, 0, 0); box(22, 4, 4);  // Lower segment
+            translate(side * 10, 0, 0); box(22, 4, 4);
             pop();
           }
         }
-
-        // Pincers with opening/closing nip animation
         fill(ccR, ccG, ccB);
         for (let side = -1; side <= 1; side += 2) {
           let pincerLift = sin(frameCount * 0.1 + e.id) * 0.1;
@@ -745,47 +699,27 @@ class EnemyManager {
           translate(side * 16, 0, 14);
           rotateY(side * -0.6);
           rotateZ(side * (-0.3 + pincerLift));
-          translate(side * 10, 0, 0); box(20, 6, 8);   // Arm segment
+          translate(side * 10, 0, 0); box(20, 6, 8);
           translate(side * 10, 0, 0);
           rotateY(side * -1.2);
-          translate(side * 8, 0, 0); box(16, 8, 10);  // Claw body
-          translate(side * 10, 0, 0); box(12, 10, 12); // Claw tip
-
-          // Upper and lower nippers rotating apart
+          translate(side * 8, 0, 0); box(16, 8, 10);
+          translate(side * 10, 0, 0); box(12, 10, 12);
           let nip = abs(sin(frameCount * 0.2 + e.id * 3)) * 0.5;
           push(); translate(side * 6, 0, -4); rotateY(side * -nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
           push(); translate(side * 6, 0, 4); rotateY(side * nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
           pop();
         }
-
-      } else if (e.type === 'hunter') {
-        let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = mag3(fvX, fvY, fvZ);
-        if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
-        noStroke();
-        fill(40, 255, 40);
-        // Smaller arrowhead than fighter — faster and more agile
-        beginShape(TRIANGLES);
-        drawTri([0, 0, 30], [-8, 0, -20], [8, 0, -20]);
-        drawTri([0, 0, 30], [-8, 0, -20], [0, -10, 0]);
-        drawTri([0, 0, 30], [8, 0, -20], [0, -10, 0]);
-        endShape();
-
       } else if (e.type === 'squid') {
         let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
         fill(30, 30, 35);
-
         push();
-        // Brief squeeze animation when releasing ink.
         let squeeze = (e.inkSqueeze || 0) / 12;
         scale(1.0 + squeeze * 0.20, 1.0 - squeeze * 0.25, 1.0 + squeeze * 0.20);
         rotateX(PI / 2);
-        cylinder(12, 40, 8, 1);  // Mantle body
-
-        // 8 animated tentacles arranged in a circle around the base
+        cylinder(12, 40, 8, 1);
         let tentaclePhase = frameCount * 0.1 + e.id;
         for (let i = 0; i < 8; i++) {
           let a = (i / 8) * TWO_PI;
@@ -798,31 +732,20 @@ class EnemyManager {
           pop();
         }
         pop();
-
       } else if (e.type === 'scorpion') {
-        // ---- Scorpion: armoured ground-crawler with raised segmented tail ----
         let yaw = atan2(e.vx || 0, e.vz || 0);
         rotateY(yaw);
         noStroke();
-
-        // Compute fog factor once; inline lerps for each of the three colours.
-        // With terrain shader, base colors handle it automatically
-        const scR = 20, scG = 180, scB = 120;
-        const scDR = 5, scDG = 100, scDB = 60;
+        const scR = 22, scG = 180, scB = 120;
+        const scDR = 6, scDG = 100, scDB = 60;
         const scGR = 80, scGG = 255, scGB = 160;
-
-        // Main carapace — low flattened body
         fill(scR, scG, scB);
-        push(); box(30, 8, 26); pop();                   // Central hull
-        push(); translate(0, -2, -18); box(18, 6, 12); pop();  // Rear abdomen
-        push(); translate(0, -1, 14); box(14, 5, 10); pop();  // Forward head plate
-
-        // Eye nubs
+        push(); box(30, 8, 26); pop();
+        push(); translate(0, -2, -18); box(18, 6, 12); pop();
+        push(); translate(0, -1, 14); box(14, 5, 10); pop();
         fill(80, 255, 80);
         push(); translate(-6, -5, 18); box(3, 3, 3); pop();
         push(); translate(6, -5, 18); box(3, 3, 3); pop();
-
-        // Animated scuttling legs (3 per side)
         fill(scDR, scDG, scDB);
         let walkPhase = frameCount * 0.35 + e.id;
         for (let side = -1; side <= 1; side += 2) {
@@ -838,47 +761,29 @@ class EnemyManager {
             pop();
           }
         }
-
-        // Segmented raised tail (4 segments curving up and over the body)
         fill(scR, scG, scB);
-        push();
-        translate(0, -5, -20);
+        push(); translate(0, -5, -20);
         for (let i = 0; i < 4; i++) {
           let wave = sin(frameCount * 0.08 + e.id + i * 0.6) * 0.06;
           rotateX(-0.45 + wave);
           translate(0, -7, -3);
           box(10 - i * 1.5, 7 - i, 6 - i);
         }
-        // Sting tip — bright glowing point
         fill(scGR, scGG, scGB);
         translate(0, -5, -3);
         box(4, 10, 4);
         pop();
-
       } else if (e.type === 'colossus') {
-        // ---- COLOSSUS BOSS: towering humanoid built from imposing blocks ----
         let yaw = atan2(e.vx || 0, e.vz || 0);
         rotateY(yaw);
         noStroke();
-
-        // Colour scheme: dark charcoal body with lava-orange accents, flashes white when hit
         let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
-
-        let bodyR = lerp(40, 255, hitT);
-        let bodyG = lerp(40, 255, hitT);
-        let bodyB = lerp(55, 255, hitT);
-
-        let accR = lerp(255, 255, hitT);
-        let accG = lerp(60, 255, hitT);
-        let accB = lerp(20, 0, hitT);
-
-        // Base colors for terrain shader
+        let bodyR = lerp(40, 255, hitT), bodyG = lerp(40, 255, hitT), bodyB = lerp(55, 255, hitT);
+        let accR = lerp(255, 255, hitT), accG = lerp(60, 255, hitT), accB = lerp(20, 0, hitT);
         const fcR = bodyR, fcG = bodyG, fcB = bodyB;
         const acR = accR, acG = accG, acB = accB;
-        const dkR = 20, dkG = 20, dkB = 30;
+        const dkR = 22, dkG = 22, dkB = 30;
         const glR = 255, glG = 120, glB = 0;
-
-        // ---- LEGS (animated — alternating stride) ----
         let walkSpeed = mag2(e.vx || 0, e.vz || 0);
         let walkCycle = frameCount * 0.08 * (walkSpeed > 0.1 ? 1 : 0) + (e.id || 0);
         for (let side = -1; side <= 1; side += 2) {
@@ -886,87 +791,112 @@ class EnemyManager {
           let thighSwing = sin(legPhase) * 0.4;
           let shinBend = max(0, -cos(legPhase)) * 0.5;
           let footLift = max(0, sin(legPhase)) * 40;
-
           push();
-          // Hip attachment point — shifted up for longer legs
           translate(side * 50, -40, 0);
-
-          // Thigh — lengthened to 120
           fill(fcR, fcG, fcB);
           rotateX(thighSwing);
           push(); translate(0, 60, 0); box(50, 120, 50); pop();
-
-          // Shin — lengthened to 120
           translate(0, 120, 0);
           rotateX(-shinBend);
           push(); translate(0, 60, 0); box(40, 120, 40); pop();
-
-          // Foot — wide flat block
           fill(dkR, dkG, dkB);
           translate(0, 120, 0);
           push(); translate(0, 12, side * -6); box(60, 24, 75); pop();
           pop();
         }
-
-        // ---- PELVIS / WAIST ----
         fill(dkR, dkG, dkB);
         push(); translate(0, -45, 0); box(130, 36, 90); pop();
-
-        // ---- TORSO — massive imposing chest block ----
         fill(fcR, fcG, fcB);
         push(); translate(0, -160, 0); box(160, 200, 110); pop();
-
-        // ---- SHOULDERS ----
         fill(dkR, dkG, dkB);
         push(); translate(-105, -210, 0); box(50, 50, 65); pop();
         push(); translate(105, -210, 0); box(50, 50, 65); pop();
-
-        // ---- ARMS — large swinging limbs ----
         for (let side = -1; side <= 1; side += 2) {
           let armSwing = sin(walkCycle * side + PI) * 0.15;
           push();
           translate(side * 105, -210, 0);
           rotateX(armSwing);
-
-          // Upper arm
           fill(fcR, fcG, fcB);
           push(); translate(0, 65, 0); box(45, 120, 45); pop();
-
-          // Elbow joint
           fill(dkR, dkG, dkB);
           push(); translate(0, 125, 0); box(40, 30, 40); pop();
-
-          // Forearm
           fill(fcR, fcG, fcB);
           push(); translate(0, 185, 0); box(40, 100, 40); pop();
-
-          // Fist — massive brutality
           fill(acR, acG, acB);
           push(); translate(0, 245, 0); box(55, 55, 55); pop();
           pop();
         }
-
-        // ---- NECK ----
         fill(dkR, dkG, dkB);
         push(); translate(0, -270, 0); box(65, 40, 60); pop();
-
-        // ---- HEAD — massive boxy skull ----
         fill(fcR, fcG, fcB);
         push(); translate(0, -320, 0); box(100, 90, 100); pop();
-
-        // Eye slots — glowing orange
         fill(glR, glG, glB);
         push(); translate(-25, -330, 51); box(25, 18, 8); pop();
         push(); translate(25, -330, 51); box(25, 18, 8); pop();
-
-        // Head armour brow ridge
         fill(dkR, dkG, dkB);
         push(); translate(0, -348, 51); box(104, 15, 8); pop();
+      }
+      pop();
+    }
 
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // PASS 2: Vertex-based enemies — terrain shader for fog, lighting & rim effects.
+    // These use beginShape(TRIANGLES) with explicit vertex calls, which correctly
+    // populate aVertexColor with the current fill() colour.
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    terrain.applyShader();
 
+    for (let e of this.enemies) {
+      if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > cullSq) continue;
 
+      const isVertexEnemy = (e.type === 'fighter' || e.type === 'bomber' ||
+        e.type === 'hunter' || e.type === 'seeder');
+      if (!isVertexEnemy) continue;
+
+      let depth = (e.x - cam.x) * cam.fwdX + (e.z - cam.z) * cam.fwdZ;
+      push(); translate(e.x, e.y, e.z);
+      scale(2);
+
+      if (e.type === 'fighter') {
+        let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
+        let d = mag3(fvX, fvY, fvZ);
+        if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
+        noStroke();
+        fill(255, 150, 0);
+        beginShape(TRIANGLES);
+        drawTri([0, 0, 20], [-15, 0, -15], [15, 0, -15]);
+        drawTri([0, 0, 20], [-15, 0, -15], [0, -10, 0]);
+        drawTri([0, 0, 20], [15, 0, -15], [0, -10, 0]);
+        drawTri([0, 0, 20], [-15, 0, -15], [0, 10, 0]);
+        drawTri([0, 0, 20], [15, 0, -15], [0, 10, 0]);
+        endShape();
+      } else if (e.type === 'bomber') {
+        rotateY(frameCount * 0.05);
+        noStroke();
+        fill(180, 20, 180);
+        beginShape(TRIANGLES);
+        drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
+        drawTri([0, -40, 0], [-40, 0, 40], [40, 0, 40]);
+        drawTri([0, -40, 0], [-40, 0, -40], [-40, 0, 40]);
+        drawTri([0, -40, 0], [40, 0, -40], [40, 0, 40]);
+        drawTri([0, 40, 0], [-40, 0, -40], [40, 0, -40]);
+        drawTri([0, 40, 0], [-40, 0, 40], [40, 0, 40]);
+        drawTri([0, 40, 0], [-40, 0, -40], [-40, 0, 40]);
+        drawTri([0, 40, 0], [40, 0, -40], [40, 0, 40]);
+        endShape();
+      } else if (e.type === 'hunter') {
+        let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
+        let d = mag3(fvX, fvY, fvZ);
+        if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
+        noStroke();
+        fill(40, 255, 40);
+        beginShape(TRIANGLES);
+        drawTri([0, 0, 30], [-8, 0, -20], [8, 0, -20]);
+        drawTri([0, 0, 30], [-8, 0, -20], [0, -10, 0]);
+        drawTri([0, 0, 30], [8, 0, -20], [0, -10, 0]);
+        endShape();
       } else {
-        // ---- Seeder: rotating double diamond with central antenna ----
+        // Seeder
         rotateY(frameCount * 0.15); noStroke();
         for (let i = 0; i < SEEDER_LAYERS.length; i++) {
           const layer = SEEDER_LAYERS[i];
@@ -980,14 +910,17 @@ class EnemyManager {
           endShape();
         }
         fill(255, 60, 60);
-        push(); translate(0, -14, 0); box(3, 14, 3); pop();  // Antenna
+        push(); translate(0, -14, 0); box(3, 14, 3); pop();
       }
       pop();
+    }
 
-      resetShader();
-      setSceneLighting();
+    resetShader();
+    setSceneLighting();
 
-      // Ground shadow — type-specific projected footprint (not a single generic circle).
+    // Shadow pass
+    for (let e of this.enemies) {
+      if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > cullSq) continue;
       const gy = terrain.getAltitude(e.x, e.z);
       const casterH = max(24, gy - e.y);
       let sw = 80, sh = 50;
@@ -997,7 +930,7 @@ class EnemyManager {
       else if (e.type === 'hunter') { sw = 72; sh = 38; }
       else if (e.type === 'squid') { sw = 110; sh = 72; }
       else if (e.type === 'seeder') { sw = 68; sh = 50; }
-      if (e.type !== 'crab' && e.type !== 'scorpion') {  // Ground-huggers already touch the surface
+      if (e.type !== 'crab' && e.type !== 'scorpion') {
         drawShadow(e.x, gy, e.z, sw, sh, casterH);
       }
     }

@@ -626,6 +626,20 @@ class EnemyManager {
     // Colossus is massive — always render it even near the edge of cull distance
     let cullSq = CULL_DIST * CULL_DIST;
 
+    const drawTri = (p0, p1, p2) => {
+      let v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+      let v2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+      let nx = v1[1] * v2[2] - v1[2] * v2[1];
+      let ny = v1[2] * v2[0] - v1[0] * v2[2];
+      let nz = v1[0] * v2[1] - v1[1] * v2[0];
+      let m = Math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (m > 0) normal(nx / m, ny / m, nz / m);
+      vertex(p0[0], p0[1], p0[2]);
+      vertex(p1[0], p1[1], p1[2]);
+      vertex(p2[0], p2[1], p2[2]);
+    };
+
+    terrain.applyShader();
     for (let e of this.enemies) {
       // Colossus gets an extra-generous cull distance so it's always visible
       let localCullSq = (e.type === 'colossus') ? (CULL_DIST * 1.5) ** 2 : cullSq;
@@ -646,30 +660,30 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        terrain.fillFogColor(255, 150, 0, depth);
+        fill(255, 150, 0);
         beginShape(TRIANGLES);
         // Nose → left rear, nose → right rear (top and bottom faces)
-        vertex(0, 0, 20); vertex(-15, 0, -15); vertex(15, 0, -15);
-        vertex(0, 0, 20); vertex(-15, 0, -15); vertex(0, -10, 0);
-        vertex(0, 0, 20); vertex(15, 0, -15); vertex(0, -10, 0);
-        vertex(0, 0, 20); vertex(-15, 0, -15); vertex(0, 10, 0);
-        vertex(0, 0, 20); vertex(15, 0, -15); vertex(0, 10, 0);
+        drawTri([0, 0, 20], [-15, 0, -15], [15, 0, -15]);
+        drawTri([0, 0, 20], [-15, 0, -15], [0, -10, 0]);
+        drawTri([0, 0, 20], [15, 0, -15], [0, -10, 0]);
+        drawTri([0, 0, 20], [-15, 0, -15], [0, 10, 0]);
+        drawTri([0, 0, 20], [15, 0, -15], [0, 10, 0]);
         endShape();
 
       } else if (e.type === 'bomber') {
         rotateY(frameCount * 0.05);
         noStroke();
-        terrain.fillFogColor(180, 20, 180, depth);
+        fill(180, 20, 180);
         beginShape(TRIANGLES);
         // Two mirrored pyramids sharing a square equator — upper and lower halves
-        vertex(0, -40, 0); vertex(-40, 0, -40); vertex(40, 0, -40);
-        vertex(0, -40, 0); vertex(-40, 0, 40); vertex(40, 0, 40);
-        vertex(0, -40, 0); vertex(-40, 0, -40); vertex(-40, 0, 40);
-        vertex(0, -40, 0); vertex(40, 0, -40); vertex(40, 0, 40);
-        vertex(0, 40, 0); vertex(-40, 0, -40); vertex(40, 0, -40);
-        vertex(0, 40, 0); vertex(-40, 0, 40); vertex(40, 0, 40);
-        vertex(0, 40, 0); vertex(-40, 0, -40); vertex(-40, 0, 40);
-        vertex(0, 40, 0); vertex(40, 0, -40); vertex(40, 0, 40);
+        drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
+        drawTri([0, -40, 0], [-40, 0, 40], [40, 0, 40]);
+        drawTri([0, -40, 0], [-40, 0, -40], [-40, 0, 40]);
+        drawTri([0, -40, 0], [40, 0, -40], [40, 0, 40]);
+        drawTri([0, 40, 0], [-40, 0, -40], [40, 0, -40]);
+        drawTri([0, 40, 0], [-40, 0, 40], [40, 0, 40]);
+        drawTri([0, 40, 0], [-40, 0, -40], [-40, 0, 40]);
+        drawTri([0, 40, 0], [40, 0, -40], [40, 0, 40]);
         endShape();
 
       } else if (e.type === 'crab') {
@@ -678,9 +692,9 @@ class EnemyManager {
         rotateY(yaw);
         noStroke();
         // Compute fog factor once; apply to both shell and dark colours inline.
-        const fogF_c = terrain.getFogFactor(depth);
-        const ccR = lerp(200, SKY_R, fogF_c), ccG = lerp(80, SKY_G, fogF_c), ccB = lerp(20, SKY_B, fogF_c);
-        const ccDR = lerp(150, SKY_R, fogF_c), ccDG = lerp(40, SKY_G, fogF_c), ccDB = lerp(10, SKY_B, fogF_c);
+        // With terrain shader, we don't need manual fog mixing, but we do need the base colors
+        const ccR = 200, ccG = 80, ccB = 20;
+        const ccDR = 150, ccDG = 40, ccDB = 10;
 
         // Main shell and raised carapace
         fill(ccR, ccG, ccB);
@@ -740,12 +754,12 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        terrain.fillFogColor(40, 255, 40, depth);
+        fill(40, 255, 40);
         // Smaller arrowhead than fighter — faster and more agile
         beginShape(TRIANGLES);
-        vertex(0, 0, 30); vertex(-8, 0, -20); vertex(8, 0, -20);
-        vertex(0, 0, 30); vertex(-8, 0, -20); vertex(0, -10, 0);
-        vertex(0, 0, 30); vertex(8, 0, -20); vertex(0, -10, 0);
+        drawTri([0, 0, 30], [-8, 0, -20], [8, 0, -20]);
+        drawTri([0, 0, 30], [-8, 0, -20], [0, -10, 0]);
+        drawTri([0, 0, 30], [8, 0, -20], [0, -10, 0]);
         endShape();
 
       } else if (e.type === 'squid') {
@@ -753,7 +767,7 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        terrain.fillFogColor(30, 30, 35, depth);
+        fill(30, 30, 35);
 
         push();
         // Brief squeeze animation when releasing ink.
@@ -783,10 +797,10 @@ class EnemyManager {
         noStroke();
 
         // Compute fog factor once; inline lerps for each of the three colours.
-        const fogF_s = terrain.getFogFactor(depth);
-        const scR = lerp(20, SKY_R, fogF_s), scG = lerp(180, SKY_G, fogF_s), scB = lerp(120, SKY_B, fogF_s);
-        const scDR = lerp(5, SKY_R, fogF_s), scDG = lerp(100, SKY_G, fogF_s), scDB = lerp(60, SKY_B, fogF_s);
-        const scGR = lerp(80, SKY_R, fogF_s), scGG = lerp(255, SKY_G, fogF_s), scGB = lerp(160, SKY_B, fogF_s);
+        // With terrain shader, base colors handle it automatically
+        const scR = 20, scG = 180, scB = 120;
+        const scDR = 5, scDG = 100, scDB = 60;
+        const scGR = 80, scGG = 255, scGB = 160;
 
         // Main carapace — low flattened body
         fill(scR, scG, scB);
@@ -849,12 +863,11 @@ class EnemyManager {
         let accG = lerp(60, 255, hitT);
         let accB = lerp(20, 0, hitT);
 
-        // Compute fog factor once; inline lerps for all four fog-blended colours.
-        const fogF_col = terrain.getFogFactor(depth);
-        const fcR = lerp(bodyR, SKY_R, fogF_col), fcG = lerp(bodyG, SKY_G, fogF_col), fcB = lerp(bodyB, SKY_B, fogF_col);
-        const acR = lerp(accR, SKY_R, fogF_col), acG = lerp(accG, SKY_G, fogF_col), acB = lerp(accB, SKY_B, fogF_col);
-        const dkR = lerp(20, SKY_R, fogF_col), dkG = lerp(20, SKY_G, fogF_col), dkB = lerp(30, SKY_B, fogF_col);
-        const glR = lerp(255, SKY_R, fogF_col), glG = lerp(120, SKY_G, fogF_col), glB = lerp(0, SKY_B, fogF_col);
+        // Base colors for terrain shader
+        const fcR = bodyR, fcG = bodyG, fcB = bodyB;
+        const acR = accR, acG = accG, acB = accB;
+        const dkR = 20, dkG = 20, dkB = 30;
+        const glR = 255, glG = 120, glB = 0;
 
         // ---- LEGS (animated — alternating stride) ----
         let walkSpeed = mag2(e.vx || 0, e.vz || 0);
@@ -949,18 +962,21 @@ class EnemyManager {
         for (let i = 0; i < SEEDER_LAYERS.length; i++) {
           const layer = SEEDER_LAYERS[i];
           const yOff = layer[0];
-          terrain.fillFogColor(layer[1], layer[2], layer[3], depth);
+          fill(layer[1], layer[2], layer[3]);
           beginShape(TRIANGLES);
-          vertex(0, yOff, -25); vertex(-22, 0, 0); vertex(22, 0, 0);
-          vertex(0, yOff, 25); vertex(-22, 0, 0); vertex(22, 0, 0);
-          vertex(0, yOff, -25); vertex(-22, 0, 0); vertex(0, yOff, 25);
-          vertex(0, yOff, -25); vertex(22, 0, 0); vertex(0, yOff, 25);
+          drawTri([0, yOff, -25], [-22, 0, 0], [22, 0, 0]);
+          drawTri([0, yOff, 25], [-22, 0, 0], [22, 0, 0]);
+          drawTri([0, yOff, -25], [-22, 0, 0], [0, yOff, 25]);
+          drawTri([0, yOff, -25], [22, 0, 0], [0, yOff, 25]);
           endShape();
         }
-        terrain.fillFogColor(255, 60, 60, depth);
+        fill(255, 60, 60);
         push(); translate(0, -14, 0); box(3, 14, 3); pop();  // Antenna
       }
       pop();
+
+      resetShader();
+      setSceneLighting();
 
       // Ground shadow — type-specific projected footprint (not a single generic circle).
       const gy = terrain.getAltitude(e.x, e.z);

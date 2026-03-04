@@ -48,16 +48,28 @@ attribute vec4 aVertexColor;
 attribute vec3 aNormal;
 uniform mat4 uProjectionMatrix;
 uniform mat4 uModelViewMatrix;
+uniform mat3 uNormalMatrix;
 varying vec4 vColor;
 varying vec4 vWorldPos;
 varying vec3 vNormal;
+varying vec3 vViewNormal;
+varying vec3 vViewPos;
+uniform mat4 uInvViewMatrix;
 
 void main() {
   vec4 viewSpace = uModelViewMatrix * vec4(aPosition, 1.0);
   gl_Position = uProjectionMatrix * viewSpace;
-  vWorldPos = vec4(aPosition, 1.0);
+  
+  vViewNormal = normalize(uNormalMatrix * aNormal);
+  vViewPos = viewSpace.xyz;
+  
+  // By transforming viewSpace back to world space using the inverse view matrix,
+  // we get true world position and world normals even when the geometry (like enemies)
+  // is subjected to local translate() and rotate() calls in p5.
+  vWorldPos = uInvViewMatrix * viewSpace;
+  vNormal = normalize(mat3(uInvViewMatrix) * vViewNormal);
+  
   vColor = aVertexColor;
-  vNormal = aNormal;
 }
 `;
 
@@ -76,6 +88,8 @@ precision mediump float;
 varying vec4 vColor;
 varying vec4 vWorldPos;
 varying vec3 vNormal;
+varying vec3 vViewNormal;
+varying vec3 vViewPos;
 uniform float uTime;
 uniform vec4 uPulses[5];
 uniform vec2 uFogDist;
@@ -238,6 +252,28 @@ void main() {
     outColor += cyberColor;
   }
   
+  // Fresnel Rim Lighting
+  // Nv points from surface to camera. V points from surface to camera.
+  vec3 Nv = normalize(vViewNormal);
+  vec3 V = normalize(-vViewPos);
+  float fresnel = 1.0 - max(dot(Nv, V), 0.0);
+  
+  // Use a softer power so the edge isn't a harsh metallic line
+  fresnel = pow(fresnel, 2.0);
+  
+  // Modulate rim by the sun Lambert, so surfaces facing away from the sun don't get a bright rim.
+  float litMask = smoothstep(0.0, 0.2, ndl);
+  
+  // For organic materials (terrain/trees), pure white/fog color additive rim light looks like 
+  // specular reflection on metal. By multiplying the rim color by the object's baseColor,
+  // we simulate diffuse rim lighting / subsurface scattering which looks much softer.
+  vec3 rim = uFogColor * fresnel * litMask;
+  
+  // Modulate rim strongly by the ambient light hemisphere (so bottom faces aren't rim-lit brightly)
+  float rimMask = smoothstep(-0.2, 0.5, normalize(vNormal).y);
+  
+  outColor += baseColor * rim * rimMask * (mat == 30 ? 3.0 : 1.2);
+
   // Apply fog to smoothly hide chunk loading edges
   float dist = gl_FragCoord.z / gl_FragCoord.w;
   float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
@@ -882,6 +918,14 @@ class Terrain {
     this._uSunColorArr[0] = SHADER_SUN_R; this._uSunColorArr[1] = SHADER_SUN_G; this._uSunColorArr[2] = SHADER_SUN_B;
     this._uAmbLowArr[0] = SHADER_AMB_L_R; this._uAmbLowArr[1] = SHADER_AMB_L_G; this._uAmbLowArr[2] = SHADER_AMB_L_B;
     this._uAmbHighArr[0] = SHADER_AMB_H_R; this._uAmbHighArr[1] = SHADER_AMB_H_G; this._uAmbHighArr[2] = SHADER_AMB_H_B;
+
+    const r = _renderer;
+    if (r && r.uViewMatrix) {
+      if (!this._invViewMat) this._invViewMat = new p5.Matrix();
+      this._invViewMat.set(r.uViewMatrix);
+      this._invViewMat.invert(this._invViewMat);
+      this.shader.setUniform('uInvViewMatrix', this._invViewMat.mat4);
+    }
 
     this.shader.setUniform('uTime', millis() / 1000.0);
     this.shader.setUniform('uFogDist', this._uFogDistArr);

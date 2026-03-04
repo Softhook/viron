@@ -161,17 +161,45 @@ class GameSFX {
         let now = this.ctx.currentTime;
 
         // Steady Hum volume
-        let humVol = this._infectionProximityAlpha * 0.25;
+        let humVol = this._infectionProximityAlpha * 0.18;
         this.ambientNodes.proximityHum.gain.gain.setTargetAtTime(humVol, now, 0.1);
         this.ambientNodes.proximityHum.filter.frequency.setTargetAtTime(200 + this._infectionProximityAlpha * 400, now, 0.1);
 
         // Pulsed Scanning "zzz" modulation - triggered when a pulse passes the player
         if (this.ambientNodes.scanningMod) {
             let scanAlpha = proximityData.pulseOverlap || 0;
-            this.ambientNodes.scanningMod.gain.gain.setTargetAtTime(scanAlpha * 0.6, now, 0.05);
+            // Use squared intensity for a sharper peak (more "zip", less "drone")
+            let alphaSq = scanAlpha * scanAlpha;
+            this.ambientNodes.scanningMod.gain.gain.setTargetAtTime(alphaSq * 0.8, now, 0.04);
+            // Speed up the rhythmic modulation at the peak of the scan
+            this.ambientNodes.scanningMod.lfo.frequency.setTargetAtTime(8.0 + alphaSq * 10.0, now, 0.04);
         }
-    }
 
+        // 4. Visual Scan Line Sweep (Metallic "Ping")
+        if (!this.ambientNodes.scanSweep) {
+            let noise = this._createNoise(2.0, 0, 0.2);
+            let filter = this.ctx.createBiquadFilter();
+            let gain = this.ctx.createGain();
+
+            filter.type = 'bandpass';
+            filter.frequency.value = 2000;
+            filter.Q.value = 25; // Very resonant
+
+            gain.gain.value = 0;
+
+            if (noise) noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.master || this.ctx.destination);
+
+            this.ambientNodes.scanSweep = { noise, filter, gain };
+        }
+
+        let sweepAlpha = proximityData.scanSweepAlpha || 0;
+        // Only audible when near infection to match visual logic
+        let sweepVol = sweepAlpha * this._infectionProximityAlpha * 0.6;
+        this.ambientNodes.scanSweep.gain.gain.setTargetAtTime(sweepVol, now, 0.05);
+        this.ambientNodes.scanSweep.filter.frequency.setTargetAtTime(1500 + sweepAlpha * 1500, now, 0.05);
+    }
 
     _setup(x, y, z) {
         this.init();

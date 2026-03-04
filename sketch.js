@@ -841,16 +841,35 @@ function draw() {
 
         // Match shader radius logic (type 1.0 = infection pulse)
         let radius = pulse.type === 1.0 ? age * 300.0 : (pulse.type === 2.0 ? age * 1200.0 : age * 800.0);
-        let distToPulse = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
+        let dist2D = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
 
-        // Define a "shell" thickness for the overlap
-        let thickness = 300;
-        if (Math.abs(distToPulse - radius) < thickness) {
-          let intensity = 1.0 - (Math.abs(distToPulse - radius) / thickness);
+        // 3D local check: The ring is on the ground.
+        let groundY = terrain.getAltitude(p.ship.x, p.ship.z);
+        let dy = p.ship.y - groundY;
+        let distToRing3D = Math.sqrt((dist2D - radius) ** 2 + dy ** 2);
+
+        // Use a tighter thickness (120world units) to match the visual rings (30-80px).
+        // This makes the "zzz" sound a localized "zip" as the ring passes the ship.
+        let thickness = 120;
+        if (distToRing3D < thickness) {
+          let intensity = 1.0 - (distToRing3D / thickness);
           if (intensity > maxScan) maxScan = intensity;
         }
       }
       proximityData.pulseOverlap = maxScan;
+
+      // --- Visual Scan Line Sync ---
+      // Replicate terrain.js shader logic: 
+      // float xP = vWorldPos.x / uTileSize;
+      // float zP = vWorldPos.z / uTileSize;
+      // float scanPos = uTime / 10.0;
+      // float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
+      let xP = p.ship.x / TILE;
+      let zP = p.ship.z / TILE;
+      let scanPos = nowSec / 10.0;
+      let val = 1.0 - Math.abs(((xP * 0.02 + zP * 0.01 - scanPos) % 1.0 + 1.0) % 1.0 - 0.5) * 2.0;
+      // Equivalent to smoothstep(0.98, 1.0, val)
+      proximityData.scanSweepAlpha = Math.max(0, (val - 0.98) / (1.0 - 0.98));
     }
     gameSFX.updateAmbiance(proximityData, infection.count, MAX_INF);
   }

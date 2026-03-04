@@ -4,14 +4,17 @@ class GameSFX {
         this.distCurve = null;
         this.spatialEnabled = true;
         this.thrustNodes = {}; // id -> { osc, noise, gain, panner }
+        this.ambientNodes = {}; // key -> { osc, noise, gain, filter, panner }
         this.lastExplosionTime = 0;
         this.lastExplosionPos = { x: 0, y: 0, z: 0 };
         this.ctx = null;
+        this.master = null;
 
         // constant values used across methods
         this._refDist = 180;            // reference distance for manual attenuation
         this._zoomOffset = 520;         // offset to simulate camera zoom in 2p mode
         this._maxManualDist = 8000;     // upper clamp for manual volume falloff
+        this._infectionProximityAlpha = 0; // Smoothed proximity value
     }
 
     init() {
@@ -56,6 +59,117 @@ class GameSFX {
             data[i] = data[i] * r + data[bufferSize - blend + i] * (1.0 - r);
         }
         return buffer;
+    }
+    /**
+     * Updates persistent ambient sounds based on player position and infection state.
+     */
+    updateAmbiance(proximityData, infectionCount, maxInfection) {
+        if (!this.initialized || !this.ctx) return;
+        let t = this.ctx.currentTime;
+
+        // 1. Infection Heartbeat (Sub-bass rumble)
+        if (!this.ambientNodes.heartbeat) {
+            let osc = this.ctx.createOscillator();
+            let gain = this.ctx.createGain();
+            let filter = this.ctx.createBiquadFilter();
+
+            osc.type = 'sine';
+            osc.frequency.value = 45;
+
+            filter.type = 'lowpass';
+            filter.frequency.value = 80;
+
+            gain.gain.value = 0;
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.master || this.ctx.destination);
+            osc.start();
+            this.ambientNodes.heartbeat = { osc, gain, filter };
+        }
+
+        let heartRate = 0.5 + (infectionCount / maxInfection) * 1.5; // 0.5Hz to 2.0Hz
+        let heartVol = (infectionCount / maxInfection) * 0.4;
+        this.ambientNodes.heartbeat.gain.gain.setTargetAtTime(heartVol, t, 0.1);
+        // Rhythmic pulsing of the heartbeat
+        let pulse = Math.pow(Math.sin(t * Math.PI * heartRate) * 0.5 + 0.5, 4);
+        this.ambientNodes.heartbeat.gain.gain.value *= pulse;
+
+        // 2. Infection Proximity (Buzzy Scanning Hum)
+        if (!this.ambientNodes.proximityHum) {
+            let osc = this.ctx.createOscillator();
+            let noise = this._createNoise(3.0, 0, 0.25);
+            let gain = this.ctx.createGain();
+            let filter = this.ctx.createBiquadFilter();
+
+            osc.type = 'sawtooth';
+            osc.frequency.value = 60;
+
+            filter.type = 'bandpass';
+            filter.frequency.value = 400;
+            filter.Q.value = 10;
+
+            gain.gain.value = 0;
+
+
+
+            osc.connect(filter);
+            if (noise) noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.master || this.ctx.destination);
+            osc.start();
+            this.ambientNodes.proximityHum = { osc, noise, gain, filter };
+        }
+
+        // 3. Scanning Modulation (Temporary pulse-pass "zzz")
+        if (!this.ambientNodes.scanningMod) {
+            let osc = this.ctx.createOscillator();
+            let gain = this.ctx.createGain();
+            let filter = this.ctx.createBiquadFilter();
+            let lfo = this.ctx.createOscillator();
+            let lfoGain = this.ctx.createGain();
+
+            osc.type = 'sawtooth';
+            osc.frequency.value = 80;
+
+            filter.type = 'bandpass';
+            filter.frequency.value = 800;
+            filter.Q.value = 12;
+
+            lfo.type = 'sine';
+            lfo.frequency.value = 8.0;
+            lfoGain.gain.value = 500;
+
+            lfo.connect(lfoGain);
+            lfoGain.connect(filter.frequency);
+
+            gain.gain.value = 0;
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.master || this.ctx.destination);
+
+            osc.start();
+            lfo.start();
+            this.ambientNodes.scanningMod = { osc, gain, filter, lfo, lfoGain };
+        }
+
+        // Smoothed proximity to infected tiles
+        let targetProximity = proximityData.dist < 800 ? (1 - proximityData.dist / 800) : 0;
+        this._infectionProximityAlpha = lerp(this._infectionProximityAlpha || 0, targetProximity, 0.05);
+
+        let now = this.ctx.currentTime;
+
+        // Steady Hum volume
+        let humVol = this._infectionProximityAlpha * 0.25;
+        this.ambientNodes.proximityHum.gain.gain.setTargetAtTime(humVol, now, 0.1);
+        this.ambientNodes.proximityHum.filter.frequency.setTargetAtTime(200 + this._infectionProximityAlpha * 400, now, 0.1);
+
+        // Pulsed Scanning "zzz" modulation - triggered when a pulse passes the player
+        if (this.ambientNodes.scanningMod) {
+            let scanAlpha = proximityData.pulseOverlap || 0;
+            this.ambientNodes.scanningMod.gain.gain.setTargetAtTime(scanAlpha * 0.6, now, 0.05);
+        }
     }
 
 
@@ -228,6 +342,7 @@ class GameSFX {
 
     createSpatializer(x, y, z) {
         if (!this.ctx || x === undefined || y === undefined || z === undefined) return null;
+        if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return null;
         let panner = this.ctx.createPanner();
         panner.panningModel = 'HRTF';
         panner.distanceModel = 'exponential';
@@ -265,16 +380,16 @@ class GameSFX {
         if (!s) return;
         let { ctx, t, targetNode } = s;
 
-        // Main volume envelope - smoother decay
+        // Main volume envelope - lower initial gain to prevent clipping during rapid fire
         let gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(0.4, t);
+        gainNode.gain.setValueAtTime(0.32, t);
         gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
 
         // Low-pass filter to remove "annoying" high frequencies
         let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(2000, t);
-        filter.frequency.exponentialRampToValueAtTime(600, t + 0.15);
+        filter.frequency.setValueAtTime(1800, t);
+        filter.frequency.exponentialRampToValueAtTime(500, t + 0.15);
 
         filter.connect(gainNode);
         gainNode.connect(targetNode);
@@ -292,18 +407,60 @@ class GameSFX {
             osc.stop(t + 0.18);
         });
 
-        // Sub-thrum for weight
+        // Sub-thrum for weight - with high-pass to avoid mud/scratchiness
         let sub = ctx.createOscillator();
+        let subFilter = ctx.createBiquadFilter();
+        subFilter.type = 'highpass';
+        subFilter.frequency.value = 40;
+
         sub.type = 'sine';
         sub.frequency.setValueAtTime(80, t);
         sub.frequency.exponentialRampToValueAtTime(40, t + 0.1);
         let subGain = ctx.createGain();
-        subGain.gain.setValueAtTime(0.3, t);
+        subGain.gain.setValueAtTime(0.25, t);
         subGain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
-        sub.connect(subGain);
+
+        sub.connect(subFilter);
+        subFilter.connect(subGain);
         subGain.connect(targetNode);
         sub.start(t);
         sub.stop(t + 0.12);
+    }
+
+    playInfectionPulse(x, y, z) {
+        let s = this._setup(x, y, z);
+        if (!s) return;
+        let { ctx, t, targetNode } = s;
+
+        let dur = 1.8;
+        let gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(0.01, t);
+        gainNode.gain.linearRampToValueAtTime(0.8, t + 0.1);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
+
+        let filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(2000, t);
+        filter.frequency.exponentialRampToValueAtTime(100, t + dur);
+
+        let osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(120, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + dur);
+
+        let noise = this._createNoise(dur, 0.05, 1.2);
+        let distortion = ctx.createWaveShaper();
+        distortion.curve = this.distCurve;
+
+        osc.connect(filter);
+        if (noise) noise.connect(filter);
+        filter.connect(distortion);
+        distortion.connect(gainNode);
+        gainNode.connect(targetNode);
+
+        osc.start(t);
+        osc.stop(t + dur);
+        if (noise) noise.stop(t + dur);
     }
 
     playEnemyShot(type = 'fighter', x, y, z) {
@@ -405,7 +562,7 @@ class GameSFX {
         osc.stop(t + dur);
     }
 
-    playExplosion(isLarge = false, type = '', x, y, z) {
+    playExplosion(x, y, z, isLarge = false, type = '') {
         // --- Deduplication & Rate Limiting ---
         // Prevents redundant explosion sounds from triggering in the same frame
         // or very close together in space/time, which can cause audio glitches.
@@ -427,13 +584,14 @@ class GameSFX {
         let isBomber = type === 'bomber';
         let isSquid = type === 'squid';
         let isCrab = type === 'crab';
-        let dur = isLarge || isBomber ? 2.2 : (isSquid ? 1.5 : 0.9);
+        let isColossus = type === 'colossus';
+        let dur = isLarge || isBomber || isColossus ? 2.8 : (isSquid ? 1.5 : 0.9);
 
         let distortion = ctx.createWaveShaper();
         distortion.curve = this.distCurve;
         distortion.oversample = '4x';
 
-        let noise = this._createNoise(dur, 0.02, 3.5);
+        let noise = this._createNoise(dur, 0.02, isLarge ? 4.5 : 3.5);
 
         let noiseFilter = ctx.createBiquadFilter();
         noiseFilter.type = isCrab ? 'bandpass' : 'lowpass';
@@ -441,14 +599,29 @@ class GameSFX {
             noiseFilter.frequency.setValueAtTime(2000, t);
             noiseFilter.frequency.exponentialRampToValueAtTime(500, t + dur);
         } else {
-            noiseFilter.frequency.setValueAtTime(isLarge || isBomber ? 2200 : 5000, t);
-            noiseFilter.frequency.exponentialRampToValueAtTime(80, t + dur);
+            noiseFilter.frequency.setValueAtTime(isLarge || isBomber || isColossus ? 1800 : 5000, t);
+            noiseFilter.frequency.exponentialRampToValueAtTime(60, t + dur);
         }
 
         let noiseGain = ctx.createGain();
-        let initVol = isLarge ? (type === '' ? 1.3 : 1.5) : (isBomber ? 1.4 : 1.0);
+        let initVol = isLarge ? (type === '' ? 1.4 : 1.6) : (isBomber || isColossus ? 1.8 : 1.1);
         noiseGain.gain.setValueAtTime(initVol, t);
         noiseGain.gain.exponentialRampToValueAtTime(0.01, t + dur);
+
+        // Sub-rumble for weight
+        if (isLarge || isBomber || isColossus) {
+            let sub = ctx.createOscillator();
+            let subGain = ctx.createGain();
+            sub.type = 'sine';
+            sub.frequency.setValueAtTime(60, t);
+            sub.frequency.exponentialRampToValueAtTime(20, t + dur * 0.5);
+            subGain.gain.setValueAtTime(0.8, t);
+            subGain.gain.exponentialRampToValueAtTime(0.01, t + dur * 0.6);
+            sub.connect(subGain);
+            subGain.connect(targetNode);
+            sub.start(t);
+            sub.stop(t + dur);
+        }
 
         noise.connect(noiseFilter);
         noiseFilter.connect(distortion);
@@ -960,11 +1133,12 @@ class GameSFX {
 
         let n = this.thrustNodes[id];
         // 50ms smoothing
-        let baseVol = this.spatialEnabled ? 0.22 : 0.16; // Lower base volume in 2p mode
+        let baseVol = (id === 0) ? (this.spatialEnabled ? 0.32 : 0.24) : (this.spatialEnabled ? 0.22 : 0.16);
         let finalVol = baseVol;
 
         // Manual attenuation for engines in 2p mode
-        if (!this.spatialEnabled && x !== undefined && y !== undefined && z !== undefined) {
+        let distance = 0;
+        if (x !== undefined && y !== undefined && z !== undefined) {
             let minDistSq = Infinity;
             if (typeof players !== 'undefined' && players.length > 0) {
                 let numPlayers = players.length;
@@ -975,8 +1149,8 @@ class GameSFX {
                     if (dSq < minDistSq) minDistSq = dSq;
                 }
                 if (minDistSq !== Infinity) {
-                    let distance = Math.sqrt(minDistSq);
-                    if (distance > this._refDist) {
+                    distance = Math.sqrt(minDistSq);
+                    if (!this.spatialEnabled && distance > this._refDist) {
                         finalVol *= Math.pow(this._refDist / Math.min(distance, this._maxManualDist), 1.25);
                     }
                 }
@@ -984,6 +1158,13 @@ class GameSFX {
         }
 
         n.gain.gain.setTargetAtTime(finalVol, t, 0.05);
+
+        // Subtle altitude-based adjustment for player engine
+        if (id === 0 && y !== undefined) {
+            let altFactor = constrain((100 - y) / 2000, 0, 1); // 0 at launchpad, 1 at 2100 altitude
+            n.filter.frequency.setTargetAtTime(110 + altFactor * 40, t, 0.1);
+            n.osc.frequency.setTargetAtTime(42 + altFactor * 10, t, 0.1);
+        }
 
         // Only update 3D panner position if we are in spatial mode (single player)
         if (this.spatialEnabled && n.panner && x !== undefined) {

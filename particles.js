@@ -164,8 +164,8 @@ class ParticleSystem {
    */
   addExplosion(x, y, z, baseColor, type) {
     if (typeof gameSFX !== 'undefined') {
-      if (type) gameSFX.playExplosion(type === 'bomber' || type === 'mega', type, x, y, z);
-      else gameSFX.playExplosion(baseColor === undefined || baseColor === null, '', x, y, z);
+      if (type) gameSFX.playExplosion(x, y, z, type === 'bomber' || type === 'mega', type);
+      else gameSFX.playExplosion(x, y, z, baseColor === undefined || baseColor === null, '');
     }
 
     let isCustom = baseColor !== undefined && baseColor !== null;
@@ -273,7 +273,7 @@ class ParticleSystem {
           }
         }
         terrain.addPulse(b.x, b.z, 0.0);  // Trigger red ground ring
-        if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal', b.x, b.y, b.z);
+        if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.x, b.y, b.z, b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal');
         // Swap-and-pop for O(1) removal (order doesn't matter for bombs)
         let lastBomb = this.bombs.pop();
         if (i < this.bombs.length) this.bombs[i] = lastBomb;

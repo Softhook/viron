@@ -787,6 +787,17 @@ function draw() {
       if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
         b.pulseTimer = 0;
         terrain.addPulse(b.x, b.z, 1.0);  // infection-blue expanding ring
+        if (typeof gameSFX !== 'undefined') {
+          // Check if any player is close enough to hear the pulse
+          let hearDist = 2000;
+          let played = false;
+          for (let p of players) {
+            if (!p.dead && dist(p.ship.x, p.ship.y, p.ship.z, b.x, b.y, b.z) < hearDist) {
+              gameSFX.playInfectionPulse(b.x, b.y, b.z);
+              played = true; break;
+            }
+          }
+        }
       }
     } else {
       // Healthy — register position for the shader steady glow ring
@@ -794,6 +805,54 @@ function draw() {
       terrain.sentinelGlows.push({ x: b.x, z: b.z, radius: b.w * 1.5 });
       if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) b.pulseTimer = 0;  // prevent overflow
     }
+  }
+
+  // --- Ambient Audio Update ---
+  if (typeof gameSFX !== 'undefined') {
+    let p = players[0]; // Primary player for ambiance
+    let proximityData = { dist: 10000 };
+    if (p && !p.dead && p.ship) {
+      // Find proximity to nearest infected tile
+      let px = toTile(p.ship.x), pz = toTile(p.ship.z);
+      let minDistSq = 1000000;
+      // Sample an 8x8 tile radius for proximity sensing (120*8 = 960 units)
+      for (let dz = -8; dz <= 8; dz++) {
+        for (let dx = -8; dx <= 8; dx++) {
+          let tx = px + dx, tz = pz + dz;
+          if (infection.has(tileKey(tx, tz))) {
+            let wx = tx * TILE + 60; // center of tile
+            let wz = tz * TILE + 60;
+            let wy = terrain.getAltitude(wx, wz);
+            let dSq = (p.ship.x - wx) ** 2 + (p.ship.y - wy) ** 2 + (p.ship.z - wz) ** 2;
+            if (dSq < minDistSq) minDistSq = dSq;
+          }
+        }
+      }
+      proximityData.dist = Math.sqrt(minDistSq);
+
+      // --- Pulse Overlap Detection ---
+      // Detection of expanding shockwaves (from sentinels/bombs) passing the player
+      // to trigger the temporary "zzz" scanning modulation.
+      let nowSec = millis() / 1000.0;
+      let maxScan = 0;
+      for (let pulse of terrain.activePulses) {
+        let age = nowSec - pulse.start;
+        if (age < 0 || age > 3.0) continue;
+
+        // Match shader radius logic (type 1.0 = infection pulse)
+        let radius = pulse.type === 1.0 ? age * 300.0 : (pulse.type === 2.0 ? age * 1200.0 : age * 800.0);
+        let distToPulse = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
+
+        // Define a "shell" thickness for the overlap
+        let thickness = 300;
+        if (Math.abs(distToPulse - radius) < thickness) {
+          let intensity = 1.0 - (Math.abs(distToPulse - radius) / thickness);
+          if (intensity > maxScan) maxScan = intensity;
+        }
+      }
+      proximityData.pulseOverlap = maxScan;
+    }
+    gameSFX.updateAmbiance(proximityData, infection.count, MAX_INF);
   }
 
   // --- Render ---

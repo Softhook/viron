@@ -862,13 +862,47 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        fill(255, 150, 0);
+        fill(255, 150, 0); // Primary orange
+
+        // Main body (elongated diamond/fish shape)
         beginShape(TRIANGLES);
-        drawTri([0, 0, 20], [-15, 0, -15], [15, 0, -15]);
-        drawTri([0, 0, 20], [-15, 0, -15], [0, -10, 0]);
-        drawTri([0, 0, 20], [15, 0, -15], [0, -10, 0]);
-        drawTri([0, 0, 20], [-15, 0, -15], [0, 10, 0]);
-        drawTri([0, 0, 20], [15, 0, -15], [0, 10, 0]);
+        // Nose to mid-body
+        drawTri([0, 0, 25], [-8, 0, 0], [0, 8, 0]);   // Top left
+        drawTri([0, 0, 25], [8, 0, 0], [0, 8, 0]);    // Top right
+        drawTri([0, 0, 25], [-8, 0, 0], [0, -8, 0]);  // Bottom left
+        drawTri([0, 0, 25], [8, 0, 0], [0, -8, 0]);   // Bottom right
+
+        // Mid-body to rear
+        drawTri([-8, 0, 0], [0, 0, -15], [0, 8, 0]);  // Top left
+        drawTri([8, 0, 0], [0, 0, -15], [0, 8, 0]);   // Top right
+        drawTri([-8, 0, 0], [0, 0, -15], [0, -8, 0]); // Bottom left
+        drawTri([8, 0, 0], [0, 0, -15], [0, -8, 0]);  // Bottom right
+        endShape();
+
+        // Dorsal fin (top)
+        fill(255, 100, 0);
+        beginShape(TRIANGLES);
+        drawTri([0, 8, 5], [0, 18, -10], [0, 8, -12]);
+        endShape();
+
+        // Pectoral fins (sides)
+        fill(255, 180, 50);
+        let finWarp = sin(frameCount * 0.15 + e.id) * 0.2;
+        beginShape(TRIANGLES);
+        // Left fin
+        drawTri([-8, 0, 5], [-22, -2, -8 + finWarp * 10], [-8, 0, -10]);
+        // Right fin
+        drawTri([8, 0, 5], [22, -2, -8 + finWarp * 10], [8, 0, -10]);
+        endShape();
+
+        // Animated Tail
+        let tailSwing = sin(frameCount * 0.2 + e.id) * 12;
+        fill(255, 80, 0);
+        beginShape(TRIANGLES);
+        // Upper tail lobe
+        drawTri([0, 0, -15], [tailSwing, 15, -35], [0, 0, -22]);
+        // Lower tail lobe
+        drawTri([0, 0, -15], [tailSwing, -15, -35], [0, 0, -22]);
         endShape();
       } else if (e.type === 'bomber') {
         rotateY(frameCount * 0.05);
@@ -889,11 +923,34 @@ class EnemyManager {
         let d = mag3(fvX, fvY, fvZ);
         if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
         noStroke();
-        fill(40, 255, 40);
+        fill(40, 255, 40); // Primary green
+
+        // Tapered body
         beginShape(TRIANGLES);
-        drawTri([0, 0, 30], [-8, 0, -20], [8, 0, -20]);
-        drawTri([0, 0, 30], [-8, 0, -20], [0, -10, 0]);
-        drawTri([0, 0, 30], [8, 0, -20], [0, -10, 0]);
+        // Beak to mid
+        drawTri([0, 0, 25], [-5, 0, 5], [0, 5, 5]);  // Top left
+        drawTri([0, 0, 25], [5, 0, 5], [0, 5, 5]);   // Top right
+        drawTri([0, 0, 25], [-5, 0, 5], [0, -3, 5]); // Bottom left
+        drawTri([0, 0, 25], [5, 0, 5], [0, -3, 5]);  // Bottom right
+        // Mid to tail base
+        drawTri([-5, 0, 5], [0, 0, -15], [0, 5, 5]); // Top left
+        drawTri([5, 0, 5], [0, 0, -15], [0, 5, 5]);  // Top right
+        endShape();
+
+        // Wings with flapping animation
+        let flap = sin(frameCount * 0.3 + e.id) * 20;
+        fill(30, 200, 30);
+        beginShape(TRIANGLES);
+        // Left wing
+        drawTri([-5, 0, 5], [-35, flap, -10], [-5, 0, -5]);
+        // Right wing
+        drawTri([5, 0, 5], [35, flap, -10], [5, 0, -5]);
+        endShape();
+
+        // Tail feathers
+        fill(20, 150, 20);
+        beginShape(TRIANGLES);
+        drawTri([0, 0, -15], [-12, 0, -30], [12, 0, -30]);
         endShape();
       } else {
         // Seeder
@@ -926,8 +983,8 @@ class EnemyManager {
       let sw = 80, sh = 50;
       if (e.type === 'colossus') { sw = 320; sh = 230; }
       else if (e.type === 'bomber') { sw = 150; sh = 85; }
-      else if (e.type === 'fighter') { sw = 58; sh = 30; }
-      else if (e.type === 'hunter') { sw = 72; sh = 38; }
+      else if (e.type === 'fighter') { sw = 64; sh = 60; }
+      else if (e.type === 'hunter') { sw = 80; sh = 48; }
       else if (e.type === 'squid') { sw = 110; sh = 72; }
       else if (e.type === 'seeder') { sw = 68; sh = 50; }
       if (e.type !== 'crab' && e.type !== 'scorpion') {

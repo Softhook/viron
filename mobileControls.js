@@ -37,7 +37,7 @@ class MobileController {
     get _anchorDiam() { return 20 * this._scale; }
     get _maxStretch() { return 100 * this._scale; } // How far the blob can visually stretch
     get _velDeadzone() { return 3 * this._scale; }   // Movement below this is "stationary"
-    get _thrustHoldTicks() { return 30; }               // Frames (at 60fps) required to trigger thrust
+    get _thrustHoldTicks() { return 20; }               // Frames (at 60fps) required to trigger thrust
 
     update(touches, w, h) {
         // Cache scale on resize

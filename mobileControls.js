@@ -37,6 +37,7 @@ class MobileController {
     get _anchorDiam() { return 20 * this._scale; }
     get _maxStretch() { return 100 * this._scale; } // How far the blob can visually stretch
     get _velDeadzone() { return 3 * this._scale; }   // Movement below this is "stationary"
+    get _thrustHoldTicks() { return 30; }               // Frames (at 60fps) required to trigger thrust
 
     update(touches, w, h) {
         // Cache scale on resize
@@ -115,7 +116,7 @@ class MobileController {
 
     getInputs(ship, enemies, yawRate, pitchRate) {
         let inputs = {
-            thrust: (this.stationaryTicks > 15), // Thrust if held still for ~250ms
+            thrust: (this.stationaryTicks > this._thrustHoldTicks), // Thrust if held still
             shoot: this.btns.shoot.active,
             cycleWeapon: this.btns.missile.active,
             yawDelta: 0,
@@ -156,7 +157,7 @@ class MobileController {
         translate(-w / 2, -h / 2, 0);
 
         if (this.leftTouchId !== null) {
-            let thrusting = (this.stationaryTicks > 15);
+            let thrusting = (this.stationaryTicks > this._thrustHoldTicks);
 
             // Anchor dot
             noStroke();
@@ -187,7 +188,7 @@ class MobileController {
                 noFill();
                 strokeWeight(3 * this._scale);
                 stroke(0, 255, 60, 150);
-                let progress = Math.min(1, this.stationaryTicks / 16);
+                let progress = Math.min(1, this.stationaryTicks / (this._thrustHoldTicks + 1));
                 let r = this._blobDiam + (1 - progress) * 40 * this._scale;
                 circle(this.lastX, this.lastY, r);
             }

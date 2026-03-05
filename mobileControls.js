@@ -1,96 +1,96 @@
 /**
  * MobileController - Handles touch inputs and on-screen buttons.
- *
- * Aim-assist logic has been moved to aimAssist.js (AimAssist class) so it can
- * be used for all input modes (mobile, desktop mouse, desktop keyboard).
- * MobileController delegates to the aimAssist singleton for assist deltas and
- * for debug-overlay data.
- *
- * All pixel distances are expressed as a fraction of the screen's short edge
- * (min(w, h)) so that the controls feel identical in physical finger-distance
- * on both phones (~375 px short edge) and iPads (~768 px short edge).
- *
- * Baseline short-edge for the design: 400 px (just under iPhone width).
- * scale = min(w, h) / 400
- * All button radii, joystick thresholds, and positions are multiplied by scale.
+ * 
+ * "Swipe-to-Turn / Stationary-to-Thrust" Scheme:
+ * 1. Swiping on the left half of the screen performs relative turning (trackpad style).
+ * 2. Holding the finger stationary logic (low velocity) engages thrust.
+ * 3. A small "thrust grace" period allows turning while maintaining momentum.
  */
 class MobileController {
     constructor() {
         this.leftTouchId = null;
-        this.joyCenter = null;
-        this.joyPos = null;
+        this.lastX = 0;
+        this.lastY = 0;
+        this.deltaX = 0;
+        this.deltaY = 0;
+
+        this.stationaryTicks = 0;
+        this.thrustGrace = 0;
+
         this._scale = 1;
         this._w = 0;
         this._h = 0;
 
-        // Button definitions — radii are BASE values at scale = 1 (phone baseline).
         this.btns = {
             shoot: { active: false, baseR: 65, col: [255, 60, 60], label: 'SHT', x: 0, y: 0, r: 65 },
             missile: { active: false, baseR: 44, col: [0, 200, 255], label: 'WPN', x: 0, y: 0, r: 44 }
         };
 
-        this.debug = false; // Controls the 2D debug overlay and syncs aimAssist.enabled
+        this.debug = false;
     }
 
     // -------------------------------------------------------------------------
-    // Scale helpers — physical-pixel baseline constants
+    // Dimensions & UI Scaling
     // -------------------------------------------------------------------------
 
-    /** Thrust activation radius in scaled pixels. */
-    get _thrustRadius() { return 60 * this._scale; }
-    /** Max rubber-band stretch before anchor slides. */
-    get _maxStretch() { return 100 * this._scale; }
-    /** Visual indicator ring diameter. */
-    get _ringDiam() { return 120 * this._scale; }
-    /** Finger-blob diameter. */
     get _blobDiam() { return 60 * this._scale; }
-    /** Anchor dot diameter. */
-    get _anchorDiam() { return 20 * this._scale; }
-
-    // -------------------------------------------------------------------------
-    // update — called every frame before getInputs / draw
-    // -------------------------------------------------------------------------
+    get _ringDiam() { return 80 * this._scale; }
+    get _deadzone() { return 4 * this._scale; } // Increased for better jitter filtering
 
     update(touches, w, h) {
-        // Only re-calculate scale if the screen dimensions change (e.g. orientation swap)
+        // Cache scale on resize
         if (w !== this._w || h !== this._h) {
             this._w = w;
             this._h = h;
             this._scale = Math.min(w, h) / 400;
             const s = this._scale;
-
-            // Updated scaled radii for buttons — do this once per resize
             this.btns.shoot.r = this.btns.shoot.baseR * s;
             this.btns.missile.r = this.btns.missile.baseR * s;
         }
 
         const s = this._scale;
-
-        // Button positions must still be updated per frame relative to current w/h
         this.btns.shoot.x = w - 105 * s; this.btns.shoot.y = h - 100 * s;
         this.btns.missile.x = w - 105 * s; this.btns.missile.y = h - 240 * s;
 
         for (let b in this.btns) this.btns[b].active = false;
 
         let leftFound = false;
+        this.deltaX = 0;
+        this.deltaY = 0;
+
         for (let i = 0; i < touches.length; i++) {
             let t = touches[i];
             if (t.x > w / 2) {
-                // Right half — check action buttons
+                // Action Buttons
                 for (let b in this.btns) {
                     if (Math.hypot(t.x - this.btns[b].x, t.y - this.btns[b].y) < this.btns[b].r * 1.7) {
                         this.btns[b].active = true;
                     }
                 }
             } else {
-                // Left half — rubber-band joystick
+                // Trackpad / Thrust logic
                 if (this.leftTouchId === t.id) {
-                    this.joyPos = { x: t.x, y: t.y };
+                    this.deltaX = t.x - this.lastX;
+                    this.deltaY = t.y - this.lastY;
+
+                    let dist = Math.hypot(this.deltaX, this.deltaY);
+
+                    if (dist < this._deadzone) {
+                        this.stationaryTicks++;
+                    } else {
+                        this.stationaryTicks = 0;
+                        this.thrustGrace = 12; // ~200ms grace period for momentum turns
+                    }
+
+                    this.lastX = t.x;
+                    this.lastY = t.y;
                     leftFound = true;
                 } else if (!this.leftTouchId) {
                     this.leftTouchId = t.id;
-                    this.joyCenter = { x: t.x, y: t.y };
-                    this.joyPos = { x: t.x, y: t.y };
+                    this.lastX = t.x;
+                    this.lastY = t.y;
+                    this.stationaryTicks = 0;
+                    this.thrustGrace = 0;
                     leftFound = true;
                 }
             }
@@ -98,28 +98,16 @@ class MobileController {
 
         if (!leftFound) {
             this.leftTouchId = null;
-            this.joyCenter = null;
-            this.joyPos = null;
-        } else if (this.joyCenter && this.joyPos) {
-            // Rubber band: slide anchor if finger stretches past maxStretch.
-            let dx = this.joyPos.x - this.joyCenter.x;
-            let dy = this.joyPos.y - this.joyCenter.y;
-            let d = Math.hypot(dx, dy);
-            if (d > this._maxStretch) {
-                let angle = Math.atan2(dy, dx);
-                this.joyCenter.x = this.joyPos.x - Math.cos(angle) * this._maxStretch;
-                this.joyCenter.y = this.joyPos.y - Math.sin(angle) * this._maxStretch;
-            }
+            this.stationaryTicks = 0;
+            this.thrustGrace = 0;
         }
-    }
 
-    // -------------------------------------------------------------------------
-    // getInputs — returns the current control state for this frame
-    // -------------------------------------------------------------------------
+        if (this.thrustGrace > 0) this.thrustGrace--;
+    }
 
     getInputs(ship, enemies, yawRate, pitchRate) {
         let inputs = {
-            thrust: this.btns.shoot.active && false, // shoot never drives thrust
+            thrust: (this.stationaryTicks > 5 || this.thrustGrace > 0),
             shoot: this.btns.shoot.active,
             cycleWeapon: this.btns.missile.active,
             yawDelta: 0,
@@ -128,30 +116,17 @@ class MobileController {
             assistPitch: 0
         };
 
-        // Start with no thrust; rubber-band drag will enable it if stretched far enough.
-        inputs.thrust = false;
-
-        let isSwipingHard = false;
-
-        if (this.joyCenter && this.joyPos) {
-            let dx = this.joyPos.x - this.joyCenter.x;
-            let dy = this.joyPos.y - this.joyCenter.y;
-            let distSq = dx * dx + dy * dy;
-
-            if (distSq > 25) {
-                let d = Math.sqrt(distSq);
-                let speedFactor = Math.min(1, (d - 5) / 50);
-                inputs.yawDelta = -(dx / d) * yawRate * speedFactor;
-                inputs.pitchDelta = -(dy / d) * pitchRate * speedFactor * 1.5;
-                if (distSq > 4000) isSwipingHard = true;
-
-                // Engage thrust once the rubber band is stretched beyond the threshold ring.
-                if (d > this._thrustRadius) inputs.thrust = true;
-            }
+        if (this.leftTouchId) {
+            // Trackpad sensitivity: a 100px swipe is ~1.5 radians (approx 85 degrees)
+            // This multiplier (1.0) with sens (0.4) is snappy but controllable.
+            let sens = 0.4 / this._scale;
+            inputs.yawDelta = -this.deltaX * sens * (yawRate * 1.0);
+            inputs.pitchDelta = -this.deltaY * sens * (pitchRate * 1.0);
         }
 
-        // Compute soft lock-on aim assist via the shared aimAssist singleton
+        // Aim Assist
         if (aimAssist.enabled && ship && enemies) {
+            let isSwipingHard = Math.hypot(this.deltaX, this.deltaY) > 15;
             let assist = aimAssist.getAssistDeltas(ship, enemies, isSwipingHard);
             inputs.assistYaw = assist.yawDelta;
             inputs.assistPitch = assist.pitchDelta;
@@ -160,49 +135,40 @@ class MobileController {
         return inputs;
     }
 
-    // -------------------------------------------------------------------------
-    // draw — on-screen UI rendered after the 3D scene each frame
-    // -------------------------------------------------------------------------
-
     draw(w, h) {
         if (typeof setup2DViewport === 'function') setup2DViewport();
         push();
         translate(-w / 2, -h / 2, 0);
 
-        // --- Rubber-band joystick ---
-        if (this.joyCenter && this.joyPos) {
-            let dx = this.joyPos.x - this.joyCenter.x;
-            let dy = this.joyPos.y - this.joyCenter.y;
-            let d = Math.hypot(dx, dy);
-            let thrusting = d > this._thrustRadius;
+        if (this.leftTouchId) {
+            let thrusting = (this.stationaryTicks > 5 || this.thrustGrace > 0);
 
-            // Rubber band line
-            stroke(255, 255, 255, thrusting ? 160 : 100);
-            strokeWeight(4 * this._scale);
-            line(this.joyCenter.x, this.joyCenter.y, this.joyPos.x, this.joyPos.y);
-
-            // Anchor dot
-            noStroke();
-            fill(255, 255, 255, 80);
-            circle(this.joyCenter.x, this.joyCenter.y, this._anchorDiam);
-
-            // Thrust threshold ring
-            stroke(255, 255, 255, 30);
-            strokeWeight(2 * this._scale);
+            // Stationary/Thrust indicator ring
             noFill();
-            circle(this.joyCenter.x, this.joyCenter.y, this._ringDiam);
+            strokeWeight(2 * this._scale);
+            if (thrusting) {
+                stroke(0, 255, 60, 150);
+                // Pulse effect
+                let pulse = (frameCount % 30) / 30;
+                circle(this.lastX, this.lastY, this._ringDiam * (1 + pulse * 0.5));
+            } else {
+                stroke(255, 255, 255, 50);
+                // Contracting ring shows progress to stationary thrust
+                let progress = Math.min(1, this.stationaryTicks / 6);
+                circle(this.lastX, this.lastY, this._ringDiam * (2 - progress));
+            }
 
-            // Finger blob — green when thrusting
+            // Finger blob
             noStroke();
             if (thrusting) {
-                fill(0, 255, 60, 220);
+                fill(0, 255, 60, 200);
             } else {
-                fill(255, 255, 255, 180);
+                fill(255, 255, 255, 150);
             }
-            circle(this.joyPos.x, this.joyPos.y, this._blobDiam);
+            circle(this.lastX, this.lastY, this._blobDiam);
         }
 
-        // --- Action buttons ---
+        // Action buttons
         for (let b in this.btns) {
             let btn = this.btns[b];
             stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
@@ -216,22 +182,17 @@ class MobileController {
             text(btn.label, btn.x, btn.y);
         }
 
-        // --- 2D Debug Overlay ---
+        // Debug info
         if (this.debug) {
-            let tr = aimAssist.lastTracking;
             resetMatrix();
-            textAlign(LEFT, TOP); textSize(16); noStroke(); fill(0, 255, 0);
+            textAlign(LEFT, TOP); textSize(14); noStroke(); fill(0, 255, 0);
             let info = [
-                `DEBUG MODE (P to toggle)`,
-                `Aim Assist: ${aimAssist.enabled ? "ON" : "OFF"}`,
-                `Target: ${tr.target ? "ENEMY LOCKED" : (tr.virusTarget ? "VIRUS LOCKED" : "NONE")}`,
-                `Dot Product: ${tr.dot.toFixed(3)}`,
-                `Yaw Delta: ${tr.yawDelta.toFixed(4)}`,
-                `Pitch Delta: ${tr.pitchDelta.toFixed(4)}`,
-                `Hard Swipe: ${tr.isSwipingHard}`,
-                `Scale: ${this._scale.toFixed(2)}`
+                `Velocity Mode`,
+                `Stationary Ticks: ${this.stationaryTicks}`,
+                `Thrust Grace: ${this.thrustGrace}`,
+                `Delta: ${this.deltaX.toFixed(1)}, ${this.deltaY.toFixed(1)}`
             ];
-            for (let i = 0; i < info.length; i++) text(info[i], 20, 20 + i * 22);
+            for (let i = 0; i < info.length; i++) text(info[i], 20, 20 + i * 20);
         }
         pop();
     }

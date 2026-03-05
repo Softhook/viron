@@ -95,7 +95,7 @@ class MobileController {
                     this.lastX = t.x;
                     this.lastY = t.y;
                     leftFound = true;
-                } else if (!this.leftTouchId) {
+                } else if (this.leftTouchId === null) {
                     this.leftTouchId = t.id;
                     this.anchorX = t.x;
                     this.anchorY = t.y;
@@ -124,7 +124,7 @@ class MobileController {
             assistPitch: 0
         };
 
-        if (this.leftTouchId) {
+        if (this.leftTouchId !== null) {
             // Joystick displacement determines constant turning rate
             let offsetX = this.lastX - this.anchorX;
             let offsetY = this.lastY - this.anchorY;
@@ -141,7 +141,7 @@ class MobileController {
 
         // Aim Assist (only activate strong assist if the user is scrubbing hard)
         if (aimAssist.enabled && ship && enemies) {
-            let isSwipingHard = this.leftTouchId && (this.stationaryTicks === 0);
+            let isSwipingHard = (this.leftTouchId !== null) && (this.stationaryTicks === 0);
             let assist = aimAssist.getAssistDeltas(ship, enemies, isSwipingHard);
             inputs.assistYaw = assist.yawDelta;
             inputs.assistPitch = assist.pitchDelta;
@@ -155,7 +155,7 @@ class MobileController {
         push();
         translate(-w / 2, -h / 2, 0);
 
-        if (this.leftTouchId) {
+        if (this.leftTouchId !== null) {
             let thrusting = (this.stationaryTicks > 5);
 
             // Anchor dot
@@ -206,6 +206,14 @@ class MobileController {
             textSize(Math.max(10, btn.r * 0.4));
             text(btn.label, btn.x, btn.y);
         }
+
+        // Navigation Mode Label
+        resetMatrix();
+        textAlign(CENTER, TOP);
+        textSize(14 * Math.max(1, this._scale));
+        fill(255, 255, 255, 120);
+        noStroke();
+        text("NAV: Hybrid Floating Joystick", w / 2, 20 * Math.max(1, this._scale));
 
         pop();
     }

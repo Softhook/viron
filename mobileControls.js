@@ -1,21 +1,21 @@
 /**
  * MobileController - Handles touch inputs and on-screen buttons.
  * 
- * "Swipe-to-Turn / Stationary-to-Thrust" Scheme:
- * 1. Swiping on the left half of the screen performs relative turning (trackpad style).
- * 2. Holding the finger stationary logic (low velocity) engages thrust.
- * 3. A small "thrust grace" period allows turning while maintaining momentum.
+ * "Hybrid Floating Joystick" Scheme:
+ * 1. Touching the left half places a floating anchor. Swiping away sets continuous Turn Rate.
+ * 2. Holding the finger stationary logic (low velocity) engages thrust instantly.
+ * 3. Actively scrubbing/moving the finger (high velocity) turns OFF thrust to allow precision aiming.
  */
 class MobileController {
     constructor() {
         this.leftTouchId = null;
+        this.anchorX = 0;
+        this.anchorY = 0;
         this.lastX = 0;
         this.lastY = 0;
-        this.deltaX = 0;
-        this.deltaY = 0;
 
+        // Thrust is engaged when the finger's frame-to-frame velocity is low
         this.stationaryTicks = 0;
-        this.thrustGrace = 0;
 
         this._scale = 1;
         this._w = 0;
@@ -34,8 +34,9 @@ class MobileController {
     // -------------------------------------------------------------------------
 
     get _blobDiam() { return 60 * this._scale; }
-    get _ringDiam() { return 80 * this._scale; }
-    get _deadzone() { return 4 * this._scale; } // Increased for better jitter filtering
+    get _anchorDiam() { return 20 * this._scale; }
+    get _maxStretch() { return 100 * this._scale; } // How far the blob can visually stretch
+    get _velDeadzone() { return 3 * this._scale; }   // Movement below this is "stationary"
 
     update(touches, w, h) {
         // Cache scale on resize
@@ -55,8 +56,6 @@ class MobileController {
         for (let b in this.btns) this.btns[b].active = false;
 
         let leftFound = false;
-        this.deltaX = 0;
-        this.deltaY = 0;
 
         for (let i = 0; i < touches.length; i++) {
             let t = touches[i];
@@ -68,18 +67,29 @@ class MobileController {
                     }
                 }
             } else {
-                // Trackpad / Thrust logic
+                // Hybrid Joystick logic
                 if (this.leftTouchId === t.id) {
-                    this.deltaX = t.x - this.lastX;
-                    this.deltaY = t.y - this.lastY;
+                    // Frame-to-frame velocity check for thrust
+                    let dx = t.x - this.lastX;
+                    let dy = t.y - this.lastY;
+                    let dist = Math.hypot(dx, dy);
 
-                    let dist = Math.hypot(this.deltaX, this.deltaY);
-
-                    if (dist < this._deadzone) {
+                    if (dist < this._velDeadzone) {
                         this.stationaryTicks++;
                     } else {
+                        // Actively scrubbing the finger removes thrust for precise aiming
                         this.stationaryTicks = 0;
-                        this.thrustGrace = 12; // ~200ms grace period for momentum turns
+                    }
+
+                    // Floating Anchor Drag (prevents getting stuck at the edge of the screen)
+                    let offsetX = t.x - this.anchorX;
+                    let offsetY = t.y - this.anchorY;
+                    let stretch = Math.hypot(offsetX, offsetY);
+
+                    if (stretch > this._maxStretch) {
+                        let over = stretch - this._maxStretch;
+                        this.anchorX += (offsetX / stretch) * over;
+                        this.anchorY += (offsetY / stretch) * over;
                     }
 
                     this.lastX = t.x;
@@ -87,10 +97,11 @@ class MobileController {
                     leftFound = true;
                 } else if (!this.leftTouchId) {
                     this.leftTouchId = t.id;
+                    this.anchorX = t.x;
+                    this.anchorY = t.y;
                     this.lastX = t.x;
                     this.lastY = t.y;
                     this.stationaryTicks = 0;
-                    this.thrustGrace = 0;
                     leftFound = true;
                 }
             }
@@ -99,15 +110,12 @@ class MobileController {
         if (!leftFound) {
             this.leftTouchId = null;
             this.stationaryTicks = 0;
-            this.thrustGrace = 0;
         }
-
-        if (this.thrustGrace > 0) this.thrustGrace--;
     }
 
     getInputs(ship, enemies, yawRate, pitchRate) {
         let inputs = {
-            thrust: (this.stationaryTicks > 5 || this.thrustGrace > 0),
+            thrust: (this.stationaryTicks > 5), // Thrust if held still for ~80ms
             shoot: this.btns.shoot.active,
             cycleWeapon: this.btns.missile.active,
             yawDelta: 0,
@@ -117,16 +125,23 @@ class MobileController {
         };
 
         if (this.leftTouchId) {
-            // Trackpad sensitivity: a 100px swipe is ~1.5 radians (approx 85 degrees)
-            // This multiplier (1.0) with sens (0.4) is snappy but controllable.
-            let sens = 0.4 / this._scale;
-            inputs.yawDelta = -this.deltaX * sens * (yawRate * 1.0);
-            inputs.pitchDelta = -this.deltaY * sens * (pitchRate * 1.0);
+            // Joystick displacement determines constant turning rate
+            let offsetX = this.lastX - this.anchorX;
+            let offsetY = this.lastY - this.anchorY;
+
+            // Map the offset visually to a (-1 to 1) steering multiplier
+            let turnX = constrain(offsetX / this._maxStretch, -1.0, 1.0);
+            let turnY = constrain(offsetY / this._maxStretch, -1.0, 1.0);
+
+            // A full pull provides ~1.2x the standard keyboard turning rate
+            // Inverted: drag right (X+) -> turn right (yaw-), drag up (Y-) -> turn up (pitch+)
+            inputs.yawDelta = -turnX * yawRate * 1.2;
+            inputs.pitchDelta = -turnY * pitchRate * 1.2;
         }
 
-        // Aim Assist
+        // Aim Assist (only activate strong assist if the user is scrubbing hard)
         if (aimAssist.enabled && ship && enemies) {
-            let isSwipingHard = Math.hypot(this.deltaX, this.deltaY) > 15;
+            let isSwipingHard = this.leftTouchId && (this.stationaryTicks === 0);
             let assist = aimAssist.getAssistDeltas(ship, enemies, isSwipingHard);
             inputs.assistYaw = assist.yawDelta;
             inputs.assistPitch = assist.pitchDelta;
@@ -141,22 +156,22 @@ class MobileController {
         translate(-w / 2, -h / 2, 0);
 
         if (this.leftTouchId) {
-            let thrusting = (this.stationaryTicks > 5 || this.thrustGrace > 0);
+            let thrusting = (this.stationaryTicks > 5);
 
-            // Stationary/Thrust indicator ring
-            noFill();
+            // Anchor dot
+            noStroke();
+            fill(255, 255, 255, 100);
+            circle(this.anchorX, this.anchorY, this._anchorDiam);
+
+            // Connecting rubber band line
+            stroke(255, 255, 255, 50);
             strokeWeight(2 * this._scale);
-            if (thrusting) {
-                stroke(0, 255, 60, 150);
-                // Pulse effect
-                let pulse = (frameCount % 30) / 30;
-                circle(this.lastX, this.lastY, this._ringDiam * (1 + pulse * 0.5));
-            } else {
-                stroke(255, 255, 255, 50);
-                // Contracting ring shows progress to stationary thrust
-                let progress = Math.min(1, this.stationaryTicks / 6);
-                circle(this.lastX, this.lastY, this._ringDiam * (2 - progress));
-            }
+            line(this.anchorX, this.anchorY, this.lastX, this.lastY);
+
+            // Max stretch limit ring
+            noFill();
+            stroke(255, 255, 255, 20);
+            circle(this.anchorX, this.anchorY, this._maxStretch * 2);
 
             // Finger blob
             noStroke();
@@ -166,6 +181,16 @@ class MobileController {
                 fill(255, 255, 255, 150);
             }
             circle(this.lastX, this.lastY, this._blobDiam);
+
+            // Thrust trigger buildup
+            if (!thrusting && this.stationaryTicks > 0) {
+                noFill();
+                strokeWeight(3 * this._scale);
+                stroke(0, 255, 60, 150);
+                let progress = Math.min(1, this.stationaryTicks / 6);
+                let r = this._blobDiam + (1 - progress) * 40 * this._scale;
+                circle(this.lastX, this.lastY, r);
+            }
         }
 
         // Action buttons
@@ -182,18 +207,6 @@ class MobileController {
             text(btn.label, btn.x, btn.y);
         }
 
-        // Debug info
-        if (this.debug) {
-            resetMatrix();
-            textAlign(LEFT, TOP); textSize(14); noStroke(); fill(0, 255, 0);
-            let info = [
-                `Velocity Mode`,
-                `Stationary Ticks: ${this.stationaryTicks}`,
-                `Thrust Grace: ${this.thrustGrace}`,
-                `Delta: ${this.deltaX.toFixed(1)}, ${this.deltaY.toFixed(1)}`
-            ];
-            for (let i = 0; i < info.length; i++) text(info[i], 20, 20 + i * 20);
-        }
         pop();
     }
 }

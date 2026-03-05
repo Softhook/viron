@@ -79,6 +79,9 @@ class MobileController {
                 inputs.yawDelta = -(dx / d) * yawRate * speedFactor;
                 inputs.pitchDelta = -(dy / d) * pitchRate * speedFactor * 1.5;
                 if (distSq > 4000) isSwipingHard = true;
+
+                // Engage thrust if joystick is pushed beyond threshold
+                if (d > 40) inputs.thrust = true;
             }
         }
 
@@ -101,10 +104,23 @@ class MobileController {
             noStroke();
             fill(255, 255, 255, 40);
             circle(this.joyCenter.x, this.joyCenter.y, 140);
+
+            // Thrust threshold indicator ring
+            stroke(255, 255, 255, 30);
+            strokeWeight(2);
+            noFill();
+            circle(this.joyCenter.x, this.joyCenter.y, 80); // diameter 80 = radius 40
+
+            noStroke();
             fill(255, 255, 255, 120);
             let d = Math.hypot(this.joyPos.x - this.joyCenter.x, this.joyPos.y - this.joyCenter.y);
             let a = Math.atan2(this.joyPos.y - this.joyCenter.y, this.joyPos.x - this.joyCenter.x);
             let r = Math.min(d, 70);
+
+            if (d > 40) { // Color joystick green if thrusting
+                fill(0, 255, 60, 180);
+            }
+
             circle(this.joyCenter.x + Math.cos(a) * r, this.joyCenter.y + Math.sin(a) * r, 50);
         }
 

@@ -115,7 +115,7 @@ class MobileController {
 
     getInputs(ship, enemies, yawRate, pitchRate) {
         let inputs = {
-            thrust: (this.stationaryTicks > 5), // Thrust if held still for ~80ms
+            thrust: (this.stationaryTicks > 15), // Thrust if held still for ~250ms
             shoot: this.btns.shoot.active,
             cycleWeapon: this.btns.missile.active,
             yawDelta: 0,
@@ -156,7 +156,7 @@ class MobileController {
         translate(-w / 2, -h / 2, 0);
 
         if (this.leftTouchId !== null) {
-            let thrusting = (this.stationaryTicks > 5);
+            let thrusting = (this.stationaryTicks > 15);
 
             // Anchor dot
             noStroke();
@@ -187,7 +187,7 @@ class MobileController {
                 noFill();
                 strokeWeight(3 * this._scale);
                 stroke(0, 255, 60, 150);
-                let progress = Math.min(1, this.stationaryTicks / 6);
+                let progress = Math.min(1, this.stationaryTicks / 16);
                 let r = this._blobDiam + (1 - progress) * 40 * this._scale;
                 circle(this.lastX, this.lastY, r);
             }

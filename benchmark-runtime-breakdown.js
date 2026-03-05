@@ -32,6 +32,7 @@ const SCENARIOS = [
   { id: 'no-lighting', title: 'Scene lighting disabled (setSceneLighting stub)' },
   { id: 'no-shadows', title: 'Shadow polygons disabled (stencil stubs)' },
   { id: 'cockpit-mode', title: 'Cockpit Mode (First Person)' },
+  { id: 'no-sound', title: 'Sound disabled (GameSFX/gameSFX stubs)' },
 ];
 
 function findChrome() {
@@ -162,6 +163,16 @@ async function setupPlayableState(page, scenarioId) {
       window._endShadowStencil = function () { };
     } else if (id === 'cockpit-mode') {
       firstPersonView = true;
+    } else if (id === 'no-sound') {
+      if (typeof gameSFX !== 'undefined') {
+        gameSFX.updateAmbiance = function () { };
+        gameSFX.updateListener = function () { };
+        gameSFX.playShot = function () { };
+        gameSFX.playExplosion = function () { };
+        gameSFX.playInfectionSpread = function () { };
+        gameSFX.playInfectionPulse = function () { };
+        gameSFX.setThrust = function () { };
+      }
     }
 
     // Function-level instrumentation.
@@ -213,6 +224,17 @@ async function setupPlayableState(page, scenarioId) {
     wrapFunction(window, 'drawRadarForPlayer', 'drawRadarForPlayer');
     wrapFunction(window, 'drawControlHints', 'drawControlHints');
     wrapFunction(window, 'shipDisplay', 'shipDisplay');
+
+    // SFX wrappers.
+    if (typeof gameSFX !== 'undefined') {
+      wrapFunction(gameSFX, 'updateAmbiance', 'gameSFX.updateAmbiance');
+      wrapFunction(gameSFX, 'updateListener', 'gameSFX.updateListener');
+      wrapFunction(gameSFX, 'playShot', 'gameSFX.playShot');
+      wrapFunction(gameSFX, 'playExplosion', 'gameSFX.playExplosion');
+      wrapFunction(gameSFX, 'playInfectionSpread', 'gameSFX.playInfectionSpread');
+      wrapFunction(gameSFX, 'playInfectionPulse', 'gameSFX.playInfectionPulse');
+      wrapFunction(gameSFX, 'setThrust', 'gameSFX.setThrust');
+    }
 
     // Wrap draw itself to estimate total JS frame cost attributable to draw().
     const originalDraw = window.draw;

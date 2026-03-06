@@ -1364,10 +1364,6 @@ function keyPressed() {
  * Returning false prevents the default browser scroll / zoom behaviour.
  */
 function touchStarted(event) {
-  if (gameState === 'menu' || gameState === 'instructions') {
-    if (typeof fullscreen === 'function' && !fullscreen()) fullscreen(true);
-  }
-
   if (gameState === 'menu') { startGame(1); return false; }
   if (gameState === 'instructions') { gameState = 'shipselect'; return false; }
   if (gameState === 'shipselect') {

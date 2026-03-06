@@ -374,7 +374,7 @@ function startGame(np) {
   if (window._perf) window._perf.cooldown = 0;
 
   startLevel(1);
-  gameState = 'shipselect';
+  gameState = 'instructions';
 }
 
 /**
@@ -648,6 +648,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
  */
 function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
+  if (gameState === 'instructions') { drawInstructions(); return; }
   if (gameState === 'shipselect') { drawShipSelect(); return; }
   if (gameState === 'gameover') { drawGameOver(); return; }
   const profiler = getVironProfiler();
@@ -1284,6 +1285,14 @@ function keyPressed() {
     return;
   }
 
+  if (gameState === 'instructions') {
+    // Any relevant key on desktop moves past instructions
+    if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
+      gameState = 'shipselect';
+    }
+    return;
+  }
+
   if (gameState === 'shipselect') {
     for (let p of players) {
       if (p.id === 0) {
@@ -1356,6 +1365,7 @@ function keyPressed() {
  */
 function touchStarted(event) {
   if (gameState === 'menu') { startGame(1); return false; }
+  if (gameState === 'instructions') { gameState = 'shipselect'; return false; }
   if (gameState === 'shipselect') {
     let vw = width / numPlayers;
     let pIdx = floor(mouseX / vw);
@@ -1400,6 +1410,8 @@ function mousePressed() {
 
     if (gameState === 'menu') {
       startGame(1);
+    } else if (gameState === 'instructions') {
+      gameState = 'shipselect';
     } else if (gameState === 'shipselect') {
       let vw = width / numPlayers;
       let pIdx = floor(mouseX / vw);

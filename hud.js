@@ -127,6 +127,139 @@ function drawMenu() {
 }
 
 /**
+ * Renders the Instructions screen before ship selection.
+ * Maintains the 3D background but adds a dark overlay for readability.
+ */
+function drawInstructions() {
+  drawBackgroundLandscape();
+
+  setup2DViewport();
+
+  // Dim the 3D background
+  fill(0, 0, 0, 180);
+  noStroke();
+  rect(-width / 2, -height / 2, width, height);
+
+  textAlign(CENTER, CENTER);
+
+  if (isMobile) {
+    // --- Mobile Touch Diagram ---
+    fill(255, 255, 255, 220);
+    textSize(36);
+    text('TOUCH CONTROLS', 0, -height * 0.35);
+
+    // Draw a stylized representation of the screen
+    let boxW = Math.min(width * 0.8, 600);
+    let boxH = Math.min(height * 0.5, 300);
+    let topY = -boxH * 0.1;
+
+    push();
+    translate(0, topY);
+
+    // Outer phone frame
+    noFill();
+    strokeWeight(4);
+    stroke(255, 255, 255, 100);
+    rect(-boxW / 2, -boxH / 2, boxW, boxH, 12);
+
+    // Dividers
+    strokeWeight(2);
+    stroke(255, 255, 255, 50);
+    line(0, -boxH / 2, 0, boxH / 2); // Center vertical
+    line(-boxW / 2, 0, 0, 0);      // Left horizontal
+    line(-boxW / 4, -boxH / 2, -boxW / 4, 0); // Left vertical (top)
+
+    // Zone Highlights & Labels
+    noStroke();
+    textSize(14);
+
+    // Shoot (Top Left)
+    fill(255, 60, 60, 60);
+    rect(-boxW / 2 + 2, -boxH / 2 + 2, boxW / 4 - 2, boxH / 2 - 2, 10, 0, 0, 0);
+    fill(255, 150, 150);
+    text("SHOOT", -boxW * 0.375, -boxH / 4);
+
+    // Barrier (Top Right of Left Half)
+    fill(100, 200, 255, 60);
+    rect(-boxW / 4 + 2, -boxH / 2 + 2, boxW / 4 - 4, boxH / 2 - 2);
+    fill(150, 220, 255);
+    text("BARRIER", -boxW * 0.125, -boxH / 4);
+
+    // Thrust (Bottom Left)
+    fill(0, 255, 60, 60);
+    rect(-boxW / 2 + 2, 2, boxW / 2 - 4, boxH / 2 - 4, 0, 0, 0, 10);
+    fill(150, 255, 150);
+    text("THRUST", -boxW / 4, boxH / 4);
+
+    // Aim (Right Half)
+    fill(255, 255, 255, 20);
+    rect(2, -boxH / 2 + 2, boxW / 2 - 4, boxH / 2 - 4, 0, 10, 0, 0);
+    fill(255, 255, 255, 200);
+    text("SWIPE TO AIM", boxW / 4, -boxH / 8);
+
+    // Missile Button (Bottom Center of Right Half)
+    stroke(0, 200, 255, 150);
+    strokeWeight(2);
+    fill(0, 200, 255, 40);
+    circle(boxW / 4, boxH * 0.25, 40);
+    noStroke();
+    fill(255);
+    textSize(11);
+    text("Mis", boxW / 4, boxH * 0.25);
+
+    pop();
+
+  } else {
+    // --- Desktop Text Instructions ---
+    fill(255, 255, 255, 220);
+    textSize(48);
+    text('HOW TO PLAY', 0, -height * 0.3);
+
+    textSize(18);
+    fill(200, 255, 200, 200);
+    text('P1 CONTROLS', -width * 0.2, -height * 0.1);
+
+    textSize(16);
+    fill(255, 255, 255, 180);
+    textAlign(LEFT, TOP);
+    let p1x = -width * 0.3;
+    let p1y = -height * 0.02;
+    text('\u2022 Mouse: Pitch and Yaw (Click to lock/unlock)', p1x, p1y);
+    text('\u2022 W or Right-Click: Thrust', p1x, p1y + 30);
+    text('\u2022 S: Brake', p1x, p1y + 60);
+    text('\u2022 Q or Left-Click: Shoot', p1x, p1y + 90);
+    text('\u2022 E or Middle-Click: Cycle Weapon Modes', p1x, p1y + 120);
+
+    if (numPlayers === 2) {
+      textAlign(CENTER, CENTER);
+      textSize(18);
+      fill(255, 200, 200, 200);
+      text('P2 CONTROLS', width * 0.2, -height * 0.1);
+
+      textSize(16);
+      fill(255, 255, 255, 180);
+      textAlign(LEFT, TOP);
+      let p2x = width * 0.1;
+      let p2y = -height * 0.02;
+      text('\u2022 ARROW KEYS: Pitch and Turn', p2x, p2y);
+      text('\u2022 UP ARROW: Thrust', p2x, p2y + 30);
+      text('\u2022 DOWN ARROW: Brake', p2x, p2y + 60);
+      text('\u2022 . (Period): Shoot', p2x, p2y + 90);
+      text('\u2022 / (Slash): Cycle Weapon Modes', p2x, p2y + 120);
+    }
+  }
+
+  // Blinking continue prompt
+  let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
+  fill(150, 255, 150, 255 * blink);
+  textAlign(CENTER, CENTER);
+  textSize(24);
+  text(isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.35);
+
+  pop();
+}
+
+/**
  * Renders the full-screen game-over overlay.
  * Shows the game-over reason string (or a default message) and automatically
  * returns to the menu after 5 seconds.

@@ -51,12 +51,14 @@ class MobileController {
     // Dimensions & UI Scaling
     // -------------------------------------------------------------------------
 
-    update(touches, w, h) {
-        // Cache scale on resize
+    /**
+     * Internal layout helper to update styling/button positions without resetting touch state.
+     */
+    _updateLayout(w, h) {
         if (w !== this._w || h !== this._h) {
             this._w = w;
             this._h = h;
-            this._scale = Math.min(w, h) / 400;
+            this._scale = Math.max(0.5, Math.min(w, h) / 400);
             const s = this._scale;
             this.btns.missile.r = this.btns.missile.baseR * s;
         }
@@ -65,6 +67,10 @@ class MobileController {
         // Position missile button at the bottom center
         this.btns.missile.x = w / 2;
         this.btns.missile.y = h - 60 * s;
+    }
+
+    update(touches, w, h) {
+        this._updateLayout(w, h);
 
         // Reset states for this frame
         this.thrustActive = false;
@@ -194,8 +200,8 @@ class MobileController {
     }
 
     draw(w, h, forceInstructions = false) {
-        // Ensure buttons and layout are updated even if update() hasn't been called yet (e.g. instruction screen)
-        this.update([], w, h);
+        // Update layout parameters (scaling, button positions) without touching input state
+        this._updateLayout(w, h);
 
         if (typeof setup2DViewport === 'function') setup2DViewport();
         push();
@@ -321,11 +327,15 @@ class MobileController {
 const mobileController = new MobileController();
 
 function handleTouchStarted() {
+    // Request fullscreen immediately on first interaction from Title screen
+    if (gameState === 'menu' || gameState === 'instructions') {
+        if (typeof fullscreen === 'function' && !fullscreen()) {
+            fullscreen(true);
+        }
+    }
+
     if (gameState === 'menu') {
-        if (typeof isAndroid !== 'undefined' && isAndroid && typeof fullscreen === 'function' && !fullscreen()) fullscreen(true);
         setTimeout(() => { if (typeof startGame === 'function') startGame(1); }, 50);
-    } else if (gameState === 'playing' && typeof isAndroid !== 'undefined' && isAndroid) {
-        if (typeof fullscreen === 'function' && !fullscreen()) fullscreen(true);
     }
     return false;
 }

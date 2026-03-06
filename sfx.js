@@ -96,13 +96,19 @@ class GameSFX {
     _terminateVoice(voice) {
         if (!voice) return;
         try {
+            // Stop all tracked source nodes first.
             if (voice.nodes) {
                 voice.nodes.forEach(n => {
                     try { if (n.stop) n.stop(); } catch (e) { }
                 });
             }
-            if (voice.tailNode) voice.tailNode.disconnect();
-            // If it was a panner from the pool, return it
+            // Only disconnect if tailNode is not a system bus node (master/destination).
+            // Disconnecting master would silence all audio.
+            const isBusNode = voice.tailNode === this.master || voice.tailNode === this.ctx.destination;
+            if (voice.tailNode && !isBusNode) {
+                voice.tailNode.disconnect();
+            }
+            // Return pooled panner.
             if (voice.panner && this.pannerPool.length < this.MAX_PANNER_POOL) {
                 voice.panner.disconnect();
                 this.pannerPool.push(voice.panner);
@@ -164,15 +170,15 @@ class GameSFX {
 
         let heartRate = 0.5 + (infectionCount / maxInfection) * 1.5; // 0.5Hz to 2.0Hz
         let heartVol = (infectionCount / maxInfection) * 0.4;
-        this.ambientNodes.heartbeat.gain.gain.setTargetAtTime(heartVol, t, 0.1);
-        // Rhythmic pulsing of the heartbeat
+        // Rhythmic pulsing: compute combined volume BEFORE scheduling.
+        // NEVER write .value after setTargetAtTime — it cancels all prior automation.
         let pulse = Math.pow(Math.sin(t * Math.PI * heartRate) * 0.5 + 0.5, 4);
-        this.ambientNodes.heartbeat.gain.gain.value *= pulse;
+        this.ambientNodes.heartbeat.gain.gain.setTargetAtTime(heartVol * pulse, t, 0.02);
 
         // 2. Infection Proximity (Buzzy Scanning Hum)
         if (!this.ambientNodes.proximityHum) {
             let osc = this.ctx.createOscillator();
-            let noise = this._createNoise(3.0, 0, 0.25);
+            let noise = this._createNoise(3.0, 0, 0.25, t);
             let gain = this.ctx.createGain();
             let filter = this.ctx.createBiquadFilter();
 
@@ -251,7 +257,7 @@ class GameSFX {
 
         // 4. Visual Scan Line Sweep (Metallic "Ping")
         if (!this.ambientNodes.scanSweep) {
-            let noise = this._createNoise(2.0, 0, 0.2);
+            let noise = this._createNoise(2.0, 0, 0.2, t);
             let filter = this.ctx.createBiquadFilter();
             let gain = this.ctx.createGain();
 
@@ -359,43 +365,55 @@ class GameSFX {
             }
         }
 
-        // Create the voice tracker
+        // Create the voice tracker.
+        // tailNode is the node to disconnect to sever the sound from the graph.
+        // For spatialized voices it's the panner/infra tail. For non-spatial sounds
+        // routed directly to master, we use the master node itself as the disconnect
+        // target so that the voice is still tracked and cleaned up on schedule.
+        let tailNode = null;
+        if (infraChain.length > 0) {
+            tailNode = infraChain[infraChain.length - 1];
+        } else if (pannerFixed) {
+            tailNode = pannerFixed;
+        } else {
+            // Non-spatial: track against master so _pruneVoices can still stop sources.
+            tailNode = this.master || this.ctx.destination;
+        }
+
         const voice = {
             startTime: t,
             duration: duration,
-            tailNode: targetNode === this.master || targetNode === this.ctx.destination ? null : (infraChain.length > 0 ? infraChain[infraChain.length - 1] : pannerFixed),
+            tailNode,
             panner: pannerFixed,
             infra: infraChain,
             priority: priority,
             distSq: minDistSq,
-            nodes: [] // Specific nodes like oscillators to be stopped
+            nodes: [] // Oscillators/sources to be stopped on termination
         };
 
-        if (voice.tailNode) {
-            this.activeVoices.push(voice);
-            this._limitVoices();
-        }
+        this.activeVoices.push(voice);
+        this._limitVoices();
 
         return { ctx: this.ctx, t, targetNode, voice };
     }
 
-    _createNoise(dur, filterCoeff = 0, mul = 1) {
+    // Pass `startAt` (the scheduled audio time from the parent method) so the source
+    // starts in sync with other nodes, not before it is connected.
+    _createNoise(dur, filterCoeff = 0, mul = 1, startAt = null) {
         if (!this.ctx || !this.persistentNoise) return null;
         let noise = this.ctx.createBufferSource();
         noise.buffer = this.persistentNoise;
         noise.loop = true;
 
-        // LATERAL OPT: Use a random start time within the 3s buffer.
-        // Because the persistent buffer is a seamless loop of white noise, 
-        // starting anywhere is safe regardless of intended duration.
-        noise.start(this.ctx.currentTime, Math.random() * noise.buffer.duration);
+        const t = startAt !== null ? startAt : this.ctx.currentTime;
+        // Start at a random position in the seamless looped buffer for variety.
+        noise.start(t, Math.random() * noise.buffer.duration);
 
         if (mul !== 1) {
             let gain = this.ctx.createGain();
             gain.gain.value = mul;
             noise.connect(gain);
-            // LATERAL OPT: Simple proxy for .stop() so callers can treat 
-            // the returned node chain as a SourceNode.
+            // Simple proxy for .stop() so callers can treat the node chain as a SourceNode.
             gain.stop = (t) => { try { noise.stop(t); } catch (e) { } };
             return gain;
         }
@@ -412,8 +430,6 @@ class GameSFX {
         if (!this.initialized) return;
         let t = this.ctx.currentTime;
         if (t - (this.lastSpreadTime || 0) < 0.06) return;
-        this.lastSpreadTime = t;
-
         this.lastSpreadTime = t;
 
         let dur = 0.04;
@@ -453,7 +469,6 @@ class GameSFX {
         let flen = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
         fx /= flen; fy /= flen; fz /= flen;
 
-        let t = this.ctx.currentTime;
         if (listener.positionX) {
             listener.positionX.value = cx;
             listener.positionY.value = cy;
@@ -492,14 +507,13 @@ class GameSFX {
     }
 
     createDistortionCurve(amount = 50) {
-        let k = typeof amount === 'number' ? amount : 50,
-            n_samples = 44100,
-            curve = new Float32Array(n_samples),
-            deg = Math.PI / 180,
-            i = 0,
-            x;
-        for (; i < n_samples; ++i) {
-            x = i * 2 / n_samples - 1;
+        let k = typeof amount === 'number' ? amount : 50;
+        // Use actual device sample rate to ensure correct curve shape on 48kHz hardware.
+        let n_samples = (this.ctx && this.ctx.sampleRate) ? this.ctx.sampleRate : 44100;
+        let curve = new Float32Array(n_samples);
+        let deg = Math.PI / 180;
+        for (let i = 0; i < n_samples; i++) {
+            let x = i * 2 / n_samples - 1;
             curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
         }
         return curve;
@@ -581,7 +595,7 @@ class GameSFX {
         osc.frequency.setValueAtTime(120, t);
         osc.frequency.exponentialRampToValueAtTime(40, t + dur);
 
-        let noise = this._createNoise(dur, 0.05, 1.2);
+        let noise = this._createNoise(dur, 0.05, 1.2, t);
         let distortion = ctx.createWaveShaper();
         distortion.curve = this.distCurve;
 
@@ -676,7 +690,7 @@ class GameSFX {
             voice.nodes.push(osc);
         });
 
-        let noise = this._createNoise(dur, 0.05);
+        let noise = this._createNoise(dur, 0.05, 1.0, t);
         if (noise) {
             noise.connect(filter);
             noise.stop(t + dur);
@@ -706,6 +720,19 @@ class GameSFX {
         osc.start(t);
         osc.stop(t + dur);
         voice.nodes.push(osc);
+
+        // Noise layer for physical texture (impact snap/whoosh)
+        let noise = this._createNoise(dur, 0, isMega ? 0.6 : 0.35, t);
+        if (noise) {
+            let noiseFilter = ctx.createBiquadFilter();
+            noiseFilter.type = 'highpass';
+            noiseFilter.frequency.setValueAtTime(isMega ? 300 : 800, t);
+            noiseFilter.frequency.exponentialRampToValueAtTime(60, t + dur);
+            noise.connect(noiseFilter);
+            noiseFilter.connect(gain);
+            noise.stop(t + dur);
+            voice.nodes.push(noise);
+        }
     }
 
     playExplosion(x, y, z, isLarge = false, type = '') {
@@ -715,14 +742,18 @@ class GameSFX {
         if (!this.ctx) this.init();
         if (!this.ctx) return;
         let now = this.ctx.currentTime;
-        if (x !== undefined && z !== undefined) {
+        if (x !== undefined && y !== undefined && z !== undefined) {
             let dx = x - this.lastExplosionPos.x;
+            let dy = y - this.lastExplosionPos.y;
             let dz = z - this.lastExplosionPos.z;
-            if (now - this.lastExplosionTime < 0.045 && (dx * dx + dz * dz < 2500)) {
+            if (now - this.lastExplosionTime < 0.045 && (dx * dx + dy * dy + dz * dz < 2500)) {
                 return; // Suppress redundant trigger
             }
             this.lastExplosionTime = now;
-            this.lastExplosionPos = { x, y, z };
+            // Mutate in-place to avoid per-explosion GC allocation
+            this.lastExplosionPos.x = x;
+            this.lastExplosionPos.y = y;
+            this.lastExplosionPos.z = z;
         }
 
         let isBomber = type === 'bomber';
@@ -739,7 +770,7 @@ class GameSFX {
         distortion.curve = this.distCurve;
         distortion.oversample = '4x';
 
-        let noise = this._createNoise(dur, 0.02, isLarge ? 4.5 : 3.5);
+        let noise = this._createNoise(dur, 0.02, isLarge ? 4.5 : 3.5, t);
 
         let noiseFilter = ctx.createBiquadFilter();
         noiseFilter.type = isCrab ? 'bandpass' : 'lowpass';
@@ -1272,12 +1303,20 @@ class GameSFX {
             // the engine drone should be non-spatialized to avoid HRTF/panning artifacts (crackling).
             let panner = null;
             if (id !== 0 && this.spatialEnabled) {
-                panner = this.createSpatializer(x, y, z);
+                // Use the pool to avoid HRTF allocation cost on each new thrust event.
+                panner = this._getPanner();
                 if (panner) {
                     panner.panningModel = 'equalpower';
                     panner.distanceModel = 'linear';
                     panner.refDistance = 200;
                     panner.rolloffFactor = 0.5;
+                    if (x !== undefined && panner.positionX) {
+                        panner.positionX.setValueAtTime(x, t);
+                        panner.positionY.setValueAtTime(y, t);
+                        panner.positionZ.setValueAtTime(z, t);
+                    } else if (x !== undefined) {
+                        panner.setPosition(x, y, z);
+                    }
                 }
             } else if (!this.spatialEnabled && this.ctx.createStereoPanner) {
                 // Split-screen mode: add fixed stereo separation to help distinguish the two viewports
@@ -1291,8 +1330,8 @@ class GameSFX {
             // Offset frequency slightly per ID to prevent phasing/beating in mono
             osc.frequency.setValueAtTime(42 + (id * 0.7), t);
 
-            // Deep roar (noise)
-            let noise = this._createNoise(5.0, 0.45, 0.4);
+            // Deep roar (noise) — use scheduled t for tight sync
+            let noise = this._createNoise(5.0, 0.45, 0.4, t);
             noise.loop = true;
 
             let filter = this.ctx.createBiquadFilter();

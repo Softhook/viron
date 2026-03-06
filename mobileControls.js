@@ -194,14 +194,17 @@ class MobileController {
     }
 
     draw(w, h, forceInstructions = false) {
+        // Ensure buttons and layout are updated even if update() hasn't been called yet (e.g. instruction screen)
+        this.update([], w, h);
+
         if (typeof setup2DViewport === 'function') setup2DViewport();
         push();
         translate(-w / 2, -h / 2, 0);
 
-        let showThrust = forceInstructions || !this.hasUsed.thrust;
-        let showShoot = forceInstructions || !this.hasUsed.shoot;
-        let showBarrier = forceInstructions || !this.hasUsed.barrier;
-        let showAim = forceInstructions || !this.hasUsed.aim;
+        let showThrust = forceInstructions;
+        let showShoot = forceInstructions;
+        let showBarrier = forceInstructions;
+        let showAim = forceInstructions;
 
         // --- Visual hints for Left Zones ---
         noStroke();

@@ -14,6 +14,8 @@ class MobileController {
     constructor() {
         this.aimTouchId = null;
         this.missileTouchId = null;
+        this.aimAnchorX = 0;
+        this.aimAnchorY = 0;
         this.lastAimX = 0;
         this.lastAimY = 0;
 
@@ -31,7 +33,7 @@ class MobileController {
         this._h = 0;
 
         this.btns = {
-            missile: { active: false, baseR: 44, col: [0, 200, 255], label: 'WPN', x: 0, y: 0, r: 44 }
+            missile: { active: false, baseR: 44, col: [0, 200, 255], label: 'Mis', x: 0, y: 0, r: 44 }
         };
 
         this.debug = false;
@@ -52,8 +54,9 @@ class MobileController {
         }
 
         const s = this._scale;
-        // Position missile button on the right side
-        this.btns.missile.x = w - 105 * s; this.btns.missile.y = h - 140 * s;
+        // Position missile button at the bottom center
+        this.btns.missile.x = w / 2;
+        this.btns.missile.y = h - 60 * s;
 
         // Reset states for this frame
         this.thrustActive = false;
@@ -63,8 +66,6 @@ class MobileController {
 
         let aimFound = false;
         let missileFound = false;
-        this.deltaAimX = 0;
-        this.deltaAimY = 0;
 
         for (let i = 0; i < touches.length; i++) {
             let t = touches[i];
@@ -88,15 +89,29 @@ class MobileController {
 
             if (!onMissile) {
                 if (t.x > w / 2) {
-                    // Right Half = Trackpad Aiming
+                    // Right Half = Trackpad Aiming (Floating Joystick)
                     if (this.aimTouchId === t.id) {
-                        this.deltaAimX = t.x - this.lastAimX;
-                        this.deltaAimY = t.y - this.lastAimY;
                         this.lastAimX = t.x;
                         this.lastAimY = t.y;
+
+                        // Prevent the anchor from getting dragged completely off-screen
+                        // by pulling it if the user stretches too far.
+                        let offsetX = t.x - this.aimAnchorX;
+                        let offsetY = t.y - this.aimAnchorY;
+                        let stretch = Math.hypot(offsetX, offsetY);
+                        let maxStretch = 100 * this._scale;
+
+                        if (stretch > maxStretch) {
+                            let over = stretch - maxStretch;
+                            this.aimAnchorX += (offsetX / stretch) * over;
+                            this.aimAnchorY += (offsetY / stretch) * over;
+                        }
+
                         aimFound = true;
                     } else if (this.aimTouchId === null) {
                         this.aimTouchId = t.id;
+                        this.aimAnchorX = t.x;
+                        this.aimAnchorY = t.y;
                         this.lastAimX = t.x;
                         this.lastAimY = t.y;
                         aimFound = true;
@@ -137,22 +152,25 @@ class MobileController {
         };
 
         if (this.aimTouchId !== null) {
-            // Trackpad relative movement
-            // Scale the physical pixels moved to a reasonable turn rate. 
-            // The magic number 150 represents a 'full drag' equivalent.
-            let turnX = constrain(this.deltaAimX / (150 * this._scale), -1.0, 1.0);
-            let turnY = constrain(this.deltaAimY / (150 * this._scale), -1.0, 1.0);
+            // Floating Joystick relative movement
+            let offsetX = this.lastAimX - this.aimAnchorX;
+            let offsetY = this.lastAimY - this.aimAnchorY;
+            let maxStretch = 100 * this._scale;
 
-            // Maintain the same turning response curve
+            // Map the offset visually to a (-1 to 1) steering multiplier
+            let turnX = constrain(offsetX / maxStretch, -1.0, 1.0);
+            let turnY = constrain(offsetY / maxStretch, -1.0, 1.0);
+
+            // Maintain continuous turning while held
             // Inverted: drag right (X+) -> turn right (yaw-), drag up (Y-) -> turn up (pitch+)
             inputs.yawDelta = -turnX * yawRate * 1.5;
             inputs.pitchDelta = -turnY * pitchRate * 1.5;
         }
 
-        // Aim Assist (only activate strong assist if the user is swiping)
+        // Aim Assist (only activate strong assist if the user is steering)
         if (aimAssist.enabled && ship && enemies) {
-            let isSwiping = (this.aimTouchId !== null) && (Math.abs(this.deltaAimX) > 1 || Math.abs(this.deltaAimY) > 1);
-            let assist = aimAssist.getAssistDeltas(ship, enemies, isSwiping);
+            let isSteering = (this.aimTouchId !== null) && (Math.hypot(this.lastAimX - this.aimAnchorX, this.lastAimY - this.aimAnchorY) > 5 * this._scale);
+            let assist = aimAssist.getAssistDeltas(ship, enemies, isSteering);
             inputs.assistYaw = assist.yawDelta;
             inputs.assistPitch = assist.pitchDelta;
         }
@@ -210,13 +228,28 @@ class MobileController {
 
         // Floating Trackpad Indicator if aiming
         if (this.aimTouchId !== null) {
+            let maxStretch = 100 * this._scale;
+
+            // Anchor dot
+            noStroke();
+            fill(255, 255, 255, 100);
+            circle(this.aimAnchorX, this.aimAnchorY, 20 * this._scale);
+
+            // Connecting line
+            stroke(255, 255, 255, 50);
+            strokeWeight(2 * this._scale);
+            line(this.aimAnchorX, this.aimAnchorY, this.lastAimX, this.lastAimY);
+
+            // Outer limits ring
             strokeWeight(3 * this._scale);
-            stroke(255, 255, 255, 100);
+            stroke(255, 255, 255, 40);
             noFill();
-            circle(this.lastAimX, this.lastAimY, 60 * this._scale);
+            circle(this.aimAnchorX, this.aimAnchorY, maxStretch * 2);
+
+            // Current finger position
             fill(255, 255, 255, 150);
             noStroke();
-            circle(this.lastAimX, this.lastAimY, 20 * this._scale);
+            circle(this.lastAimX, this.lastAimY, 60 * this._scale);
         }
 
         // Action buttons

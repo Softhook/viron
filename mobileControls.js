@@ -24,6 +24,14 @@ class MobileController {
         this.shootActive = false;
         this.barrierActive = false;
 
+        this.hasUsed = {
+            thrust: false,
+            shoot: false,
+            barrier: false,
+            aim: false,
+            missile: false
+        };
+
         // Frame-over-frame deltas for aiming
         this.deltaAimX = 0;
         this.deltaAimY = 0;
@@ -73,6 +81,7 @@ class MobileController {
             // If this touch is already our missile touch, keep tracking it
             if (this.missileTouchId === t.id) {
                 this.btns.missile.active = true;
+                this.hasUsed.missile = true;
                 missileFound = true;
                 continue; // Skip zone/aiming logic for this finger
             }
@@ -83,6 +92,7 @@ class MobileController {
             if (this.missileTouchId === null && Math.hypot(t.x - this.btns.missile.x, t.y - this.btns.missile.y) < this.btns.missile.r * 1.7) {
                 this.missileTouchId = t.id;
                 this.btns.missile.active = true;
+                this.hasUsed.missile = true;
                 missileFound = true;
                 onMissile = true;
             }
@@ -107,6 +117,7 @@ class MobileController {
                             this.aimAnchorY += (offsetY / stretch) * over;
                         }
 
+                        this.hasUsed.aim = true;
                         aimFound = true;
                     } else if (this.aimTouchId === null) {
                         this.aimTouchId = t.id;
@@ -114,17 +125,21 @@ class MobileController {
                         this.aimAnchorY = t.y;
                         this.lastAimX = t.x;
                         this.lastAimY = t.y;
+                        this.hasUsed.aim = true;
                         aimFound = true;
                     }
                 } else {
                     // Left Half = Zones
                     if (t.y > h / 2) {
                         this.thrustActive = true;
+                        this.hasUsed.thrust = true;
                     } else {
                         if (t.x < w / 4) {
                             this.shootActive = true;
+                            this.hasUsed.shoot = true;
                         } else {
                             this.barrierActive = true;
+                            this.hasUsed.barrier = true;
                         }
                     }
                 }
@@ -178,53 +193,74 @@ class MobileController {
         return inputs;
     }
 
-    draw(w, h) {
+    draw(w, h, forceInstructions = false) {
         if (typeof setup2DViewport === 'function') setup2DViewport();
         push();
         translate(-w / 2, -h / 2, 0);
+
+        let showThrust = forceInstructions || !this.hasUsed.thrust;
+        let showShoot = forceInstructions || !this.hasUsed.shoot;
+        let showBarrier = forceInstructions || !this.hasUsed.barrier;
+        let showAim = forceInstructions || !this.hasUsed.aim;
 
         // --- Visual hints for Left Zones ---
         noStroke();
 
         // Thrust Zone
-        if (this.thrustActive) {
-            fill(0, 255, 60, 40);
+        if (showThrust || this.thrustActive) {
+            fill(0, 255, 60, this.thrustActive ? 60 : (forceInstructions ? 40 : 20));
             rect(0, h / 2, w / 2, h / 2);
         }
 
         // Shoot Zone
-        if (this.shootActive) {
-            fill(255, 60, 60, 40);
+        if (showShoot || this.shootActive) {
+            fill(255, 60, 60, this.shootActive ? 60 : (forceInstructions ? 40 : 20));
             rect(0, 0, w / 4, h / 2);
         }
 
         // Barrier Zone
-        if (this.barrierActive) {
-            fill(100, 200, 255, 40);
+        if (showBarrier || this.barrierActive) {
+            fill(100, 200, 255, this.barrierActive ? 60 : (forceInstructions ? 40 : 20));
             rect(w / 4, 0, w / 4, h / 2);
         }
 
+        // Aim Zone background hint
+        if (showAim) {
+            fill(255, 255, 255, forceInstructions ? 20 : 10);
+            rect(w / 2, 0, w / 2, h);
+        }
+
         // Dividers
-        stroke(255, 255, 255, 30);
+        stroke(255, 255, 255, forceInstructions ? 60 : 30);
         strokeWeight(2 * this._scale);
         // Vertical center (Left vs Right)
-        line(w / 2, 0, w / 2, h);
+        if (showThrust || showAim) line(w / 2, 0, w / 2, h);
         // Horizontal left (Top vs Bottom)
-        line(0, h / 2, w / 2, h / 2);
+        if (showThrust || showShoot || showBarrier) line(0, h / 2, w / 2, h / 2);
         // Vertical left (Shoot vs Barrier)
-        line(w / 4, 0, w / 4, h / 2);
+        if (showShoot || showBarrier) line(w / 4, 0, w / 4, h / 2);
 
         // Labels
         noStroke();
-        fill(255, 255, 255, 80);
         textAlign(CENTER, CENTER);
         textSize(16 * Math.max(1, this._scale));
-        text("SHOOT", (w / 4) / 2, h / 4);
-        text("BARRIER", w / 4 + (w / 4) / 2, h / 4);
-        text("THRUST", (w / 2) / 2, h * 0.75);
 
-        fill(255, 255, 255, 40);
-        text("AIM (SWIPE)", w * 0.75, h / 2);
+        if (showShoot) {
+            fill(255, 255, 255, forceInstructions ? 150 : 80);
+            text("SHOOT", (w / 4) / 2, h / 4);
+        }
+        if (showBarrier) {
+            fill(255, 255, 255, forceInstructions ? 150 : 80);
+            text("BARRIER", w / 4 + (w / 4) / 2, h / 4);
+        }
+        if (showThrust) {
+            fill(255, 255, 255, forceInstructions ? 150 : 80);
+            text("THRUST", (w / 2) / 2, h * 0.75);
+        }
+        if (showAim) {
+            fill(255, 255, 255, forceInstructions ? 150 : 80);
+            text("AIM (SWIPE)", w * 0.75, h / 8);
+        }
 
         // Floating Trackpad Indicator if aiming
         if (this.aimTouchId !== null) {

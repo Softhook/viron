@@ -9,12 +9,24 @@ class GameSFX {
         this.lastExplosionPos = { x: 0, y: 0, z: 0 };
         this.ctx = null;
         this.master = null;
+        this.activeVoices = []; // { startTime, duration, tailNode, priority, distSq }
+        this.maxVoices = 32;
+        this.pannerPool = [];
+        this.MAX_PANNER_POOL = 16;
 
         // constant values used across methods
         this._refDist = 180;            // reference distance for manual attenuation
         this._zoomOffset = 520;         // offset to simulate camera zoom in 2p mode
         this._maxManualDist = 8000;     // upper clamp for manual volume falloff
         this._infectionProximityAlpha = 0; // Smoothed proximity value
+
+        // Priority constants
+        this.PRIORITY = {
+            LOW: 0,     // Common environment sounds
+            MED: 1,     // Most SFX
+            HIGH: 2,    // Player-triggered crucial SFX
+            CRITICAL: 3 // Alarms, Level transitions
+        };
     }
 
     init() {
@@ -59,6 +71,68 @@ class GameSFX {
             data[i] = data[i] * r + data[bufferSize - blend + i] * (1.0 - r);
         }
         return buffer;
+    }
+
+    /**
+     * Internal voice limit enforcer. 
+     * If too many voices are active, stops and disconnects the lowest priority/furthest ones.
+     */
+    _limitVoices() {
+        if (this.activeVoices.length <= this.maxVoices) return;
+
+        // Sort: Priority DESC, then Distance ASC (keep close high-priority sounds)
+        this.activeVoices.sort((a, b) => {
+            if (b.priority !== a.priority) return b.priority - a.priority;
+            return a.distSq - b.distSq;
+        });
+
+        // Terminate excess voices
+        while (this.activeVoices.length > this.maxVoices) {
+            let voice = this.activeVoices.pop();
+            this._terminateVoice(voice);
+        }
+    }
+
+    _terminateVoice(voice) {
+        if (!voice) return;
+        try {
+            if (voice.nodes) {
+                voice.nodes.forEach(n => {
+                    try { if (n.stop) n.stop(); } catch (e) { }
+                });
+            }
+            if (voice.tailNode) voice.tailNode.disconnect();
+            // If it was a panner from the pool, return it
+            if (voice.panner && this.pannerPool.length < this.MAX_PANNER_POOL) {
+                voice.panner.disconnect();
+                this.pannerPool.push(voice.panner);
+            }
+        } catch (e) { }
+    }
+
+    /**
+     * Passively cleans up expired voices. Called by _setup.
+     */
+    _pruneVoices() {
+        let now = this.ctx.currentTime;
+        for (let i = this.activeVoices.length - 1; i >= 0; i--) {
+            let v = this.activeVoices[i];
+            if (now > v.startTime + v.duration + 0.1) {
+                this._terminateVoice(v);
+                this.activeVoices.splice(i, 1);
+            }
+        }
+    }
+
+    _getPanner() {
+        if (this.pannerPool.length > 0) return this.pannerPool.pop();
+        let panner = this.ctx.createPanner();
+        panner.panningModel = 'HRTF';
+        panner.distanceModel = 'exponential';
+        panner.refDistance = 150;
+        panner.maxDistance = 10000;
+        panner.rolloffFactor = 1.0;
+        return panner;
     }
     /**
      * Updates persistent ambient sounds based on player position and infection state.
@@ -201,76 +275,82 @@ class GameSFX {
         this.ambientNodes.scanSweep.filter.frequency.setTargetAtTime(1500 + sweepAlpha * 1500, now, 0.05);
     }
 
-    _setup(x, y, z) {
+    _setup(x, y, z, priority = 1, duration = 0.5) {
         this.init();
         if (!this.ctx) return null;
+        this._pruneVoices();
+
         let t = this.ctx.currentTime;
         let targetNode = this.master || this.ctx.destination;
+        let infraChain = []; // Nodes to be disconnected later
+        let pannerFixed = null;
+        let minDistSq = Infinity;
 
         if (x !== undefined && y !== undefined && z !== undefined) {
+            // Early exit for performance: if sound is way beyond audible distance, don't even create it
+            if (typeof players !== 'undefined' && players.length > 0) {
+                for (let i = 0; i < players.length; i++) {
+                    let p = players[i];
+                    if (p.dead || !p.ship) continue;
+                    let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
+                    if (dSq < minDistSq) minDistSq = dSq;
+                }
+                if (minDistSq > this._maxManualDist ** 2) return null;
+            }
+
             if (this.spatialEnabled) {
-                let panner = this.createSpatializer(x, y, z);
+                let panner = this._getPanner();
                 if (panner) {
+                    if (panner.positionX) {
+                        panner.positionX.setValueAtTime(x, t);
+                        panner.positionY.setValueAtTime(y, t);
+                        panner.positionZ.setValueAtTime(z, t);
+                    } else {
+                        panner.setPosition(x, y, z);
+                    }
                     panner.connect(targetNode);
                     targetNode = panner;
+                    pannerFixed = panner;
                 }
             } else {
-                // FALLBACK: Manual distance-based volume scaling and stereo separation for split-screen
                 let manualVol = 1.0;
                 let panVal = 0;
-                let minDistSq = Infinity;
+                let closestIdx = -1;
 
-                if (typeof players !== 'undefined' && players.length > 0) {
-                    let closestIdx = -1;
-                    let numPlayers = players.length;
-
-                    for (let i = 0; i < numPlayers; i++) {
-                        let p = players[i];
-                        if (p.dead || !p.ship) continue;
-                        let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
-                        if (dSq < minDistSq) {
-                            minDistSq = dSq;
-                            closestIdx = i;
-                        }
+                if (minDistSq !== Infinity) {
+                    let distance = Math.sqrt(minDistSq) + this._zoomOffset;
+                    if (distance > this._refDist) {
+                        manualVol = Math.pow(this._refDist / Math.min(distance, this._maxManualDist), 1.25);
                     }
-
-                    // if nobody viable, abandon the manual fallback early
-                    if (minDistSq === Infinity) {
-                        // no change to manualVol/panVal, targetNode remains as-is
-                    } else {
-                        // Offset distance by ~520 units to simulate the follow-camera being zoomed out.
-                        // This prevents sounds at x=0 distance from blasting the speakers at 100% volume,
-                        // making split-screen volume match the feel of single-player spatial audio.
-                        let distance = Math.sqrt(minDistSq) + this._zoomOffset;
-                        if (distance > this._refDist) {
-                            manualVol = Math.pow(this._refDist / Math.min(distance, this._maxManualDist), 1.25);
+                    if (players.length === 2) {
+                        // find which player was closest
+                        for (let i = 0; i < players.length; i++) {
+                            let p = players[i]; if (p.dead || !p.ship) continue;
+                            let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
+                            if (dSq <= minDistSq + 1) { closestIdx = i; break; }
                         }
-
-                        // Split-screen panning: shift sound toward the listener it's closer to
-                        if (numPlayers === 2) {
-                            panVal = (closestIdx === 0) ? -0.35 : 0.35;
-                        }
+                        panVal = (closestIdx === 0) ? -0.35 : 0.35;
                     }
                 }
 
-                // Create a utility gain/pan chain if needed
-                // if we never found a player, skip the whole manual chain
                 if (manualVol < 0.99 || panVal !== 0) {
                     let g = this.ctx.createGain();
                     g.gain.setValueAtTime(manualVol, t);
+                    infraChain.push(g);
 
-                    // FALLBACK: Manual distance-based low-pass to simulate "deepness" at range
                     let f = this.ctx.createBiquadFilter();
                     f.type = 'lowpass';
                     let distFactor = (minDistSq === Infinity) ? 0 : Math.min(Math.max(0, (minDistSq - 10000) / 1000000), 1);
                     f.frequency.setValueAtTime(20000 - (18000 * distFactor), t);
                     g.connect(f);
+                    infraChain.push(f);
 
                     if (panVal !== 0 && this.ctx.createStereoPanner) {
                         let p = this.ctx.createStereoPanner();
                         p.pan.setValueAtTime(panVal, t);
                         f.connect(p);
                         p.connect(targetNode);
+                        infraChain.push(p);
                     } else {
                         f.connect(targetNode);
                     }
@@ -278,7 +358,25 @@ class GameSFX {
                 }
             }
         }
-        return { ctx: this.ctx, t, targetNode };
+
+        // Create the voice tracker
+        const voice = {
+            startTime: t,
+            duration: duration,
+            tailNode: targetNode === this.master || targetNode === this.ctx.destination ? null : (infraChain.length > 0 ? infraChain[infraChain.length - 1] : pannerFixed),
+            panner: pannerFixed,
+            infra: infraChain,
+            priority: priority,
+            distSq: minDistSq,
+            nodes: [] // Specific nodes like oscillators to be stopped
+        };
+
+        if (voice.tailNode) {
+            this.activeVoices.push(voice);
+            this._limitVoices();
+        }
+
+        return { ctx: this.ctx, t, targetNode, voice };
     }
 
     _createNoise(dur, filterCoeff = 0, mul = 1) {
@@ -316,31 +414,35 @@ class GameSFX {
         if (t - (this.lastSpreadTime || 0) < 0.06) return;
         this.lastSpreadTime = t;
 
-        let s = this._setup(x, y, z);
+        this.lastSpreadTime = t;
+
+        let dur = 0.04;
+        let s = this._setup(x, y, z, this.PRIORITY.LOW, dur);
         if (!s) return;
-        let { targetNode } = s;
+        let { targetNode, voice } = s;
 
         let gainNode = this.ctx.createGain();
         gainNode.gain.setValueAtTime(0.8, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, t + dur);
 
         let filter = this.ctx.createBiquadFilter();
         filter.type = 'bandpass';
         filter.frequency.setValueAtTime(1000, t);
-        filter.frequency.exponentialRampToValueAtTime(200, t + 0.04);
+        filter.frequency.exponentialRampToValueAtTime(200, t + dur);
         filter.Q.value = 5;
 
         let osc = this.ctx.createOscillator();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(150, t);
-        osc.frequency.exponentialRampToValueAtTime(40, t + 0.04);
+        osc.frequency.exponentialRampToValueAtTime(40, t + dur);
 
         osc.connect(filter);
         filter.connect(gainNode);
         gainNode.connect(targetNode);
 
         osc.start(t);
-        osc.stop(t + 0.04);
+        osc.stop(t + dur);
+        voice.nodes.push(osc);
     }
 
     updateListener(cx, cy, cz, lx, ly, lz, ux, uy, uz) {
@@ -404,14 +506,15 @@ class GameSFX {
     }
 
     playShot(x, y, z) {
-        let s = this._setup(x, y, z);
+        let dur = 0.18;
+        let s = this._setup(x, y, z, this.PRIORITY.HIGH, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
 
         // Main volume envelope - lower initial gain to prevent clipping during rapid fire
         let gainNode = ctx.createGain();
         gainNode.gain.setValueAtTime(0.32, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.18);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
         // Low-pass filter to remove "annoying" high frequencies
         let filter = ctx.createBiquadFilter();
@@ -432,7 +535,8 @@ class GameSFX {
             osc.frequency.exponentialRampToValueAtTime(140, t + 0.15);
             osc.connect(filter);
             osc.start(t);
-            osc.stop(t + 0.18);
+            osc.stop(t + dur);
+            voice.nodes.push(osc);
         });
 
         // Sub-thrum for weight - with high-pass to avoid mud/scratchiness
@@ -453,14 +557,15 @@ class GameSFX {
         subGain.connect(targetNode);
         sub.start(t);
         sub.stop(t + 0.12);
+        voice.nodes.push(sub);
     }
 
     playInfectionPulse(x, y, z) {
-        let s = this._setup(x, y, z);
-        if (!s) return;
-        let { ctx, t, targetNode } = s;
-
         let dur = 1.8;
+        let s = this._setup(x, y, z, this.PRIORITY.MED, dur);
+        if (!s) return;
+        let { ctx, t, targetNode, voice } = s;
+
         let gainNode = ctx.createGain();
         gainNode.gain.setValueAtTime(0.01, t);
         gainNode.gain.linearRampToValueAtTime(0.8, t + 0.1);
@@ -488,20 +593,25 @@ class GameSFX {
 
         osc.start(t);
         osc.stop(t + dur);
-        if (noise) noise.stop(t + dur);
+        voice.nodes.push(osc);
+        if (noise) {
+            voice.nodes.push(noise);
+            noise.stop(t + dur);
+        }
     }
 
     playEnemyShot(type = 'fighter', x, y, z) {
-        let s = this._setup(x, y, z);
+        let dur = type === 'crab' ? 0.2 : 0.15;
+        let s = this._setup(x, y, z, this.PRIORITY.MED, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
 
         let gainNode = ctx.createGain();
         let filter = ctx.createBiquadFilter();
 
         if (type === 'crab') {
             gainNode.gain.setValueAtTime(0.3, t);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
             filter.type = 'highpass';
             filter.frequency.setValueAtTime(3000, t);
 
@@ -513,40 +623,43 @@ class GameSFX {
             filter.connect(gainNode);
             gainNode.connect(targetNode);
             osc.start(t);
-            osc.stop(t + 0.2);
+            osc.stop(t + dur);
+            voice.nodes.push(osc);
         } else {
             gainNode.gain.setValueAtTime(0.25, t);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
             filter.type = 'lowpass';
             filter.frequency.setValueAtTime(4000, t);
-            filter.frequency.exponentialRampToValueAtTime(100, t + 0.15);
+            filter.frequency.exponentialRampToValueAtTime(100, t + dur);
 
             let osc = ctx.createOscillator();
             osc.type = 'square';
             osc.frequency.setValueAtTime(1200, t);
-            osc.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+            osc.frequency.exponentialRampToValueAtTime(200, t + dur);
             osc.connect(filter);
             filter.connect(gainNode);
             gainNode.connect(targetNode);
             osc.start(t);
-            osc.stop(t + 0.15);
+            osc.stop(t + dur);
+            voice.nodes.push(osc);
         }
     }
 
     playMissileFire(x, y, z) {
-        let s = this._setup(x, y, z);
+        let dur = 0.6;
+        let s = this._setup(x, y, z, this.PRIORITY.HIGH, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
 
         let gainNode = ctx.createGain();
         gainNode.gain.setValueAtTime(0.5, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
         let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(400, t);
         filter.frequency.linearRampToValueAtTime(3500, t + 0.2);
-        filter.frequency.exponentialRampToValueAtTime(100, t + 0.6);
+        filter.frequency.exponentialRampToValueAtTime(100, t + dur);
 
         filter.connect(gainNode);
         gainNode.connect(targetNode);
@@ -556,23 +669,27 @@ class GameSFX {
             osc.type = 'square';
             osc.detune.value = det;
             osc.frequency.setValueAtTime(150, t);
-            osc.frequency.exponentialRampToValueAtTime(40, t + 0.6);
+            osc.frequency.exponentialRampToValueAtTime(40, t + dur);
             osc.connect(filter);
             osc.start(t);
-            osc.stop(t + 0.6);
+            osc.stop(t + dur);
+            voice.nodes.push(osc);
         });
 
-        let noise = this._createNoise(0.6, 0.05);
-        noise.connect(filter);
-        noise.stop(t + 0.6);
+        let noise = this._createNoise(dur, 0.05);
+        if (noise) {
+            noise.connect(filter);
+            noise.stop(t + dur);
+            voice.nodes.push(noise);
+        }
     }
 
     playBombDrop(type = 'normal', x, y, z) {
-        let s = this._setup(x, y, z);
-        if (!s) return;
-        let { ctx, t, targetNode } = s;
         let isMega = type === 'mega';
         let dur = isMega ? 0.8 : 0.4;
+        let s = this._setup(x, y, z, this.PRIORITY.HIGH, dur);
+        if (!s) return;
+        let { ctx, t, targetNode, voice } = s;
 
         let gain = ctx.createGain();
         gain.gain.setValueAtTime(isMega ? 0.6 : 0.3, t);
@@ -588,32 +705,35 @@ class GameSFX {
         gain.connect(targetNode);
         osc.start(t);
         osc.stop(t + dur);
+        voice.nodes.push(osc);
     }
 
     playExplosion(x, y, z, isLarge = false, type = '') {
         // --- Deduplication & Rate Limiting ---
         // Prevents redundant explosion sounds from triggering in the same frame
         // or very close together in space/time, which can cause audio glitches.
-        let now = Date.now();
+        if (!this.ctx) this.init();
+        if (!this.ctx) return;
+        let now = this.ctx.currentTime;
         if (x !== undefined && z !== undefined) {
             let dx = x - this.lastExplosionPos.x;
             let dz = z - this.lastExplosionPos.z;
-            if (now - this.lastExplosionTime < 45 && (dx * dx + dz * dz < 2500)) {
+            if (now - this.lastExplosionTime < 0.045 && (dx * dx + dz * dz < 2500)) {
                 return; // Suppress redundant trigger
             }
             this.lastExplosionTime = now;
             this.lastExplosionPos = { x, y, z };
         }
 
-        let s = this._setup(x, y, z);
-        if (!s) return;
-        let { ctx, t, targetNode } = s;
-
         let isBomber = type === 'bomber';
         let isSquid = type === 'squid';
         let isCrab = type === 'crab';
         let isColossus = type === 'colossus';
         let dur = isLarge || isBomber || isColossus ? 2.8 : (isSquid ? 1.5 : 0.9);
+
+        let s = this._setup(x, y, z, isLarge || isBomber || isColossus ? this.PRIORITY.HIGH : this.PRIORITY.MED, dur);
+        if (!s) return;
+        let { ctx, t, targetNode, voice } = s;
 
         let distortion = ctx.createWaveShaper();
         distortion.curve = this.distCurve;
@@ -649,6 +769,7 @@ class GameSFX {
             subGain.connect(targetNode);
             sub.start(t);
             sub.stop(t + dur);
+            voice.nodes.push(sub);
         }
 
         noise.connect(noiseFilter);
@@ -675,19 +796,22 @@ class GameSFX {
             oscGain.connect(distortion);
             osc.start(t);
             osc.stop(t + dur);
+            voice.nodes.push(osc);
         });
 
         distortion.connect(noiseGain);
         noiseGain.connect(targetNode);
         noise.stop(t + dur);
+        voice.nodes.push(noise);
     }
 
     playNewLevel() {
-        let s = this._setup();
+        let dur = 3.5; // Longest level tune approx
+        let s = this._setup(undefined, undefined, undefined, this.PRIORITY.CRITICAL, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
         let pick = Math.floor(Math.random() * 8);
-        this._levelTunes[pick](ctx, t, targetNode);
+        this._levelTunes[pick](ctx, t, targetNode, voice);
     }
 
     /**
@@ -697,7 +821,7 @@ class GameSFX {
     _levelTunes = [
 
         // 0 — Original: eerie resonant filter sweep on low A minor
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             let freqs = [110.00, 146.83, 164.81, 220.00]; // A2 D3 E3 A3
             freqs.forEach((freq, i) => {
                 let noteT = t + i * 0.8;
@@ -713,12 +837,13 @@ class GameSFX {
                     gain.gain.exponentialRampToValueAtTime(0.01, noteT + 1.4);
                     osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                     osc.start(noteT); osc.stop(noteT + 1.5);
+                    if (voice) voice.nodes.push(osc);
                 });
             });
         },
 
         // 1 — Rapid chiptune arpeggio: tight 8-bit style bleeps racing up and down
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             // Fast sequence of short square wave blips — sounds like a retro computer booting
             let seq = [220, 277.18, 329.63, 415.30, 523.25, 415.30, 329.63, 220, 174.61, 220];
             let masterGain = ctx.createGain();
@@ -734,11 +859,12 @@ class GameSFX {
                 env.gain.linearRampToValueAtTime(0, noteT + 0.09);
                 osc.connect(env); env.connect(masterGain);
                 osc.start(noteT); osc.stop(noteT + 0.1);
+                if (voice) voice.nodes.push(osc);
             });
         },
 
         // 2 — FM-style clang: carrier + modulator for metallic bell-like tones
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             // Simulated FM: modulate gain of a high-freq osc into a carrier's frequency input via ring
             let carriers = [220, 293.66, 184.99]; // A3, D4, F#3
             carriers.forEach((cFreq, i) => {
@@ -763,11 +889,15 @@ class GameSFX {
                 carrier.connect(outGain); outGain.connect(targetNode);
                 carrier.start(noteT); carrier.stop(noteT + 1.7);
                 modulator.start(noteT); modulator.stop(noteT + 1.7);
+                if (voice) {
+                    voice.nodes.push(carrier);
+                    voice.nodes.push(modulator);
+                }
             });
         },
 
         // 3 — Theremin-like glide: one continuous pitch sliding eerily through wide interval
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             let osc = ctx.createOscillator();
             let filter = ctx.createBiquadFilter();
             let gain = ctx.createGain();
@@ -786,10 +916,11 @@ class GameSFX {
 
             osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
             osc.start(t); osc.stop(t + 3.1);
+            if (voice) voice.nodes.push(osc);
         },
 
         // 4 — Rhythmic techno stabs: punchy staccato bursts at irregular intervals
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             // Offbeat pattern with two alternating pitches — robotic/mechanical feel
             let pattern = [
                 [t + 0.0, 311.13],  // E♭4
@@ -810,11 +941,12 @@ class GameSFX {
                 gain.gain.exponentialRampToValueAtTime(0.001, noteT + 0.14);
                 osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                 osc.start(noteT); osc.stop(noteT + 0.16);
+                if (voice) voice.nodes.push(osc);
             });
         },
 
         // 5 — Laser ping sweep: sci-fi rising "pew" with trailing decay
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             // Three overlapping laser sweeps at different speeds and pitches
             [[80, 2400, 0.3], [60, 1800, 0.55], [40, 3200, 0.8]].forEach(([start, end, offset]) => {
                 let noteT = t + offset;
@@ -832,11 +964,12 @@ class GameSFX {
 
                 osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                 osc.start(noteT); osc.stop(noteT + 0.65);
+                if (voice) voice.nodes.push(osc);
             });
         },
 
         // 6 — Deep bass pulse with tremolo: sub-bass heartbeat that throbs and fades
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             // A low drone with amplitude tremolo — ominous and pulsing
             let baseFreq = 55; // A1
             let osc = ctx.createOscillator();
@@ -861,10 +994,14 @@ class GameSFX {
             osc.connect(filter); filter.connect(masterGain); masterGain.connect(targetNode);
             osc.start(t); osc.stop(t + 3.6);
             tremoloOsc.start(t); tremoloOsc.stop(t + 3.6);
+            if (voice) {
+                voice.nodes.push(osc);
+                voice.nodes.push(tremoloOsc);
+            }
         },
 
         // 7 — Alien morse code: irregular high-pitched digital beeps with feedback ring
-        (ctx, t, targetNode) => {
+        (ctx, t, targetNode, voice) => {
             // Bursts of high sine tones at varying lengths — like intercepted transmissions
             let beeps = [
                 [0.0, 0.04, 1200],
@@ -888,6 +1025,7 @@ class GameSFX {
                 gain.gain.linearRampToValueAtTime(0, noteT + dur);
                 osc.connect(gain); gain.connect(targetNode);
                 osc.start(noteT); osc.stop(noteT + dur + 0.01);
+                if (voice) voice.nodes.push(osc);
             });
         },
     ];
@@ -898,9 +1036,10 @@ class GameSFX {
      * Fast upward arpeggio with bright, snappy pulse waves.
      */
     playLevelComplete() {
-        let s = this._setup();
+        let dur = 1.5;
+        let s = this._setup(undefined, undefined, undefined, this.PRIORITY.CRITICAL, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
 
         let notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 (C Major)
 
@@ -921,6 +1060,7 @@ class GameSFX {
 
             osc.start(noteT);
             osc.stop(noteT + 0.2);
+            voice.nodes.push(osc);
         });
 
         // Final lingering bright chord
@@ -937,13 +1077,15 @@ class GameSFX {
             gain.connect(targetNode);
             osc.start(noteT);
             osc.stop(noteT + 1.3);
+            voice.nodes.push(osc);
         });
     }
 
     playGameOver() {
-        let s = this._setup();
+        let dur = 2.5;
+        let s = this._setup(undefined, undefined, undefined, this.PRIORITY.CRITICAL, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
         let freqs = [329.63, 293.66, 261.63, 164.81];
 
         let distortion = ctx.createWaveShaper();
@@ -974,20 +1116,22 @@ class GameSFX {
                 gain.connect(distortion);
                 osc.start(noteT);
                 osc.stop(noteT + 1.9);
+                voice.nodes.push(osc);
             });
         });
     }
 
     playPowerup(isGood = true, x, y, z) {
-        let s = this._setup(x, y, z);
+        let dur = isGood ? 0.6 : 0.8;
+        let s = this._setup(x, y, z, this.PRIORITY.CRITICAL, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
 
         let freqs = isGood ? [440, 554.37, 659.25, 880] : [220, 207.65, 196.00, 110];
 
         let masterGain = ctx.createGain();
         masterGain.gain.setValueAtTime(0.35, t);
-        masterGain.gain.linearRampToValueAtTime(0.01, t + (isGood ? 0.6 : 0.8));
+        masterGain.gain.linearRampToValueAtTime(0.01, t + dur);
         masterGain.connect(targetNode);
 
         freqs.forEach((freq, i) => {
@@ -1008,14 +1152,16 @@ class GameSFX {
                 gain.connect(masterGain);
                 osc.start(noteT);
                 osc.stop(noteT + 0.4);
+                voice.nodes.push(osc);
             });
         });
     }
 
     playClearInfection(x, y, z) {
-        let s = this._setup(x, y, z);
+        let dur = 1.3;
+        let s = this._setup(x, y, z, this.PRIORITY.HIGH, dur);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
 
         let freqs = [523.25, 659.25, 1046.50];
 
@@ -1035,30 +1181,33 @@ class GameSFX {
                 osc.connect(gain);
                 gain.connect(targetNode);
                 osc.start(t);
-                osc.stop(t + 1.3);
+                osc.stop(t + dur);
+                voice.nodes.push(osc);
             });
         });
 
         let noise = this._createNoise(0.4);
-        let filter = ctx.createBiquadFilter();
-        filter.type = 'highpass';
-        filter.frequency.value = 4000;
+        if (noise) {
+            let filter = ctx.createBiquadFilter();
+            filter.type = 'highpass';
+            filter.frequency.value = 4000;
 
-        let noiseGain = ctx.createGain();
-        noiseGain.gain.setValueAtTime(0.2, t);
-        noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+            let noiseGain = ctx.createGain();
+            noiseGain.gain.setValueAtTime(0.2, t);
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
 
-        noise.connect(filter);
-        filter.connect(noiseGain);
-        noiseGain.connect(targetNode);
-        noise.stop(t + 0.4);
+            noise.connect(filter);
+            filter.connect(noiseGain);
+            noiseGain.connect(targetNode);
+            noise.stop(t + 0.4);
+            voice.nodes.push(noise);
+        }
     }
 
-
     playAlarm() {
-        let s = this._setup();
+        let s = this._setup(undefined, undefined, undefined, this.PRIORITY.CRITICAL, 0.5);
         if (!s) return;
-        let { ctx, t, targetNode } = s;
+        let { ctx, t, targetNode, voice } = s;
 
         let gain = ctx.createGain();
         gain.gain.setValueAtTime(0.25, t);
@@ -1073,6 +1222,7 @@ class GameSFX {
         gain.connect(targetNode);
         osc.start(t);
         osc.stop(t + 0.5);
+        voice.nodes.push(osc);
     }
 
     /**
@@ -1097,6 +1247,14 @@ class GameSFX {
                             n.noise.stop();
                             n.osc.disconnect();
                             n.noise.disconnect();
+                            n.filter.disconnect();
+                            n.gain.disconnect();
+                            if (n.panner) {
+                                n.panner.disconnect();
+                                if (this.pannerPool.length < this.MAX_PANNER_POOL) {
+                                    this.pannerPool.push(n.panner);
+                                }
+                            }
                         } catch (e) { }
                         delete this.thrustNodes[id];
                     }

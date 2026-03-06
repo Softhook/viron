@@ -151,13 +151,13 @@ function drawInstructions() {
 
     fill(255, 255, 255, 220);
     textSize(36);
-    text('TOUCH CONTROLS', 0, -height * 0.35);
+    text('TOUCH CONTROLS', 0, -height * 0.42);
 
   } else {
     // --- Desktop Text Instructions ---
     fill(255, 255, 255, 220);
     textSize(48);
-    text('HOW TO PLAY', 0, -height * 0.3);
+    text('HOW TO PLAY', 0, -height * 0.42);
 
     if (numPlayers === 1) {
       // Split single player controls: Mouse on left, Keyboard on right
@@ -229,7 +229,7 @@ function drawInstructions() {
   fill(150, 255, 150, 255 * blink);
   textAlign(CENTER, CENTER);
   textSize(24);
-  text(isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.3);
+  text(isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
 
   pop();
 }

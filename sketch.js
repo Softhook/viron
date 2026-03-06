@@ -1364,8 +1364,20 @@ function keyPressed() {
  * Returning false prevents the default browser scroll / zoom behaviour.
  */
 function touchStarted(event) {
+  if (gameState === 'menu' || gameState === 'instructions') {
+    if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
+      fullscreen(true);
+    }
+  }
+
   if (gameState === 'menu') { startGame(1); return false; }
-  if (gameState === 'instructions') { gameState = 'shipselect'; return false; }
+  if (gameState === 'instructions') {
+    if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
+      return false;
+    }
+    gameState = 'shipselect';
+    return false;
+  }
   if (gameState === 'shipselect') {
     let vw = width / numPlayers;
     let pIdx = floor(mouseX / vw);
@@ -1406,11 +1418,16 @@ function touchMoved(event) { return false; }
  */
 function mousePressed() {
   if (!isMobile) {
-    if (!fullscreen()) fullscreen(true);
+    if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
+      fullscreen(true);
+    }
 
     if (gameState === 'menu') {
       startGame(1);
     } else if (gameState === 'instructions') {
+      if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
+        return;
+      }
       gameState = 'shipselect';
     } else if (gameState === 'shipselect') {
       let vw = width / numPlayers;

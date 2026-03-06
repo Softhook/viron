@@ -44,6 +44,12 @@ class MobileController {
             missile: { active: false, baseR: 44, col: [0, 200, 255], label: 'Mis', x: 0, y: 0, r: 44 }
         };
 
+        this.isSwapped = false; // Aim on Left, Actions on Right
+        this.settingsBtns = {
+            switchSides: { x: 0, y: 0, w: 160, h: 50, label: 'SWITCH SIDES' },
+            cockpit: { x: 0, y: 0, w: 160, h: 50, label: 'COCKPIT VIEW' }
+        };
+
         this.debug = false;
     }
 
@@ -67,6 +73,17 @@ class MobileController {
         // Position missile button at the bottom center
         this.btns.missile.x = w / 2;
         this.btns.missile.y = h - 60 * s;
+
+        // Position settings buttons for Instruction screen (Slightly higher to clear title)
+        this.settingsBtns.switchSides.x = w / 2 - 90 * s;
+        this.settingsBtns.switchSides.y = h * 0.15; // Raised from 0.2
+        this.settingsBtns.switchSides.w = 160 * s;
+        this.settingsBtns.switchSides.h = 44 * s;
+
+        this.settingsBtns.cockpit.x = w / 2 + 90 * s;
+        this.settingsBtns.cockpit.y = h * 0.15; // Raised from 0.2
+        this.settingsBtns.cockpit.w = 160 * s;
+        this.settingsBtns.cockpit.h = 44 * s;
     }
 
     update(touches, w, h) {
@@ -104,8 +121,11 @@ class MobileController {
             }
 
             if (!onMissile) {
-                if (t.x > w / 2) {
-                    // Right Half = Trackpad Aiming (Floating Joystick)
+                let onRight = t.x > w / 2;
+                let isAimZone = this.isSwapped ? !onRight : onRight;
+
+                if (isAimZone) {
+                    // Aiming half (Relative Trackpad / Floating Joystick)
                     if (this.aimTouchId === t.id) {
                         this.lastAimX = t.x;
                         this.lastAimY = t.y;
@@ -135,15 +155,26 @@ class MobileController {
                         aimFound = true;
                     }
                 } else {
-                    // Left Half = Zones
+                    // Action half (Thrust / Shoot / Barrier)
                     if (t.y > h / 2) {
                         this.thrustActive = true;
                         this.hasUsed.thrust = true;
                     } else {
-                        if (t.x < w / 4) {
+                        // Horizontal logic for Shoot/Barrier depends on swap
+                        let isShoot, isBarrier;
+                        if (!this.isSwapped) {
+                            isShoot = t.x < w / 4;
+                            isBarrier = t.x >= w / 4 && t.x < w / 2;
+                        } else {
+                            // Swapped: Right side zones. Fire in corner, Barrier left of it.
+                            isShoot = t.x >= w * 0.75;
+                            isBarrier = t.x >= w / 2 && t.x < w * 0.75;
+                        }
+
+                        if (isShoot) {
                             this.shootActive = true;
                             this.hasUsed.shoot = true;
-                        } else {
+                        } else if (isBarrier) {
                             this.barrierActive = true;
                             this.hasUsed.barrier = true;
                         }
@@ -212,35 +243,41 @@ class MobileController {
         let showBarrier = forceInstructions;
         let showAim = forceInstructions;
 
-        // --- Visual hints for Left Zones ---
+        let leftX = this.isSwapped ? w / 2 : 0;
+        let aimX = this.isSwapped ? 0 : w / 2;
+
+        // --- Visual hints for Action Zones ---
         noStroke();
 
         // Thrust Zone
         if (showThrust) {
-            // Only use active highlights in instruction mode
             let alpha = forceInstructions ? (this.thrustActive ? 60 : 40) : 15;
             fill(0, 255, 60, alpha);
-            rect(0, h / 2, w / 2, h / 2);
+            rect(leftX, h / 2, w / 2, h / 2);
         }
 
         // Shoot Zone
         if (showShoot) {
-            let alpha = forceInstructions ? (this.shootActive ? 60 : 40) : 15;
+            let active = this.shootActive;
+            let alpha = forceInstructions ? (active ? 60 : 40) : 15;
             fill(255, 60, 60, alpha);
-            rect(0, 0, w / 4, h / 2);
+            let sx = (!this.isSwapped) ? leftX : leftX + w / 4;
+            rect(sx, 0, w / 4, h / 2);
         }
 
         // Barrier Zone
         if (showBarrier) {
-            let alpha = forceInstructions ? (this.barrierActive ? 60 : 40) : 15;
+            let active = this.barrierActive;
+            let alpha = forceInstructions ? (active ? 60 : 40) : 15;
             fill(100, 200, 255, alpha);
-            rect(w / 4, 0, w / 4, h / 2);
+            let bx = (!this.isSwapped) ? leftX + w / 4 : leftX;
+            rect(bx, 0, w / 4, h / 2);
         }
 
         // Aim Zone background hint
         if (showAim) {
             fill(255, 255, 255, forceInstructions ? 20 : 8);
-            rect(w / 2, 0, w / 2, h);
+            rect(aimX, 0, w / 2, h);
         }
 
         // Dividers
@@ -248,10 +285,10 @@ class MobileController {
         strokeWeight(2 * this._scale);
         // Vertical center (Left vs Right)
         if (showThrust || showAim) line(w / 2, 0, w / 2, h);
-        // Horizontal left (Top vs Bottom)
-        if (showThrust || showShoot || showBarrier) line(0, h / 2, w / 2, h / 2);
-        // Vertical left (Shoot vs Barrier)
-        if (showShoot || showBarrier) line(w / 4, 0, w / 4, h / 2);
+        // Horizontal action line (Top vs Bottom)
+        if (showThrust || showShoot || showBarrier) line(leftX, h / 2, leftX + w / 2, h / 2);
+        // Vertical action split (Shoot vs Barrier)
+        if (showShoot || showBarrier) line(leftX + w / 4, 0, leftX + w / 4, h / 2);
 
         // Labels - Only drawn during Instruction screen
         if (forceInstructions) {
@@ -259,10 +296,30 @@ class MobileController {
             textAlign(CENTER, CENTER);
             textSize(16 * Math.max(1, this._scale));
             fill(255, 255, 255, 200);
-            text("SHOOT", (w / 4) / 2, h / 4);
-            text("BARRIER", w / 4 + (w / 4) / 2, h / 4);
-            text("THRUST", (w / 2) / 2, h * 0.75);
-            text("AIM (SWIPE)", w * 0.75, h / 8);
+            let shootLabelX = (!this.isSwapped) ? leftX + w / 8 : leftX + 3 * w / 8;
+            let barrierLabelX = (!this.isSwapped) ? leftX + 3 * w / 8 : leftX + w / 8;
+
+            text("SHOOT", shootLabelX, h * 0.28);
+            text("BARRIER", barrierLabelX, h * 0.28);
+            text("THRUST", leftX + w / 4, h * 0.68);
+            text("AIM (SWIPE)", aimX + w / 4, h * 0.22);
+
+            // --- Settings Buttons (Only on Instructions) ---
+            rectMode(CENTER);
+            for (let k in this.settingsBtns) {
+                let btn = this.settingsBtns[k];
+                fill(255, 255, 255, 40);
+                stroke(255, 255, 255, 100);
+                rect(btn.x, btn.y, btn.w, btn.h, 8);
+
+                noStroke();
+                fill(255);
+                textSize(12 * this._scale);
+                let label = btn.label;
+                if (k === 'cockpit') label += (typeof firstPersonView !== 'undefined' && firstPersonView ? ": ON" : ": OFF");
+                text(label, btn.x, btn.y);
+            }
+            rectMode(CORNER);
         }
 
         // Floating Trackpad Indicator if aiming (only during actual gameplay)
@@ -322,14 +379,53 @@ class MobileController {
 
         pop();
     }
+    /**
+     * Checks if a point (mouse/touch) hits any settings buttons on the Instructions screen.
+     * Returns true if a button was hit (to prevent advancing the game state).
+     */
+    checkSettingsHit(mx, my) {
+        for (let k in this.settingsBtns) {
+            let btn = this.settingsBtns[k];
+            if (mx > btn.x - btn.w / 2 && mx < btn.x + btn.w / 2 &&
+                my > btn.y - btn.h / 2 && my < btn.y + btn.h / 2) {
+
+                if (k === 'switchSides') {
+                    this.isSwapped = !this.isSwapped;
+                } else if (k === 'cockpit') {
+                    if (typeof firstPersonView !== 'undefined') {
+                        firstPersonView = !firstPersonView;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 const mobileController = new MobileController();
 
+function shouldRequestFullscreen() {
+    if (typeof fullscreen !== 'function' || fullscreen()) return false;
+
+    // Skip if already in standalone mode (PWA / "Add to Home Screen" app)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    if (isStandalone) return false;
+
+    // Check device type
+    const ua = navigator.userAgent;
+    const isIPad = (ua.includes('Mac') && navigator.maxTouchPoints > 1) || ua.includes('iPad');
+
+    // We want fullscreen on Desktop and Android, but NOT iPad
+    if (isIPad) return false;
+
+    return true;
+}
+
 function handleTouchStarted() {
     // Request fullscreen immediately on first interaction from Title screen
     if (gameState === 'menu' || gameState === 'instructions') {
-        if (typeof fullscreen === 'function' && !fullscreen()) {
+        if (shouldRequestFullscreen()) {
             fullscreen(true);
         }
     }

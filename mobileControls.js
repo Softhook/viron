@@ -1,28 +1,36 @@
 /**
  * MobileController - Handles touch inputs and on-screen buttons.
  * 
- * "Hybrid Floating Joystick" Scheme:
- * 1. Touching the left half places a floating anchor. Swiping away sets continuous Turn Rate.
- * 2. Holding the finger stationary logic (low velocity) engages thrust instantly.
- * 3. Actively scrubbing/moving the finger (high velocity) turns OFF thrust to allow precision aiming.
+ * "Trackpad Hybrid" Scheme:
+ * Left Half (x < w/2):
+ *   - Top-Left Quadrant (x < w/4, y < h/2): Shoot Area
+ *   - Top-Right Quadrant (w/4 < x < w/2, y < h/2): Barrier Area
+ *   - Bottom Half (y > h/2): Thrust Area
+ * Right Half (x > w/2):
+ *   - Trackpad Aiming: Swipe to aim (relative movement).
+ *   - Missile Button: Floating button for secondary weapon.
  */
 class MobileController {
     constructor() {
-        this.leftTouchId = null;
-        this.anchorX = 0;
-        this.anchorY = 0;
-        this.lastX = 0;
-        this.lastY = 0;
+        this.aimTouchId = null;
+        this.missileTouchId = null;
+        this.lastAimX = 0;
+        this.lastAimY = 0;
 
-        // Thrust is engaged when the finger's frame-to-frame velocity is low
-        this.stationaryTicks = 0;
+        // Current state for zones
+        this.thrustActive = false;
+        this.shootActive = false;
+        this.barrierActive = false;
+
+        // Frame-over-frame deltas for aiming
+        this.deltaAimX = 0;
+        this.deltaAimY = 0;
 
         this._scale = 1;
         this._w = 0;
         this._h = 0;
 
         this.btns = {
-            shoot: { active: false, baseR: 65, col: [255, 60, 60], label: 'SHT', x: 0, y: 0, r: 65 },
             missile: { active: false, baseR: 44, col: [0, 200, 255], label: 'WPN', x: 0, y: 0, r: 44 }
         };
 
@@ -33,12 +41,6 @@ class MobileController {
     // Dimensions & UI Scaling
     // -------------------------------------------------------------------------
 
-    get _blobDiam() { return 60 * this._scale; }
-    get _anchorDiam() { return 20 * this._scale; }
-    get _maxStretch() { return 100 * this._scale; } // How far the blob can visually stretch
-    get _velDeadzone() { return 3 * this._scale; }   // Movement below this is "stationary"
-    get _thrustHoldTicks() { return 20; }               // Frames (at 60fps) required to trigger thrust
-
     update(touches, w, h) {
         // Cache scale on resize
         if (w !== this._w || h !== this._h) {
@@ -46,104 +48,111 @@ class MobileController {
             this._h = h;
             this._scale = Math.min(w, h) / 400;
             const s = this._scale;
-            this.btns.shoot.r = this.btns.shoot.baseR * s;
             this.btns.missile.r = this.btns.missile.baseR * s;
         }
 
         const s = this._scale;
-        this.btns.shoot.x = w - 105 * s; this.btns.shoot.y = h - 100 * s;
-        this.btns.missile.x = w - 105 * s; this.btns.missile.y = h - 240 * s;
+        // Position missile button on the right side
+        this.btns.missile.x = w - 105 * s; this.btns.missile.y = h - 140 * s;
 
+        // Reset states for this frame
+        this.thrustActive = false;
+        this.shootActive = false;
+        this.barrierActive = false;
         for (let b in this.btns) this.btns[b].active = false;
 
-        let leftFound = false;
+        let aimFound = false;
+        let missileFound = false;
+        this.deltaAimX = 0;
+        this.deltaAimY = 0;
 
         for (let i = 0; i < touches.length; i++) {
             let t = touches[i];
-            if (t.x > w / 2) {
-                // Action Buttons
-                for (let b in this.btns) {
-                    if (Math.hypot(t.x - this.btns[b].x, t.y - this.btns[b].y) < this.btns[b].r * 1.7) {
-                        this.btns[b].active = true;
-                    }
-                }
-            } else {
-                // Hybrid Joystick logic
-                if (this.leftTouchId === t.id) {
-                    // Frame-to-frame velocity check for thrust
-                    let dx = t.x - this.lastX;
-                    let dy = t.y - this.lastY;
-                    let dist = Math.hypot(dx, dy);
 
-                    if (dist < this._velDeadzone) {
-                        this.stationaryTicks++;
+            // If this touch is already our missile touch, keep tracking it
+            if (this.missileTouchId === t.id) {
+                this.btns.missile.active = true;
+                missileFound = true;
+                continue; // Skip zone/aiming logic for this finger
+            }
+
+            // Check if a new touch hits the missile button
+            let onMissile = false;
+            // The distance check is multiplied by 1.7 to create a larger, more forgiving hit-box
+            if (this.missileTouchId === null && Math.hypot(t.x - this.btns.missile.x, t.y - this.btns.missile.y) < this.btns.missile.r * 1.7) {
+                this.missileTouchId = t.id;
+                this.btns.missile.active = true;
+                missileFound = true;
+                onMissile = true;
+            }
+
+            if (!onMissile) {
+                if (t.x > w / 2) {
+                    // Right Half = Trackpad Aiming
+                    if (this.aimTouchId === t.id) {
+                        this.deltaAimX = t.x - this.lastAimX;
+                        this.deltaAimY = t.y - this.lastAimY;
+                        this.lastAimX = t.x;
+                        this.lastAimY = t.y;
+                        aimFound = true;
+                    } else if (this.aimTouchId === null) {
+                        this.aimTouchId = t.id;
+                        this.lastAimX = t.x;
+                        this.lastAimY = t.y;
+                        aimFound = true;
+                    }
+                } else {
+                    // Left Half = Zones
+                    if (t.y > h / 2) {
+                        this.thrustActive = true;
                     } else {
-                        // Actively scrubbing the finger removes thrust for precise aiming
-                        this.stationaryTicks = 0;
+                        if (t.x < w / 4) {
+                            this.shootActive = true;
+                        } else {
+                            this.barrierActive = true;
+                        }
                     }
-
-                    // Floating Anchor Drag (prevents getting stuck at the edge of the screen)
-                    let offsetX = t.x - this.anchorX;
-                    let offsetY = t.y - this.anchorY;
-                    let stretch = Math.hypot(offsetX, offsetY);
-
-                    if (stretch > this._maxStretch) {
-                        let over = stretch - this._maxStretch;
-                        this.anchorX += (offsetX / stretch) * over;
-                        this.anchorY += (offsetY / stretch) * over;
-                    }
-
-                    this.lastX = t.x;
-                    this.lastY = t.y;
-                    leftFound = true;
-                } else if (this.leftTouchId === null) {
-                    this.leftTouchId = t.id;
-                    this.anchorX = t.x;
-                    this.anchorY = t.y;
-                    this.lastX = t.x;
-                    this.lastY = t.y;
-                    this.stationaryTicks = 0;
-                    leftFound = true;
                 }
             }
         }
 
-        if (!leftFound) {
-            this.leftTouchId = null;
-            this.stationaryTicks = 0;
+        if (!aimFound) {
+            this.aimTouchId = null;
+        }
+        if (!missileFound) {
+            this.missileTouchId = null;
         }
     }
 
     getInputs(ship, enemies, yawRate, pitchRate) {
         let inputs = {
-            thrust: (this.stationaryTicks > this._thrustHoldTicks), // Thrust if held still
-            shoot: this.btns.shoot.active,
-            cycleWeapon: this.btns.missile.active,
+            thrust: this.thrustActive,
+            shoot: this.shootActive,
+            missile: this.btns.missile.active,
+            barrier: this.barrierActive,
             yawDelta: 0,
             pitchDelta: 0,
             assistYaw: 0,
             assistPitch: 0
         };
 
-        if (this.leftTouchId !== null) {
-            // Joystick displacement determines constant turning rate
-            let offsetX = this.lastX - this.anchorX;
-            let offsetY = this.lastY - this.anchorY;
+        if (this.aimTouchId !== null) {
+            // Trackpad relative movement
+            // Scale the physical pixels moved to a reasonable turn rate. 
+            // The magic number 150 represents a 'full drag' equivalent.
+            let turnX = constrain(this.deltaAimX / (150 * this._scale), -1.0, 1.0);
+            let turnY = constrain(this.deltaAimY / (150 * this._scale), -1.0, 1.0);
 
-            // Map the offset visually to a (-1 to 1) steering multiplier
-            let turnX = constrain(offsetX / this._maxStretch, -1.0, 1.0);
-            let turnY = constrain(offsetY / this._maxStretch, -1.0, 1.0);
-
-            // A full pull provides ~1.2x the standard keyboard turning rate
+            // Maintain the same turning response curve
             // Inverted: drag right (X+) -> turn right (yaw-), drag up (Y-) -> turn up (pitch+)
-            inputs.yawDelta = -turnX * yawRate * 1.2;
-            inputs.pitchDelta = -turnY * pitchRate * 1.2;
+            inputs.yawDelta = -turnX * yawRate * 1.5;
+            inputs.pitchDelta = -turnY * pitchRate * 1.5;
         }
 
-        // Aim Assist (only activate strong assist if the user is scrubbing hard)
+        // Aim Assist (only activate strong assist if the user is swiping)
         if (aimAssist.enabled && ship && enemies) {
-            let isSwipingHard = (this.leftTouchId !== null) && (this.stationaryTicks === 0);
-            let assist = aimAssist.getAssistDeltas(ship, enemies, isSwipingHard);
+            let isSwiping = (this.aimTouchId !== null) && (Math.abs(this.deltaAimX) > 1 || Math.abs(this.deltaAimY) > 1);
+            let assist = aimAssist.getAssistDeltas(ship, enemies, isSwiping);
             inputs.assistYaw = assist.yawDelta;
             inputs.assistPitch = assist.pitchDelta;
         }
@@ -156,42 +165,58 @@ class MobileController {
         push();
         translate(-w / 2, -h / 2, 0);
 
-        if (this.leftTouchId !== null) {
-            let thrusting = (this.stationaryTicks > this._thrustHoldTicks);
+        // --- Visual hints for Left Zones ---
+        noStroke();
 
-            // Anchor dot
-            noStroke();
-            fill(255, 255, 255, 100);
-            circle(this.anchorX, this.anchorY, this._anchorDiam);
+        // Thrust Zone
+        if (this.thrustActive) {
+            fill(0, 255, 60, 40);
+            rect(0, h / 2, w / 2, h / 2);
+        }
 
-            // Connecting rubber band line
-            stroke(255, 255, 255, 50);
-            strokeWeight(2 * this._scale);
-            line(this.anchorX, this.anchorY, this.lastX, this.lastY);
+        // Shoot Zone
+        if (this.shootActive) {
+            fill(255, 60, 60, 40);
+            rect(0, 0, w / 4, h / 2);
+        }
 
-            // Max stretch limit ring
+        // Barrier Zone
+        if (this.barrierActive) {
+            fill(100, 200, 255, 40);
+            rect(w / 4, 0, w / 4, h / 2);
+        }
+
+        // Dividers
+        stroke(255, 255, 255, 30);
+        strokeWeight(2 * this._scale);
+        // Vertical center (Left vs Right)
+        line(w / 2, 0, w / 2, h);
+        // Horizontal left (Top vs Bottom)
+        line(0, h / 2, w / 2, h / 2);
+        // Vertical left (Shoot vs Barrier)
+        line(w / 4, 0, w / 4, h / 2);
+
+        // Labels
+        noStroke();
+        fill(255, 255, 255, 80);
+        textAlign(CENTER, CENTER);
+        textSize(16 * Math.max(1, this._scale));
+        text("SHOOT", (w / 4) / 2, h / 4);
+        text("BARRIER", w / 4 + (w / 4) / 2, h / 4);
+        text("THRUST", (w / 2) / 2, h * 0.75);
+
+        fill(255, 255, 255, 40);
+        text("AIM (SWIPE)", w * 0.75, h / 2);
+
+        // Floating Trackpad Indicator if aiming
+        if (this.aimTouchId !== null) {
+            strokeWeight(3 * this._scale);
+            stroke(255, 255, 255, 100);
             noFill();
-            stroke(255, 255, 255, 20);
-            circle(this.anchorX, this.anchorY, this._maxStretch * 2);
-
-            // Finger blob
+            circle(this.lastAimX, this.lastAimY, 60 * this._scale);
+            fill(255, 255, 255, 150);
             noStroke();
-            if (thrusting) {
-                fill(0, 255, 60, 200);
-            } else {
-                fill(255, 255, 255, 150);
-            }
-            circle(this.lastX, this.lastY, this._blobDiam);
-
-            // Thrust trigger buildup
-            if (!thrusting && this.stationaryTicks > 0) {
-                noFill();
-                strokeWeight(3 * this._scale);
-                stroke(0, 255, 60, 150);
-                let progress = Math.min(1, this.stationaryTicks / (this._thrustHoldTicks + 1));
-                let r = this._blobDiam + (1 - progress) * 40 * this._scale;
-                circle(this.lastX, this.lastY, r);
-            }
+            circle(this.lastAimX, this.lastAimY, 20 * this._scale);
         }
 
         // Action buttons
@@ -214,7 +239,7 @@ class MobileController {
         textSize(14 * Math.max(1, this._scale));
         fill(255, 255, 255, 120);
         noStroke();
-        text("NAV: Hybrid Floating Joystick", w / 2, 20 * Math.max(1, this._scale));
+        text("NAV: Trackpad Split", w / 2, 20 * Math.max(1, this._scale));
 
         pop();
     }

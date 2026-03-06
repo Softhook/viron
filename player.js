@@ -682,12 +682,17 @@ function updateShipInput(p) {
     isThrusting = isThrusting || inputs.thrust;
     isShooting = isShooting || inputs.shoot;
 
-    // Edge-detect the weapon-cycle button so a single tap cycles once
-    if (inputs.cycleWeapon && !p.mobileMissilePressed) {
-      p.weaponMode = (p.weaponMode + 1) % WEAPON_MODES.length;
+    // Edge-detect the missile button
+    if (inputs.missile && !p.mobileMissilePressed) {
+      fireMissile(p);
       p.mobileMissilePressed = true;
-    } else if (!inputs.cycleWeapon) {
+    } else if (!inputs.missile) {
       p.mobileMissilePressed = false;
+    }
+
+    // Barrier is continuous while held, using the same 6-frame pacing as normal bullets
+    if (inputs.barrier && frameCount % 6 === 0) {
+      fireBarrier(p);
     }
 
     p.ship.yaw += inputs.yawDelta + inputs.assistYaw;

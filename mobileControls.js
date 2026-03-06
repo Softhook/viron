@@ -207,31 +207,35 @@ class MobileController {
         noStroke();
 
         // Thrust Zone
-        if (showThrust || this.thrustActive) {
-            fill(0, 255, 60, this.thrustActive ? 60 : (forceInstructions ? 40 : 20));
+        if (showThrust) {
+            // Only use active highlights in instruction mode
+            let alpha = forceInstructions ? (this.thrustActive ? 60 : 40) : 15;
+            fill(0, 255, 60, alpha);
             rect(0, h / 2, w / 2, h / 2);
         }
 
         // Shoot Zone
-        if (showShoot || this.shootActive) {
-            fill(255, 60, 60, this.shootActive ? 60 : (forceInstructions ? 40 : 20));
+        if (showShoot) {
+            let alpha = forceInstructions ? (this.shootActive ? 60 : 40) : 15;
+            fill(255, 60, 60, alpha);
             rect(0, 0, w / 4, h / 2);
         }
 
         // Barrier Zone
-        if (showBarrier || this.barrierActive) {
-            fill(100, 200, 255, this.barrierActive ? 60 : (forceInstructions ? 40 : 20));
+        if (showBarrier) {
+            let alpha = forceInstructions ? (this.barrierActive ? 60 : 40) : 15;
+            fill(100, 200, 255, alpha);
             rect(w / 4, 0, w / 4, h / 2);
         }
 
         // Aim Zone background hint
         if (showAim) {
-            fill(255, 255, 255, forceInstructions ? 20 : 10);
+            fill(255, 255, 255, forceInstructions ? 20 : 8);
             rect(w / 2, 0, w / 2, h);
         }
 
         // Dividers
-        stroke(255, 255, 255, forceInstructions ? 60 : 30);
+        stroke(255, 255, 255, forceInstructions ? 60 : 25);
         strokeWeight(2 * this._scale);
         // Vertical center (Left vs Right)
         if (showThrust || showAim) line(w / 2, 0, w / 2, h);
@@ -240,30 +244,20 @@ class MobileController {
         // Vertical left (Shoot vs Barrier)
         if (showShoot || showBarrier) line(w / 4, 0, w / 4, h / 2);
 
-        // Labels
-        noStroke();
-        textAlign(CENTER, CENTER);
-        textSize(16 * Math.max(1, this._scale));
-
-        if (showShoot) {
-            fill(255, 255, 255, forceInstructions ? 150 : 80);
+        // Labels - Only drawn during Instruction screen
+        if (forceInstructions) {
+            noStroke();
+            textAlign(CENTER, CENTER);
+            textSize(16 * Math.max(1, this._scale));
+            fill(255, 255, 255, 200);
             text("SHOOT", (w / 4) / 2, h / 4);
-        }
-        if (showBarrier) {
-            fill(255, 255, 255, forceInstructions ? 150 : 80);
             text("BARRIER", w / 4 + (w / 4) / 2, h / 4);
-        }
-        if (showThrust) {
-            fill(255, 255, 255, forceInstructions ? 150 : 80);
             text("THRUST", (w / 2) / 2, h * 0.75);
-        }
-        if (showAim) {
-            fill(255, 255, 255, forceInstructions ? 150 : 80);
             text("AIM (SWIPE)", w * 0.75, h / 8);
         }
 
-        // Floating Trackpad Indicator if aiming
-        if (this.aimTouchId !== null) {
+        // Floating Trackpad Indicator if aiming (only during actual gameplay)
+        if (!forceInstructions && this.aimTouchId !== null) {
             let maxStretch = 100 * this._scale;
 
             // Anchor dot
@@ -291,24 +285,31 @@ class MobileController {
         // Action buttons
         for (let b in this.btns) {
             let btn = this.btns[b];
-            stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-            strokeWeight(2 * this._scale);
-            fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-            circle(btn.x, btn.y, btn.r * 2);
-            noStroke();
-            fill(255, btn.active ? 255 : 150);
-            textAlign(CENTER, CENTER);
-            textSize(Math.max(10, btn.r * 0.4));
-            text(btn.label, btn.x, btn.y);
-        }
 
-        // Navigation Mode Label
-        resetMatrix();
-        textAlign(CENTER, TOP);
-        textSize(14 * Math.max(1, this._scale));
-        fill(255, 255, 255, 120);
-        noStroke();
-        text("NAV: Trackpad Split", w / 2, 20 * Math.max(1, this._scale));
+            if (forceInstructions) {
+                // Dimmer, non-interactive rendering for instructions screen
+                stroke(btn.col[0], btn.col[1], btn.col[2], 80);
+                strokeWeight(2 * this._scale);
+                fill(btn.col[0], btn.col[1], btn.col[2], 20);
+                circle(btn.x, btn.y, btn.r * 2);
+                noStroke();
+                fill(255, 150);
+                textAlign(CENTER, CENTER);
+                textSize(Math.max(10, btn.r * 0.4));
+                text(btn.label, btn.x, btn.y);
+            } else {
+                // Actual gameplay rendering
+                stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
+                strokeWeight(2 * this._scale);
+                fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
+                circle(btn.x, btn.y, btn.r * 2);
+                noStroke();
+                fill(255, btn.active ? 255 : 150);
+                textAlign(CENTER, CENTER);
+                textSize(Math.max(10, btn.r * 0.4));
+                text(btn.label, btn.x, btn.y);
+            }
+        }
 
         pop();
     }

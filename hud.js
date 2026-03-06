@@ -229,7 +229,7 @@ function drawInstructions() {
   fill(150, 255, 150, 255 * blink);
   textAlign(CENTER, CENTER);
   textSize(24);
-  text(isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.35);
+  text(isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.3);
 
   pop();
 }

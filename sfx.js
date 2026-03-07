@@ -808,7 +808,7 @@ class GameSFX {
                     filter.frequency.exponentialRampToValueAtTime(100, noteT + 1.2);
                     gain.gain.setValueAtTime(0, noteT);
                     gain.gain.linearRampToValueAtTime(0.15, noteT + 0.1);
-                    gain.gain.exponentialRampToValueAtTime(0.01, noteT + 1.4);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.5);
                     osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                     osc.start(noteT); osc.stop(noteT + 1.5);
                     nodes.push(osc, filter, gain);
@@ -860,7 +860,7 @@ class GameSFX {
 
                 outGain.gain.setValueAtTime(0, noteT);
                 outGain.gain.linearRampToValueAtTime(0.2, noteT + 0.01);
-                outGain.gain.exponentialRampToValueAtTime(0.001, noteT + 1.6);
+                outGain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.7);
 
                 carrier.connect(outGain); outGain.connect(targetNode);
                 carrier.start(noteT); carrier.stop(noteT + 1.7);
@@ -886,7 +886,7 @@ class GameSFX {
             gain.gain.setValueAtTime(0, t);
             gain.gain.linearRampToValueAtTime(0.2, t + 0.3);
             gain.gain.setValueAtTime(0.2, t + 2.4);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 3.0);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.1);
 
             osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
             osc.start(t); osc.stop(t + 3.1);
@@ -962,7 +962,7 @@ class GameSFX {
             masterGain.gain.setValueAtTime(0, t);
             masterGain.gain.linearRampToValueAtTime(0.3, t + 0.2);
             masterGain.gain.setValueAtTime(0.3, t + 2.5);
-            masterGain.gain.exponentialRampToValueAtTime(0.001, t + 3.5);
+            masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
 
             tremoloOsc.connect(tremoloGain);
             tremoloGain.connect(masterGain.gain); // Tremolo modulates the master gain
@@ -1397,6 +1397,7 @@ class GameSFX {
 
         // Fade out all thrust node gains.
         for (const n of Object.values(thrustSnapshot)) {
+            if (!n.gain || !n.gain.gain) continue;
             if (typeof n.gain.gain.cancelAndHoldAtTime === 'function') {
                 n.gain.gain.cancelAndHoldAtTime(t);
             } else {

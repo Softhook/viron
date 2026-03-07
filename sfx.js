@@ -367,15 +367,37 @@ class GameSFX {
             // audible spatial discontinuities (clicks, glitches) whenever the player turns or moves
             // quickly.  linearRampToValueAtTime interpolates smoothly between frames without lag.
             const dt = 0.05;
-            listener.positionX.linearRampToValueAtTime(cx, t + dt);
-            listener.positionY.linearRampToValueAtTime(cy, t + dt);
-            listener.positionZ.linearRampToValueAtTime(cz, t + dt);
-            listener.forwardX.linearRampToValueAtTime(fx, t + dt);
-            listener.forwardY.linearRampToValueAtTime(fy, t + dt);
-            listener.forwardZ.linearRampToValueAtTime(fz, t + dt);
-            listener.upX.linearRampToValueAtTime(ux, t + dt);
-            listener.upY.linearRampToValueAtTime(uy, t + dt);
-            listener.upZ.linearRampToValueAtTime(uz, t + dt);
+            const endTime = t + dt;
+
+            // Cancel any pending automation before scheduling new ramps.
+            // Without this, each frame appends 9 new events to the AudioParam queues,
+            // causing unbounded growth in long sessions and wasted CPU/memory.
+            const params = [
+                listener.positionX, listener.positionY, listener.positionZ,
+                listener.forwardX,  listener.forwardY,  listener.forwardZ,
+                listener.upX,       listener.upY,       listener.upZ,
+            ];
+            for (const p of params) {
+                if (!p) continue;
+                if (typeof p.cancelAndHoldAtTime === 'function') {
+                    // Keep the current interpolated value at t, discard future events.
+                    p.cancelAndHoldAtTime(t);
+                } else {
+                    // Older-browser fallback: cancel future events and pin current value at t.
+                    p.cancelScheduledValues(t);
+                    p.setValueAtTime(p.value, t);
+                }
+            }
+
+            listener.positionX.linearRampToValueAtTime(cx, endTime);
+            listener.positionY.linearRampToValueAtTime(cy, endTime);
+            listener.positionZ.linearRampToValueAtTime(cz, endTime);
+            listener.forwardX.linearRampToValueAtTime(fx, endTime);
+            listener.forwardY.linearRampToValueAtTime(fy, endTime);
+            listener.forwardZ.linearRampToValueAtTime(fz, endTime);
+            listener.upX.linearRampToValueAtTime(ux, endTime);
+            listener.upY.linearRampToValueAtTime(uy, endTime);
+            listener.upZ.linearRampToValueAtTime(uz, endTime);
         } else {
             listener.setPosition(cx, cy, cz);
             listener.setOrientation(fx, fy, fz, ux, uy, uz);
@@ -1042,7 +1064,8 @@ class GameSFX {
             });
         });
 
-        this._cleanupNodes([...nodes, ...routingNodes], 3 * 0.1 + 0.4);
+        const cleanupDelay = Math.max(dur, 3 * 0.1 + 0.4);
+        this._cleanupNodes([...nodes, ...routingNodes], cleanupDelay);
     }
 
     playClearInfection(x, y, z) {

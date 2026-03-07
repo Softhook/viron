@@ -357,17 +357,22 @@ class GameSFX {
         let flen = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
         fx /= flen; fy /= flen; fz /= flen;
 
-        let t = this.ctx.currentTime;
+        const t = this.ctx.currentTime;
         if (listener.positionX) {
-            listener.positionX.value = cx;
-            listener.positionY.value = cy;
-            listener.positionZ.value = cz;
-            listener.forwardX.value = fx;
-            listener.forwardY.value = fy;
-            listener.forwardZ.value = fz;
-            listener.upX.value = ux;
-            listener.upY.value = uy;
-            listener.upZ.value = uz;
+            // Ramp all listener AudioParams to their new targets over 50ms (~3 frames at 60fps).
+            // Direct .value assignment causes instantaneous HRTF direction/position jumps, producing
+            // audible spatial discontinuities (clicks, glitches) whenever the player turns or moves
+            // quickly.  linearRampToValueAtTime interpolates smoothly between frames without lag.
+            const dt = 0.05;
+            listener.positionX.linearRampToValueAtTime(cx, t + dt);
+            listener.positionY.linearRampToValueAtTime(cy, t + dt);
+            listener.positionZ.linearRampToValueAtTime(cz, t + dt);
+            listener.forwardX.linearRampToValueAtTime(fx, t + dt);
+            listener.forwardY.linearRampToValueAtTime(fy, t + dt);
+            listener.forwardZ.linearRampToValueAtTime(fz, t + dt);
+            listener.upX.linearRampToValueAtTime(ux, t + dt);
+            listener.upY.linearRampToValueAtTime(uy, t + dt);
+            listener.upZ.linearRampToValueAtTime(uz, t + dt);
         } else {
             listener.setPosition(cx, cy, cz);
             listener.setOrientation(fx, fy, fz, ux, uy, uz);
@@ -692,10 +697,12 @@ class GameSFX {
     }
 
     playNewLevel() {
-        let s = this._setup();
+        const s = this._setup();
         if (!s) return;
-        let { ctx, t, targetNode } = s;
-        let pick = Math.floor(Math.random() * 8);
+        const { ctx, t, targetNode } = s;
+        // routingNodes is always empty here (no coordinates → no spatializer created),
+        // so cleanup is handled entirely inside each _levelTunes entry.
+        const pick = Math.floor(Math.random() * this._levelTunes.length);
         this._levelTunes[pick](ctx, t, targetNode);
     }
 

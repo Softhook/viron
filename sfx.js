@@ -124,10 +124,13 @@ class GameSFX {
 
         const heartRate = 0.5 + (infectionCount / maxInfection) * 1.5; // 0.5Hz to 2.0Hz
         const heartVol = (infectionCount / maxInfection) * 0.4;
-        this.ambientNodes.heartbeat.gain.gain.setTargetAtTime(heartVol, t, 0.1);
-        // Rhythmic pulsing of the heartbeat
-        const pulse = Math.pow(Math.sin(t * Math.PI * heartRate) * 0.5 + 0.5, 4);
-        this.ambientNodes.heartbeat.gain.gain.value *= pulse;
+        // Rhythmic pulsing of the heartbeat.
+        // sin(t * 2π * f) gives exactly f Hz; using π instead of 2π would halve the rate.
+        // Combining the envelope peak and the pulse into one setTargetAtTime call avoids
+        // the Web Audio spec pitfall where a direct .value write after scheduling an
+        // automation event (setTargetAtTime) cancels that event, silencing the beat.
+        const pulse = Math.pow(Math.sin(t * 2 * Math.PI * heartRate) * 0.5 + 0.5, 4);
+        this.ambientNodes.heartbeat.gain.gain.setTargetAtTime(heartVol * pulse, t, 0.05);
 
         // 2. Infection Proximity (Buzzy Scanning Hum)
         if (!this.ambientNodes.proximityHum) {

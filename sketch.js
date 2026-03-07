@@ -647,7 +647,6 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
  *   6. Respawn logic: decrement respawn timers, reset dead ships.
  */
 function draw() {
-  if (typeof gameSFX !== 'undefined') gameSFX.update();
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'instructions') { drawInstructions(); return; }
   if (gameState === 'shipselect') { drawShipSelect(); return; }

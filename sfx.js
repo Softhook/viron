@@ -18,9 +18,7 @@ class GameSFX {
         this._refDist = 180;            // reference distance for manual attenuation
         this._zoomOffset = 520;         // offset to simulate camera zoom in 2p mode
         this._maxManualDist = 8000;     // upper clamp for manual volume falloff
-        this._maxManualDistSq = 8000 * 8000; // cached squared — avoids ** per sound in _setup
         this._infectionProximityAlpha = 0; // Smoothed proximity value
-
 
         // Priority constants
         this.PRIORITY = {
@@ -31,58 +29,20 @@ class GameSFX {
         };
     }
 
-    static _EXPLOSION_CONFIG = {
-        'default': { dur: 0.9, heavy: false, initVol: 1.1, freqs: [150, 155, 145], endFreq: 20, baseGain: 0.6 },
-        'large': { dur: 2.8, heavy: true, initVol: 1.4, freqs: [90, 94, 86], endFreq: 20, baseGain: 1.0 },
-        'bomber': { dur: 2.8, heavy: true, initVol: 1.8, freqs: [90, 94, 86], endFreq: 20, baseGain: 1.0 },
-        'colossus': { dur: 2.8, heavy: true, initVol: 1.8, freqs: [90, 94, 86], endFreq: 20, baseGain: 1.0 },
-        'squid': { dur: 1.5, heavy: false, initVol: 1.1, freqs: [130, 135, 125], endFreq: 5, baseGain: 0.8, sawtooth: true },
-        'crab': { dur: 0.9, heavy: false, initVol: 1.1, freqs: [150, 155, 145], endFreq: 20, baseGain: 0.6, bandpass: true }
-    };
-
-    static _ENEMY_SHOT_CONFIG = {
-        'crab': { dur: 0.2, vol: 0.3, filter: 'highpass', freq: 3000, osc: 'sawtooth', baseF: 800, endF: 4000 },
-        'fighter': { dur: 0.15, vol: 0.25, filter: 'lowpass', freq: 4000, osc: 'square', baseF: 1200, endF: 200 }
-    };
-
-    static _COMPRESSOR_CONFIG = {
-        threshold: -18,
-        knee: 24,
-        ratio: 10,
-        attack: 0.003,
-        release: 0.25
-    };
-
-    static _PLAYER_SHOT_CONFIG = {
-        dur: 0.18, vol: 0.32, detunes: [-10, 0, 10], baseF: 220, endF: 140, filterF: 1800
-    };
-
-    static _MISSILE_CONFIG = {
-        dur: 0.6, vol: 0.5, detunes: [-25, 0, 25], baseF: 150, endF: 40, filterF: 400
-    };
-
-    static _BOMB_CONFIG = {
-        normal: { dur: 0.4, vol: 0.3, maxVol: 0.4, baseF: 1200, endF: 300, osc: 'sine', noiseVol: 0.35, noiseF: 800 },
-        mega: { dur: 0.8, vol: 0.6, maxVol: 0.8, baseF: 800, endF: 150, osc: 'sawtooth', noiseVol: 0.6, noiseF: 300 }
-    };
-
-    static _PULSE_CONFIG = {
-        dur: 1.8, vol: 0.8, baseF: 120, endF: 40, filterF: 2000, noiseMul: 1.2
-    };
-
     init() {
         if (this.initialized) return;
         try { if (typeof userStartAudio !== 'undefined') userStartAudio(); } catch (e) { }
         if (typeof getAudioContext !== 'undefined') {
             this.ctx = getAudioContext();
 
-            const cfg = GameSFX._COMPRESSOR_CONFIG;
+            // Master compressor to prevent clipping when multiple sounds (explosions, shots, engines) 
+            // overlap, especially likely in two-player mode.
             this.master = this.ctx.createDynamicsCompressor();
-            this.master.threshold.setValueAtTime(cfg.threshold, this.ctx.currentTime);
-            this.master.knee.setValueAtTime(cfg.knee, this.ctx.currentTime);
-            this.master.ratio.setValueAtTime(cfg.ratio, this.ctx.currentTime);
-            this.master.attack.setValueAtTime(cfg.attack, this.ctx.currentTime);
-            this.master.release.setValueAtTime(cfg.release, this.ctx.currentTime);
+            this.master.threshold.setValueAtTime(-18, this.ctx.currentTime);
+            this.master.knee.setValueAtTime(24, this.ctx.currentTime);
+            this.master.ratio.setValueAtTime(10, this.ctx.currentTime);
+            this.master.attack.setValueAtTime(0.003, this.ctx.currentTime);
+            this.master.release.setValueAtTime(0.25, this.ctx.currentTime);
             this.master.connect(this.ctx.destination);
 
             this.distCurve = this.createDistortionCurve(400);
@@ -157,20 +117,18 @@ class GameSFX {
     }
 
     /**
-     * Cheap O(N) expired-voice sweep. Called at the start of _setup.
-     * No sort — that stays in _limitVoices, called only when over cap.
+     * Passively cleans up expired voices. Called by _setup.
      */
-    _pruneExpired() {
-        const now = this.ctx.currentTime;
+    _pruneVoices() {
+        let now = this.ctx.currentTime;
         for (let i = this.activeVoices.length - 1; i >= 0; i--) {
-            const v = this.activeVoices[i];
+            let v = this.activeVoices[i];
             if (now > v.startTime + v.duration + 0.1) {
                 this._terminateVoice(v);
                 this.activeVoices.splice(i, 1);
             }
         }
     }
-
 
     _getPanner() {
         if (this.pannerPool.length > 0) return this.pannerPool.pop();
@@ -187,8 +145,7 @@ class GameSFX {
      */
     updateAmbiance(proximityData, infectionCount, maxInfection) {
         if (!this.initialized || !this.ctx) return;
-        // Single ctx.currentTime read — eliminates duplicate OS-clock call per frame.
-        const t = this.ctx.currentTime;
+        let t = this.ctx.currentTime;
 
         // 1. Infection Heartbeat (Sub-bass rumble)
         if (!this.ambientNodes.heartbeat) {
@@ -237,7 +194,7 @@ class GameSFX {
 
 
             osc.connect(filter);
-            if (noise) (noise.output || noise).connect(filter);
+            if (noise) noise.connect(filter);
             filter.connect(gain);
             gain.connect(this.master || this.ctx.destination);
             osc.start();
@@ -277,20 +234,25 @@ class GameSFX {
             this.ambientNodes.scanningMod = { osc, gain, filter, lfo, lfoGain };
         }
 
-        // Smoothed proximity: inline exponential lerp — no dependency on sketch.js `lerp` global.
-        const targetProximity = proximityData.dist < 800 ? (1 - proximityData.dist / 800) : 0;
-        this._infectionProximityAlpha = (this._infectionProximityAlpha || 0) + (targetProximity - (this._infectionProximityAlpha || 0)) * 0.05;
-        // Reuse `t` from top of method — no second currentTime read needed.
+        // Smoothed proximity to infected tiles
+        let targetProximity = proximityData.dist < 800 ? (1 - proximityData.dist / 800) : 0;
+        this._infectionProximityAlpha = lerp(this._infectionProximityAlpha || 0, targetProximity, 0.05);
+
+        let now = this.ctx.currentTime;
+
         // Steady Hum volume
         let humVol = this._infectionProximityAlpha * 0.18;
-        this.ambientNodes.proximityHum.gain.gain.setTargetAtTime(humVol, t, 0.1);
-        this.ambientNodes.proximityHum.filter.frequency.setTargetAtTime(200 + this._infectionProximityAlpha * 400, t, 0.1);
+        this.ambientNodes.proximityHum.gain.gain.setTargetAtTime(humVol, now, 0.1);
+        this.ambientNodes.proximityHum.filter.frequency.setTargetAtTime(200 + this._infectionProximityAlpha * 400, now, 0.1);
 
+        // Pulsed Scanning "zzz" modulation - triggered when a pulse passes the player
         if (this.ambientNodes.scanningMod) {
-            const scanAlpha = proximityData.pulseOverlap || 0;
-            const alphaSq = scanAlpha * scanAlpha;
-            this.ambientNodes.scanningMod.gain.gain.setTargetAtTime(alphaSq * 0.8, t, 0.04);
-            this.ambientNodes.scanningMod.lfo.frequency.setTargetAtTime(8.0 + alphaSq * 10.0, t, 0.04);
+            let scanAlpha = proximityData.pulseOverlap || 0;
+            // Use squared intensity for a sharper peak (more "zip", less "drone")
+            let alphaSq = scanAlpha * scanAlpha;
+            this.ambientNodes.scanningMod.gain.gain.setTargetAtTime(alphaSq * 0.8, now, 0.04);
+            // Speed up the rhythmic modulation at the peak of the scan
+            this.ambientNodes.scanningMod.lfo.frequency.setTargetAtTime(8.0 + alphaSq * 10.0, now, 0.04);
         }
 
         // 4. Visual Scan Line Sweep (Metallic "Ping")
@@ -305,23 +267,24 @@ class GameSFX {
 
             gain.gain.value = 0;
 
-            if (noise) (noise.output || noise).connect(filter);
+            if (noise) noise.connect(filter);
             filter.connect(gain);
             gain.connect(this.master || this.ctx.destination);
 
             this.ambientNodes.scanSweep = { noise, filter, gain };
         }
 
-        const sweepAlpha = proximityData.scanSweepAlpha || 0;
-        const sweepVol = sweepAlpha * this._infectionProximityAlpha * 0.6;
-        this.ambientNodes.scanSweep.gain.gain.setTargetAtTime(sweepVol, t, 0.05);
-        this.ambientNodes.scanSweep.filter.frequency.setTargetAtTime(1500 + sweepAlpha * 1500, t, 0.05);
+        let sweepAlpha = proximityData.scanSweepAlpha || 0;
+        // Only audible when near infection to match visual logic
+        let sweepVol = sweepAlpha * this._infectionProximityAlpha * 0.6;
+        this.ambientNodes.scanSweep.gain.gain.setTargetAtTime(sweepVol, now, 0.05);
+        this.ambientNodes.scanSweep.filter.frequency.setTargetAtTime(1500 + sweepAlpha * 1500, now, 0.05);
     }
 
     _setup(x, y, z, priority = 1, duration = 0.5) {
         this.init();
         if (!this.ctx) return null;
-        this._pruneExpired();
+        this._pruneVoices();
 
         let t = this.ctx.currentTime;
         let targetNode = this.master || this.ctx.destination;
@@ -338,7 +301,7 @@ class GameSFX {
                     let dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
                     if (dSq < minDistSq) minDistSq = dSq;
                 }
-                if (minDistSq > this._maxManualDistSq) return null;
+                if (minDistSq > this._maxManualDist ** 2) return null;
             }
 
             if (this.spatialEnabled) {
@@ -429,14 +392,13 @@ class GameSFX {
         };
 
         this.activeVoices.push(voice);
-        // O(N log N) sort only when over cap — skipped on the vast majority of frames.
-        if (this.activeVoices.length > this.maxVoices) this._limitVoices();
+        this._limitVoices();
 
         return { ctx: this.ctx, t, targetNode, voice };
     }
 
-    // Always returns the BufferSourceNode so callers can track it for cleanup.
-    // When mul !== 1, a GainNode is inserted; access it via noise.output for connecting.
+    // Pass `startAt` (the scheduled audio time from the parent method) so the source
+    // starts in sync with other nodes, not before it is connected.
     _createNoise(dur, filterCoeff = 0, mul = 1, startAt = null) {
         if (!this.ctx || !this.persistentNoise) return null;
         let noise = this.ctx.createBufferSource();
@@ -451,7 +413,9 @@ class GameSFX {
             let gain = this.ctx.createGain();
             gain.gain.value = mul;
             noise.connect(gain);
-            noise.output = gain; // callers: connect via (noise.output || noise)
+            // Simple proxy for .stop() so callers can treat the node chain as a SourceNode.
+            gain.stop = (t) => { try { noise.stop(t); } catch (e) { } };
+            return gain;
         }
 
         return noise;
@@ -556,270 +520,321 @@ class GameSFX {
     }
 
     playShot(x, y, z) {
-        const cfg = GameSFX._PLAYER_SHOT_CONFIG;
-        const s = this._setup(x, y, z, this.PRIORITY.HIGH, cfg.dur);
+        let dur = 0.18;
+        let s = this._setup(x, y, z, this.PRIORITY.HIGH, dur);
         if (!s) return;
-        const { ctx, t, targetNode, voice } = s;
+        let { ctx, t, targetNode, voice } = s;
 
-        const gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(cfg.vol, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur);
+        // Main volume envelope - lower initial gain to prevent clipping during rapid fire
+        let gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(0.32, t);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
-        const filter = ctx.createBiquadFilter();
+        // Low-pass filter to remove "annoying" high frequencies
+        let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(cfg.filterF, t);
+        filter.frequency.setValueAtTime(1800, t);
         filter.frequency.exponentialRampToValueAtTime(500, t + 0.15);
 
         filter.connect(gainNode);
         gainNode.connect(targetNode);
 
-        cfg.detunes.forEach((det) => {
-            const osc = ctx.createOscillator();
+        // Core oscillators - triangle waves for a smoother, less buzzing sound
+        [-10, 0, 10].forEach((det) => {
+            let osc = ctx.createOscillator();
             osc.type = 'triangle';
             osc.detune.value = det;
-            osc.frequency.setValueAtTime(cfg.baseF, t);
-            osc.frequency.exponentialRampToValueAtTime(cfg.endF, t + 0.15);
+            // Lower base frequency for a more powerful, less shrill sound
+            osc.frequency.setValueAtTime(220, t); // A3
+            osc.frequency.exponentialRampToValueAtTime(140, t + 0.15);
             osc.connect(filter);
-            osc.start(t); osc.stop(t + cfg.dur);
+            osc.start(t);
+            osc.stop(t + dur);
             voice.nodes.push(osc);
         });
 
-        const sub = ctx.createOscillator();
-        const subFilter = ctx.createBiquadFilter();
+        // Sub-thrum for weight - with high-pass to avoid mud/scratchiness
+        let sub = ctx.createOscillator();
+        let subFilter = ctx.createBiquadFilter();
         subFilter.type = 'highpass';
         subFilter.frequency.value = 40;
+
         sub.type = 'sine';
         sub.frequency.setValueAtTime(80, t);
         sub.frequency.exponentialRampToValueAtTime(40, t + 0.1);
-        const subGain = ctx.createGain();
+        let subGain = ctx.createGain();
         subGain.gain.setValueAtTime(0.25, t);
         subGain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
+
         sub.connect(subFilter);
         subFilter.connect(subGain);
         subGain.connect(targetNode);
-        sub.start(t); sub.stop(t + 0.12);
+        sub.start(t);
+        sub.stop(t + 0.12);
         voice.nodes.push(sub);
     }
 
     playInfectionPulse(x, y, z) {
-        const cfg = GameSFX._PULSE_CONFIG;
-        const s = this._setup(x, y, z, this.PRIORITY.MED, cfg.dur);
+        let dur = 1.8;
+        let s = this._setup(x, y, z, this.PRIORITY.MED, dur);
         if (!s) return;
-        const { ctx, t, targetNode, voice } = s;
+        let { ctx, t, targetNode, voice } = s;
 
-        const gainNode = ctx.createGain();
+        let gainNode = ctx.createGain();
         gainNode.gain.setValueAtTime(0.01, t);
-        gainNode.gain.linearRampToValueAtTime(cfg.vol, t + 0.1);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur);
+        gainNode.gain.linearRampToValueAtTime(0.8, t + 0.1);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
-        const filter = ctx.createBiquadFilter();
+        let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(cfg.filterF, t);
-        filter.frequency.exponentialRampToValueAtTime(100, t + cfg.dur);
+        filter.frequency.setValueAtTime(2000, t);
+        filter.frequency.exponentialRampToValueAtTime(100, t + dur);
 
-        const osc = ctx.createOscillator();
+        let osc = ctx.createOscillator();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(cfg.baseF, t);
-        osc.frequency.exponentialRampToValueAtTime(cfg.endF, t + cfg.dur);
+        osc.frequency.setValueAtTime(120, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + dur);
 
-        const noise = this._createNoise(cfg.dur, 0.05, cfg.noiseMul, t);
-        const distortion = ctx.createWaveShaper();
+        let noise = this._createNoise(dur, 0.05, 1.2, t);
+        let distortion = ctx.createWaveShaper();
         distortion.curve = this.distCurve;
 
         osc.connect(filter);
-        if (noise) (noise.output || noise).connect(filter);
+        if (noise) noise.connect(filter);
         filter.connect(distortion);
         distortion.connect(gainNode);
         gainNode.connect(targetNode);
 
-        osc.start(t); osc.stop(t + cfg.dur);
+        osc.start(t);
+        osc.stop(t + dur);
         voice.nodes.push(osc);
-        if (noise) { voice.nodes.push(noise); noise.stop(t + cfg.dur); }
+        if (noise) {
+            voice.nodes.push(noise);
+            noise.stop(t + dur);
+        }
     }
 
     playEnemyShot(type = 'fighter', x, y, z) {
-        const cfg = GameSFX._ENEMY_SHOT_CONFIG[type] || GameSFX._ENEMY_SHOT_CONFIG['fighter'];
-        const s = this._setup(x, y, z, this.PRIORITY.MED, cfg.dur);
+        let dur = type === 'crab' ? 0.2 : 0.15;
+        let s = this._setup(x, y, z, this.PRIORITY.MED, dur);
         if (!s) return;
-        const { ctx, t, targetNode, voice } = s;
+        let { ctx, t, targetNode, voice } = s;
 
-        const gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(cfg.vol, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur);
+        let gainNode = ctx.createGain();
+        let filter = ctx.createBiquadFilter();
 
-        const filter = ctx.createBiquadFilter();
-        filter.type = cfg.filter;
-        filter.frequency.setValueAtTime(cfg.freq, t);
-        if (cfg.filter === 'lowpass') {
-            filter.frequency.exponentialRampToValueAtTime(100, t + cfg.dur);
+        if (type === 'crab') {
+            gainNode.gain.setValueAtTime(0.3, t);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
+            filter.type = 'highpass';
+            filter.frequency.setValueAtTime(3000, t);
+
+            let osc = ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(800, t);
+            osc.frequency.exponentialRampToValueAtTime(4000, t + 0.1);
+            osc.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(targetNode);
+            osc.start(t);
+            osc.stop(t + dur);
+            voice.nodes.push(osc);
+        } else {
+            gainNode.gain.setValueAtTime(0.25, t);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(4000, t);
+            filter.frequency.exponentialRampToValueAtTime(100, t + dur);
+
+            let osc = ctx.createOscillator();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(1200, t);
+            osc.frequency.exponentialRampToValueAtTime(200, t + dur);
+            osc.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(targetNode);
+            osc.start(t);
+            osc.stop(t + dur);
+            voice.nodes.push(osc);
         }
-
-        const osc = ctx.createOscillator();
-        osc.type = cfg.osc;
-        osc.frequency.setValueAtTime(cfg.baseF, t);
-        osc.frequency.exponentialRampToValueAtTime(cfg.endF, t + cfg.dur);
-
-        osc.connect(filter);
-        filter.connect(gainNode);
-        gainNode.connect(targetNode);
-
-        osc.start(t);
-        osc.stop(t + cfg.dur);
-        voice.nodes.push(osc);
     }
 
-
     playMissileFire(x, y, z) {
-        const cfg = GameSFX._MISSILE_CONFIG;
-        const s = this._setup(x, y, z, this.PRIORITY.HIGH, cfg.dur);
+        let dur = 0.6;
+        let s = this._setup(x, y, z, this.PRIORITY.HIGH, dur);
         if (!s) return;
-        const { ctx, t, targetNode, voice } = s;
+        let { ctx, t, targetNode, voice } = s;
 
-        const gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(cfg.vol, t);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur);
+        let gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(0.5, t);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
-        const filter = ctx.createBiquadFilter();
+        let filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(cfg.filterF, t);
+        filter.frequency.setValueAtTime(400, t);
         filter.frequency.linearRampToValueAtTime(3500, t + 0.2);
-        filter.frequency.exponentialRampToValueAtTime(100, t + cfg.dur);
+        filter.frequency.exponentialRampToValueAtTime(100, t + dur);
 
         filter.connect(gainNode);
         gainNode.connect(targetNode);
 
-        cfg.detunes.forEach(det => {
-            const osc = ctx.createOscillator();
+        [-25, 0, 25].forEach(det => {
+            let osc = ctx.createOscillator();
             osc.type = 'square';
             osc.detune.value = det;
-            osc.frequency.setValueAtTime(cfg.baseF, t);
-            osc.frequency.exponentialRampToValueAtTime(cfg.endF, t + cfg.dur);
+            osc.frequency.setValueAtTime(150, t);
+            osc.frequency.exponentialRampToValueAtTime(40, t + dur);
             osc.connect(filter);
-            osc.start(t); osc.stop(t + cfg.dur);
+            osc.start(t);
+            osc.stop(t + dur);
             voice.nodes.push(osc);
         });
 
-        const noise = this._createNoise(cfg.dur, 0.05, 1.0, t);
+        let noise = this._createNoise(dur, 0.05, 1.0, t);
         if (noise) {
-            (noise.output || noise).connect(filter);
-            noise.stop(t + cfg.dur);
+            noise.connect(filter);
+            noise.stop(t + dur);
             voice.nodes.push(noise);
         }
     }
 
     playBombDrop(type = 'normal', x, y, z) {
-        const cfg = GameSFX._BOMB_CONFIG[type] || GameSFX._BOMB_CONFIG['normal'];
-        const s = this._setup(x, y, z, this.PRIORITY.HIGH, cfg.dur);
+        let isMega = type === 'mega';
+        let dur = isMega ? 0.8 : 0.4;
+        let s = this._setup(x, y, z, this.PRIORITY.HIGH, dur);
         if (!s) return;
-        const { ctx, t, targetNode, voice } = s;
+        let { ctx, t, targetNode, voice } = s;
 
-        const gainNode = ctx.createGain();
-        gainNode.gain.setValueAtTime(cfg.vol, t);
-        gainNode.gain.linearRampToValueAtTime(cfg.maxVol, t + cfg.dur * 0.5);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur);
+        let gain = ctx.createGain();
+        gain.gain.setValueAtTime(isMega ? 0.6 : 0.3, t);
+        gain.gain.linearRampToValueAtTime(isMega ? 0.8 : 0.4, t + dur * 0.5);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + dur);
 
-        const osc = ctx.createOscillator();
-        osc.type = cfg.osc;
-        osc.frequency.setValueAtTime(cfg.baseF, t);
-        osc.frequency.exponentialRampToValueAtTime(cfg.endF, t + cfg.dur);
+        let osc = ctx.createOscillator();
+        osc.type = isMega ? 'sawtooth' : 'sine';
+        osc.frequency.setValueAtTime(isMega ? 800 : 1200, t);
+        osc.frequency.exponentialRampToValueAtTime(isMega ? 150 : 300, t + dur);
 
-        osc.connect(gainNode);
-        gainNode.connect(targetNode);
-        osc.start(t); osc.stop(t + cfg.dur);
+        osc.connect(gain);
+        gain.connect(targetNode);
+        osc.start(t);
+        osc.stop(t + dur);
         voice.nodes.push(osc);
 
-        const noise = this._createNoise(cfg.dur, 0, cfg.noiseVol, t);
+        // Noise layer for physical texture (impact snap/whoosh)
+        let noise = this._createNoise(dur, 0, isMega ? 0.6 : 0.35, t);
         if (noise) {
-            const noiseFilter = ctx.createBiquadFilter();
+            let noiseFilter = ctx.createBiquadFilter();
             noiseFilter.type = 'highpass';
-            noiseFilter.frequency.setValueAtTime(cfg.noiseF, t);
-            noiseFilter.frequency.exponentialRampToValueAtTime(60, t + cfg.dur);
-            (noise.output || noise).connect(noiseFilter);
-            noiseFilter.connect(gainNode);
-            noise.stop(t + cfg.dur);
+            noiseFilter.frequency.setValueAtTime(isMega ? 300 : 800, t);
+            noiseFilter.frequency.exponentialRampToValueAtTime(60, t + dur);
+            noise.connect(noiseFilter);
+            noiseFilter.connect(gain);
+            noise.stop(t + dur);
             voice.nodes.push(noise);
         }
     }
 
     playExplosion(x, y, z, isLarge = false, type = '') {
-        this.init();
-        if (!this.ctx) return;
-
         // --- Deduplication & Rate Limiting ---
-        const now = this.ctx.currentTime;
+        // Prevents redundant explosion sounds from triggering in the same frame
+        // or very close together in space/time, which can cause audio glitches.
+        if (!this.ctx) this.init();
+        if (!this.ctx) return;
+        let now = this.ctx.currentTime;
         if (x !== undefined && y !== undefined && z !== undefined) {
-            const dx = x - this.lastExplosionPos.x;
-            const dy = y - this.lastExplosionPos.y;
-            const dz = z - this.lastExplosionPos.z;
+            let dx = x - this.lastExplosionPos.x;
+            let dy = y - this.lastExplosionPos.y;
+            let dz = z - this.lastExplosionPos.z;
             if (now - this.lastExplosionTime < 0.045 && (dx * dx + dy * dy + dz * dz < 2500)) {
-                return;
+                return; // Suppress redundant trigger
             }
             this.lastExplosionTime = now;
-            this.lastExplosionPos.x = x; this.lastExplosionPos.y = y; this.lastExplosionPos.z = z;
+            // Mutate in-place to avoid per-explosion GC allocation
+            this.lastExplosionPos.x = x;
+            this.lastExplosionPos.y = y;
+            this.lastExplosionPos.z = z;
         }
 
-        const key = type || (isLarge ? 'large' : 'default');
-        const cfg = GameSFX._EXPLOSION_CONFIG[key] || GameSFX._EXPLOSION_CONFIG['default'];
+        let isBomber = type === 'bomber';
+        let isSquid = type === 'squid';
+        let isCrab = type === 'crab';
+        let isColossus = type === 'colossus';
+        let dur = isLarge || isBomber || isColossus ? 2.8 : (isSquid ? 1.5 : 0.9);
 
-        const s = this._setup(x, y, z, cfg.heavy ? this.PRIORITY.HIGH : this.PRIORITY.MED, cfg.dur);
+        let s = this._setup(x, y, z, isLarge || isBomber || isColossus ? this.PRIORITY.HIGH : this.PRIORITY.MED, dur);
         if (!s) return;
-        const { ctx, t, targetNode, voice } = s;
+        let { ctx, t, targetNode, voice } = s;
 
-        const distortion = ctx.createWaveShaper();
+        let distortion = ctx.createWaveShaper();
         distortion.curve = this.distCurve;
         distortion.oversample = '4x';
 
-        const noise = this._createNoise(cfg.dur, 0.02, cfg.initVol, t);
-        if (noise) {
-            const noiseFilter = ctx.createBiquadFilter();
-            noiseFilter.type = cfg.bandpass ? 'bandpass' : 'lowpass';
-            noiseFilter.frequency.setValueAtTime(cfg.freqs[0] * 10, t);
-            noiseFilter.frequency.exponentialRampToValueAtTime(60, t + cfg.dur);
+        let noise = this._createNoise(dur, 0.02, isLarge ? 4.5 : 3.5, t);
 
-            const noiseGain = ctx.createGain();
-            noiseGain.gain.setValueAtTime(cfg.initVol, t);
-            noiseGain.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur);
-
-            (noise.output || noise).connect(noiseFilter);
-            noiseFilter.connect(distortion);
-            distortion.connect(noiseGain);
-            noiseGain.connect(targetNode);
-            noise.stop(t + cfg.dur);
-            voice.nodes.push(noise);
+        let noiseFilter = ctx.createBiquadFilter();
+        noiseFilter.type = isCrab ? 'bandpass' : 'lowpass';
+        if (isCrab) {
+            noiseFilter.frequency.setValueAtTime(2000, t);
+            noiseFilter.frequency.exponentialRampToValueAtTime(500, t + dur);
+        } else {
+            noiseFilter.frequency.setValueAtTime(isLarge || isBomber || isColossus ? 1800 : 5000, t);
+            noiseFilter.frequency.exponentialRampToValueAtTime(60, t + dur);
         }
 
-        // Sub-rumble for heavy explosions
-        if (cfg.heavy) {
-            const sub = ctx.createOscillator();
-            const subGain = ctx.createGain();
+        let noiseGain = ctx.createGain();
+        let initVol = isLarge ? (type === '' ? 1.4 : 1.6) : (isBomber || isColossus ? 1.8 : 1.1);
+        noiseGain.gain.setValueAtTime(initVol, t);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, t + dur);
+
+        // Sub-rumble for weight
+        if (isLarge || isBomber || isColossus) {
+            let sub = ctx.createOscillator();
+            let subGain = ctx.createGain();
             sub.type = 'sine';
             sub.frequency.setValueAtTime(60, t);
-            sub.frequency.exponentialRampToValueAtTime(20, t + cfg.dur * 0.5);
+            sub.frequency.exponentialRampToValueAtTime(20, t + dur * 0.5);
             subGain.gain.setValueAtTime(0.8, t);
-            subGain.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur * 0.6);
+            subGain.gain.exponentialRampToValueAtTime(0.01, t + dur * 0.6);
             sub.connect(subGain);
             subGain.connect(targetNode);
-            sub.start(t); sub.stop(t + cfg.dur);
+            sub.start(t);
+            sub.stop(t + dur);
             voice.nodes.push(sub);
         }
 
-        // Texture Oscillators
-        cfg.freqs.forEach((freq, idx) => {
-            const osc = ctx.createOscillator();
-            const oscGain = ctx.createGain();
-            osc.type = cfg.sawtooth ? 'sawtooth' : (idx === 0 ? 'triangle' : 'sine');
+        noise.connect(noiseFilter);
+        noiseFilter.connect(distortion);
+
+        // Oscillators - Large explosions (players/bombers) use lower frequencies, 
+        // Squids use sawtooth for 'ripping' sound, others use highersine/triangle.
+        let freqs = isLarge || isBomber ? [90, 94, 86] : (isSquid ? [130, 135, 125] : [150, 155, 145]);
+        freqs.forEach((freq, idx) => {
+            let osc = ctx.createOscillator();
+            let oscGain = ctx.createGain();
+
+            osc.type = isSquid ? 'sawtooth' : (idx === 0 ? 'triangle' : 'sine');
             osc.frequency.setValueAtTime(freq, t);
-            osc.frequency.exponentialRampToValueAtTime(cfg.endFreq, t + cfg.dur);
-            osc.gain.value = 0; // standard init
-            oscGain.gain.setValueAtTime(cfg.baseGain, t);
-            oscGain.gain.exponentialRampToValueAtTime(0.01, t + cfg.dur);
+            // End frequency: 20Hz for large, 5-20Hz for others. 
+            let endFreq = isLarge || isBomber ? 20 : (isSquid ? 5 : 20);
+            osc.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
+
+            let baseGain = isLarge || isBomber ? 1.0 : (isSquid ? 0.8 : 0.6);
+            oscGain.gain.setValueAtTime(baseGain, t);
+            oscGain.gain.exponentialRampToValueAtTime(0.01, t + dur);
+
             osc.connect(oscGain);
             oscGain.connect(distortion);
-            osc.start(t); osc.stop(t + cfg.dur);
+            osc.start(t);
+            osc.stop(t + dur);
             voice.nodes.push(osc);
         });
-    }
 
+        distortion.connect(noiseGain);
+        noiseGain.connect(targetNode);
+        noise.stop(t + dur);
+        voice.nodes.push(noise);
+    }
 
     playNewLevel() {
         let dur = 3.5; // Longest level tune approx
@@ -1212,7 +1227,7 @@ class GameSFX {
             noiseGain.gain.setValueAtTime(0.2, t);
             noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
 
-            (noise.output || noise).connect(filter);
+            noise.connect(filter);
             filter.connect(noiseGain);
             noiseGain.connect(targetNode);
             noise.stop(t + 0.4);
@@ -1325,7 +1340,7 @@ class GameSFX {
             filter.Q.value = 0.2; // Keep Q extra low for the engine core
 
             osc.connect(filter);
-            (noise.output || noise).connect(filter);
+            noise.connect(filter);
             filter.connect(gain);
 
             if (panner) {

@@ -114,14 +114,16 @@ function drawMenu() {
   }
 
   // --- Control hint (bottom of screen) ---
+  /*
   textSize(13);
   fill(100, 140, 100, 150);
   if (isMobile) {
     text('Use virtual joystick and buttons to play', 0, height / 2 - 40);
   } else {
-    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click to lock mouse)', 0, height / 2 - 55);
-    text('P2: ARROWS + ;/\' pitch  . shoot  / cycle weapon  \u2193 brake', 0, height / 2 - 35);
+    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  F/R tilt', 0, height / 2 - 55);
+    text('P2: ARROWS turn  UP thrust  ;/\' tilt  . shoot  / cycle weapon  DOWN brake', 0, height / 2 - 35);
   }
+  */
 
   pop();
 }
@@ -176,19 +178,18 @@ function drawInstructions() {
 
       // Mouse list
       text('Pitch / Yaw: Move Mouse', -width * 0.25, my);
-      text('Lock / Unlock: Click (Anywhere)', -width * 0.25, my + lh * 1);
-      text('Thrust: Right-Click', -width * 0.25, my + lh * 2);
-      text('Shoot: Left-Click', -width * 0.25, my + lh * 3);
-      text('Cycle Weapon: Middle-Click', -width * 0.25, my + lh * 4);
+      text('Thrust: Right-Click', -width * 0.25, my + lh * 1);
+      text('Shoot: Left-Click', -width * 0.25, my + lh * 2);
+      text('Cycle Weapon: Middle-Click', -width * 0.25, my + lh * 3);
 
-      // Keyboard list (No aim alternative, so blank at top)
-      fill(255, 255, 255, 60);
-      text('(Requires mouse for aiming)', width * 0.25, my);
+      // Keyboard list
       fill(255, 255, 255, 180);
-      text('Thrust: W', width * 0.25, my + lh * 1.5);
-      text('Brake: S', width * 0.25, my + lh * 2.5);
-      text('Shoot: Q', width * 0.25, my + lh * 3.5);
-      text('Cycle Weapon: E', width * 0.25, my + lh * 4.5);
+      text('Forward Tilt: F', width * 0.25, my);
+      text('Backward Tilt: R', width * 0.25, my + lh * 1);
+      text('Thrust: W', width * 0.25, my + lh * 2);
+      text('Brake: S', width * 0.25, my + lh * 3);
+      text('Shoot: Q', width * 0.25, my + lh * 4);
+      text('Cycle Weapon: E', width * 0.25, my + lh * 5);
 
     } else {
       // P1 vs P2 layout for 2 players
@@ -203,11 +204,12 @@ function drawInstructions() {
       let p1y = -height * 0.02;
 
       text('Pitch / Yaw: Mouse', -width * 0.25, p1y);
-      text('Lock / Unlock: Click (Anywhere)', -width * 0.25, p1y + lh * 1);
-      text('Thrust: W or Right-Click', -width * 0.25, p1y + lh * 2);
-      text('Brake: S', -width * 0.25, p1y + lh * 3);
-      text('Shoot: Q or Left-Click', -width * 0.25, p1y + lh * 4);
-      text('Cycle Weapon: E or Middle-Click', -width * 0.25, p1y + lh * 5);
+      text('Forward Tilt: F', -width * 0.25, p1y + lh * 1);
+      text('Backward Tilt: R', -width * 0.25, p1y + lh * 2);
+      text('Thrust: W or Right-Click', -width * 0.25, p1y + lh * 3);
+      text('Brake: S', -width * 0.25, p1y + lh * 4);
+      text('Shoot: Q or Left-Click', -width * 0.25, p1y + lh * 5);
+      text('Cycle Weapon: E or Middle-Click', -width * 0.25, p1y + lh * 6);
 
       fill(255, 200, 200, 200);
       textSize(22);
@@ -216,11 +218,13 @@ function drawInstructions() {
       textSize(18);
       fill(255, 255, 255, 180);
       let p2y = -height * 0.02;
-      text('Pitch / Turn: Arrow Keys', width * 0.25, p2y);
-      text('Thrust: Up Arrow', width * 0.25, p2y + lh * 1);
-      text('Brake: Down Arrow', width * 0.25, p2y + lh * 2);
-      text('Shoot: . (Period)', width * 0.25, p2y + lh * 3);
-      text('Cycle Weapon: / (Slash)', width * 0.25, p2y + lh * 4);
+      text('Turn: Arrow Keys', width * 0.25, p2y);
+      text('Forward Tilt: \' (Quote)', width * 0.25, p2y + lh * 1);
+      text('Backward Tilt: ; (Semicolon)', width * 0.25, p2y + lh * 2);
+      text('Thrust: Up Arrow', width * 0.25, p2y + lh * 3);
+      text('Brake: Down Arrow', width * 0.25, p2y + lh * 4);
+      text('Shoot: . (Period)', width * 0.25, p2y + lh * 5);
+      text('Cycle Weapon: / (Slash)', width * 0.25, p2y + lh * 6);
     }
   }
 
@@ -460,11 +464,13 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     text("CONFIRM", relX, vh / 2 - 70);
     textAlign(CENTER, TOP);
   } else if (!p.ready) {
+    /*
     textSize(16);
     fill(200, 200, 200, 150);
     let hint = (pi === 0) ? "A / D TO CYCLE \u2022 ENTER TO READY" : "ARROWS TO CYCLE \u2022 . TO READY";
     if (numPlayers === 1) hint = "LEFT / RIGHT TO CYCLE \u2022 ENTER TO START";
     text(hint, relX, vh / 2 - 35);
+    */
   }
 
   // Ready State
@@ -580,7 +586,7 @@ function drawPlayerHUD(p, pi, hw, h) {
   }
 
   drawRadarForPlayer(p, hw, h, infKeys);
-  drawControlHints(p, pi, hw, h);
+  // drawControlHints(p, pi, hw, h); // Removed to hide control hints during gameplay
 
   // --- Weapon Selector Indicator (top-centre) ---
   // Three pills horizontally: NORMAL | MISSILE | BARRIER
@@ -793,11 +799,11 @@ function drawControlHints(p, pi, hw, h) {
   imageMode(CENTER);
   let hints = '';
   if (numPlayers === 1) {
-    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click to lock mouse)';
+    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  F/R tilt';
   } else {
     hints = pi === 0
-      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E/MMB cycle weapon  S brake  (Click lock)'
-      : '\u2191 thrust  \u2190/\u2192 turn  ;/\' pitch  . shoot  / cycle weapon  \u2193 brake';
+      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  F/R tilt'
+      : '\u2191 thrust  \u2190/\u2192 turn  ;/\' tilt  . shoot  / cycle weapon  \u2193 brake';
   }
   const g = _getControlHintGraphic(hints, hw, h);
   image(g, 0, h / 2 - 12);

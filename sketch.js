@@ -952,7 +952,7 @@ function spreadInfection() {
       gameState = 'gameover';
       gameOverReason = 'INFECTION REACHED CRITICAL MASS';
       levelEndTime = millis();
-      if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
+      if (typeof gameSFX !== 'undefined') { gameSFX.stopAll(); gameSFX.playGameOver(); }
     }
     return;
   }
@@ -969,7 +969,7 @@ function spreadInfection() {
       gameState = 'gameover';
       gameOverReason = 'LAUNCH PAD INFECTED';
       levelEndTime = millis();
-      if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
+      if (typeof gameSFX !== 'undefined') { gameSFX.stopAll(); gameSFX.playGameOver(); }
     }
     return;
   }

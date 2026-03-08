@@ -81,6 +81,23 @@ class GameSFX {
         }, (delaySec + 0.05) * 1000);
     }
 
+    // Cancel any pending AudioParam automation at time t, hold the current
+    // interpolated value, then schedule a new setTargetAtTime event.
+    // Must be called before every setTargetAtTime on params that are driven
+    // every frame (updateAmbiance, setThrust) — without cancellation each frame
+    // appends a new event to the queue, causing unbounded growth that leads to
+    // growing CPU overhead and eventually audio dropouts / clicks.
+    _paramSetTarget(param, value, t, tau) {
+        if (!param) return;
+        if (typeof param.cancelAndHoldAtTime === 'function') {
+            param.cancelAndHoldAtTime(t);
+        } else {
+            param.cancelScheduledValues(t);
+            param.setValueAtTime(param.value, t);
+        }
+        param.setTargetAtTime(value, t, tau);
+    }
+
     // Create a looping noise source backed by the shared persistent buffer.
     // mul != 1 inserts a gain stage; the returned node exposes a .stop() proxy
     // and a ._src reference so _cleanupNodes can reach the inner BufferSource.
@@ -158,8 +175,8 @@ class GameSFX {
 
         const heartVol = this._heartIntensitySmoothed * 0.34;
         const heartFreq = 38 + this._heartIntensitySmoothed * 10 + pulse * 12;
-        this.ambientNodes.heartbeat.osc.frequency.setTargetAtTime(heartFreq, now, 0.06);
-        this.ambientNodes.heartbeat.gain.gain.setTargetAtTime(heartVol * pulse, now, 0.03);
+        this._paramSetTarget(this.ambientNodes.heartbeat.osc.frequency, heartFreq, now, 0.06);
+        this._paramSetTarget(this.ambientNodes.heartbeat.gain.gain, heartVol * pulse, now, 0.03);
 
         // 2. Infection Proximity (Buzzy Scanning Hum)
         if (!this.ambientNodes.proximityHum) {
@@ -218,8 +235,8 @@ class GameSFX {
 
         // Steady Hum volume
         const humVol = this._infectionProximityAlpha * 0.18;
-        this.ambientNodes.proximityHum.gain.gain.setTargetAtTime(humVol, now, 0.1);
-        this.ambientNodes.proximityHum.filter.frequency.setTargetAtTime(200 + this._infectionProximityAlpha * 400, now, 0.1);
+        this._paramSetTarget(this.ambientNodes.proximityHum.gain.gain, humVol, now, 0.1);
+        this._paramSetTarget(this.ambientNodes.proximityHum.filter.frequency, 200 + this._infectionProximityAlpha * 400, now, 0.1);
 
         // Pulsed Scanning "zzz" modulation - triggered when a pulse passes the player
         {
@@ -227,9 +244,9 @@ class GameSFX {
             this._scanPulseAlpha = lerp(this._scanPulseAlpha, scanAlpha, 0.22);
             // Use squared intensity for a sharper peak (more "zip", less "drone")
             const alphaSq = this._scanPulseAlpha * this._scanPulseAlpha;
-            this.ambientNodes.scanningMod.gain.gain.setTargetAtTime(alphaSq * 0.7, now, 0.06);
+            this._paramSetTarget(this.ambientNodes.scanningMod.gain.gain, alphaSq * 0.7, now, 0.06);
             // Speed up the rhythmic modulation at the peak of the scan
-            this.ambientNodes.scanningMod.lfo.frequency.setTargetAtTime(8.0 + alphaSq * 8.5, now, 0.08);
+            this._paramSetTarget(this.ambientNodes.scanningMod.lfo.frequency, 8.0 + alphaSq * 8.5, now, 0.08);
         }
 
         // 4. Visual Scan Line Sweep (Metallic "Ping")
@@ -254,8 +271,8 @@ class GameSFX {
         this._scanSweepAlpha = lerp(this._scanSweepAlpha, sweepAlphaTarget, 0.2);
         // Only audible when near infection to match visual logic
         const sweepVol = this._scanSweepAlpha * this._infectionProximityAlpha * 0.52;
-        this.ambientNodes.scanSweep.gain.gain.setTargetAtTime(sweepVol, now, 0.08);
-        this.ambientNodes.scanSweep.filter.frequency.setTargetAtTime(1400 + this._scanSweepAlpha * 1300, now, 0.08);
+        this._paramSetTarget(this.ambientNodes.scanSweep.gain.gain, sweepVol, now, 0.08);
+        this._paramSetTarget(this.ambientNodes.scanSweep.filter.frequency, 1400 + this._scanSweepAlpha * 1300, now, 0.08);
     }
 
     // Set up audio routing for a one-shot event.
@@ -791,7 +808,7 @@ class GameSFX {
                     filter.frequency.exponentialRampToValueAtTime(100, noteT + 1.2);
                     gain.gain.setValueAtTime(0, noteT);
                     gain.gain.linearRampToValueAtTime(0.15, noteT + 0.1);
-                    gain.gain.exponentialRampToValueAtTime(0.01, noteT + 1.4);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.5);
                     osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                     osc.start(noteT); osc.stop(noteT + 1.5);
                     nodes.push(osc, filter, gain);
@@ -843,7 +860,7 @@ class GameSFX {
 
                 outGain.gain.setValueAtTime(0, noteT);
                 outGain.gain.linearRampToValueAtTime(0.2, noteT + 0.01);
-                outGain.gain.exponentialRampToValueAtTime(0.001, noteT + 1.6);
+                outGain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.7);
 
                 carrier.connect(outGain); outGain.connect(targetNode);
                 carrier.start(noteT); carrier.stop(noteT + 1.7);
@@ -869,7 +886,7 @@ class GameSFX {
             gain.gain.setValueAtTime(0, t);
             gain.gain.linearRampToValueAtTime(0.2, t + 0.3);
             gain.gain.setValueAtTime(0.2, t + 2.4);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 3.0);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.1);
 
             osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
             osc.start(t); osc.stop(t + 3.1);
@@ -945,7 +962,7 @@ class GameSFX {
             masterGain.gain.setValueAtTime(0, t);
             masterGain.gain.linearRampToValueAtTime(0.3, t + 0.2);
             masterGain.gain.setValueAtTime(0.3, t + 2.5);
-            masterGain.gain.exponentialRampToValueAtTime(0.001, t + 3.5);
+            masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
 
             tremoloOsc.connect(tremoloGain);
             tremoloGain.connect(masterGain.gain); // Tremolo modulates the master gain
@@ -1005,7 +1022,7 @@ class GameSFX {
             osc.frequency.value = freq;
             gain.gain.setValueAtTime(0, noteT);
             gain.gain.linearRampToValueAtTime(0.2, noteT + 0.01);
-            gain.gain.exponentialRampToValueAtTime(0.01, noteT + 0.15);
+            gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 0.2);
             osc.connect(gain);
             gain.connect(targetNode);
             osc.start(noteT);
@@ -1022,7 +1039,7 @@ class GameSFX {
             osc.frequency.value = freq;
             gain.gain.setValueAtTime(0, noteT);
             gain.gain.linearRampToValueAtTime(0.1, noteT + 0.05);
-            gain.gain.exponentialRampToValueAtTime(0.001, noteT + 1.2);
+            gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.3);
             osc.connect(gain);
             gain.connect(targetNode);
             osc.start(noteT);
@@ -1057,9 +1074,9 @@ class GameSFX {
                 filter.type = 'lowpass';
                 filter.frequency.setValueAtTime(2500, noteT);
                 filter.frequency.exponentialRampToValueAtTime(100, noteT + 1.8);
-                gain.gain.setValueAtTime(0.0, noteT);
+                gain.gain.setValueAtTime(0, noteT);
                 gain.gain.linearRampToValueAtTime(0.3, noteT + 0.1);
-                gain.gain.exponentialRampToValueAtTime(0.01, noteT + 1.8);
+                gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.9);
 
                 osc.connect(filter);
                 filter.connect(gain);
@@ -1291,13 +1308,13 @@ class GameSFX {
             }
         }
 
-        n.gain.gain.setTargetAtTime(finalVol, t, 0.05);
+        this._paramSetTarget(n.gain.gain, finalVol, t, 0.05);
 
         // Subtle altitude-based adjustment for the local player engine
         if (id === 0 && y !== undefined) {
             const altFactor = constrain((100 - y) / 2000, 0, 1); // 0 at launchpad, 1 at 2100 altitude
-            n.filter.frequency.setTargetAtTime(110 + altFactor * 40, t, 0.1);
-            n.osc.frequency.setTargetAtTime(42 + altFactor * 10, t, 0.1);
+            this._paramSetTarget(n.filter.frequency, 110 + altFactor * 40, t, 0.1);
+            this._paramSetTarget(n.osc.frequency, 42 + altFactor * 10, t, 0.1);
         }
 
         // Only update 3D panner position if we are in spatial mode (single player)
@@ -1332,6 +1349,91 @@ class GameSFX {
                 n.lastX = x; n.lastY = y; n.lastZ = z;
             }
         }
+    }
+
+    /**
+     * Immediately fades out and disconnects all persistent ambient and thrust
+     * nodes. Call this when transitioning to game-over (or any state where game
+     * audio should stop) so that looping oscillators and noise sources don't
+     * continue playing silently in the background after the game loop exits.
+     *
+     * Captured snapshots are used so that any new nodes created by a rapid
+     * game restart won't be accidentally torn down by the deferred cleanup.
+     */
+    stopAll() {
+        if (!this.ctx) return;
+        const t = this.ctx.currentTime;
+        const fadeTime = 0.08; // 80 ms linear fade to avoid abrupt clicks
+
+        // Snapshot current node collections and clear them immediately.
+        // Clearing before the setTimeout means a fast restart can create new
+        // nodes without them being wrongly destroyed by the deferred teardown.
+        const ambientSnapshot = this.ambientNodes;
+        const thrustSnapshot  = this.thrustNodes;
+        this.ambientNodes = {};
+        this.thrustNodes  = {};
+
+        // Reset per-frame smoothed state so the next session starts clean.
+        this._infectionProximityAlpha = 0;
+        this._heartRateSmoothed       = 0.65;
+        this._heartIntensitySmoothed  = 0;
+        this._heartbeatPhase          = 0;
+        this._heartbeatLastTime       = 0;
+        this._scanPulseAlpha          = 0;
+        this._scanSweepAlpha          = 0;
+
+        // Fade out all ambient node gains.
+        for (const n of Object.values(ambientSnapshot)) {
+            if (n.gain && n.gain.gain) {
+                if (typeof n.gain.gain.cancelAndHoldAtTime === 'function') {
+                    n.gain.gain.cancelAndHoldAtTime(t);
+                } else {
+                    n.gain.gain.cancelScheduledValues(t);
+                    n.gain.gain.setValueAtTime(n.gain.gain.value, t);
+                }
+                n.gain.gain.linearRampToValueAtTime(0, t + fadeTime);
+            }
+        }
+
+        // Fade out all thrust node gains.
+        for (const n of Object.values(thrustSnapshot)) {
+            if (!n.gain || !n.gain.gain) continue;
+            if (typeof n.gain.gain.cancelAndHoldAtTime === 'function') {
+                n.gain.gain.cancelAndHoldAtTime(t);
+            } else {
+                n.gain.gain.cancelScheduledValues(t);
+                n.gain.gain.setValueAtTime(n.gain.gain.value, t);
+            }
+            n.gain.gain.linearRampToValueAtTime(0, t + fadeTime);
+        }
+
+        // Disconnect and stop everything after the fade completes.
+        setTimeout(() => {
+            for (const n of Object.values(ambientSnapshot)) {
+                for (const node of Object.values(n)) {
+                    if (!node) continue;
+                    if (typeof node.stop === 'function') try { node.stop(); } catch (e) {}
+                    if (node._src) {
+                        try { node._src.stop(); } catch (e) {}
+                        try { node._src.disconnect(); } catch (e) {}
+                    }
+                    if (typeof node.disconnect === 'function') try { node.disconnect(); } catch (e) {}
+                }
+            }
+            for (const n of Object.values(thrustSnapshot)) {
+                try { n.osc.stop(); }   catch (e) {}
+                try { n.noise.stop(); } catch (e) {}
+                if (n.noise && n.noise._src) {
+                    try { n.noise._src.stop();       } catch (e) {}
+                    try { n.noise._src.disconnect(); } catch (e) {}
+                }
+                try { n.osc.disconnect();    } catch (e) {}
+                try { n.noise.disconnect();  } catch (e) {}
+                try { n.filter.disconnect(); } catch (e) {}
+                if (n.panner) try { n.panner.disconnect(); } catch (e) {}
+                try { n.gain.disconnect();   } catch (e) {}
+            }
+        }, (fadeTime + 0.05) * 1000);
     }
 }
 

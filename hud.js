@@ -289,8 +289,6 @@ function drawBackgroundLandscape() {
   // Fake ship for culling / terrain logic
   let fakeShip = { x: menuCam.x, y: cy, z: menuCam.z, yaw: menuCam.yaw, pitch: 0 };
 
-  drawSkyDome(cx, cy, cz, VIEW_FAR * TILE);
-  drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
   setSceneLighting();
   terrain.drawLandscape(fakeShip, width / height);
   terrain.drawTrees(fakeShip);

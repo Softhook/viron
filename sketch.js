@@ -155,166 +155,6 @@ function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
   pop();
 }
 
-// ---------------------------------------------------------------------------
-// Sky dome — procedural gradient sky replacing the flat clear-colour background.
-// A large sphere is drawn centred on the camera before any scene geometry so it
-// forms the sky backdrop.  It uses a minimal GLSL shader that blends linearly
-// between a zenith colour (top) and the horizon/fog colour (bottom) based on
-// the fragment's world-space Y position.  No vertex colours or per-frame
-// rebuilds are required; only two uniform updates per draw call.
-//
-// Two GLSL source variants are provided so the shader compiles cleanly under
-// both WebGL1 (GLSL ES 1.00) and WebGL2 (GLSL ES 3.00).  initSkyDome() picks
-// the correct pair after the canvas has been created.
-// ---------------------------------------------------------------------------
-
-// --- WebGL 1 / GLSL ES 1.00 ---
-const _SKY_DOME_VERT_100 = `
-precision highp float;
-attribute vec3 aPosition;
-uniform mat4 uProjectionMatrix;
-uniform mat4 uModelViewMatrix;
-varying float vY;
-void main() {
-  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
-  // Pass the dome's local Y through: positive = below camera (horizon side),
-  // negative = above camera (zenith side) in p5's coordinate system where -Y is up.
-  vY = aPosition.y;
-}
-`;
-
-const _SKY_DOME_FRAG_100 = `
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-uniform vec3 uHorizonColor;
-uniform vec3 uZenithColor;
-uniform float uDomeRadius;
-varying float vY;
-void main() {
-  // In p5 coordinates -Y is up, so vY is negative at the zenith and positive
-  // at the equator/below.  Remap to t: 0 = horizon, 1 = zenith.
-  float t = clamp(-vY / uDomeRadius, 0.0, 1.0);
-  // Smooth the gradient with a gentle ease-in so the transition near the
-  // horizon is gradual and the upper sky deepens naturally.
-  t = t * t * (3.0 - 2.0 * t); // smoothstep
-  gl_FragColor = vec4(mix(uHorizonColor, uZenithColor, t), 1.0);
-}
-`;
-
-// --- WebGL 2 / GLSL ES 3.00 ---
-const _SKY_DOME_VERT_300 = `#version 300 es
-precision highp float;
-in vec3 aPosition;
-uniform mat4 uProjectionMatrix;
-uniform mat4 uModelViewMatrix;
-out float vY;
-void main() {
-  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
-  // Pass the dome's local Y through: positive = below camera (horizon side),
-  // negative = above camera (zenith side) in p5's coordinate system where -Y is up.
-  vY = aPosition.y;
-}
-`;
-
-const _SKY_DOME_FRAG_300 = `#version 300 es
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-uniform vec3 uHorizonColor;
-uniform vec3 uZenithColor;
-uniform float uDomeRadius;
-in float vY;
-out vec4 fragColor;
-void main() {
-  // In p5 coordinates -Y is up, so vY is negative at the zenith and positive
-  // at the equator/below.  Remap to t: 0 = horizon, 1 = zenith.
-  float t = clamp(-vY / uDomeRadius, 0.0, 1.0);
-  // Smooth the gradient with a gentle ease-in so the transition near the
-  // horizon is gradual and the upper sky deepens naturally.
-  t = t * t * (3.0 - 2.0 * t); // smoothstep
-  fragColor = vec4(mix(uHorizonColor, uZenithColor, t), 1.0);
-}
-`;
-
-/** @type {p5.Shader|null} Compiled sky dome shader; null until initSkyDome(). */
-let _skyDomeShader = null;
-
-/**
- * Compiles the sky dome shader.  Must be called once after the WebGL canvas
- * is created (i.e., from setup()).  Selects the GLSL ES 3.00 variant when the
- * canvas is running in a WebGL2 context, and GLSL ES 1.00 otherwise.
- */
-function initSkyDome() {
-  const isWebGL2Context = (typeof WebGL2RenderingContext !== 'undefined') &&
-                          (drawingContext instanceof WebGL2RenderingContext);
-  _skyDomeShader = isWebGL2Context
-    ? createShader(_SKY_DOME_VERT_300, _SKY_DOME_FRAG_300)
-    : createShader(_SKY_DOME_VERT_100, _SKY_DOME_FRAG_100);
-}
-
-/**
- * Draws a gradient sky dome centred on the camera.
- * Must be called before any scene geometry so the dome forms the background.
- * The dome sphere is drawn with depth writes disabled and back-face culling
- * disabled so the interior faces are visible.
- *
- * @param {number} cx Camera world X.
- * @param {number} cy Camera world Y.
- * @param {number} cz Camera world Z.
- * @param {number} viewFarWorld View far plane in world units.
- */
-function drawSkyDome(cx, cy, cz, viewFarWorld) {
-  if (!_skyDomeShader) return;
-  const gl = drawingContext;
-  // The camera far clip plane is viewFarWorld * 1.5 (see renderPlayerView camFar).
-  // Using 1.2× keeps the dome comfortably inside the clip volume while placing it
-  // behind most gameplay geometry, which is drawn later with normal depth writes.
-  const radius = viewFarWorld * 1.2;
-
-  // Snapshot the GL state we will temporarily override so we can restore it
-  // exactly — p5 enables DEPTH_TEST but does NOT enable CULL_FACE by default,
-  // so unconditionally re-enabling it after the dome draw would permanently
-  // flip that flag for the rest of the frame.
-  const wasDepthTestEnabled = gl.isEnabled(gl.DEPTH_TEST);
-  const wasCullFaceEnabled  = gl.isEnabled(gl.CULL_FACE);
-  const prevDepthWriteMask  = gl.getParameter(gl.DEPTH_WRITEMASK);
-
-  push();
-  noStroke();
-  noLights();
-  // Depth writes off: the sky is infinitely far — do not occlude anything.
-  // Depth test also disabled: the sky dome is always the very first draw in
-  // each render pass so nothing has written to depth yet, but disabling the
-  // test makes this explicit and safe against future draw-order changes.
-  gl.depthMask(false);
-  gl.disable(gl.DEPTH_TEST);
-  // Disable back-face culling so the inside of the sphere is rendered
-  // (the camera sits at the centre of the dome).
-  gl.disable(gl.CULL_FACE);
-
-  translate(cx, cy, cz);
-  shader(_skyDomeShader);
-  _skyDomeShader.setUniform('uHorizonColor',
-    [SKY_R / 255, SKY_G / 255, SKY_B / 255]);
-  _skyDomeShader.setUniform('uZenithColor',
-    [SKY_ZENITH_R / 255, SKY_ZENITH_G / 255, SKY_ZENITH_B / 255]);
-  _skyDomeShader.setUniform('uDomeRadius', radius);
-  // 16 longitude × 12 latitude segments: smooth gradient with ~192 tris.
-  sphere(radius, 16, 12);
-
-  resetShader();
-  // Restore prior GL state instead of unconditionally enabling everything.
-  if (wasCullFaceEnabled)  gl.enable(gl.CULL_FACE);  else gl.disable(gl.CULL_FACE);
-  if (wasDepthTestEnabled) gl.enable(gl.DEPTH_TEST);  else gl.disable(gl.DEPTH_TEST);
-  gl.depthMask(prevDepthWriteMask);
-  pop();
-}
-
 /**
  * Switches the p5 renderer into a full-canvas 2D orthographic projection.
  * Sets the GL viewport to cover the full canvas, then pushes a new matrix
@@ -461,7 +301,6 @@ function setup() {
   });
 
   terrain.init();  // Compile terrain GLSL shader (must happen after canvas creation)
-  initSkyDome();   // Compile sky dome gradient shader
   textFont(gameFont);
 
   // Initialize Aim Assist based on platform
@@ -695,7 +534,6 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
-    drawSkyDome(cx, cy, cz, VIEW_FAR * TILE);
     drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     setSceneLighting();
     terrain.drawLandscape(s, viewW / viewH, firstPersonView);
@@ -758,7 +596,6 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     push();
     perspective(PI / 3, viewW / viewH, camNear, camFar);
     camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
-    drawSkyDome(cx, cy, cz, VIEW_FAR * TILE);
     drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     setSceneLighting();
     terrain.drawLandscape(s, viewW / viewH, firstPersonView);

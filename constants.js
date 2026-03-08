@@ -19,9 +19,7 @@ let VIEW_FAR = 50;            // Outer tile radius — rendered with frustum cul
 let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
-let SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky (horizon/fog colour)
-// Sky zenith colour — top of the sky gradient dome (deeper/richer than horizon)
-let SKY_ZENITH_R = 100, SKY_ZENITH_G = 80, SKY_ZENITH_B = 150;
+let SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
 let AMBIENT_R = 110, AMBIENT_G = 100, AMBIENT_B = 125; // Warmer ambient
 
@@ -73,76 +71,67 @@ const shadowShift = (casterH, sun) => {
   return Math.min(casterH / sun.y, maxShift);
 };
 let SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180;
-// Shader lighting defaults — match the Late Morning initial time step.
-// sSun values are kept ≤ 1.1 so that combined with sAmbH the total light
-// term stays below ~1.5 on the brightest channel, preventing blown-out whites.
-let SHADER_SUN_R = 1.05, SHADER_SUN_G = 0.88, SHADER_SUN_B = 0.72;
-let SHADER_AMB_L_R = 0.26, SHADER_AMB_L_G = 0.28, SHADER_AMB_L_B = 0.38;
-let SHADER_AMB_H_R = 0.40, SHADER_AMB_H_G = 0.50, SHADER_AMB_H_B = 0.62;
+let SHADER_SUN_R = 1.5, SHADER_SUN_G = 1.25, SHADER_SUN_B = 0.9;
+let SHADER_AMB_L_R = 0.35, SHADER_AMB_L_G = 0.32, SHADER_AMB_L_B = 0.40;
+let SHADER_AMB_H_R = 0.70, SHADER_AMB_H_G = 0.85, SHADER_AMB_H_B = 0.90;
 
 let currentTimeStep = 0;
 
 const DAY_CYCLE = [
-  { // 0: Morning 1 (Gentle warm light from low angle)
+  { // 0: Morning 1 (Gentle warm light)
     name: 'Morning 1',
     dir: [0.95, 0.16, -0.34],
     sky: [160, 140, 180],
-    zenith: [80, 65, 135],
     amb: [90, 100, 130],
-    sunKey: [240, 180, 130],
-    sSun: [1.1, 0.88, 0.65],
-    sAmbL: [0.28, 0.26, 0.35],
-    sAmbH: [0.45, 0.46, 0.56]
+    sunKey: [255, 200, 150],
+    sSun: [1.6, 1.3, 0.8],
+    sAmbL: [0.30, 0.30, 0.40],
+    sAmbH: [0.60, 0.60, 0.70]
   },
-  { // 1: Late Morning (Subtle shift toward midday)
+  { // 1: Late Morning (Subtle shift)
     name: 'Late Morning',
     dir: [0.85, 0.20, -0.34],
     sky: [150, 145, 190],
-    zenith: [70, 80, 155],
     amb: [85, 95, 125],
-    sunKey: [240, 195, 150],
-    sSun: [1.05, 0.88, 0.72],
-    sAmbL: [0.26, 0.28, 0.38],
-    sAmbH: [0.40, 0.50, 0.62]
+    sunKey: [255, 205, 160],
+    sSun: [1.5, 1.25, 0.85],
+    sAmbL: [0.30, 0.32, 0.42],
+    sAmbH: [0.55, 0.62, 0.75]
   },
-  { // 2: Midday (High sun — muted to avoid bleaching detail)
+  { // 2: Midday (Keeping it muted, not bleached)
     name: 'Midday',
     dir: [0.70, 0.25, -0.40],
-    sky: [130, 145, 195],
-    zenith: [55, 95, 175],
+    sky: [140, 150, 200],
     amb: [80, 95, 120],
-    sunKey: [235, 215, 200],
-    sSun: [0.95, 0.90, 0.82],
-    sAmbL: [0.22, 0.26, 0.38],
-    sAmbH: [0.32, 0.40, 0.60]
+    sunKey: [255, 215, 175],
+    sSun: [1.4, 1.2, 0.9],
+    sAmbL: [0.28, 0.32, 0.45],
+    sAmbH: [0.50, 0.60, 0.80]
   },
-  { // 3: Afternoon (Sun past zenith, still bright)
+  { // 3: Afternoon
     name: 'Afternoon',
     dir: [-0.60, 0.25, -0.40],
     sky: [135, 145, 195],
-    zenith: [60, 90, 168],
     amb: [80, 95, 115],
-    sunKey: [240, 205, 165],
-    sSun: [0.98, 0.86, 0.82],
-    sAmbL: [0.26, 0.28, 0.40],
-    sAmbH: [0.36, 0.46, 0.62]
+    sunKey: [255, 210, 170],
+    sSun: [1.4, 1.15, 0.95],
+    sAmbL: [0.30, 0.30, 0.42],
+    sAmbH: [0.52, 0.58, 0.75]
   },
-  { // 4: Late Afternoon (Warming toward sunset)
+  { // 4: Late Afternoon 
     name: 'Late Afternoon',
     dir: [-0.85, 0.20, -0.34],
     sky: [145, 135, 180],
-    zenith: [75, 62, 130],
     amb: [85, 90, 110],
-    sunKey: [250, 190, 145],
-    sSun: [1.1, 0.88, 0.72],
-    sAmbL: [0.28, 0.25, 0.36],
-    sAmbH: [0.42, 0.44, 0.58]
+    sunKey: [255, 195, 150],
+    sSun: [1.5, 1.1, 0.85],
+    sAmbL: [0.32, 0.28, 0.40],
+    sAmbH: [0.58, 0.52, 0.70]
   },
-  { // 5: Sunset (Dramatic warm light)
+  { // 5: Sunset
     name: 'Sunset',
     dir: [-0.95, 0.12, -0.34],
     sky: [170, 110, 120],
-    zenith: [60, 30, 90],
     amb: [90, 80, 100],
     sunKey: [255, 140, 90],
     sSun: [1.7, 1.0, 0.6],
@@ -153,7 +142,6 @@ const DAY_CYCLE = [
     name: 'Dusk',
     dir: [-0.98, 0.05, -0.34],
     sky: [80, 50, 80],
-    zenith: [18, 12, 48],
     amb: [50, 40, 60],
     sunKey: [200, 100, 80],
     sSun: [1.0, 0.7, 0.5],
@@ -164,7 +152,6 @@ const DAY_CYCLE = [
     name: 'Night 1',
     dir: [0.50, 0.15, 0.50],
     sky: [20, 25, 40],
-    zenith: [5, 8, 28],
     amb: [25, 30, 45],
     sunKey: [80, 100, 160],
     sSun: [0.4, 0.5, 0.7],
@@ -175,18 +162,16 @@ const DAY_CYCLE = [
     name: 'Night 2',
     dir: [0.70, 0.25, 0.50],
     sky: [10, 15, 30],
-    zenith: [3, 5, 20],
     amb: [15, 20, 35],
     sunKey: [60, 80, 140],
     sSun: [0.3, 0.4, 0.6],
     sAmbL: [0.08, 0.12, 0.18],
     sAmbH: [0.15, 0.20, 0.35]
   },
-  { // 9: Dawn (Warm pre-sunrise glow)
+  { // 9: Dawn
     name: 'Dawn',
     dir: [0.96, 0.08, -0.34],
     sky: [180, 100, 90],
-    zenith: [70, 30, 75],
     amb: [90, 60, 80],
     sunKey: [255, 130, 80],
     sSun: [1.8, 1.0, 0.6],
@@ -212,7 +197,6 @@ function updateTimeOfDay(stepIndex) {
   SUN_DIR_NZ = SUN_DIR_Z / SUN_DIR_LEN;
 
   SKY_R = cycle.sky[0]; SKY_G = cycle.sky[1]; SKY_B = cycle.sky[2];
-  SKY_ZENITH_R = cycle.zenith[0]; SKY_ZENITH_G = cycle.zenith[1]; SKY_ZENITH_B = cycle.zenith[2];
   AMBIENT_R = cycle.amb[0]; AMBIENT_G = cycle.amb[1]; AMBIENT_B = cycle.amb[2];
   SUN_KEY_R = cycle.sunKey[0]; SUN_KEY_G = cycle.sunKey[1]; SUN_KEY_B = cycle.sunKey[2];
 

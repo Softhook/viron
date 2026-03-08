@@ -116,8 +116,8 @@ async function setupPlayableState(page, scenarioId) {
         vx: ((i % 7) - 3) * 0.12,
         vy: -0.2 - (i % 3) * 0.04,
         vz: ((i % 5) - 2) * 0.10,
-        life: 140 + (i % 80),
-        decay: 1.8 + (i % 5) * 0.25,
+        life: 10000,
+        decay: 0,
         size: 6 + (i % 4),
         seed: (i % 100) / 100,
         isThrust: (i % 2) === 0,
@@ -351,7 +351,18 @@ async function runScenario(url, launchOpts, scenario) {
   page.setDefaultTimeout(LOAD_TIMEOUT);
 
   try {
-    await page.setViewport({ width: 1600, height: 900 });
+    const IS_MOBILE = !!process.env.MOBILE;
+    if (IS_MOBILE) {
+      await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1');
+      await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+      await page.evaluateOnNewDocument(() => {
+        window.isMobile = true;
+      });
+      console.log('--- Simulating Mobile Environment ---');
+    } else {
+      await page.setViewport({ width: 1600, height: 900 });
+    }
+
     await page.goto(url, { waitUntil: 'load', timeout: LOAD_TIMEOUT });
 
     const setupState = await setupPlayableState(page, scenario.id);
@@ -400,8 +411,10 @@ function printScenarioResult(r) {
 
 function printDelta(base, other) {
   const delta = other.formatted.avgDrawMs - base.formatted.avgDrawMs;
+  const fpsDelta = other.summary.fps - base.summary.fps;
   const sign = delta >= 0 ? '+' : '';
-  console.log(`  ${other.scenario.id.padEnd(14)} vs baseline: ${sign}${delta.toFixed(3)} ms/frame`);
+  const fpsSign = fpsDelta >= 0 ? '+' : '';
+  console.log(`  ${other.scenario.id.padEnd(14)} vs baseline: ${sign}${delta.toFixed(3)} ms/frame JS cost, ${fpsSign}${fpsDelta.toFixed(1)} FPS`);
 }
 
 async function main() {

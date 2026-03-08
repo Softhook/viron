@@ -552,15 +552,16 @@ class ParticleSystem {
         r = p.sr; g = p.sg; b = p.sb;
       }
 
-      push();
-      translate(p.x, p.y, p.z);
-      fill(r, g, b, alpha);
-      // Use box() for explosions — much faster than sphere on mobile,
-      // and looks "gritter" for high-velocity debris.
-      const sz = (p.size || 8) / 2;
-      box(sz, sz, sz);
-      pop();
+      // Use point() for explosion embers — ultra-fast 2D billboards.
+      // One vertex per particle. Scale by distance for perspective.
+      stroke(r, g, b, alpha);
+      // Perspective scale: make them roughly world-space sized.
+      // 1200 is a tuning constant to match the old 3D box sizes.
+      const screenSz = (p.size || 12) * (1200 / Math.max(d, 10));
+      strokeWeight(screenSz);
+      point(p.x, p.y, p.z);
     }
+    noStroke(); // Restore state for other rendering
 
     // Bombs — narrow red-dark cuboids (falling capsules)
     for (let b of this.bombs) {

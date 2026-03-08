@@ -636,7 +636,7 @@ function shipDisplay(s, tintColor) {
  * @param {object} p  Player state object (mutated in place).
  */
 function updateShipInput(p) {
-  if (p.dead) return;
+  if (p.dead || (typeof gameState !== 'undefined' && gameState === 'gameover')) return;
 
   // Reset each frame so stale enemy references never persist across frames.
   p.aimTarget = null;

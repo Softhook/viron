@@ -650,7 +650,7 @@ function draw() {
   if (gameState === 'menu') { drawMenu(); return; }
   if (gameState === 'instructions') { drawInstructions(); return; }
   if (gameState === 'shipselect') { drawShipSelect(); return; }
-  if (gameState === 'gameover') { drawGameOver(); return; }
+
   const profiler = getVironProfiler();
   const frameStart = profiler ? performance.now() : 0;
 
@@ -922,8 +922,10 @@ function draw() {
       }
     }
   }
+  if (gameState === 'gameover') drawGameOver();
   if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
+
 
 // ---------------------------------------------------------------------------
 // Infection spread simulation
@@ -942,8 +944,9 @@ function spreadInfection() {
   const profilerConfig = profiler ? profiler.config : (typeof window !== 'undefined' ? window.VIRON_PROFILE : null);
   const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
   const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
-  const shouldRun = frameCount % 5 === 0;
-  if (!shouldRun || levelComplete) return;
+  const isGameOver = gameState === 'gameover';
+  const shouldRun = isGameOver || (frameCount % 5 === 0);
+  if (!shouldRun || (levelComplete && !isGameOver)) return;
   const spreadStart = profiler ? performance.now() : 0;
 
   // Game over — too much infection (fast path: no Object.keys allocation needed)
@@ -954,7 +957,6 @@ function spreadInfection() {
       levelEndTime = millis();
       if (typeof gameSFX !== 'undefined') { gameSFX.stopAll(); gameSFX.playGameOver(); }
     }
-    return;
   }
 
   // Game over — launchpad fully overrun (7×7 = 49 tiles)
@@ -971,8 +973,8 @@ function spreadInfection() {
       levelEndTime = millis();
       if (typeof gameSFX !== 'undefined') { gameSFX.stopAll(); gameSFX.playGameOver(); }
     }
-    return;
   }
+
 
   if (freezeSpread) {
     if (profiler) profiler.recordSpread(performance.now() - spreadStart);
@@ -982,8 +984,10 @@ function spreadInfection() {
   let infObjects = infection.keys();
   // Probabilistic spread to one random orthogonal neighbour per infected tile.
   let freshSet = new Set();
+  const currentRate = isGameOver ? RAPID_INF_RATE : INF_RATE;
   for (let i = 0; i < infObjects.length; i++) {
-    if (random() > INF_RATE) continue;
+    if (random() > currentRate) continue;
+
     let t = infObjects[i];
     let d = ORTHO_DIRS[floor(random(4))];
     let nx = t.tx + d[0], nz = t.tz + d[1], nk = tileKey(nx, nz);

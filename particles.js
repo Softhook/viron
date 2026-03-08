@@ -65,6 +65,11 @@ void main() {
 let _softShader = null;
 /** 64×64 2D p5.Graphics: white radial-gradient cloud sprite. */
 let _cloudTex = null;
+/** Pre-computed wave expansion values for explosion particles. */
+const _EXPLOSION_WAVE_LUT = new Float32Array(256);
+for (let i = 0; i < 256; i++) {
+  _EXPLOSION_WAVE_LUT[i] = 2000.0 * Math.pow(1.0 - i / 255, 0.6);
+}
 
 class ParticleSystem {
   constructor() {
@@ -169,8 +174,9 @@ class ParticleSystem {
     }
 
     let isCustom = baseColor !== undefined && baseColor !== null;
+    let count = (typeof isMobile !== 'undefined' && isMobile) ? 220 : 400;
 
-    for (let i = 0; i < 350; i++) {
+    for (let i = 0; i < count; i++) {
       let speed = random(5.0, 45.0);
       let a1 = random(TWO_PI);
       let a2 = random(TWO_PI);
@@ -519,13 +525,18 @@ class ParticleSystem {
       if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
 
       let lifeNorm = p.life / 255.0;
-      let t = 1.0 - lifeNorm;
       let alpha = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 255 : 255;
 
-      let d = Math.hypot(p.x - p.cx, p.y - p.cy, p.z - p.cz);
-      let wave = 1400.0 * Math.pow(t, 0.6);
-      let diff = wave - d;
-      if (diff < -50) continue;  // Behind wave front — skip
+      // Use LUT for wave expansion math — floor index because p.life is a float (decay-based).
+      // Increased scaling factor (2000) makes the explosion "proper big".
+      const wave = _EXPLOSION_WAVE_LUT[p.life | 0] || 0;
+      // Fast box check before distance check.
+      const dx = p.x - p.cx, dy = p.y - p.cy, dz = p.z - p.cz;
+      if (Math.abs(dx) > wave + 100 || Math.abs(dy) > wave + 100 || Math.abs(dz) > wave + 100) continue;
+
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const diff = wave - d;
+      // Removed wave-front culling (diff < -50) to allow fast particles to fly outward naturally.
 
       let r, g, b;
       if (diff < 40) {
@@ -544,7 +555,10 @@ class ParticleSystem {
       push();
       translate(p.x, p.y, p.z);
       fill(r, g, b, alpha);
-      sphere((p.size || 8) / 2);
+      // Use box() for explosions — much faster than sphere on mobile,
+      // and looks "gritter" for high-velocity debris.
+      const sz = (p.size || 8) / 2;
+      box(sz, sz, sz);
       pop();
     }
 

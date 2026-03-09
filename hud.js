@@ -4,6 +4,7 @@ const HUD_WEAPON_LABELS = ['NORMAL', 'MISSILE', 'BARRIER'];
 const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
 const HUD_HINT_CACHE = Object.create(null);
 const HUD_LABEL_CACHE = Object.create(null); // Static labels graphic per viewport size
+const HUD_RADAR_BUFFERS = Object.create(null); // Graphics buffers for radar (one per player)
 const RADAR_SCALE = 0.012;
 const RADAR_HALF = 68;
 const RADAR_TILE_RADIUS_SQ = 4200;
@@ -37,6 +38,17 @@ function _getHUDLabelGraphic(hw, h) {
   return g;
 }
 
+/**
+ * Ensures a player has a dedicated graphics buffer for the radar.
+ */
+function _getRadarBuffer(pId, size) {
+  if (HUD_RADAR_BUFFERS[pId]) return HUD_RADAR_BUFFERS[pId];
+  const g = createGraphics(size, size);
+  g.pixelDensity(1);
+  HUD_RADAR_BUFFERS[pId] = g;
+  return g;
+}
+
 function _getControlHintGraphic(hint, hw, h) {
   const key = `${hint}|${hw}|${h}`;
   let entry = HUD_HINT_CACHE[key];
@@ -54,6 +66,7 @@ function _getControlHintGraphic(hint, hw, h) {
   HUD_HINT_CACHE[key] = g;
   return g;
 }
+
 // hud.js — HUD and menu rendering functions
 //
 // All 2D overlay rendering is handled here.  Every function that draws in 2D
@@ -575,14 +588,13 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   ortho(-hw / 2, hw / 2, -h / 2, h / 2, 0, 1000);
   resetMatrix();
 
-  noStroke();
-  textAlign(LEFT, TOP);
+  // Reset imageMode to ensure CORNER works as expected for cached graphics
+  imageMode(CORNER);
 
   let lx = -hw / 2 + 14;
   let ly = -h / 2;
 
   // 1. Draw cached static labels for stat names
-  imageMode(CORNER);
   image(_getHUDLabelGraphic(hw, h), -hw / 2, -h / 2);
 
   // 2. Draw dynamic stat values (inline text calls are still needed for dynamic data)
@@ -596,24 +608,19 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
 
   // --- Crosshair (first-person reticle — only shown in first-person mode) ---
   if (typeof firstPersonView !== 'undefined' && firstPersonView) {
-    let cw = 12, gap = 4;
-    stroke(255, 255, 255, 200); strokeWeight(1.5); noFill();
-    line(-cw - gap, 0, -gap, 0);
-    line(gap, 0, cw + gap, 0);
-    line(0, -cw - gap, 0, -gap);
-    line(0, gap, 0, cw + gap);
-    noStroke(); fill(255, 255, 255, 200);
-    ellipse(0, 0, 3, 3);
+    stroke(0, 255, 0, 150);
+    strokeWeight(2);
+    noFill();
+    ellipse(0, 0, 30, 30);
+    line(-20, 0, 20, 0);
+    line(0, -20, 0, 20);
   }
 
-  // Death / respawn overlay
-  if (p.dead) {
-    fill(255, 0, 0, 200);
-    textAlign(CENTER, CENTER);
-    textSize(28);
-    text('DESTROYED', 0, 0);
-    textSize(16);
-    fill(200);
+  // --- Respawn Indicator ---
+  if (p.dead && !p.gameOver) {
+    textAlign(CENTER);
+    fill(255, 255, 0, 200);
+    textSize(32);
     text('Respawning...', 0, 30);
   }
 
@@ -621,55 +628,35 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   // drawControlHints(p, pi, hw, h); // Removed to hide control hints during gameplay
 
   // --- Weapon Selector Indicator (top-centre) ---
-  // Three pills horizontally: NORMAL | MISSILE | BARRIER
-  // Active pill: solid white box with black label.
-  // Inactive pill: dim outline with grey label.
-  {
-    let pillW = 82, pillH = 22, pillGap = 8;
-    let totalW = 3 * pillW + 2 * pillGap;
-    let startX = floor(-totalW / 2);
-    let pillY = floor(-h / 2 + 8);   // Near the very top of the viewport
-    textAlign(CENTER, TOP);
-    for (let i = 0; i < 3; i++) {
-      let px = startX + i * (pillW + pillGap);
-      let active = (p.weaponMode === i);
-      if (active) {
-        // Filled pill
-        fill(HUD_WEAPON_ACTIVE_COLS[i][0], HUD_WEAPON_ACTIVE_COLS[i][1], HUD_WEAPON_ACTIVE_COLS[i][2], 230);
-        noStroke();
-        rect(px, pillY, pillW, pillH, 4);
-        // Label in dark ink
-        fill(0, 0, 0);
-        textSize(11);
-        text(HUD_WEAPON_LABELS[i], floor(px + pillW / 2), pillY + 5);
-      } else {
-        // Outline pill
-        noFill();
-        stroke(180, 180, 180, 130);
-        strokeWeight(1);
-        rect(px, pillY, pillW, pillH, 4);
-        noStroke();
-        fill(180, 180, 180, 130);
-        textSize(11);
-        text(HUD_WEAPON_LABELS[i], floor(px + pillW / 2), pillY + 5);
-      }
+  let wId = p.weaponMode;
+  let wName = HUD_WEAPON_LABELS[wId];
+  let wCol = HUD_WEAPON_ACTIVE_COLS[wId];
+
+  textAlign(CENTER, TOP);
+  textSize(18);
+  fill(wCol[0], wCol[1], wCol[2], 230);
+  text(wName, 0, -h / 2 + 10);
+
+  // Selector boxes
+  let bw = 60, bh = 6, pad = 8;
+  let totalW = (bw + pad) * 3 - pad;
+  let sx = -totalW / 2;
+  let sy = -h / 2 + 34;
+
+  rectMode(CORNER);
+  noStroke();
+  for (let i = 0; i < 3; i++) {
+    if (i === wId) {
+      fill(wCol[0], wCol[1], wCol[2], 255);
+    } else {
+      fill(50, 50, 50, 150);
     }
+    rect(sx + i * (bw + pad), sy, bw, bh);
   }
 
   pop();
 }
 
-/**
- * Renders a circular mini-map radar in the top-right corner of the player's viewport.
- *
- * The radar rotates with the player's yaw so forward is always up.
- * Contents:
- *   • Red squares — infected tiles (scaled to fit the 110×110 radar area)
- *   • Yellow square — launchpad centre (if in range)
- *   • Red squares / triangles — enemies (triangle when off-screen, pointing toward enemy)
- *   • Player colour square — co-op partner ship (two-player only)
- *   • Yellow centre square — own ship
- *
 /**
  * Renders a circular mini-map radar in the top-right corner of the player's viewport.
  *
@@ -677,104 +664,111 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
  * 1. Mobile-only: Throttled to 30fps (every 2nd frame) to recover frame budget.
  * 2. Spatial Query: Only iterates nearby infection chunks.
  * 3. Batching: Uses POINTS for all markers (1 vertex vs 4-6).
+ * 4. Buffering: Draws to a Graphics buffer and skip frames properly without flickering.
  *
  * @param {object} p        Player state.
  * @param {number} hw       Viewport half-width.
  * @param {number} h        Viewport height.
  */
 function drawRadarForPlayer(p, hw, h) {
-  // Throttled update on mobile: redraw every 2nd frame
-  const shouldRedraw = !isMobile || (frameCount + p.id) % 2 === 0;
-
-  // We need to store the radar in a graphics buffer if we want to skip frames properly,
-  // but for now let's just optimize the DRAW path first.
-  // If we just return, the radar will disappear every other frame.
-  // Instead, let's focus on making the draw path as fast as possible.
-
   let s = p.ship;
-  push();
-
-  // Position the radar in the top-right corner
   let radarSize = 150;
-  translate(floor(hw / 2 - radarSize / 2 - 4), floor(-h / 2 + radarSize / 2 + 4), 0);
+  let gb = _getRadarBuffer(p.id, radarSize);
 
-  // 1. Radar frame (static-ish, but drawn every frame)
-  fill(0, 180); stroke(0, 255, 0, 150); strokeWeight(1.5);
-  rectMode(CENTER);
-  rect(0, 0, radarSize, radarSize);
+  // Throttled update on mobile: redraw into buffer every 2nd frame
+  const shouldUpdate = !isMobile || (frameCount + p.id) % 2 === 0;
 
-  // Rotation setup
-  let yawSin = sin(s.yaw), yawCos = cos(s.yaw);
+  if (shouldUpdate) {
+    gb.clear();
+    gb.push();
+    gb.translate(radarSize / 2, radarSize / 2);
 
-  // 2. Viron tiles (Batch with POINTS)
-  noStroke();
-  let shipTX = toTile(s.x), shipTZ = toTile(s.z);
-  let shipCX = shipTX >> 4, shipCZ = shipTZ >> 4;
+    // 1. Radar frame
+    gb.fill(0, 180); gb.stroke(0, 255, 0, 150); gb.strokeWeight(1.5);
+    gb.rectMode(CENTER);
+    gb.rect(0, 0, radarSize, radarSize);
 
-  stroke(255, 50, 50, 235);
-  strokeWeight(3);
-  beginShape(POINTS);
-  for (let dcz = -3; dcz <= 3; dcz++) {
-    for (let dcx = -3; dcx <= 3; dcx++) {
-      let bucket = infection.buckets.get(`${shipCX + dcx},${shipCZ + dcz}`);
-      if (!bucket) continue;
-      for (let t of bucket) {
-        let rx = (t.tx * TILE - s.x) * RADAR_SCALE;
-        let rz = (t.tz * TILE - s.z) * RADAR_SCALE;
-        let rrx = rx * yawCos - rz * yawSin;
-        let rrz = rx * yawSin + rz * yawCos;
-        if (abs(rrx) < RADAR_HALF && abs(rrz) < RADAR_HALF) {
-          vertex(rrx, rrz);
+    // Rotation setup
+    let yawSin = sin(s.yaw), yawCos = cos(s.yaw);
+
+    // 2. Viron tiles (Batch with POINTS)
+    let shipTX = toTile(s.x), shipTZ = toTile(s.z);
+    let shipCX = Math.floor(shipTX / CHUNK_SIZE), shipCZ = Math.floor(shipTZ / CHUNK_SIZE);
+
+    gb.stroke(255, 50, 50, 235);
+    gb.strokeWeight(3);
+    gb.beginShape(POINTS);
+    for (let dcz = -3; dcz <= 3; dcz++) {
+      for (let dcx = -3; dcx <= 3; dcx++) {
+        let bucket = infection.buckets.get(`${shipCX + dcx},${shipCZ + dcz}`);
+        if (!bucket) continue;
+        for (let t of bucket) {
+          let rx = (t.tx * TILE - s.x) * RADAR_SCALE;
+          let rz = (t.tz * TILE - s.z) * RADAR_SCALE;
+          let rrx = rx * yawCos - rz * yawSin;
+          let rrz = rx * yawSin + rz * yawCos;
+          if (abs(rrx) < RADAR_HALF && abs(rrz) < RADAR_HALF) {
+            gb.vertex(rrx, rrz);
+          }
         }
       }
     }
-  }
-  endShape();
+    gb.endShape();
 
-  // 3. Enemy markers (Batch with POINTS)
-  if (enemyManager.enemies.length > 0) {
-    stroke(170, 255, 50);
-    strokeWeight(4);
-    beginShape(POINTS);
-    for (let e of enemyManager.enemies) {
-      let rx = (e.x - s.x) * RADAR_SCALE;
-      let rz = (e.z - s.z) * RADAR_SCALE;
-      let rrx = rx * yawCos - rz * yawSin;
-      let rrz = rx * yawSin + rz * yawCos;
-      if (abs(rrx) < RADAR_HALF && abs(rrz) < RADAR_HALF) {
-        vertex(rrx, rrz);
+    // 3. Enemy markers (Batch with POINTS)
+    if (enemyManager.enemies.length > 0) {
+      gb.stroke(170, 255, 50);
+      gb.strokeWeight(4);
+      gb.beginShape(POINTS);
+      for (let e of enemyManager.enemies) {
+        let rx = (e.x - s.x) * RADAR_SCALE;
+        let rz = (e.z - s.z) * RADAR_SCALE;
+        let rrx = rx * yawCos - rz * yawSin;
+        let rrz = rx * yawSin + rz * yawCos;
+        if (abs(rrx) < RADAR_HALF && abs(rrz) < RADAR_HALF) {
+          gb.vertex(rrx, rrz);
+        }
+      }
+      gb.endShape();
+    }
+
+    // 4. Launchpad centre marker
+    let lx = (420 - s.x) * RADAR_SCALE, lz = (420 - s.z) * RADAR_SCALE;
+    let rlx = lx * yawCos - lz * yawSin, rlz = lx * yawSin + lz * yawCos;
+    if (abs(rlx) < RADAR_HALF && abs(rlz) < RADAR_HALF) {
+      gb.stroke(0, 150, 255, 220); gb.strokeWeight(5);
+      gb.point(rlx, rlz);
+    }
+
+    // 5. Co-op partner
+    let other = players[1 - p.id];
+    if (other && !other.dead) {
+      let ox = (other.ship.x - s.x) * RADAR_SCALE, oz = (other.ship.z - s.z) * RADAR_SCALE;
+      let rox = ox * yawCos - oz * yawSin, roz = ox * yawSin + oz * yawCos;
+      if (abs(rox) < RADAR_HALF && abs(roz) < RADAR_HALF) {
+        gb.stroke(other.labelColor[0], other.labelColor[1], other.labelColor[2], 200);
+        gb.strokeWeight(5);
+        gb.point(rox, roz);
       }
     }
-    endShape();
+
+    // 6. Own ship
+    gb.stroke(255); gb.strokeWeight(5);
+    gb.point(0, 0);
+
+    gb.pop();
   }
 
-  // 4. Launchpad centre marker
-  let lx = (420 - s.x) * RADAR_SCALE, lz = (420 - s.z) * RADAR_SCALE;
-  let rlx = lx * yawCos - lz * yawSin, rlz = lx * yawSin + lz * yawCos;
-  if (abs(rlx) < RADAR_HALF && abs(rlz) < RADAR_HALF) {
-    stroke(0, 150, 255, 220); strokeWeight(5);
-    point(rlx, rlz);
-  }
-
-  // 5. Co-op partner
-  let other = players[1 - p.id];
-  if (other && !other.dead) {
-    let ox = (other.ship.x - s.x) * RADAR_SCALE, oz = (other.ship.z - s.z) * RADAR_SCALE;
-    let rox = ox * yawCos - oz * yawSin, roz = ox * yawSin + oz * yawCos;
-    if (abs(rox) < RADAR_HALF && abs(roz) < RADAR_HALF) {
-      stroke(other.labelColor[0], other.labelColor[1], other.labelColor[2], 200);
-      strokeWeight(5);
-      point(rox, roz);
-    }
-  }
-
-  // 6. Own ship
-  stroke(255); strokeWeight(5);
-  point(0, 0);
-
-  rectMode(CORNER);
+  // Always draw the buffered radar to the screen (at 60fps, even if content updates at 30fps)
+  push();
+  ortho(-hw / 2, hw / 2, -h / 2, h / 2, 0, 1000);
+  resetMatrix();
+  imageMode(CENTER);
+  translate(floor(hw / 2 - radarSize / 2 - 4), floor(-h / 2 + radarSize / 2 + 4));
+  image(gb, 0, 0);
   pop();
 }
+
 
 /**
  * Renders one-line keyboard/touch control hints at the bottom of the viewport.

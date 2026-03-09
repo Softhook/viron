@@ -622,59 +622,20 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
 }
 
 // ---------------------------------------------------------------------------
-// p5 lifecycle — draw
+// draw() helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Main p5 draw loop — runs at the display refresh rate (60 / 75 / 90 / 120 / 144 Hz).
+ * Runs the frame-time percentile monitor and adjusts VIEW_NEAR/FAR + CULL_DIST.
  *
- * If in 'menu' or 'gameover' state, delegates entirely to the appropriate
- * HUD function and returns early.
+ * Uses a 60-sample circular buffer of raw deltaTime values.  Every 2 s wall-clock
+ * the 90th-percentile frame time is compared against the detected display budget
+ * (snapped to the nearest standard tier: 144/120/90/75/60/30 Hz).
  *
- * In 'playing' state:
- *   1. Dynamic performance scaling: adjusts VIEW_NEAR/FAR and CULL_DIST
- *      every 2 s wall-clock time using a frame-time percentile monitor.
- *      Raw deltaTime values fill a 60-frame circular buffer; the 90th-
- *      percentile frame time is compared against the detected display
- *      budget (ms/frame).  This catches jitter that FPS averages hide,
- *      works correctly at any refresh rate, and prevents quality bouncing
- *      on mobile via a 4-second post-reduction cooldown.
- *   2. Physics update: ship input, enemy AI, collision detection, infection spread,
- *      particle physics, projectile physics.
- *   3. Render: one or two viewport passes via renderPlayerView().
- *   4. Post-render 2D pass: split-screen divider and level-complete message.
- *   5. Level logic: detect level clear, advance level after 4-second delay.
- *   6. Respawn logic: decrement respawn timers, reset dead ships.
+ * A 6-second cooldown after each quality reduction prevents rapid bouncing on
+ * mobile devices where thermal throttling causes short spikes that quickly recover.
  */
-function draw() {
-  if (gameState === 'menu') { drawMenu(); return; }
-  if (gameState === 'instructions') { drawInstructions(); return; }
-  if (gameState === 'shipselect') { drawShipSelect(); return; }
-
-  const profiler = getVironProfiler();
-  const frameStart = profiler ? performance.now() : 0;
-
-  // --- Dynamic Performance Scaling ---
-  // Approach: frame-time percentile monitor (industry-standard technique).
-  //
-  // Why not frameRate() / EMA:
-  //   • p5's frameRate() is itself an average of recent deltaTime values —
-  //     applying another EMA compounds the smoothing lag.
-  //   • FPS averages mask jitter: a game averaging 60 fps but spiking to
-  //     100 ms every second feels terrible; the average shows no problem.
-  //   • "Every N frames" evaluates at different wall-clock rates depending
-  //     on the display (75 Hz → 1.6 s, 120 Hz → 1.0 s).
-  //
-  // This monitor instead:
-  //   • Stores every raw deltaTime in a 60-entry circular buffer.
-  //   • Derives the display frame budget once from the median of the first
-  //     60 samples, snapped to a standard tier (144/120/90/75/60/30 Hz).
-  //   • Evaluates the 90th-percentile frame time every 2 s wall-clock — if
-  //     1 in 10 frames is slow the player feels it; averages would miss it.
-  //   • Enforces a 4 s cooldown after every quality reduction to prevent
-  //     bouncing (critical on mobile, where thermal throttling causes brief
-  //     spikes that quickly recover).
-
+function _updatePerfScaling() {
   if (!window._perf) {
     window._perf = {
       buf: new Float32Array(60), // circular buffer of raw frame times (ms)
@@ -695,189 +656,159 @@ function draw() {
   _p.idx = (_p.idx + 1) % 60;
   if (_p.idx === 0) _p.full = true;
 
-  // After the first full buffer pass, detect the display refresh rate from the
-  // median frame time and snap to the nearest standard tier.
+  // Detect display refresh rate once from the median of the first 60 samples.
   if (!_p.budgetSet && _p.full) {
     const sorted = _p.buf.slice().sort();  // Float32Array.sort() is numeric — no comparator needed
-    const medMs = (sorted[29] + sorted[30]) / 2; // p50 of 60 samples (even-sized set)
-    // ms-per-frame for standard tiers: 144 / 120 / 90 / 75 / 60 / 30 Hz
-    const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
+    const medMs = (sorted[29] + sorted[30]) / 2;
+    const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33]; // 144/120/90/75/60/30 Hz
     _p.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
-    // Desktop monitors above 60 Hz should not force lower view distance if the
-    // machine is otherwise delivering stable 60 fps gameplay.
-    if (!isMobile) _p.budgetMs = Math.max(_p.budgetMs, 1000 / 60);
+    if (!isMobile) _p.budgetMs = Math.max(_p.budgetMs, 1000 / 60); // desktop floor at 60 Hz
     _p.budgetSet = true;
   }
 
   const _now = performance.now();
-  if (_p.full && _now >= _p.nextEval) {
-    _p.nextEval = _now + 2000; // re-evaluate every 2 s wall-clock
+  if (!_p.full || _now < _p.nextEval) return;
+  _p.nextEval = _now + 2000;
 
-    // 90th-percentile frame time: sort a copy and read index 53 of 60.
-    // Thresholds form a dead zone that prevents quality bouncing:
-    //   reduce  if p90 > budget × 1.40  (sustained stutter — 40% over budget)
-    //   restore if p90 < budget × 1.15  (clear headroom — within 15% of budget)
-    const sorted = _p.buf.slice().sort();  // Float32Array.sort() is numeric — no comparator needed
-    const p90ms = sorted[53];
+  // 90th-percentile frame time (index 53 of 60 sorted samples).
+  const sorted = _p.buf.slice().sort();
+  const p90ms = sorted[53];
 
-    // Desktop quality controller: conservative downshift, very deliberate upshift.
-    const reduceRatio = isMobile ? 1.40 : 1.55;
-    const restoreRatio = isMobile ? 1.15 : 1.08;
-    const canRestore = _now >= _p.cooldown;
+  // Dead zone prevents bouncing: reduce at 1.55× budget, restore at 1.08×.
+  const reduceRatio = isMobile ? 1.40 : 1.55;
+  const restoreRatio = isMobile ? 1.15 : 1.08;
+  const canRestore = _now >= _p.cooldown;
 
-    if (p90ms > _p.budgetMs * reduceRatio) {
-      _p.overBudgetEvals++;
-      _p.underBudgetEvals = 0;
-    } else if (p90ms < _p.budgetMs * restoreRatio && canRestore) {
-      _p.underBudgetEvals++;
-      _p.overBudgetEvals = 0;
-    } else {
-      _p.overBudgetEvals = 0;
-      _p.underBudgetEvals = 0;
-    }
-
-    const minNear = isMobile ? 15 : 24;
-    const minFar = isMobile ? 20 : 34;
-    const minCull = isMobile ? 2000 : 4200;
-
-    if (_p.overBudgetEvals >= 2) {
-      VIEW_NEAR = max(minNear, VIEW_NEAR - 1);
-      VIEW_FAR = max(minFar, VIEW_FAR - 1);
-      CULL_DIST = max(minCull, CULL_DIST - 250);
-      _p.cooldown = _now + 6000;
-      _p.overBudgetEvals = 0;
-      _p.underBudgetEvals = 0;
-    } else if (_p.underBudgetEvals >= 3) {
-      VIEW_NEAR = min(35, VIEW_NEAR + 1);
-      VIEW_FAR = min(50, VIEW_FAR + 1);
-      CULL_DIST = min(6000, CULL_DIST + 150);
-      _p.cooldown = _now + 4000;
-      _p.overBudgetEvals = 0;
-      _p.underBudgetEvals = 0;
-    }
+  if (p90ms > _p.budgetMs * reduceRatio) {
+    _p.overBudgetEvals++;
+    _p.underBudgetEvals = 0;
+  } else if (p90ms < _p.budgetMs * restoreRatio && canRestore) {
+    _p.underBudgetEvals++;
+    _p.overBudgetEvals = 0;
+  } else {
+    _p.overBudgetEvals = 0;
+    _p.underBudgetEvals = 0;
   }
 
-  terrain.clearCaches();  // Evict caches if they exceed their size limits
+  const minNear = isMobile ? 15 : 24;
+  const minFar  = isMobile ? 20 : 34;
+  const minCull = isMobile ? 2000 : 4200;
 
-  let gl = drawingContext;
+  if (_p.overBudgetEvals >= 2) {
+    VIEW_NEAR = max(minNear, VIEW_NEAR - 1);
+    VIEW_FAR  = max(minFar,  VIEW_FAR  - 1);
+    CULL_DIST = max(minCull, CULL_DIST - 250);
+    _p.cooldown = _now + 6000;
+    _p.overBudgetEvals = 0;
+    _p.underBudgetEvals = 0;
+  } else if (_p.underBudgetEvals >= 3) {
+    VIEW_NEAR = min(35,   VIEW_NEAR + 1);
+    VIEW_FAR  = min(50,   VIEW_FAR  + 1);
+    CULL_DIST = min(6000, CULL_DIST + 150);
+    _p.cooldown = _now + 4000;
+    _p.overBudgetEvals = 0;
+    _p.underBudgetEvals = 0;
+  }
+}
 
-  // Process mobile touch joystick before ship input so the inputs are ready
-  if (isMobile && numPlayers === 1 && typeof mobileController !== 'undefined') mobileController.update(touches, width, height);
-
-  // --- Physics update ---
-  for (let p of players) updateShipInput(p);
-  enemyManager.update();
-  for (let p of players) checkCollisions(p);
-  spreadInfection();
-  particleSystem.updatePhysics();
-  for (let p of players) updateProjectilePhysics(p);
-  updateBarrierPhysics();  // Environment-owned in-flight barriers
-
-  // --- Sentinel glow update ---
-  // Healthy sentinels: upload their positions to the terrain shader so it can
-  // draw a steady breathing ring on the ground around the building base.
-  // Infected sentinels: emit the old expanding infection-blue pulse instead,
-  // giving a clear visual cue that danger is spreading from this location.
+/**
+ * Updates the sentinel glow / pulse list each frame.
+ *
+ * Healthy sentinels: registers their position in terrain.sentinelGlows so the
+ * terrain shader draws a steady breathing ring on the ground.
+ * Infected sentinels: emits an expanding infection-blue pulse every
+ * SENTINEL_PULSE_INTERVAL frames as a visual + audio danger cue.
+ */
+function _updateSentinelGlows() {
   terrain.sentinelGlows = [];   // Rebuilt each frame
   for (let b of buildings) {
     if (b.type !== 4) continue;
     b.pulseTimer = (b.pulseTimer || 0) + 1;
     let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
     if (inf) {
-      // Infected — emit the classic expanding pulse every SENTINEL_PULSE_INTERVAL frames
       if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
         b.pulseTimer = 0;
         terrain.addPulse(b.x, b.z, 1.0);  // infection-blue expanding ring
         if (typeof gameSFX !== 'undefined') {
-          // Check if any player is close enough to hear the pulse
           let hearDist = 2000;
-          let played = false;
           for (let p of players) {
             if (!p.dead && dist(p.ship.x, p.ship.y, p.ship.z, b.x, b.y, b.z) < hearDist) {
               gameSFX.playInfectionPulse(b.x, b.y, b.z);
-              played = true; break;
+              break;
             }
           }
         }
       }
     } else {
-      // Healthy — register position for the shader steady glow ring
-      // Glow radius ≈ 1.4× the plinth width (b.w * 1.1) for a nice halo outside the base
       terrain.sentinelGlows.push({ x: b.x, z: b.z, radius: b.w * 1.5 });
-      if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) b.pulseTimer = 0;  // prevent overflow
+      if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) b.pulseTimer = 0;
     }
   }
+}
 
-  // --- Ambient Audio Update ---
-  if (typeof gameSFX !== 'undefined') {
-    let p = players[0]; // Primary player for ambiance
-    let proximityData = { dist: 10000 };
-    if (p && !p.dead && p.ship) {
-      // Find proximity to nearest infected tile
-      let px = toTile(p.ship.x), pz = toTile(p.ship.z);
-      let minDistSq = 1000000;
-      // Sample an 8x8 tile radius for proximity sensing (120*8 = 960 units)
-      for (let dz = -8; dz <= 8; dz++) {
-        for (let dx = -8; dx <= 8; dx++) {
-          let tx = px + dx, tz = pz + dz;
-          if (infection.has(tileKey(tx, tz))) {
-            let wx = tx * TILE + 60; // center of tile
-            let wz = tz * TILE + 60;
-            let wy = terrain.getAltitude(wx, wz);
-            let dSq = (p.ship.x - wx) ** 2 + (p.ship.y - wy) ** 2 + (p.ship.z - wz) ** 2;
-            if (dSq < minDistSq) minDistSq = dSq;
-          }
+/**
+ * Computes infection proximity, pulse-overlap, and scan-sweep data for the
+ * primary player, then calls gameSFX.updateAmbiance() to update the audio mix.
+ * No-ops when gameSFX is not available.
+ */
+function _updateAmbianceAudio() {
+  if (typeof gameSFX === 'undefined') return;
+
+  let p = players[0]; // Primary player drives ambiance
+  let proximityData = { dist: 10000 };
+
+  if (p && !p.dead && p.ship) {
+    // Nearest infected tile within an 8-tile radius for proximity sensing
+    let px = toTile(p.ship.x), pz = toTile(p.ship.z);
+    let minDistSq = 1000000;
+    for (let dz = -8; dz <= 8; dz++) {
+      for (let dx = -8; dx <= 8; dx++) {
+        let tx = px + dx, tz = pz + dz;
+        if (infection.has(tileKey(tx, tz))) {
+          let wx = tx * TILE + 60, wz = tz * TILE + 60;
+          let wy = terrain.getAltitude(wx, wz);
+          let dSq = (p.ship.x - wx) ** 2 + (p.ship.y - wy) ** 2 + (p.ship.z - wz) ** 2;
+          if (dSq < minDistSq) minDistSq = dSq;
         }
       }
-      proximityData.dist = Math.sqrt(minDistSq);
-
-      // --- Pulse Overlap Detection ---
-      // Detection of expanding shockwaves (from sentinels/bombs) passing the player
-      // to trigger the temporary "zzz" scanning modulation.
-      let nowSec = millis() / 1000.0;
-      let maxScan = 0;
-      for (let pulse of terrain.activePulses) {
-        let age = nowSec - pulse.start;
-        if (age < 0 || age > 3.0) continue;
-
-        // Match shader radius logic (type 1.0 = infection pulse)
-        let radius = pulse.type === 1.0 ? age * 300.0 : (pulse.type === 2.0 ? age * 1200.0 : age * 800.0);
-        let dist2D = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
-
-        // 3D local check: The ring is on the ground.
-        let groundY = terrain.getAltitude(p.ship.x, p.ship.z);
-        let dy = p.ship.y - groundY;
-        let distToRing3D = Math.sqrt((dist2D - radius) ** 2 + dy ** 2);
-
-        // Use a tighter thickness (120world units) to match the visual rings (30-80px).
-        // This makes the "zzz" sound a localized "zip" as the ring passes the ship.
-        let thickness = 120;
-        if (distToRing3D < thickness) {
-          let intensity = 1.0 - (distToRing3D / thickness);
-          if (intensity > maxScan) maxScan = intensity;
-        }
-      }
-      proximityData.pulseOverlap = maxScan;
-
-      // --- Visual Scan Line Sync ---
-      // Replicate terrain.js shader logic: 
-      // float xP = vWorldPos.x / uTileSize;
-      // float zP = vWorldPos.z / uTileSize;
-      // float scanPos = uTime / 10.0;
-      // float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
-      let xP = p.ship.x / TILE;
-      let zP = p.ship.z / TILE;
-      let scanPos = nowSec / 10.0;
-      let val = 1.0 - Math.abs(((xP * 0.02 + zP * 0.01 - scanPos) % 1.0 + 1.0) % 1.0 - 0.5) * 2.0;
-      // Equivalent to smoothstep(0.98, 1.0, val)
-      proximityData.scanSweepAlpha = Math.max(0, (val - 0.98) / (1.0 - 0.98));
     }
-    gameSFX.updateAmbiance(proximityData, infection.count, MAX_INF);
+    proximityData.dist = Math.sqrt(minDistSq);
+
+    // Pulse-overlap: detect expanding shockwaves passing the player for the "zzz" sound
+    let nowSec = millis() / 1000.0;
+    let maxScan = 0;
+    for (let pulse of terrain.activePulses) {
+      let age = nowSec - pulse.start;
+      if (age < 0 || age > 3.0) continue;
+      let radius = pulse.type === 1.0 ? age * 300.0 : (pulse.type === 2.0 ? age * 1200.0 : age * 800.0);
+      let dist2D = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
+      let groundY = terrain.getAltitude(p.ship.x, p.ship.z);
+      let dy = p.ship.y - groundY;
+      let distToRing3D = Math.sqrt((dist2D - radius) ** 2 + dy ** 2);
+      if (distToRing3D < 120) {
+        let intensity = 1.0 - (distToRing3D / 120);
+        if (intensity > maxScan) maxScan = intensity;
+      }
+    }
+    proximityData.pulseOverlap = maxScan;
+
+    // Scan-sweep sync: replicate terrain.js shader logic to stay in phase with visuals
+    let xP = p.ship.x / TILE, zP = p.ship.z / TILE;
+    let scanPos = nowSec / 10.0;
+    let val = 1.0 - Math.abs(((xP * 0.02 + zP * 0.01 - scanPos) % 1.0 + 1.0) % 1.0 - 0.5) * 2.0;
+    proximityData.scanSweepAlpha = Math.max(0, (val - 0.98) / (1.0 - 0.98));
   }
 
-  // --- Render ---
-  let h = height;
-  let pxDensity = pixelDensity();
+  gameSFX.updateAmbiance(proximityData, infection.count, MAX_INF);
+}
+
+/**
+ * Dispatches one 3D render pass per player (1 or 2) and draws the shared 2D
+ * overlay (split-screen divider and level-complete banner).
+ * @param {WebGLRenderingContext} gl  Raw WebGL context.
+ */
+function _renderScene(gl) {
+  const h = height, pxDensity = pixelDensity();
 
   if (numPlayers === 1) {
     renderPlayerView(gl, players[0], 0, 0, width, h, pxDensity);
@@ -888,7 +819,7 @@ function draw() {
     }
   }
 
-  // --- Shared 2D overlay (split-screen divider + level-complete banner) ---
+  // Shared 2D overlay: split-screen divider + level-complete banner
   setup2DViewport();
   if (numPlayers === 2) {
     stroke(0, 255, 0, 180); strokeWeight(2);
@@ -899,8 +830,13 @@ function draw() {
     text('LEVEL ' + level + ' COMPLETE', 0, 0);
   }
   pop();
+}
 
-  // --- Level progression ---
+/**
+ * Checks level-clear conditions, advances the level after a 4-second delay, and
+ * decrements respawn timers for dead players.
+ */
+function _updateLevelAndRespawn() {
   if (!levelComplete) {
     let ic = infection.count;
     if (ic > 0) infectionStarted = true;
@@ -912,7 +848,6 @@ function draw() {
   }
   if (levelComplete && millis() - levelEndTime > 4000) startLevel(level + 1);
 
-  // --- Respawn dead players after their timer expires ---
   for (let p of players) {
     if (p.dead) {
       p.respawnTimer--;
@@ -922,6 +857,54 @@ function draw() {
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// p5 lifecycle — draw
+// ---------------------------------------------------------------------------
+
+/**
+ * Main p5 draw loop — runs at the display refresh rate (60 / 75 / 90 / 120 / 144 Hz).
+ *
+ * Delegates to state-specific screens (menu / instructions / shipselect) or
+ * runs the full gameplay frame:
+ *   1. _updatePerfScaling   — adaptive quality control
+ *   2. Physics update       — ship input, enemy AI, collisions, infection, particles
+ *   3. _updateSentinelGlows — shader data for building rings / pulses
+ *   4. _updateAmbianceAudio — infection proximity and ambient sound mix
+ *   5. _renderScene         — 3D viewport(s) + 2D overlay
+ *   6. _updateLevelAndRespawn — level clear / respawn logic
+ */
+function draw() {
+  if (gameState === 'menu') { drawMenu(); return; }
+  if (gameState === 'instructions') { drawInstructions(); return; }
+  if (gameState === 'shipselect') { drawShipSelect(); return; }
+
+  const profiler = getVironProfiler();
+  const frameStart = profiler ? performance.now() : 0;
+
+  _updatePerfScaling();
+  terrain.clearCaches();
+
+  // Process mobile touch joystick before ship input so inputs are ready
+  if (isMobile && numPlayers === 1 && typeof mobileController !== 'undefined') {
+    mobileController.update(touches, width, height);
+  }
+
+  // --- Physics update ---
+  for (let p of players) updateShipInput(p);
+  enemyManager.update();
+  for (let p of players) checkCollisions(p);
+  spreadInfection();
+  particleSystem.updatePhysics();
+  for (let p of players) updateProjectilePhysics(p);
+  updateBarrierPhysics();
+
+  _updateSentinelGlows();
+  _updateAmbianceAudio();
+  _renderScene(drawingContext);
+  _updateLevelAndRespawn();
+
   if (gameState === 'gameover') drawGameOver();
   if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
@@ -1049,6 +1032,84 @@ function spreadInfection() {
 // ---------------------------------------------------------------------------
 
 /**
+ * Applies damage to a Colossus enemy from a single weapon hit.
+ * Removes the enemy and awards `killBonus` points if HP drops to zero.
+ * @param {object} p         Player state.
+ * @param {number} j         Index of the enemy in enemyManager.enemies.
+ * @param {number} dmg       HP damage dealt per hit.
+ * @param {number} flashDur  Frames the hit-flash effect lasts.
+ * @param {number} hitScore  Score per hit.
+ * @param {number} killBonus Additional score for the killing blow.
+ * @returns {boolean}  True if the Colossus was killed.
+ */
+function _damageColossus(p, j, dmg, flashDur, hitScore, killBonus) {
+  let e = enemyManager.enemies[j];
+  e.hp = (e.hp || 0) - dmg;
+  e.hitFlash = flashDur;
+  p.score += hitScore;
+  if (e.hp <= 0) {
+    particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
+    swapRemove(enemyManager.enemies, j);
+    p.score += killBonus;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Handles player bullets/missiles/shells hitting infected procedural trees.
+ * @param {object} p  Player state.
+ */
+function _checkProjectilesVsTrees(p) {
+  // Bullets vs infected trees (2-tile search radius)
+  for (let i = p.bullets.length - 1; i >= 0; i--) {
+    let b = p.bullets[i];
+    let tx0 = toTile(b.x), tz0 = toTile(b.z);
+    let hit = false;
+    for (let tz = tz0 - 2; tz <= tz0 + 2 && !hit; tz++) {
+      for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
+        let t = terrain.tryGetProceduralTree(tx, tz);
+        if (!t) continue;
+        let ty = terrain.getAltitude(t.x, t.z);
+        if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 >= 3600) continue;
+        if (b.y <= ty - t.trunkH - 30 * t.canopyScale - 10 || b.y >= ty + 10) continue;
+        if (!infection.has(tileKey(tx, tz))) continue;
+        clearInfectionRadius(tx, tz);
+        p.score += 200;
+        swapRemove(p.bullets, i);
+        hit = true; break;
+      }
+    }
+  }
+
+  // Tank shells vs infected trees (3-tile search radius, area-clear explosion)
+  for (let j = p.tankShells.length - 1; j >= 0; j--) {
+    let ts = p.tankShells[j];
+    let tx0 = toTile(ts.x), tz0 = toTile(ts.z);
+    let hitTree = false;
+    for (let tz = tz0 - 3; tz <= tz0 + 3 && !hitTree; tz++) {
+      for (let tx = tx0 - 3; tx <= tx0 + 3; tx++) {
+        let t = terrain.tryGetProceduralTree(tx, tz);
+        if (!t) continue;
+        let ty = terrain.getAltitude(t.x, t.z);
+        if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
+        if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
+        if (!infection.has(tileKey(tx, tz))) continue;
+        for (let dx = -TANK_SHELL_CLEAR_R; dx <= TANK_SHELL_CLEAR_R; dx++) {
+          for (let dz = -TANK_SHELL_CLEAR_R; dz <= TANK_SHELL_CLEAR_R; dz++) {
+            infection.remove(tileKey(tx + dx, tz + dz));
+          }
+        }
+        terrain.addPulse(ts.x, ts.z, 2.0);
+        particleSystem.addExplosion(ts.x, ts.y, ts.z);
+        swapRemove(p.tankShells, j);
+        hitTree = true; break;
+      }
+    }
+  }
+}
+
+/**
  * Runs all collision tests for one player each frame.
  * Returns early if the player is already dead.
  *
@@ -1058,7 +1119,7 @@ function spreadInfection() {
  *   3. Player missiles vs each enemy     (radius 100 units squared, +250 score)
  *   4. Enemy body vs player ship body    (radius 70 units squared)
  *   5. Floating powerup (type-3 building) vs player ship (radius = building width + 15)
- *   6. Player bullets vs infected trees  (radius 60 units XZ + height range check)
+ *   6. Player bullets / tank shells vs infected trees
  *
  * @param {object} p  Player state object.
  */
@@ -1089,17 +1150,8 @@ function checkCollisions(p) {
       let hitRadSq = e.type === 'colossus' ? 90000 : 6400;  // 300 vs 80 unit radius
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < hitRadSq) {
         if (e.type === 'colossus') {
-          // Damage the Colossus — bullets don't pass through the body, consume bullet
-          e.hp = (e.hp || 0) - 1;
-          e.hitFlash = 12;
           swapRemove(p.bullets, i);
-          p.score += 10;  // Small score per hit
-          if (e.hp <= 0) {
-            particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-            swapRemove(enemyManager.enemies, j);
-            p.score += 2000;  // Big bonus for killing the boss
-            killed = true;
-          }
+          killed = _damageColossus(p, j, 1, 12, 10, 2000);
         } else {
           particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
           swapRemove(enemyManager.enemies, j);
@@ -1118,16 +1170,8 @@ function checkCollisions(p) {
         let hitRadSq = e.type === 'colossus' ? 160000 : 10000;
         if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < hitRadSq) {
           if (e.type === 'colossus') {
-            e.hp = (e.hp || 0) - 5;
-            e.hitFlash = 20;
             swapRemove(p.homingMissiles, i);
-            p.score += 50;
-            if (e.hp <= 0) {
-              particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-              swapRemove(enemyManager.enemies, j);
-              p.score += 2000;
-              killed = true;
-            }
+            killed = _damageColossus(p, j, 5, 20, 50, 2000);
           } else {
             particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
             swapRemove(enemyManager.enemies, j);
@@ -1147,17 +1191,8 @@ function checkCollisions(p) {
         let hitRadSq = e.type === 'colossus' ? 250000 : 22500; // 500 vs 150 unit radius
         if ((s2.x - e.x) ** 2 + (s2.y - e.y) ** 2 + (s2.z - e.z) ** 2 < hitRadSq) {
           if (e.type === 'colossus') {
-            // Tank shells deal massive damage to Colossus
-            e.hp = (e.hp || 0) - 15;
-            e.hitFlash = 30;
             swapRemove(p.tankShells, i);
-            p.score += 100;
-            if (e.hp <= 0) {
-              particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-              swapRemove(enemyManager.enemies, j);
-              p.score += 2000;
-              killed = true;
-            }
+            killed = _damageColossus(p, j, 15, 30, 100, 2000);
           } else {
             particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
             swapRemove(enemyManager.enemies, j);
@@ -1190,15 +1225,12 @@ function checkCollisions(p) {
       if (dx * dx + dy * dy + dz * dz < radiusSq) {
         let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
         if (inf) {
-          // Infected powerup — penalty: lose a missile
           if (p.missilesRemaining > 0) p.missilesRemaining--;
           if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);
         } else {
-          // Healthy powerup — either missile ammo or a normal-shot pattern upgrade.
           if (random() < 0.5) {
             p.missilesRemaining++;
           } else {
-            // Pick one of the non-default spread modes.
             p.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
           }
           p.score += 500;
@@ -1206,7 +1238,6 @@ function checkCollisions(p) {
         }
         buildings.splice(i, 1);  // Consume the powerup — splice OK (no further iteration after this)
 
-        // Spawn a burst of colour-coded particles at the collection point
         for (let j = 0; j < 20; j++) {
           particleSystem.particles.push({
             x: b.x, y: floatY, z: b.z,
@@ -1219,63 +1250,8 @@ function checkCollisions(p) {
     }
   }
 
-  // --- 6. Player bullets vs infected procedural trees ---
-  // Trees are generated from deterministic tile noise, so this checks nearby
-  // sample tiles around each bullet rather than iterating a global tree array.
-  for (let i = p.bullets.length - 1; i >= 0; i--) {
-    let b = p.bullets[i];
-    let tx0 = toTile(b.x), tz0 = toTile(b.z);
-    let hit = false;
-
-    for (let tz = tz0 - 2; tz <= tz0 + 2 && !hit; tz++) {
-      for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
-        let t = terrain.tryGetProceduralTree(tx, tz);
-        if (!t) continue;
-        let ty = terrain.getAltitude(t.x, t.z);
-        if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 >= 3600) continue;
-        if (b.y <= ty - t.trunkH - 30 * t.canopyScale - 10 || b.y >= ty + 10) continue;
-
-        let k = tileKey(tx, tz);
-        if (!infection.has(k)) continue;
-
-        clearInfectionRadius(tx, tz);
-        p.score += 200;
-        swapRemove(p.bullets, i);
-        hit = true;
-        break;
-      }
-    }
-  }
-
-  // --- 7. Player tank shells vs infected procedural trees ---
-  for (let j = p.tankShells.length - 1; j >= 0; j--) {
-    let ts = p.tankShells[j];
-    let tx0 = toTile(ts.x), tz0 = toTile(ts.z);
-    let hitTree = false;
-
-    for (let tz = tz0 - 3; tz <= tz0 + 3 && !hitTree; tz++) {
-      for (let tx = tx0 - 3; tx <= tx0 + 3; tx++) {
-        let t = terrain.tryGetProceduralTree(tx, tz);
-        if (!t) continue;
-        let ty = terrain.getAltitude(t.x, t.z);
-        if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
-        if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
-
-        if (!infection.has(tileKey(tx, tz))) continue;
-
-        for (let dx = -TANK_SHELL_CLEAR_R; dx <= TANK_SHELL_CLEAR_R; dx++) {
-          for (let dz = -TANK_SHELL_CLEAR_R; dz <= TANK_SHELL_CLEAR_R; dz++) {
-            infection.remove(tileKey(tx + dx, tz + dz));
-          }
-        }
-        terrain.addPulse(ts.x, ts.z, 2.0);
-        particleSystem.addExplosion(ts.x, ts.y, ts.z);
-        swapRemove(p.tankShells, j);
-        hitTree = true;
-        break;
-      }
-    }
-  }
+  // --- 6 & 7. Projectiles vs infected procedural trees ---
+  _checkProjectilesVsTrees(p);
 
 } // end checkCollisions
 

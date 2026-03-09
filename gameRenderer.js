@@ -9,7 +9,6 @@
 class GameRenderer {
   constructor() {
     this.sceneFBO = null;
-    this._perfScalingState = null;
   }
 
   /**
@@ -78,6 +77,72 @@ class GameRenderer {
   }
 
   /**
+   * Computes camera eye/look vectors for a player's ship.
+   * @private
+   */
+  _computeCamera(ship) {
+    let camNear = gameState.firstPersonView ? 5 : 50;
+    let camFar = VIEW_FAR * TILE * 1.5;
+    let cx, cy, cz, lx, ly, lz;
+
+    if (gameState.firstPersonView) {
+      let cosPitch = cos(ship.pitch), sinPitch = sin(ship.pitch);
+      cx = ship.x;
+      cy = ship.y - 25;
+      cz = ship.z;
+      lx = ship.x + (-sin(ship.yaw) * cosPitch) * 500;
+      ly = (ship.y - 25) + sinPitch * 500;
+      lz = ship.z + (-cos(ship.yaw) * cosPitch) * 500;
+    } else {
+      cy = min(ship.y - 120, 140);
+      cx = ship.x + 300 * sin(ship.yaw);
+      cz = ship.z + 300 * cos(ship.yaw);
+      lx = ship.x;
+      ly = ship.y;
+      lz = ship.z;
+    }
+
+    return { camNear, camFar, cx, cy, cz, lx, ly, lz };
+  }
+
+  /**
+   * Applies viewport + scissor for one split-screen region.
+   * @private
+   */
+  _applyViewportScissor(gl, vx, vw, vh) {
+    gl.viewport(vx, 0, vw, vh);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(vx, 0, vw, vh);
+  }
+
+  /**
+   * Sets perspective and camera transform for 3D scene draw.
+   * @private
+   */
+  _setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
+    perspective(PI / 3, viewW / viewH, camNear, camFar);
+    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+  }
+
+  /**
+   * Draws shared opaque world/actor content.
+   * @private
+   */
+  _drawSharedWorld(s, player, viewAspect, drawAimAssist) {
+    this.setSceneLighting();
+    terrain.drawLandscape(s, viewAspect, gameState.firstPersonView);
+    terrain.drawTrees(s);
+    terrain.drawBuildings(s);
+    enemyManager.draw(s);
+    for (let p of gameState.players) {
+      if (!p.dead && (p !== player || !gameState.firstPersonView)) shipDisplay(p.ship, p.labelColor);
+      renderProjectiles(p, s.x, s.z);
+    }
+    renderInFlightBarriers(s.x, s.z);
+    if (drawAimAssist && typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
+  }
+
+  /**
    * Renders the complete 3D scene for one player using scissor testing.
    * Handles camera positioning, lighting, terrain, enemies, particles, and HUD.
    *
@@ -92,24 +157,7 @@ class GameRenderer {
   renderPlayerView(gl, player, playerIdx, viewX, viewW, viewH, pxDensity) {
     let s = player.ship;
     let vx = viewX * pxDensity, vw = viewW * pxDensity, vh = viewH * pxDensity;
-
-    // Pre-compute camera parameters
-    let camNear = gameState.firstPersonView ? 5 : 50;
-    let camFar = VIEW_FAR * TILE * 1.5;
-    let cx, cy, cz, lx, ly, lz;
-
-    if (gameState.firstPersonView) {
-      let cosPitch = cos(s.pitch), sinPitch = sin(s.pitch);
-      cx = s.x; cy = s.y - 25; cz = s.z;
-      lx = s.x + (-sin(s.yaw) * cosPitch) * 500;
-      ly = (s.y - 25) + sinPitch * 500;
-      lz = s.z + (-cos(s.yaw) * cosPitch) * 500;
-    } else {
-      cy = min(s.y - 120, 140);
-      cx = s.x + 300 * sin(s.yaw);
-      cz = s.z + 300 * cos(s.yaw);
-      lx = s.x; ly = s.y; lz = s.z;
-    }
+    let { camNear, camFar, cx, cy, cz, lx, ly, lz } = this._computeCamera(s);
 
     // Update spatial audio listener once per viewport
     if (typeof gameSFX !== 'undefined') {
@@ -138,34 +186,19 @@ class GameRenderer {
   _renderWithFBO(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
     // Pass 1: Render opaque scene to FBO
     this.sceneFBO.begin();
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
+    this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     push();
-    perspective(PI / 3, viewW / viewH, camNear, camFar);
-    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
-    this.setSceneLighting();
-    terrain.drawLandscape(s, viewW / viewH, gameState.firstPersonView);
-    terrain.drawTrees(s);
-    terrain.drawBuildings(s);
-    enemyManager.draw(s);
-    for (let p of gameState.players) {
-      if (!p.dead && (p !== player || !gameState.firstPersonView)) shipDisplay(p.ship, p.labelColor);
-      renderProjectiles(p, s.x, s.z);
-    }
-    renderInFlightBarriers(s.x, s.z);
-    if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
+    this._drawSharedWorld(s, player, viewW / viewH, true);
     particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
     pop();
     this.sceneFBO.end();
 
     // Pass 2: Blit FBO to main canvas
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
+    this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     push();
@@ -178,12 +211,9 @@ class GameRenderer {
     pop();
 
     // Pass 3: Render soft billboard particles
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
+    this._applyViewportScissor(gl, vx, vw, vh);
     push();
-    perspective(PI / 3, viewW / viewH, camNear, camFar);
-    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, this.sceneFBO);
     pop();
   }
@@ -193,25 +223,13 @@ class GameRenderer {
    * @private
    */
   _renderSinglePass(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
+    this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     push();
-    perspective(PI / 3, viewW / viewH, camNear, camFar);
-    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
-    this.setSceneLighting();
-    terrain.drawLandscape(s, viewW / viewH, gameState.firstPersonView);
-    terrain.drawTrees(s);
-    terrain.drawBuildings(s);
-    enemyManager.draw(s);
-    for (let p of gameState.players) {
-      if (!p.dead && (p !== player || !gameState.firstPersonView)) shipDisplay(p.ship, p.labelColor);
-      renderProjectiles(p, s.x, s.z);
-    }
-    renderInFlightBarriers(s.x, s.z);
+    this._drawSharedWorld(s, player, viewW / viewH, false);
     particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
     if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
     pop();
@@ -246,6 +264,62 @@ class GameRenderer {
   }
 
   /**
+   * Returns platform-tuned performance scaling thresholds.
+   * @private
+   */
+  _getPerfProfile() {
+    if (gameState.isMobile) {
+      return {
+        reduceRatio: 1.40,
+        restoreRatio: 1.15,
+        minNear: 15,
+        minFar: 20,
+        minCull: 2000,
+      };
+    }
+    return {
+      reduceRatio: 1.55,
+      restoreRatio: 1.08,
+      minNear: 24,
+      minFar: 34,
+      minCull: 4200,
+    };
+  }
+
+  /**
+   * Clears streak counters used to trigger scale adjustments.
+   * @private
+   */
+  _resetPerfCounters(perf) {
+    perf.overBudgetEvals = 0;
+    perf.underBudgetEvals = 0;
+  }
+
+  /**
+   * Applies one quality-level reduction step.
+   * @private
+   */
+  _applyPerfReduction(perf, now, profile) {
+    VIEW_NEAR = max(profile.minNear, VIEW_NEAR - 1);
+    VIEW_FAR = max(profile.minFar, VIEW_FAR - 1);
+    CULL_DIST = max(profile.minCull, CULL_DIST - 250);
+    perf.cooldown = now + 6000;
+    this._resetPerfCounters(perf);
+  }
+
+  /**
+   * Applies one quality-level restoration step.
+   * @private
+   */
+  _applyPerfRestore(perf, now) {
+    VIEW_NEAR = min(35, VIEW_NEAR + 1);
+    VIEW_FAR = min(50, VIEW_FAR + 1);
+    CULL_DIST = min(6000, CULL_DIST + 150);
+    perf.cooldown = now + 4000;
+    this._resetPerfCounters(perf);
+  }
+
+  /**
    * Runs adaptive performance quality scaling based on frame-time percentiles.
    * Uses 60-sample circular buffer to detect thermal throttling and adjust
    * VIEW_NEAR/FAR and CULL_DIST accordingly with 6-second cooldown.
@@ -264,61 +338,89 @@ class GameRenderer {
         underBudgetEvals: 0,
       };
     }
-    const _p = window._perf;
+    const perf = window._perf;
+    const profile = this._getPerfProfile();
 
-    _p.buf[_p.idx] = Math.min(deltaTime, 100);
-    _p.idx = (_p.idx + 1) % 60;
-    if (_p.idx === 0) _p.full = true;
+    perf.buf[perf.idx] = Math.min(deltaTime, 100);
+    perf.idx = (perf.idx + 1) % 60;
+    if (perf.idx === 0) perf.full = true;
 
-    if (!_p.budgetSet && _p.full) {
-      const sorted = _p.buf.slice().sort();
+    if (!perf.budgetSet && perf.full) {
+      const sorted = perf.buf.slice().sort();
       const medMs = (sorted[29] + sorted[30]) / 2;
       const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
-      _p.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
-      if (!gameState.isMobile) _p.budgetMs = Math.max(_p.budgetMs, 1000 / 60);
-      _p.budgetSet = true;
+      perf.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
+      if (!gameState.isMobile) perf.budgetMs = Math.max(perf.budgetMs, 1000 / 60);
+      perf.budgetSet = true;
     }
 
-    const _now = performance.now();
-    if (!_p.full || _now < _p.nextEval) return;
-    _p.nextEval = _now + 2000;
+    const now = performance.now();
+    if (!perf.full || now < perf.nextEval) return;
+    perf.nextEval = now + 2000;
 
-    const sorted = _p.buf.slice().sort();
+    const sorted = perf.buf.slice().sort();
     const p90ms = sorted[53];
-    const reduceRatio = gameState.isMobile ? 1.40 : 1.55;
-    const restoreRatio = gameState.isMobile ? 1.15 : 1.08;
-    const canRestore = _now >= _p.cooldown;
+    const canRestore = now >= perf.cooldown;
 
-    if (p90ms > _p.budgetMs * reduceRatio) {
-      _p.overBudgetEvals++;
-      _p.underBudgetEvals = 0;
-    } else if (p90ms < _p.budgetMs * restoreRatio && canRestore) {
-      _p.underBudgetEvals++;
-      _p.overBudgetEvals = 0;
+    if (p90ms > perf.budgetMs * profile.reduceRatio) {
+      perf.overBudgetEvals++;
+      perf.underBudgetEvals = 0;
+    } else if (p90ms < perf.budgetMs * profile.restoreRatio && canRestore) {
+      perf.underBudgetEvals++;
+      perf.overBudgetEvals = 0;
     } else {
-      _p.overBudgetEvals = 0;
-      _p.underBudgetEvals = 0;
+      this._resetPerfCounters(perf);
     }
 
-    const minNear = gameState.isMobile ? 15 : 24;
-    const minFar = gameState.isMobile ? 20 : 34;
-    const minCull = gameState.isMobile ? 2000 : 4200;
-
-    if (_p.overBudgetEvals >= 2) {
-      VIEW_NEAR = max(minNear, VIEW_NEAR - 1);
-      VIEW_FAR = max(minFar, VIEW_FAR - 1);
-      CULL_DIST = max(minCull, CULL_DIST - 250);
-      _p.cooldown = _now + 6000;
-      _p.overBudgetEvals = 0;
-      _p.underBudgetEvals = 0;
-    } else if (_p.underBudgetEvals >= 3) {
-      VIEW_NEAR = min(35, VIEW_NEAR + 1);
-      VIEW_FAR = min(50, VIEW_FAR + 1);
-      CULL_DIST = min(6000, CULL_DIST + 150);
-      _p.cooldown = _now + 4000;
-      _p.overBudgetEvals = 0;
-      _p.underBudgetEvals = 0;
+    if (perf.overBudgetEvals >= 2) {
+      this._applyPerfReduction(perf, now, profile);
+    } else if (perf.underBudgetEvals >= 3) {
+      this._applyPerfRestore(perf, now);
     }
+  }
+
+  /**
+   * Checks whether a sentinel building is on an infected tile.
+   * @private
+   */
+  _isSentinelInfected(building) {
+    return infection.has(tileKey(toTile(building.x), toTile(building.z)));
+  }
+
+  /**
+   * True when any living player is close enough to hear a pulse.
+   * @private
+   */
+  _canAnyPlayerHearPulse(x, y, z, hearDist) {
+    for (let p of gameState.players) {
+      if (!p.dead && dist(p.ship.x, p.ship.y, p.ship.z, x, y, z) < hearDist) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Handles infected sentinel interval tick.
+   * @private
+   */
+  _handleInfectedSentinelPulse(building) {
+    building.pulseTimer = 0;
+    terrain.addPulse(building.x, building.z, 1.0);
+
+    if (typeof gameSFX === 'undefined') return;
+    if (this._canAnyPlayerHearPulse(building.x, building.y, building.z, 2000)) {
+      gameSFX.playInfectionPulse(building.x, building.y, building.z);
+    }
+  }
+
+  /**
+   * Handles non-infected sentinel visual state.
+   * @private
+   */
+  _handleCleanSentinel(building) {
+    terrain.sentinelGlows.push({ x: building.x, z: building.z, radius: building.w * 1.5 });
+    if (building.pulseTimer >= SENTINEL_PULSE_INTERVAL) building.pulseTimer = 0;
   }
 
   /**
@@ -327,27 +429,16 @@ class GameRenderer {
    */
   updateSentinelGlows() {
     terrain.sentinelGlows = [];
-    for (let b of gameState.buildings) {
-      if (b.type !== 4) continue;
-      b.pulseTimer = (b.pulseTimer || 0) + 1;
-      let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
-      if (inf) {
-        if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
-          b.pulseTimer = 0;
-          terrain.addPulse(b.x, b.z, 1.0);
-          if (typeof gameSFX !== 'undefined') {
-            let hearDist = 2000;
-            for (let p of gameState.players) {
-              if (!p.dead && dist(p.ship.x, p.ship.y, p.ship.z, b.x, b.y, b.z) < hearDist) {
-                gameSFX.playInfectionPulse(b.x, b.y, b.z);
-                break;
-              }
-            }
-          }
+    for (let building of gameState.buildings) {
+      if (building.type !== 4) continue;
+      building.pulseTimer = (building.pulseTimer || 0) + 1;
+
+      if (this._isSentinelInfected(building)) {
+        if (building.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
+          this._handleInfectedSentinelPulse(building);
         }
       } else {
-        terrain.sentinelGlows.push({ x: b.x, z: b.z, radius: b.w * 1.5 });
-        if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) b.pulseTimer = 0;
+        this._handleCleanSentinel(building);
       }
     }
   }

@@ -53,6 +53,45 @@ class GameState {
     this.gameFont = null;
   }
 
+  _createPlayers(np) {
+    if (np === 1) {
+      return [createPlayer(0, P1_KEYS, 420, [80, 180, 255])];
+    }
+
+    return [
+      createPlayer(0, P1_KEYS, 300, [80, 180, 255]),
+      createPlayer(1, P2_KEYS, 500, [255, 180, 80])
+    ];
+  }
+
+  _resetPlayerForLevel(p, lvl) {
+    if (lvl === 1) resetShip(p, getSpawnX(p));
+
+    p.homingMissiles = [];
+    p.missilesRemaining = (lvl > 1) ? (p.missilesRemaining + 1) : 1;
+    p.dead = false;
+    p.respawnTimer = 0;
+    p.lpDeaths = 0;
+  }
+
+  _resetLevelOneWorldState() {
+    this.barrierTiles.reset();
+    this.inFlightBarriers = [];
+    infection.reset();
+    this.infectionStarted = false;
+    this._seedInitialInfection();
+  }
+
+  _spawnLevelWave(lvl) {
+    // Every 3rd level guarantees a Colossus boss.
+    const hasColossus = (lvl >= 3 && lvl % 3 === 0);
+    for (let i = 0; i < this.currentMaxEnemies; i++) {
+      const forceSeeder = (i === 0);
+      const forceColossus = (!forceSeeder && hasColossus && i === 1);
+      enemyManager.spawn(forceSeeder, forceColossus);
+    }
+  }
+
   /**
    * Initializes platform detection (mobile/desktop, Android/iOS).
    * Called once during setup().
@@ -93,13 +132,7 @@ class GameState {
     this.gameStartTime = millis();
     this.mouseReleasedSinceStart = !this.leftMouseDown;
 
-    this.players = [];
-    if (np === 1) {
-      this.players.push(createPlayer(0, P1_KEYS, 420, [80, 180, 255]));
-    } else {
-      this.players.push(createPlayer(0, P1_KEYS, 300, [80, 180, 255]));
-      this.players.push(createPlayer(1, P2_KEYS, 500, [255, 180, 80]));
-    }
+    this.players = this._createPlayers(np);
 
     // Reset quality scaling penalty from previous session
     if (window._perf) window._perf.cooldown = 0;
@@ -127,38 +160,17 @@ class GameState {
     if (lvl === 1) this.infectionStarted = false;
     this.currentMaxEnemies = 1 + lvl; // Scale linearly with level
 
-    for (let p of this.players) {
-      if (lvl === 1) resetShip(p, getSpawnX(p));
-      p.homingMissiles = [];
-      if (lvl > 1) {
-        p.missilesRemaining++;
-      } else {
-        p.missilesRemaining = 1;
-      }
-      p.dead = false;
-      p.respawnTimer = 0;
-      p.lpDeaths = 0;
-    }
+    for (const p of this.players) this._resetPlayerForLevel(p, lvl);
 
     if (lvl === 1) {
-      this.barrierTiles.reset();
-      this.inFlightBarriers = [];
-      infection.reset();
-      this.infectionStarted = false;
-      this._seedInitialInfection();
+      this._resetLevelOneWorldState();
     }
 
     enemyManager.clear();
     particleSystem.clear();
     terrain.activePulses = [];
 
-    // Every 3rd level guarantees a Colossus boss
-    let hasColossus = (lvl >= 3 && lvl % 3 === 0);
-    for (let i = 0; i < this.currentMaxEnemies; i++) {
-      let forceSeeder = (i === 0);
-      let forceColossus = (!forceSeeder && hasColossus && i === 1);
-      enemyManager.spawn(forceSeeder, forceColossus);
-    }
+    this._spawnLevelWave(lvl);
   }
 
   /**

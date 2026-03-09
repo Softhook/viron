@@ -15,6 +15,9 @@
 // Spawn helpers
 // ---------------------------------------------------------------------------
 
+/** Fallback ship-design object used when the player's designIndex has no entry in SHIP_DESIGNS. */
+const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };
+
 /**
  * Returns the world-space X spawn position for a given player.
  * In single-player mode both players share the centre (420); in two-player
@@ -949,7 +952,7 @@ function updateShipInput(p) {
   // Reset each frame so stale enemy references never persist across frames.
   p.aimTarget = null;
 
-  const d = SHIP_DESIGNS[p.designIndex] || { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };
+  const d = SHIP_DESIGNS[p.designIndex] || DEFAULT_SHIP_DESIGN;
 
   _applyMouseSteering(p);
 

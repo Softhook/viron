@@ -19,6 +19,9 @@
 // Hoisted out of the draw loop so the nested array literal is not re-allocated every frame.
 const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
 
+// Uniform scale applied to every enemy mesh in both rendering passes.
+const ENEMY_DRAW_SCALE = 2;
+
 class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
@@ -1009,7 +1012,7 @@ class EnemyManager {
       push();
       translate(e.x, e.y, e.z);
       if (e.type === 'crab' || e.type === 'yellowCrab') translate(0, -10, 0);
-      scale(2);
+      scale(ENEMY_DRAW_SCALE);
 
       if (e.type === 'crab' || e.type === 'yellowCrab') this._drawCrab(e);
       else if (e.type === 'squid') this._drawSquid(e);
@@ -1032,7 +1035,7 @@ class EnemyManager {
         e.type === 'hunter' || e.type === 'seeder');
       if (!isVertexEnemy) continue;
 
-      push(); translate(e.x, e.y, e.z); scale(2);
+      push(); translate(e.x, e.y, e.z); scale(ENEMY_DRAW_SCALE);
       if (e.type === 'fighter') this._drawFighter(e);
       else if (e.type === 'bomber') this._drawBomber(e);
       else if (e.type === 'hunter') this._drawHunter(e);

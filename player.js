@@ -922,7 +922,7 @@ function _handleWeaponFire(p, isShooting) {
  * the ship's physics for one frame.
  *
  * Physics model:
- *   1. Gravity applied to vy each frame (GRAV = 0.07).
+ *   1. Gravity applied to vy each frame (GRAV = 0.09).
  *   2. Thrust adds force along the ship's up vector when W/RMB is held.
  *   3. Braking multiplies all velocity components by 0.96.
  *   4. Global drag: velocity × 0.985 every frame.

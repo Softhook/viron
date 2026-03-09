@@ -1210,23 +1210,44 @@ class GameSFX {
         if (!active) {
             if (this.thrustNodes[id]) {
                 const n = this.thrustNodes[id];
-                n.gain.gain.setTargetAtTime(0, t, 0.05);
-                setTimeout(() => {
-                    if (this.thrustNodes[id] === n) {
-                        try { n.osc.stop(); } catch (e) {}
-                        try { n.noise.stop(); } catch (e) {}
-                        try { n.osc.disconnect(); } catch (e) {}
-                        try { n.noise.disconnect(); } catch (e) {}
-                        // Disconnect the inner BufferSource wrapped by the gain proxy.
-                        if (n.noise && n.noise._src) try { n.noise._src.disconnect(); } catch (e) {}
-                        try { n.filter.disconnect(); } catch (e) {}
-                        if (n.panner) try { n.panner.disconnect(); } catch (e) {}
-                        try { n.gain.disconnect(); } catch (e) {}
-                        delete this.thrustNodes[id];
-                    }
-                }, 200);
+                if (!n.stopping) {
+                    n.active = false;
+                    n.stopping = true;
+                    n.stopSeq = (n.stopSeq || 0) + 1;
+                    const stopSeq = n.stopSeq;
+                    this._paramSetTarget(n.gain.gain, 0, t, 0.04);
+                    n.stopTimer = setTimeout(() => {
+                        n.stopTimer = null;
+                        if (this.thrustNodes[id] === n && n.stopping && n.stopSeq === stopSeq) {
+                            try { n.osc.stop(); } catch (e) {}
+                            try { n.noise.stop(); } catch (e) {}
+                            try { n.osc.disconnect(); } catch (e) {}
+                            try { n.noise.disconnect(); } catch (e) {}
+                            // Disconnect the inner BufferSource wrapped by the gain proxy.
+                            if (n.noise && n.noise._src) try { n.noise._src.disconnect(); } catch (e) {}
+                            try { n.filter.disconnect(); } catch (e) {}
+                            if (n.panner) try { n.panner.disconnect(); } catch (e) {}
+                            try { n.gain.disconnect(); } catch (e) {}
+                            delete this.thrustNodes[id];
+                        }
+                    }, 160);
+                }
             }
             return;
+        }
+
+        if (this.thrustNodes[id]) {
+            // Invalidate any pending delayed stop from a recent key release.
+            const n = this.thrustNodes[id];
+            n.active = true;
+            if (n.stopping) {
+                n.stopping = false;
+                n.stopSeq = (n.stopSeq || 0) + 1;
+                if (n.stopTimer) {
+                    clearTimeout(n.stopTimer);
+                    n.stopTimer = null;
+                }
+            }
         }
 
         if (!this.thrustNodes[id]) {
@@ -1280,7 +1301,20 @@ class GameSFX {
 
             osc.start(t);
 
-            this.thrustNodes[id] = { osc, noise, gain, panner, filter, lastX: x, lastY: y, lastZ: z };
+            this.thrustNodes[id] = {
+                osc,
+                noise,
+                gain,
+                panner,
+                filter,
+                lastX: x,
+                lastY: y,
+                lastZ: z,
+                active: true,
+                stopSeq: 0,
+                stopping: false,
+                stopTimer: null
+            };
         }
 
         const n = this.thrustNodes[id];

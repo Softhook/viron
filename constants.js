@@ -213,6 +213,7 @@ function updateTimeOfDay(stepIndex) {
 // --- Infection spread parameters ---
 const MAX_INF = 2000;   // Total infected tile count that triggers game over
 const INF_RATE = 0.01;   // Per-tile per-update probability of spreading to a neighbour
+const YELLOW_INF_RATE = 0.04; // 4x faster than normal virus (virulent yellow virus)
 const RAPID_INF_RATE = 0.8; // Accelerated spread rate during game over
 const CLEAR_R = 3;      // Radius (in tiles) cleared by a single bullet/missile impact
 const TANK_SHELL_CLEAR_R = 7; // Radius (in tiles) cleared by a tank shell impact
@@ -394,14 +395,15 @@ class TileManager {
   /**
    * Adds a tile.
    * @param {number} k  Numeric tile key from tileKey().
+   * @param {string} [type='normal']  Virus or barrier type.
    * @returns {object|null} the newly added tile object, or null if it already existed.
    */
-  add(k) {
+  add(k, type = 'normal') {
     if (this === infection && typeof barrierTiles !== 'undefined' && barrierTiles.has(k)) return null;
     if (this.tiles.has(k)) return null;
     const tx = Math.floor(k / 20001) - 10000;
     const tz = (k % 20001) - 10000;
-    const obj = { k, tx, tz, verts: null, _idx: this.keyList.length };
+    const obj = { k, tx, tz, type, verts: null, _idx: this.keyList.length };
     this.tiles.set(k, obj);
     this.count++;
     this.keyList.push(obj);

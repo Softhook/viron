@@ -52,7 +52,8 @@ class EnemyManager {
       hunter: [40, 255, 40],
       squid: [100, 100, 150],
       scorpion: [20, 180, 120],
-      colossus: [255, 60, 20]
+      colossus: [255, 60, 20],
+      yellowCrab: [255, 255, 0]
     };
     return ENEMY_COLORS[type] || [220, 30, 30];  // Default: seeder red
   }
@@ -83,7 +84,10 @@ class EnemyManager {
       else if (r < 0.57) type = 'fighter';
       else if (r < 0.72) type = 'bomber';
       else if (r < 0.84) type = 'crab';
-      else if (r < 0.90) type = 'hunter';
+      else if (r < 0.90) {
+        if (level >= 4 && r < 0.87) type = 'yellowCrab'; // Steal 3% from hunters for yellow crab
+        else type = 'hunter';
+      }
       else if (r < 0.96) type = 'squid';
       else type = 'scorpion';
     }
@@ -100,7 +104,7 @@ class EnemyManager {
       ex = random(-4000, 4000);
       ez = random(-4000, 4000);
       ey = random(-300, -800);
-      if (type === 'crab' || type === 'scorpion') {
+      if (type === 'crab' || type === 'scorpion' || type === 'yellowCrab') {
         // Ground-hugging enemies spawn ON the ground surface rather than at altitude
         ey = terrain.getAltitude(ex, ez) - 10;
       }
@@ -149,6 +153,7 @@ class EnemyManager {
       else if (e.type === 'squid') this.updateSquid(e, alivePlayers, refShip);
       else if (e.type === 'scorpion') this.updateScorpion(e, alivePlayers, refShip);
       else if (e.type === 'colossus') this.updateColossus(e, alivePlayers, refShip);
+      else if (e.type === 'yellowCrab') this.updateYellowCrab(e, alivePlayers, refShip);
       else this.updateSeeder(e, refShip);
     }
   }
@@ -194,42 +199,56 @@ class EnemyManager {
    * @param {object}   refShip      Fallback target ship.
    */
   updateCrab(e, alivePlayers, refShip) {
+    this._updateCrabAI(e, alivePlayers, refShip, 1.2, 0.02, 'normal', 1.0);
+  }
+
+  /**
+   * Yellow Crab AI: similar to Crab but spreads the faster-growing Yellow Virus.
+   */
+  updateYellowCrab(e, alivePlayers, refShip) {
+    this._updateCrabAI(e, alivePlayers, refShip, 1.5, 0.04, 'green', 2.0);
+  }
+
+  /**
+   * Shared logic for ground-hugging crab enemies.
+   * @param {object} e            Enemy state.
+   * @param {object[]} alivePlayers Alive ships.
+   * @param {object} refShip      Fallback.
+   * @param {number} speed        Movement speed factor.
+   * @param {number} infProb      Probability of tile infection per frame.
+   * @param {string} infType      Type of virus to spread ('normal' or 'green' [yellow virus]).
+   * @param {number} pulseScale   Visual pulse feedback intensity.
+   */
+  _updateCrabAI(e, alivePlayers, refShip, speed, infProb, infType, pulseScale) {
     let target = findNearest(alivePlayers, e.x, e.y, e.z);
     let tShip = target || refShip;
 
     let dx = tShip.x - e.x, dz = tShip.z - e.z;
     let d = mag2(dx, dz);
     if (d > 0) {
-      // Slow lerped steering gives the crab a clumsy, deliberate gait
-      e.vx = lerp(e.vx || 0, (dx / d) * 1.2, 0.05);
-      e.vz = lerp(e.vz || 0, (dz / d) * 1.2, 0.05);
+      e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.05);
+      e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.05);
     }
 
     e.x += e.vx; e.z += e.vz;
 
-    // Snap Y to the ground surface minus a small offset so the crab appears to crawl
     const gyC = terrain.getAltitude(e.x, e.z);
     e.y = gyC - 10;
 
     e.fireTimer++;
     if (d < 1500 && e.fireTimer > 180) {
       e.fireTimer = 0;
-      // Shoot a fast upward projectile toward the player
-      // longer-lived shot so crab bullets can travel much farther
       particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -12, vz: 0, life: 1000 });
       if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab', e.x, e.y - 10, e.z);
     }
 
-    // Random ground infection
-    if (random() < 0.02) {
+    if (random() < infProb) {
       if (!aboveSea(gyC)) {
         let tx = toTile(e.x), tz = toTile(e.z);
         let k = tileKey(tx, tz);
-        if (infection.add(k)) {
-          if (isLaunchpad(e.x, e.z)) {
-            maybePlayLaunchpadAlarm();
-          }
-          terrain.addPulse(e.x, e.z, 1.0);  // Blue crab-type pulse ring
+        if (infection.add(k, infType)) {
+          if (isLaunchpad(e.x, e.z)) maybePlayLaunchpadAlarm();
+          terrain.addPulse(e.x, e.z, pulseScale);
         }
       }
     }
@@ -652,21 +671,24 @@ class EnemyManager {
       let localCullSq = (e.type === 'colossus') ? (CULL_DIST * 1.5) ** 2 : cullSq;
       if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > localCullSq) continue;
 
-      const isBoxEnemy = (e.type === 'crab' || e.type === 'scorpion' ||
-        e.type === 'squid' || e.type === 'colossus');
-      if (!isBoxEnemy) continue;
-
-      push(); translate(e.x, e.y, e.z);
-      if (e.type === 'crab') translate(0, -10, 0);
+      push();
+      translate(e.x, e.y, e.z);
+      if (e.type === 'crab' || e.type === 'yellowCrab') translate(0, -10, 0);
       scale(2);
 
-      if (e.type === 'crab') {
+      if (e.type === 'crab' || e.type === 'yellowCrab') {
         let yaw = atan2(e.vx || 0, e.vz || 0);
         rotateY(yaw);
         noStroke();
-        const ccR = 200, ccG = 80, ccB = 20;
-        const ccDR = 150, ccDG = 40, ccDB = 10;
+        const isYellow = e.type === 'yellowCrab';
+        const ccR = isYellow ? 255 : 200, ccG = isYellow ? 255 : 80, ccB = isYellow ? 0 : 20;
+        const ccDR = isYellow ? 100 : 150, ccDG = isYellow ? 100 : 40, ccDB = isYellow ? 0 : 10;
         fill(ccR, ccG, ccB);
+        if (isYellow) {
+          // Luminous glow for yellow crab
+          let glow = sin(frameCount * 0.1) * 30 + 30;
+          fill(Math.min(255, ccR + glow), Math.min(255, ccG + glow), ccB);
+        }
         push(); box(36, 16, 30); pop();
         push(); translate(0, -8, 0); box(24, 8, 20); pop();
         push();
@@ -693,6 +715,10 @@ class EnemyManager {
           }
         }
         fill(ccR, ccG, ccB);
+        if (isYellow) {
+          let glow = sin(frameCount * 0.1) * 30 + 30;
+          fill(Math.min(255, ccR + glow), Math.min(255, ccG + glow), ccB);
+        }
         for (let side = -1; side <= 1; side += 2) {
           let pincerLift = sin(frameCount * 0.1 + e.id) * 0.1;
           push();
@@ -1054,7 +1080,7 @@ class EnemyManager {
       else if (e.type === 'hunter') { sw = 80; sh = 48; }
       else if (e.type === 'squid') { sw = 110; sh = 72; }
       else if (e.type === 'seeder') { sw = 68; sh = 50; }
-      if (e.type !== 'crab' && e.type !== 'scorpion') {
+      if (e.type !== 'crab' && e.type !== 'scorpion' && e.type !== 'yellowCrab') {
         drawShadow(e.x, gy, e.z, sw, sh, casterH);
       }
     }

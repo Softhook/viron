@@ -982,57 +982,63 @@ function spreadInfection() {
   }
 
   let infObjects = infection.keys();
-  // Probabilistic spread to one random orthogonal neighbour per infected tile.
-  let freshSet = new Set();
-  const currentRate = isGameOver ? RAPID_INF_RATE : INF_RATE;
+  // Use a Map to ensure unique infections per frame (Set of objects doesn't deduplicate by property).
+  let freshMap = new Map();
+  const normalRate = isGameOver ? RAPID_INF_RATE : INF_RATE;
+  const yellowRate = isGameOver ? RAPID_INF_RATE : YELLOW_INF_RATE;
+
   for (let i = 0; i < infObjects.length; i++) {
+    let t = infObjects[i];
+    const currentRate = (t.type === 'green') ? yellowRate : normalRate;
     if (random() > currentRate) continue;
 
-    let t = infObjects[i];
     let d = ORTHO_DIRS[floor(random(4))];
     let nx = t.tx + d[0], nz = t.tz + d[1], nk = tileKey(nx, nz);
     let wx = nx * TILE, wz = nz * TILE;
     if (aboveSea(terrain.getAltitude(wx, wz)) || infection.has(nk)) continue;
-    freshSet.add(nk);
+    // New infection inherits the type of its parent
+    freshMap.set(nk, t.type);
   }
 
   // Commit all new infections after the loop (avoid modifying while iterating)
   // Accelerated spread from infected sentinels — virus grows very fast around them
-  // LATERIAL OPT: Use the pre-filtered sentinel list.
   for (let b of sentinelBuildings) {
     let stx = toTile(b.x), stz = toTile(b.z);
-    if (!infection.has(tileKey(stx, stz))) continue;  // Only when this sentinel is infected
-    // Blast outward in a ~5-tile radius circle with high per-tile probability
+    let sInf = infection.get(tileKey(stx, stz));
+    if (!sInf) continue;  // Only when this sentinel is infected
+    const sType = sInf.type;
     for (let ddx = -SENTINEL_INFECTION_RADIUS; ddx <= SENTINEL_INFECTION_RADIUS; ddx++) {
       for (let ddz = -SENTINEL_INFECTION_RADIUS; ddz <= SENTINEL_INFECTION_RADIUS; ddz++) {
-        if (ddx * ddx + ddz * ddz > SENTINEL_INFECTION_RADIUS * SENTINEL_INFECTION_RADIUS) continue;  // Circle shape
+        if (ddx * ddx + ddz * ddz > SENTINEL_INFECTION_RADIUS * SENTINEL_INFECTION_RADIUS) continue;
         if (random() > SENTINEL_INFECTION_PROBABILITY) continue;
         let nx = stx + ddx, nz = stz + ddz;
         let nk = tileKey(nx, nz);
         let wx = nx * TILE, wz = nz * TILE;
         if (!aboveSea(terrain.getAltitude(wx, wz)) && !infection.has(nk)) {
-          freshSet.add(nk);
+          freshMap.set(nk, sType);
         }
       }
     }
   }
 
   let soundCount = 0;
-  for (let nk of freshSet) {
+  for (let [nk, nType] of freshMap) {
     // Barrier blocking: immune tiles stop infection spread
     if (barrierTiles.has(nk)) continue;
 
-    const o = infection.add(nk);
-    if (!o) continue;  // already present (e.g. added by both spread and sentinel in same step)
+    const o = infection.add(nk, nType);
+    if (!o) continue;
     let wx = o.tx * TILE, wz = o.tz * TILE;
     // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
     if (typeof gameSFX !== 'undefined' && soundCount < 3) {
       gameSFX.playInfectionSpread(wx, terrain.getAltitude(wx, wz), wz);
       soundCount++;
     }
+    // Launchpad alarm and pulse
     if (isLaunchpad(wx, wz)) {
       maybePlayLaunchpadAlarm();
     }
+    // Note: pulses are only added when enemies seed infection, not during natural spread
   }
 
   if (profiler) profiler.recordSpread(performance.now() - spreadStart);

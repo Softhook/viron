@@ -22,6 +22,12 @@ const TERRAIN_PALETTE = {
   barrier: [
     [245, 247, 255],  // Pearl base
     [235, 235, 240]   // Subtle parity shift
+  ],
+  // Yellow Viron (Yellow/Dark/Luminous) - Virulent Virus
+  yellowViron: [
+    [255, 255, 0],     // Yellow index 0
+    [60, 60, 0],       // Dark index 1
+    [255, 255, 100]    // Scan index 2
   ]
 };
 
@@ -35,6 +41,7 @@ const TERRAIN_PALETTE_FLAT = (() => {
   for (let c of p.shore) arr.push(...c);
   for (let c of p.viron) arr.push(...c);
   for (let c of p.barrier) arr.push(...c);
+  for (let c of p.yellowViron) arr.push(...c);
   return arr.map(v => v / 255.0);
 })();
 
@@ -96,7 +103,7 @@ uniform vec2 uFogDist;
 // Steady sentinel glows: xy = world position, z = glow radius, w = 1.0 if active
 uniform vec4 uSentinelGlows[2];
 // uPalette: array of vec3 colors for dynamic re-coloring
-uniform vec3 uPalette[14];
+uniform vec3 uPalette[17];
 uniform float uTileSize;
 uniform vec3 uFogColor;
 // Terrain-local lighting uniforms (used while p5 built-in lights are disabled).
@@ -124,6 +131,21 @@ void main() {
     vec3 cScan   = uPalette[11] * parity; 
     baseColor = mix(cDark, cRed, pulse);
     baseColor += cScan * scan * 1.5;      
+    baseColor *= af;
+  } else if (mat >= 14 && mat <= 15) {
+    // ── Green Viron (Mat 14=Even, 15=Odd) ─────────────────────────────
+    float xP = vWorldPos.x / uTileSize;
+    float zP = vWorldPos.z / uTileSize;
+    float pulse = sin(uTime * 4.8 + xP * 0.08 + zP * 0.08) * 0.5 + 0.5; // Faster pulse
+    float scanPos = uTime / 8.0; // Faster scan
+    float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
+    float af = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3); // Brighter
+    float parity = (mat == 14) ? 1.0 : 0.75;
+    vec3 gGreen = uPalette[14] * parity;
+    vec3 gDark  = uPalette[15] * parity;
+    vec3 gScan  = uPalette[16] * parity; 
+    baseColor = mix(gDark, gGreen, pulse);
+    baseColor += gScan * scan * 2.0; // More intense scan
     baseColor *= af;
   } else if (mat >= 20 && mat <= 21) {
     // ── Barrier (Mat 20=Even, 21=Odd) ────────────────────────────────
@@ -1004,94 +1026,101 @@ class Terrain {
   // ---------------------------------------------------------------------------
 
   /**
-   * Renders a set of tile overlay quads (infection or barrier) using the
-   * currently bound terrain shader.  All visible tiles are sorted into two
-   * parity buckets so each parity is drawn in a single beginShape/endShape
-   * pass, avoiding per-tile GPU flushes.
+   * Renders sets of tile overlay quads using the currently bound terrain shader.
    *
-   * @param {Iterable} tiles   Iterable yielding {tx, tz, verts} tile objects.
-   *                           `verts` is lazily populated here when null.
-   * @param {number} matEven   Material ID (R channel) for even-parity tiles.
-   * @param {number} matOdd    Material ID for odd-parity tiles.
-   * @param {number} yOffset   Y offset applied to each vertex corner altitude.
-   * @param {object} cam       Camera descriptor from getCameraParams().
-   * @param {number} fovSlope  FOV slope for lateral frustum culling.
-   * @param {number} minTx     Tile-space view bound (min X).
-   * @param {number} maxTx     Tile-space view bound (max X).
-   * @param {number} minTz     Tile-space view bound (min Z).
-   * @param {number} maxTz     Tile-space view bound (max Z).
-   * @param {string} tag       Profiler tag to label this overlay batch.
+   * @param {object}   manager     TileManager instance (infection or barrierTiles).
+   * @param {object}   typeConfigs Mapping of type names to [matEven, matOdd] ID pairs.
+   * @param {number}   yOffset     Y offset applied to each vertex corner altitude.
+   * @param {object}   cam         Camera descriptor.
+   * @param {number}   fovSlope    FOV slope for lateral frustum culling.
+   * @param {number}   minTx       Tile-space view bound (min X).
+   * @param {number}   maxTx       Tile-space view bound (max X).
+   * @param {number}   minTz       Tile-space view bound (min Z).
+   * @param {number}   maxTz       Tile-space view bound (max Z).
+   * @param {string}   tag         Profiler tag.
+   * @param {number}   [minCx]     Chunk-space min X (optional for bucketed iteration).
+   * @param {number}   [maxCx]     Chunk-space max X.
+   * @param {number}   [minCz]     Chunk-space min Z.
+   * @param {number}   [maxCz]     Chunk-space max Z.
    */
-  _drawTileOverlays(tiles, matEven, matOdd, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz, tag) {
+  _drawTileOverlays(manager, typeConfigs, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz, tag, minCx, maxCx, minCz, maxCz) {
     const profiler = getVironProfiler();
     const overlayStart = profiler ? performance.now() : 0;
+
+    if (!this._buckets) this._buckets = {};
+    for (const k in this._buckets) this._buckets[k].length = 0;
+
     let overlayCount = 0;
 
-    // Use pre-allocated Float32Arrays to avoid per-frame GC churn.
-    const b0 = this._overlayBuffer0;
-    const b1 = this._overlayBuffer1;
-    let i0 = 0, i1 = 0;
-
-    for (const t of tiles) {
-      if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) continue;
+    const processTile = (t) => {
+      if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) return;
 
       const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
       const tdx = tcx - cam.x, tdz = tcz - cam.z;
       if (!cam.skipFrustum) {
         const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
-        if (tFwd < -TILE * 2) continue;
-        if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) continue;
+        if (tFwd < -TILE * 2) return;
+        if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) return;
       }
+
+      const type = t.type || 'default';
+      const parity = (t.tx + t.tz) % 2 === 0 ? 0 : 1;
+      const config = typeConfigs[type] || typeConfigs['default'];
+      if (!config) return;
+
+      const matId = (parity === 0) ? config[0] : config[1];
+      if (!this._buckets[matId]) this._buckets[matId] = [];
+      this._buckets[matId].push(t);
 
       if (!t.verts) {
         const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
-        // Compute the four grid corners once — avoids the 2 duplicate calls in the
-        // original plain-array version.  Stored as Float32Array so Float32Array.set()
-        // below can use a fast typed-array memcpy instead of element-wise coercion.
         const y00 = this.getGridAltitude(t.tx, t.tz) + yOffset;
         const y10 = this.getGridAltitude(t.tx + 1, t.tz) + yOffset;
         const y01 = this.getGridAltitude(t.tx, t.tz + 1) + yOffset;
         const y11 = this.getGridAltitude(t.tx + 1, t.tz + 1) + yOffset;
         t.verts = new Float32Array([
-          xP, y00, zP,
-          xP1, y10, zP,
-          xP, y01, zP1,
-          xP1, y10, zP,   // shares corner (tx+1, tz) with vertex 1
-          xP1, y11, zP1,
-          xP, y01, zP1   // shares corner (tx, tz+1) with vertex 2
+          xP, y00, zP, xP1, y10, zP, xP, y01, zP1,
+          xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1
         ]);
       }
-
       overlayCount++;
-      if (((t.tx + t.tz) % 2 === 0)) {
-        b0.set(t.verts, i0);
-        i0 += 18;
-      } else {
-        b1.set(t.verts, i1);
-        i1 += 18;
+    };
+
+    if (manager.buckets && minCx !== undefined) {
+      for (let cz = minCz; cz <= maxCz; cz++) {
+        for (let cx = minCx; cx <= maxCx; cx++) {
+          const arr = manager.buckets.get(`${cx},${cz}`);
+          if (arr) {
+            for (let i = 0; i < arr.length; i++) processTile(arr[i]);
+          }
+        }
       }
+    } else {
+      const list = manager.keyList || manager.values();
+      for (let i = 0; i < list.length; i++) processTile(list[i]);
     }
 
     const _gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
-    if (_gl && i0 + i1 > 0) {
+    if (_gl && overlayCount > 0) {
       _gl.enable(_gl.POLYGON_OFFSET_FILL);
       _gl.polygonOffset(-1.0, -2.0);
     }
-    if (i0 > 0) {
-      fill(matEven, 0, 0, 255);
+
+    for (const matId in this._buckets) {
+      const tileList = this._buckets[matId];
+      if (tileList.length === 0) continue;
+
+      fill(parseInt(matId), 0, 0, 255);
       beginShape(TRIANGLES);
       normal(0, 1, 0);
-      for (let i = 0; i < i0; i += 3) vertex(b0[i], b0[i + 1], b0[i + 2]);
+      for (let i = 0; i < tileList.length; i++) {
+        const v = tileList[i].verts;
+        for (let j = 0; j < 18; j += 3) vertex(v[j], v[j + 1], v[j + 2]);
+      }
       endShape();
     }
-    if (i1 > 0) {
-      fill(matOdd, 0, 0, 255);
-      beginShape(TRIANGLES);
-      normal(0, 1, 0);
-      for (let i = 0; i < i1; i += 3) vertex(b1[i], b1[i + 1], b1[i + 2]);
-      endShape();
-    }
-    if (_gl && i0 + i1 > 0) {
+
+    if (_gl && overlayCount > 0) {
       _gl.disable(_gl.POLYGON_OFFSET_FILL);
     }
     if (profiler && tag) {
@@ -1189,20 +1218,11 @@ class Terrain {
     // Build Viron tile overlays for the full visible tile range.
     // All infection tiles that pass normal view/frustum tests remain drawable.
     if (infection.count > 0) {
-      const _iBuckets = infection.buckets;
-      const _infSource = _iBuckets
-        ? (function* (b, x0, x1, z0, z1) {
-          for (let cz = z0; cz <= z1; cz++) {
-            for (let cx = x0; cx <= x1; cx++) {
-              const arr = b.get(`${cx},${cz}`);
-              if (arr) yield* arr;
-            }
-          }
-        })(infection.buckets, minCx, maxCx, minCz, maxCz)
-        : infection.keys();
       this._drawTileOverlays(
-        _infSource, 10, 11, -0.5,
-        cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection'
+        infection,
+        { normal: [10, 11], green: [14, 15] },
+        -0.5, cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection',
+        minCx, maxCx, minCz, maxCz
       );
     }
 
@@ -1219,20 +1239,11 @@ class Terrain {
     // overlap the current view rectangle instead of the entire global tile list.
     // Cost becomes O(visible tiles) regardless of total barrier count.
     if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
-      const _bBuckets = barrierTiles.buckets;
-      const _barrierSource = _bBuckets
-        ? (function* (b, x0, x1, z0, z1) {
-          for (let cz = z0; cz <= z1; cz++) {
-            for (let cx = x0; cx <= x1; cx++) {
-              const arr = b.get(`${cx},${cz}`);
-              if (arr) yield* arr;
-            }
-          }
-        })(barrierTiles.buckets, minCx, maxCx, minCz, maxCz)
-        : barrierTiles.values();
       this._drawTileOverlays(
-        _barrierSource, 20, 21, -0.3,
-        cam, fovSlope, minTx, maxTx, minTz, maxTz, 'barrier'
+        barrierTiles,
+        { default: [20, 21] },
+        -0.3, cam, fovSlope, minTx, maxTx, minTz, maxTz, 'barrier',
+        minCx, maxCx, minCz, maxCz
       );
     }
 

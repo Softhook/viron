@@ -617,6 +617,7 @@ function drawShipPreview(designIdx, tintColor) {
  * @param {number} h   Viewport height in pixels.
  */
 function drawPlayerHUD(p, pi, viewW, viewH) {
+  if (viewW <= 0 || viewH <= 0) return;
   let hw = viewW, h = viewH;
   let s = p.ship;
 

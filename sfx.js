@@ -309,13 +309,13 @@ class GameSFX {
     // Returns { entry, nodes } where entry is what sound sources connect to, and nodes
     // is the full list of created nodes to pass to _cleanupNodes.
     _buildManualChain(x, y, z, t, finalTarget) {
-        if (typeof players === 'undefined' || players.length === 0) return null;
+        if (typeof gameState === 'undefined' || gameState.players.length === 0) return null;
 
         let minDistSq = Infinity;
         let closestIdx = -1;
-        const numPlayers = players.length;
+        const numPlayers = gameState.players.length;
         for (let i = 0; i < numPlayers; i++) {
-            const p = players[i];
+            const p = gameState.players[i];
             if (p.dead || !p.ship) continue;
             const dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
             if (dSq < minDistSq) { minDistSq = dSq; closestIdx = i; }
@@ -1325,10 +1325,10 @@ class GameSFX {
         // Manual attenuation for engines in split-screen mode
         if (x !== undefined && y !== undefined && z !== undefined) {
             let minDistSq = Infinity;
-            if (typeof players !== 'undefined' && players.length > 0) {
-                const numPlayers = players.length;
+            if (typeof gameState !== 'undefined' && gameState.players.length > 0) {
+                const numPlayers = gameState.players.length;
                 for (let i = 0; i < numPlayers; i++) {
-                    const p = players[i];
+                    const p = gameState.players[i];
                     if (p.dead || !p.ship) continue;
                     const dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
                     if (dSq < minDistSq) minDistSq = dSq;

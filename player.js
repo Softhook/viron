@@ -99,24 +99,12 @@ function spawnProjectile(s, power, life) {
   let fy = sp;
   let fz = -cp * cy;
 
-  // Barrel offset: 30 units forward. Ground vehicles have guns on top (negative ly), 
+  // Barrel offset: 30 units forward. Ground vehicles have guns on top (negative ly),
   // while aircraft typically have them slightly below center (positive ly).
-  let designIdx = (typeof players !== 'undefined' && s.designIdx !== undefined) ? s.designIdx : 0;
-  // If we can't find it directly on 's', we don't have enough info here, but player.js 
-  // fireActiveWeapon passes p.designIndex which isn't in spawnProjectile's 's'.
-  // However, we can detect if it's a ground vehicle from the design context if we had it.
-
-  // Actually, let's just use a reasonable default that works for both or check if y is very low.
+  // Ship objects don't carry a designIdx; use terrain proximity as a heuristic
+  // for ground-vehicle detection instead (Ironclad Tank uses fireTankShell, so
+  // only Jeep and Hovercraft reach this path).
   let lz = -30, ly = 10;
-
-  // Heuristic: if y is close to terrain, it's probably a ground vehicle.
-  // Better: fireActiveWeapon can pass the design info. 
-  // For now, let's check if DesignIndex is available in p.
-  // Wait, spawnProjectile is called from fireNormalPattern(p, s). 
-  // I'll update fireNormalPattern to pass design info if needed, or just hardcode for ground vehicles.
-
-  // NOTE: Ironclad Tank uses its own fireTankShell, so we only care about Jeep and Hovercraft here.
-  // Let's check ground altitude as a proxy.
   if (terrain && s.y > terrain.getAltitude(s.x, s.z) - 30) {
     ly = -14; // Spawn from the top for ground vehicles
     lz = -40; // And a bit further forward

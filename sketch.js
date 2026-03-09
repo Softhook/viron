@@ -1061,7 +1061,7 @@ function _damageColossus(p, j, dmg, flashDur, hitScore, killBonus) {
 }
 
 /**
- * Handles player bullets/missiles/shells hitting infected procedural trees.
+ * Handles player bullets and tank shells hitting infected procedural trees.
  * @param {object} p  Player state.
  */
 function _checkProjectilesVsTrees(p) {
@@ -1147,7 +1147,7 @@ function checkCollisions(p) {
     let killed = false;
 
     // Player bullets vs enemy
-    // Colossus: bullets do 1 HP damage and survive (they pass through), large hit radius
+    // Colossus: bullets deal 1 HP damage and are consumed on hit, large hit radius
     // Other enemies: one bullet kills
     for (let i = p.bullets.length - 1; i >= 0; i--) {
       let b = p.bullets[i];

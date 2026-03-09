@@ -72,7 +72,8 @@ for (let i = 0; i < 256; i++) {
 }
 
 /**
- * Computes the RGB colour for a soft (non-explosion) particle at age fraction t.
+ * Computes the RGB colour for a soft (non-explosion) particle at normalised age `t`
+ * and writes the result into the shared `_softColorBuf` to avoid per-call allocation.
  *
  * Three colour models:
  *   • Fog / ink particles (p.isFog + p.color): fade toward a near-black haze.
@@ -82,8 +83,11 @@ for (let i = 0; i < 256; i++) {
  *
  * @param {object} p  Particle state object.
  * @param {number} t  Age fraction in [0, 1] (0 = fresh, 1 = expired).
- * @returns {number[]} [r, g, b] in 0–255.
+ * @returns {number[]}  The shared `_softColorBuf` [r, g, b] — valid until next call.
  */
+// Shared buffer — avoids a per-particle heap allocation inside the render loop.
+// Safe because _calcSoftParticleColor is called non-reentrantly once per particle.
+const _softColorBuf = [0, 0, 0];
 function _calcSoftParticleColor(p, t) {
   let r, g, b;
   if (p.isFog && p.color) {
@@ -117,7 +121,8 @@ function _calcSoftParticleColor(p, t) {
       let f = (t - 0.6) / 0.4; r = lerp(vr * 0.4, 15, f); g = lerp(vg * 0.4, 15, f); b = lerp(vb * 0.4, 15, f);
     }
   }
-  return [r, g, b];
+  _softColorBuf[0] = r; _softColorBuf[1] = g; _softColorBuf[2] = b;
+  return _softColorBuf;
 }
 
 class ParticleSystem {

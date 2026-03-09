@@ -15,6 +15,9 @@
 // Spawn helpers
 // ---------------------------------------------------------------------------
 
+/** Fallback ship-design object used when the player's designIndex has no entry in SHIP_DESIGNS. */
+const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };
+
 /**
  * Returns the world-space X spawn position for a given player.
  * In single-player mode both players share the centre (420); in two-player
@@ -615,6 +618,314 @@ function shipDisplay(s, tintColor) {
 }
 
 // ---------------------------------------------------------------------------
+// Input and physics update — helper functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies mouse-look steering and aim assist for player 1 (pointer-lock path).
+ * Mutates p.ship.yaw, p.ship.pitch and p.aimTarget.
+ * @param {object} p  Player state.
+ */
+function _applyMouseSteering(p) {
+  if (p.id !== 0 || isMobile || !document.pointerLockElement) return;
+
+  smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
+  smoothedMY = lerp(smoothedMY, movedY, MOUSE_SMOOTHING);
+
+  let newYaw = p.ship.yaw - smoothedMX * MOUSE_SENSITIVITY;
+  // Pitch polarity: behind-ship → mouse-down = nose up; first-person → nose down.
+  let pitchSign = (typeof firstPersonView !== 'undefined' && firstPersonView) ? 1 : -1;
+  let newPitch = p.ship.pitch + pitchSign * smoothedMY * MOUSE_SENSITIVITY;
+
+  if (aimAssist.enabled) {
+    let assist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
+    newYaw += assist.yawDelta;
+    newPitch += assist.pitchDelta;
+    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
+    p.aimTarget = aimAssist.lastTracking.target;
+  }
+  p.ship.yaw = newYaw;
+  p.ship.pitch = constrain(newPitch, -PI / 2.2, PI / 2.2);
+}
+
+/**
+ * Merges mobile joystick / button state into the running isThrusting / isShooting
+ * flags, fires one-shot weapons (missiles, barrier), and applies aim-assist deltas
+ * from the mobile path.
+ * @param {object}  p           Player state.
+ * @param {boolean} isThrusting Current thrust state from keyboard/mouse.
+ * @param {boolean} isShooting  Current shoot state from keyboard/mouse.
+ * @returns {{isThrusting: boolean, isShooting: boolean}}  Updated flags.
+ */
+function _applyMobileInputs(p, isThrusting, isShooting) {
+  if (!isMobile || p.id !== 0 || typeof mobileController === 'undefined') {
+    return { isThrusting, isShooting };
+  }
+
+  let inputs = mobileController.getInputs(p.ship, enemyManager.enemies, YAW_RATE, PITCH_RATE);
+  isThrusting = isThrusting || inputs.thrust;
+  isShooting = isShooting || inputs.shoot;
+
+  // Edge-detect missile button (fires once per tap)
+  if (inputs.missile && !p.mobileMissilePressed) {
+    fireMissile(p);
+    p.mobileMissilePressed = true;
+  } else if (!inputs.missile) {
+    p.mobileMissilePressed = false;
+  }
+
+  // Barrier fires continuously while held (same 6-frame cadence as normal bullets)
+  if (inputs.barrier && frameCount % 6 === 0) fireBarrier(p);
+
+  p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
+  p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
+  p.aimTarget = aimAssist.lastTracking.target;
+
+  return { isThrusting, isShooting };
+}
+
+/**
+ * Applies keyboard turn / pitch inputs and aim assist for non-mouse players.
+ * Mutates p.ship.yaw, p.ship.pitch and p.aimTarget.
+ * @param {object} p  Player state.
+ * @param {object} d  Ship design object (provides turnRate, pitchRate, mass).
+ */
+function _applyKeyboardSteering(p, d) {
+  let m = d.mass || 1.0;
+  let currentYawRate = (d.turnRate || YAW_RATE) / m;
+  let currentPitchRate = (d.pitchRate || PITCH_RATE) / m;
+  let k = p.keys;
+
+  if (keyIsDown(k.left)) p.ship.yaw += currentYawRate;
+  if (keyIsDown(k.right)) p.ship.yaw -= currentYawRate;
+  // Keyboard pitch: pitchUp always adds, pitchDown always subtracts (camera-independent).
+  if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + currentPitchRate, -PI / 2.2, PI / 2.2);
+  if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - currentPitchRate, -PI / 2.2, PI / 2.2);
+
+  // Aim assist for keyboard players (P2 always; P1 when not using mouse pointer-lock).
+  const isKeyboardPlayer = !(p.id === 0 && document.pointerLockElement);
+  if (!isMobile && aimAssist.enabled && isKeyboardPlayer) {
+    let kAssist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
+    p.ship.yaw += kAssist.yawDelta;
+    p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);
+    p.aimTarget = aimAssist.lastTracking.target;
+  }
+}
+
+/**
+ * Integrates one frame of ground-vehicle physics (suspension, friction, wall stop).
+ * @param {object}  p           Player state.
+ * @param {object}  d           Ship design object.
+ * @param {boolean} isThrusting Whether thrust is active this frame.
+ * @param {boolean} isBraking   Whether braking is active this frame.
+ * @returns {boolean}  True if the caller should return early (water boundary hit).
+ */
+function _updateGroundVehicle(p, d, isThrusting, isBraking) {
+  let s = p.ship;
+  let m = d.mass || 1.0;
+
+  s.y += s.vy;
+  let alt = terrain.getAltitude(s.x, s.z);
+  let surfaceY = d.canTravelOnWater ? Math.min(SEA, alt) : alt;
+  let groundY = surfaceY - 12;
+
+  if (s.y > groundY) {
+    // Contact with ground — clamp and handle slope kick
+    let terrainPush = groundY - (s.y - s.vy);
+    if (terrainPush < -8) {
+      // Major upward slope: small vertical kick (heavier feel at 0.18 vs original 0.35)
+      s.vy = terrainPush * (0.18 / m);
+    } else {
+      s.vy = 0;
+    }
+    s.y = groundY;
+  } else {
+    // Airborne — glue to surface unless moving fast or high enough
+    let speedSq = s.vx * s.vx + s.vz * s.vz;
+    let hoverHeight = groundY - s.y;
+    if (hoverHeight < 20 && speedSq < 45) {
+      s.y = groundY;
+      s.vy = 0;
+    } else {
+      s.vy += GRAV;
+    }
+  }
+
+  if (isThrusting) {
+    let pw = (d.thrust || 0.45) / m;
+    let dVec = shipUpDir(s, p.designIndex);
+    s.vx += dVec.x * pw;
+    s.vz += dVec.z * pw;
+    // Dust particles when near the ground
+    if (frameCount % 4 === 0 && s.y > groundY - 5) {
+      particleSystem.particles.push({
+        x: s.x, y: s.y + 10, z: s.z,
+        vx: random(-1.5, 1.5), vy: -random(1, 3), vz: random(-1.5, 1.5),
+        life: random(40, 70), decay: 4, seed: random(1), size: random(6, 12),
+        color: [140, 130, 110]
+      });
+    }
+  }
+
+  if (isBraking) {
+    let br = d.brakeRate ?? 0.94;
+    s.vx *= br; s.vz *= br;
+  }
+
+  // Higher ground friction than air drag — prevents sliding
+  let groundFriction = isThrusting ? 0.95 : 0.85;
+  s.vx *= groundFriction; s.vz *= groundFriction;
+  // Snap near-zero velocity to zero for responsive feel
+  if (Math.abs(s.vx) < 0.05) s.vx = 0;
+  if (Math.abs(s.vz) < 0.05) s.vz = 0;
+
+  s.x += s.vx; s.z += s.vz;
+
+  // Water boundary — stop instead of explode
+  if (!d.canTravelOnWater && terrain.getAltitude(s.x, s.z) >= SEA - 1) {
+    s.x -= s.vx; s.z -= s.vz;
+    s.vx = 0; s.vz = 0;
+    return true;  // Skip thrust sound and weapon fire
+  }
+  return false;
+}
+
+/**
+ * Integrates one frame of aircraft physics (gravity, aerodynamic lift, drag,
+ * terrain and sea collision).  Emits exhaust particles while thrusting.
+ * @param {object}  p           Player state.
+ * @param {object}  d           Ship design object.
+ * @param {boolean} isThrusting Whether thrust is active this frame.
+ * @param {boolean} isBraking   Whether braking is active this frame.
+ * @returns {boolean}  True if the caller should return early (player killed).
+ */
+function _updateAircraft(p, d, isThrusting, isBraking) {
+  let s = p.ship;
+  let m = d.mass || 1.0;
+
+  s.vy += GRAV;  // Gravity
+
+  // Aerodynamic lift: project velocity onto the forward axis; lift acts along the up axis
+  let cp_L = Math.cos(s.pitch), sp_L = Math.sin(s.pitch);
+  let cy_L = Math.cos(s.yaw), sy_L = Math.sin(s.yaw);
+  let fx_L = -cp_L * sy_L, fy_L = sp_L, fz_L = -cp_L * cy_L;
+  let ux_L = -sp_L * sy_L, uy_L = -cp_L, uz_L = -sp_L * cy_L;
+  let fSpd = s.vx * fx_L + s.vy * fy_L + s.vz * fz_L;
+  let currentDrag = d.drag || DRAG;
+
+  if (fSpd > 0) {
+    let liftAccel = fSpd * (d.lift ?? LIFT_FACTOR);
+    s.vx += ux_L * liftAccel;
+    s.vy += uy_L * liftAccel;
+    s.vz += uz_L * liftAccel;
+    // Induced drag: lift generation bleeds forward momentum
+    currentDrag -= (fSpd * INDUCED_DRAG * 0.01);
+  }
+
+  if (isThrusting) {
+    let pw = (d.thrust || 0.45) / m;
+    let dVec = shipUpDir(s, p.designIndex);
+    s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
+
+    // Exhaust smoke — adaptive emission rate under heavy particle load
+    const totalParticles = particleSystem.particles.length;
+    const fogLoad = particleSystem.fogCount;
+    const emitEvery = totalParticles > 700 ? 5 : (totalParticles > 500 || fogLoad > 130 ? 4 : 3);
+    if (frameCount % emitEvery === 0) {
+      let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
+      let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
+      let tLocal = (pt) => {
+        let x = pt[0], y = pt[1], z = pt[2];
+        let y1 = y * cx - z * sx;
+        let z1 = y * sx + z * cx;
+        let x2 = x * cy + z1 * sy;
+        let z2 = -x * sy + z1 * cy;
+        return { x: x2 + s.x, y: y1 + s.y, z: z2 + s.z };
+      };
+      let alpha = (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex])
+        ? (SHIP_DESIGNS[p.designIndex].thrustAngle || 0) : 0;
+      const pa = s.pitch + alpha;
+      let exDir = {
+        x: Math.sin(pa) * Math.sin(s.yaw),
+        y: Math.cos(pa),
+        z: Math.sin(pa) * Math.cos(s.yaw)
+      };
+      let engPos = (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex])
+        ? SHIP_DESIGNS[p.designIndex].draw(null)
+        : [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
+      const emitChance = totalParticles > 700 ? 0.28 : (totalParticles > 500 ? 0.42 : 0.65);
+      engPos.forEach(pos => {
+        if (random() > emitChance) return;
+        let wPos = tLocal([pos.x, pos.y, pos.z + 2]);
+        particleSystem.particles.push({
+          x: wPos.x, y: wPos.y, z: wPos.z,
+          vx: exDir.x * random(4, 7) + random(-0.8, 0.8),
+          vy: exDir.y * random(4, 7) + random(-0.8, 0.8),
+          vz: exDir.z * random(4, 7) + random(-0.8, 0.8),
+          life: random(190, 240), decay: random(4.2, 6.0), seed: random(1.0), size: random(11, 18),
+          isThrust: true,
+          color: [random(150, 195), random(150, 195), random(150, 195)]
+        });
+      });
+    }
+  }
+
+  if (isBraking) {
+    let br = d.brakeRate ?? 0.96;
+    s.vx *= br; s.vy *= br; s.vz *= br;
+  }
+
+  s.vx *= currentDrag; s.vy *= currentDrag; s.vz *= currentDrag;
+  s.x += s.vx; s.y += s.vy; s.z += s.vz;
+
+  // Sea collision — instant death
+  if (s.y > SEA - 12) {
+    killPlayer(p);
+    return true;
+  }
+
+  // Terrain collision — soft bounce or kill on hard impact
+  let g = terrain.getAltitude(s.x, s.z);
+  if (s.y > g - 12) {
+    if (s.vy > 2.8) killPlayer(p);
+    else { s.y = g - 12; s.vy = 0; s.vx *= 0.8; s.vz *= 0.8; }
+  }
+  return false;
+}
+
+/**
+ * Fires the player's currently selected weapon based on the shoot input state.
+ * Handles rate-limiting, edge-detection, and mode-specific weapon logic.
+ * @param {object}  p          Player state.
+ * @param {boolean} isShooting Whether the shoot input is active this frame.
+ */
+function _handleWeaponFire(p, isShooting) {
+  let s = p.ship;
+  if (p.weaponMode === 0) {
+    // NORMAL: rate-limited burst fire; tank shells slower than standard bullets
+    if (isShooting) {
+      let des = SHIP_DESIGNS[p.designIndex];
+      let isTank = (des && des.shotType === 'tank_shell');
+      let rate = isTank ? 15 : 6;
+      if (frameCount % rate === 0) {
+        if (isTank) fireTankShell(p);
+        else fireNormalPattern(p, s);
+      }
+    }
+    p.shootHeld = isShooting;
+  } else if (p.weaponMode === 1) {
+    // MISSILE: edge-detect — fires once per press
+    if (isShooting && !p.shootHeld) fireMissile(p);
+    p.shootHeld = isShooting;
+  } else if (p.weaponMode === 2) {
+    // BARRIER: auto-repeat at the same 6-frame cadence as normal bullets
+    if (isShooting && frameCount % 6 === 0) fireBarrier(p);
+    // Track shootHeld so switching modes resets missile edge-detection
+    p.shootHeld = isShooting;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Input and physics update
 // ---------------------------------------------------------------------------
 
@@ -641,302 +952,34 @@ function updateShipInput(p) {
   // Reset each frame so stale enemy references never persist across frames.
   p.aimTarget = null;
 
-  // --- Mouse steering (pointer-lock, desktop P1 only) ---
-  if (p.id === 0 && !isMobile && document.pointerLockElement) {
-    smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
-    smoothedMY = lerp(smoothedMY, movedY, MOUSE_SMOOTHING);
+  const d = SHIP_DESIGNS[p.designIndex] || DEFAULT_SHIP_DESIGN;
 
-    let newYaw = p.ship.yaw - smoothedMX * MOUSE_SENSITIVITY;
-    // Pitch polarity depends on camera mode:
-    //   behind-ship (default): mouse-down = nose up (original behaviour) → subtract
-    //   first-person:          mouse-down = nose down                     → add
-    let pitchSign = (typeof firstPersonView !== 'undefined' && firstPersonView) ? 1 : -1;
-    let newPitch = p.ship.pitch + pitchSign * smoothedMY * MOUSE_SENSITIVITY;
-
-    // Apply aim assist if enabled
-    if (aimAssist.enabled) {
-      let assist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
-      newYaw += assist.yawDelta;
-      newPitch += assist.pitchDelta;
-      // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
-      p.aimTarget = aimAssist.lastTracking.target;
-    }
-    p.ship.yaw = newYaw;
-    p.ship.pitch = constrain(newPitch, -PI / 2.2, PI / 2.2);
-  }
+  _applyMouseSteering(p);
 
   let k = p.keys;
-
-  // Track mouse release so clicking to enter fullscreen / pointer-lock doesn't
-  // accidentally fire the gun on the first frame of gameplay.
+  // Track mouse release so clicking to enter pointer-lock doesn't accidentally fire.
   if (!leftMouseDown) mouseReleasedSinceStart = true;
 
   let isThrusting = keyIsDown(k.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
   let isBraking = keyIsDown(k.brake);
   let isShooting = keyIsDown(k.shoot) || (p.id === 0 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
 
-  // --- Mobile joystick / button input ---
-  if (isMobile && p.id === 0 && typeof mobileController !== 'undefined') {
-    let inputs = mobileController.getInputs(p.ship, enemyManager.enemies, YAW_RATE, PITCH_RATE);
+  ({ isThrusting, isShooting } = _applyMobileInputs(p, isThrusting, isShooting));
+  _applyKeyboardSteering(p, d);
 
-    isThrusting = isThrusting || inputs.thrust;
-    isShooting = isShooting || inputs.shoot;
-
-    // Edge-detect the missile button
-    if (inputs.missile && !p.mobileMissilePressed) {
-      fireMissile(p);
-      p.mobileMissilePressed = true;
-    } else if (!inputs.missile) {
-      p.mobileMissilePressed = false;
-    }
-
-    // Barrier is continuous while held, using the same 6-frame pacing as normal bullets
-    if (inputs.barrier && frameCount % 6 === 0) {
-      fireBarrier(p);
-    }
-
-    p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
-    p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
-    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
-    p.aimTarget = aimAssist.lastTracking.target;
-  }
-
-  // --- Keyboard steering ---
-  let d = SHIP_DESIGNS[p.designIndex] || { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };
-  let m = d.mass || 1.0;
-  let currentYawRate = (d.turnRate || YAW_RATE) / m;
-  let currentPitchRate = (d.pitchRate || PITCH_RATE) / m;
-
-  if (keyIsDown(k.left)) p.ship.yaw += currentYawRate;
-  if (keyIsDown(k.right)) p.ship.yaw -= currentYawRate;
-  // Keyboard pitch: original behaviour — pitchUp adds, pitchDown subtracts, regardless of camera mode.
-  if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + currentPitchRate, -PI / 2.2, PI / 2.2);
-  if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - currentPitchRate, -PI / 2.2, PI / 2.2);
-
-  // Aim assist for keyboard players (P2 always; P1 when not using mouse pointer-lock).
-  // Skipped for the mouse-look path (already handled above).
-  const isKeyboardPlayer = !(p.id === 0 && document.pointerLockElement);
-  if (!isMobile && aimAssist.enabled && isKeyboardPlayer) {
-    let kAssist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
-    p.ship.yaw += kAssist.yawDelta;
-    p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);
-    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
-    p.aimTarget = aimAssist.lastTracking.target;
-  }
-
-  let s = p.ship;
-
-  // --- Physics integration ---
+  // Physics: ground vehicles and aircraft use separate models
   if (d.isGroundVehicle) {
-    // GROUND VEHICLE PHYSICS: Dynamic suspension and jumping
-    s.y += s.vy;
-    let alt = terrain.getAltitude(s.x, s.z);
-    let surfaceY = d.canTravelOnWater ? Math.min(SEA, alt) : alt;
-    let groundY = surfaceY - 12;
-
-    if (s.y > groundY) {
-      // Collision/Contact with ground
-      let terrainPush = groundY - (s.y - s.vy); // Vertical displacement due to terrain slope
-      if (terrainPush < -8) {
-        // We hit a major upward slope: limited vertical kick
-        // Reduced from 0.35 to 0.18 for a much heavier, more stable feel
-        s.vy = terrainPush * (0.18 / m);
-      } else {
-        s.vy = 0;
-      }
-      s.y = groundY;
-    } else {
-      // Airborne Check: keep it 'glued' unless we have significant height OR speed
-      let speedSq = s.vx * s.vx + s.vz * s.vz;
-      let hoverHeight = groundY - s.y;
-
-      // Increased thresholds again to reduce bounciness on moderate terrain
-      if (hoverHeight < 20 && speedSq < 45) {
-        s.y = groundY;
-        s.vy = 0;
-      } else {
-        s.vy += GRAV;
-      }
-    }
-
-    // Movement
-    if (isThrusting) {
-      let pw = (d.thrust || 0.45) / m;
-      let dVec = shipUpDir(s, p.designIndex);
-      s.vx += dVec.x * pw;
-      s.vz += dVec.z * pw;
-
-      // Ground/Dust particles (Only when touching or near ground)
-      if (frameCount % 4 === 0 && s.y > groundY - 5) {
-        particleSystem.particles.push({
-          x: s.x, y: s.y + 10, z: s.z,
-          vx: random(-1.5, 1.5), vy: -random(1, 3), vz: random(-1.5, 1.5),
-          life: random(40, 70), decay: 4, seed: random(1), size: random(6, 12),
-          color: [140, 130, 110]
-        });
-      }
-    }
-
-    if (isBraking) {
-      let br = d.brakeRate ?? 0.94;
-      s.vx *= br; s.vz *= br;
-    }
-
-    // Drag (Much higher friction for ground vehicles to stop 'sliding')
-    let groundFriction = isThrusting ? 0.95 : 0.85;
-    s.vx *= groundFriction; s.vz *= groundFriction;
-
-    // Snap extremely low velocities to zero to feel responsive
-    if (Math.abs(s.vx) < 0.05) s.vx = 0;
-    if (Math.abs(s.vz) < 0.05) s.vz = 0;
-
-    s.x += s.vx; s.z += s.vz;
-
-    // Boundary check for water (Stop instead of explode)
-    let currentG = terrain.getAltitude(s.x, s.z);
-    if (!d.canTravelOnWater && currentG >= SEA - 1) {
-      s.x -= s.vx; s.z -= s.vz;
-      s.vx = 0; s.vz = 0;
-      return;
-    }
+    if (_updateGroundVehicle(p, d, isThrusting, isBraking)) return;
   } else {
-    // FLYING VEHICLE PHYSICS
-    s.vy += GRAV;  // Gravity
-
-    // --- Aerodynamic Lift ---
-    let cp_L = Math.cos(s.pitch), sp_L = Math.sin(s.pitch);
-    let cy_L = Math.cos(s.yaw), sy_L = Math.sin(s.yaw);
-    let fx_L = -cp_L * sy_L, fy_L = sp_L, fz_L = -cp_L * cy_L;
-    let ux_L = -sp_L * sy_L, uy_L = -cp_L, uz_L = -sp_L * cy_L;
-    let fSpd = s.vx * fx_L + s.vy * fy_L + s.vz * fz_L;
-
-    let currentDrag = d.drag || DRAG;
-
-    if (fSpd > 0) {
-      let liftAccel = fSpd * (d.lift ?? LIFT_FACTOR);
-      s.vx += ux_L * liftAccel;
-      s.vy += uy_L * liftAccel;
-      s.vz += uz_L * liftAccel;
-
-      // Induced Drag: Generating lift bleeds forward momentum
-      currentDrag -= (fSpd * INDUCED_DRAG * 0.01);
-    }
-
-    if (isThrusting) {
-      let pw = (d.thrust || 0.45) / m;
-      let dVec = shipUpDir(s, p.designIndex);
-      s.vx += dVec.x * pw; s.vy += dVec.y * pw; s.vz += dVec.z * pw;
-
-      // Emit fewer, softer smoke billows from twin engines
-      const totalParticles = particleSystem.particles.length;
-      const fogLoad = particleSystem.fogCount;
-      const emitEvery = totalParticles > 700 ? 5 : (totalParticles > 500 || fogLoad > 130 ? 4 : 3);
-      if (frameCount % emitEvery === 0) {
-        let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
-        let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
-        let tLocal = (pt) => {
-          let x = pt[0], y = pt[1], z = pt[2];
-          let y1 = y * cx - z * sx;
-          let z1 = y * sx + z * cx;
-          let x2 = x * cy + z1 * sy;
-          let z2 = -x * sy + z1 * cy;
-          return { x: x2 + s.x, y: y1 + s.y, z: z2 + s.z };
-        };
-
-        // Particle exhaust direction is exactly opposite of thrust force
-        let alpha = 0;
-        if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
-          alpha = SHIP_DESIGNS[p.designIndex].thrustAngle || 0;
-        }
-        const pa = s.pitch + alpha;
-        let exDir = {
-          x: Math.sin(pa) * Math.sin(s.yaw),
-          y: Math.cos(pa),
-          z: Math.sin(pa) * Math.cos(s.yaw)
-        };
-
-        // Get engine locations from the current design
-        let engPos = [];
-        if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex]) {
-          engPos = SHIP_DESIGNS[p.designIndex].draw(null);
-        } else {
-          engPos = [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
-        }
-        const emitChance = totalParticles > 700 ? 0.28 : (totalParticles > 500 ? 0.42 : 0.65);
-
-        engPos.forEach(pos => {
-          if (random() > emitChance) return; // Adaptive throttling under heavy particle load
-          let wPos = tLocal([pos.x, pos.y, pos.z + 2]); // Particle spawn slightly behind nozzle
-          particleSystem.particles.push({
-            x: wPos.x, y: wPos.y, z: wPos.z,
-            vx: exDir.x * random(4, 7) + random(-0.8, 0.8),
-            vy: exDir.y * random(4, 7) + random(-0.8, 0.8),
-            vz: exDir.z * random(4, 7) + random(-0.8, 0.8),
-            life: random(190, 240), decay: random(4.2, 6.0), seed: random(1.0), size: random(11, 18),
-            isThrust: true,
-            color: [random(150, 195), random(150, 195), random(150, 195)] // Soft grey smoke
-          });
-        });
-      }
-    }
-
-    if (isBraking) {
-      let br = d.brakeRate ?? 0.96;
-      s.vx *= br; s.vy *= br; s.vz *= br;
-    }
-
-    // Global air drag (Thinner Air Fix)
-    s.vx *= currentDrag; s.vy *= currentDrag; s.vz *= currentDrag;
-    s.x += s.vx; s.y += s.vy; s.z += s.vz;
-
-    let g = terrain.getAltitude(s.x, s.z);
-
-    // Sea collision — instant death
-    if (s.y > SEA - 12) {
-      killPlayer(p);
-      return;
-    }
-
-    // Terrain collision — bounce softly or kill on hard impact
-    if (s.y > g - 12) {
-      if (s.vy > 2.8) killPlayer(p);
-      else { s.y = g - 12; s.vy = 0; s.vx *= 0.8; s.vz *= 0.8; }
-    }
+    if (_updateAircraft(p, d, isThrusting, isBraking)) return;
   }
 
-  // Sustained thrust sound - update every frame for each player (used by both types)
+  // Sustained thrust sound (runs every frame for both vehicle types)
   if (typeof gameSFX !== 'undefined') {
-    gameSFX.setThrust(p.id, isThrusting, s.x, s.y, s.z);
+    gameSFX.setThrust(p.id, isThrusting, p.ship.x, p.ship.y, p.ship.z);
   }
 
-  // Fire based on selected weapon mode (used by both types)
-  if (p.weaponMode === 0) {
-    // NORMAL: tank shells fire slower than bullets for balance (every 24 vs 6 frames)
-    if (isShooting) {
-      let des = SHIP_DESIGNS[p.designIndex];
-      let isTank = (des && des.shotType === 'tank_shell');
-      let rate = isTank ? 15 : 6;
-      if (frameCount % rate === 0) {
-        if (isTank) fireTankShell(p);
-        else fireNormalPattern(p, s);
-      }
-    }
-    p.shootHeld = isShooting;
-  } else if (p.weaponMode === 1) {
-    // MISSILE: edge-detect (missiles still fire only once per press)
-    if (isShooting && !p.shootHeld) fireMissile(p);
-    p.shootHeld = isShooting;
-  } else if (p.weaponMode === 2) {
-    // BARRIER: auto-repeat while held, similar cadence to normal bullets.
-    // A barrier is a heavier projectile so it doesn't need to be every frame;
-    // use the same 6-frame interval used for normal bullets.
-    if (isShooting && frameCount % 6 === 0) {
-      fireBarrier(p);
-    }
-    // we still track shootHeld so that switching away from barrier resets
-    // the edge-detection state used by missiles when the mode changes.
-    p.shootHeld = isShooting;
-  }
+  _handleWeaponFire(p, isShooting);
 }
 
 /**

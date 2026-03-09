@@ -71,6 +71,60 @@ for (let i = 0; i < 256; i++) {
   _EXPLOSION_WAVE_LUT[i] = 2000.0 * Math.pow(1.0 - i / 255, 0.6);
 }
 
+/**
+ * Computes the RGB colour for a soft (non-explosion) particle at normalised age `t`
+ * and writes the result into the shared `_softColorBuf` to avoid per-call allocation.
+ *
+ * Three colour models:
+ *   • Fog / ink particles (p.isFog + p.color): fade toward a near-black haze.
+ *   • Tinted particles (p.color): fade to dark grey; thrust exhaust is desaturated.
+ *   • Seed-coloured sparks (no p.color): rainbow-hue derived from p.seed, then cool
+ *     through bright → vivid → dim over the particle lifetime.
+ *
+ * @param {object} p  Particle state object.
+ * @param {number} t  Age fraction in [0, 1] (0 = fresh, 1 = expired).
+ * @returns {number[]}  The shared `_softColorBuf` [r, g, b] — valid until next call.
+ */
+// Shared buffer — avoids a per-particle heap allocation inside the render loop.
+// Safe because _calcSoftParticleColor is called non-reentrantly once per particle.
+const _softColorBuf = [0, 0, 0];
+function _calcSoftParticleColor(p, t) {
+  let r, g, b;
+  if (p.isFog && p.color) {
+    if (p.isInkBurst) {
+      let f = Math.min(t * 0.7, 1.0);
+      r = lerp(p.color[0], 3, f); g = lerp(p.color[1], 3, f); b = lerp(p.color[2], 4, f);
+    } else {
+      let f = Math.min(t * 0.9, 1.0);
+      r = lerp(p.color[0], 8, f); g = lerp(p.color[1], 8, f); b = lerp(p.color[2], 10, f);
+    }
+  } else if (p.color) {
+    let f = Math.min(t * 1.5, 1.0);
+    r = lerp(p.color[0], 30, f); g = lerp(p.color[1], 30, f); b = lerp(p.color[2], 30, f);
+    if (p.isThrust) {
+      // Desaturate exhaust smoke toward grey
+      let grey = (r + g + b) / 3;
+      r = lerp(r, grey, 0.75); g = lerp(g, grey, 0.75); b = lerp(b, grey, 0.75);
+    }
+  } else {
+    // Seed-based rainbow hue: bright flash → vivid colour → dim ember
+    let seed = p.seed || 1.0;
+    let kr = (5 + seed * 6) % 6, kg = (3 + seed * 6) % 6, kb = (1 + seed * 6) % 6;
+    let vr = 255 * (1 - Math.max(Math.min(kr, 4 - kr, 1), 0));
+    let vg = 255 * (1 - Math.max(Math.min(kg, 4 - kg, 1), 0));
+    let vb = 255 * (1 - Math.max(Math.min(kb, 4 - kb, 1), 0));
+    if (t < 0.15) {
+      let f = t / 0.15; r = lerp(255, vr, f); g = lerp(255, vg, f); b = lerp(255, vb, f);
+    } else if (t < 0.6) {
+      let f = (t - 0.15) / 0.45; r = lerp(vr, vr * 0.4, f); g = lerp(vg, vg * 0.4, f); b = lerp(vb, vb * 0.4, f);
+    } else {
+      let f = (t - 0.6) / 0.4; r = lerp(vr * 0.4, 15, f); g = lerp(vg * 0.4, 15, f); b = lerp(vb * 0.4, 15, f);
+    }
+  }
+  _softColorBuf[0] = r; _softColorBuf[1] = g; _softColorBuf[2] = b;
+  return _softColorBuf;
+}
+
 class ParticleSystem {
   constructor() {
     /** @type {Array} Generic visual-effects particles (exhaust, sparks, explosions). */
@@ -379,36 +433,7 @@ class ParticleSystem {
         if (p.isThrust) alpha *= 0.42;
         if (alpha <= 0.02) continue;
 
-        let r, g, b;
-        if (p.isFog && p.color) {
-          if (p.isInkBurst) {
-            let f = Math.min(t * 0.7, 1.0);
-            r = lerp(p.color[0], 3, f); g = lerp(p.color[1], 3, f); b = lerp(p.color[2], 4, f);
-          } else {
-            let f = Math.min(t * 0.9, 1.0);
-            r = lerp(p.color[0], 8, f); g = lerp(p.color[1], 8, f); b = lerp(p.color[2], 10, f);
-          }
-        } else if (p.color) {
-          let f = Math.min(t * 1.5, 1.0);
-          r = lerp(p.color[0], 30, f); g = lerp(p.color[1], 30, f); b = lerp(p.color[2], 30, f);
-          if (p.isThrust) {
-            let grey = (r + g + b) / 3;
-            r = lerp(r, grey, 0.75); g = lerp(g, grey, 0.75); b = lerp(b, grey, 0.75);
-          }
-        } else {
-          let seed = p.seed || 1.0;
-          let kr = (5 + seed * 6) % 6, kg = (3 + seed * 6) % 6, kb = (1 + seed * 6) % 6;
-          let vr = 255 * (1 - Math.max(Math.min(kr, 4 - kr, 1), 0));
-          let vg = 255 * (1 - Math.max(Math.min(kg, 4 - kg, 1), 0));
-          let vb = 255 * (1 - Math.max(Math.min(kb, 4 - kb, 1), 0));
-          if (t < 0.15) {
-            let f = t / 0.15; r = lerp(255, vr, f); g = lerp(255, vg, f); b = lerp(255, vb, f);
-          } else if (t < 0.6) {
-            let f = (t - 0.15) / 0.45; r = lerp(vr, vr * 0.4, f); g = lerp(vg, vg * 0.4, f); b = lerp(vb, vb * 0.4, f);
-          } else {
-            let f = (t - 0.6) / 0.4; r = lerp(vr * 0.4, 15, f); g = lerp(vg * 0.4, 15, f); b = lerp(vb * 0.4, 15, f);
-          }
-        }
+        let [r, g, b] = _calcSoftParticleColor(p, t);
 
         if (useDepthSoftShader || useBillowSprites) {
           let dx = (camCX ?? p.x) - p.x, dy = (camCY ?? p.y) - p.y, dz = (camCZ ?? (p.z + 1)) - p.z;

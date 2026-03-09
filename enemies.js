@@ -19,6 +19,9 @@
 // Hoisted out of the draw loop so the nested array literal is not re-allocated every frame.
 const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
 
+// Uniform scale applied to every enemy mesh in both rendering passes.
+const ENEMY_DRAW_SCALE = 2;
+
 class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
@@ -625,38 +628,373 @@ class EnemyManager {
   // ---------------------------------------------------------------------------
 
   /**
+   * Emits three vertices for a triangle and auto-computes its face normal.
+   * Must be called between beginShape(TRIANGLES) / endShape().
+   * @param {number[]} p0  [x,y,z] of first vertex.
+   * @param {number[]} p1  [x,y,z] of second vertex.
+   * @param {number[]} p2  [x,y,z] of third vertex.
+   */
+  _drawTri(p0, p1, p2) {
+    let v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+    let v2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+    let nx = v1[1] * v2[2] - v1[2] * v2[1];
+    let ny = v1[2] * v2[0] - v1[0] * v2[2];
+    let nz = v1[0] * v2[1] - v1[1] * v2[0];
+    let m = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (m > 0) normal(nx / m, ny / m, nz / m);
+    vertex(p0[0], p0[1], p0[2]);
+    vertex(p1[0], p1[1], p1[2]);
+    vertex(p2[0], p2[1], p2[2]);
+  }
+
+  /** @private Renders a crab or yellowCrab enemy (articulated body with animated legs). */
+  _drawCrab(e) {
+    let yaw = atan2(e.vx || 0, e.vz || 0);
+    rotateY(yaw);
+    noStroke();
+    const isYellow = e.type === 'yellowCrab';
+    const ccR = isYellow ? 255 : 200, ccG = isYellow ? 255 : 80, ccB = isYellow ? 0 : 20;
+    const ccDR = isYellow ? 100 : 150, ccDG = isYellow ? 100 : 40, ccDB = isYellow ? 0 : 10;
+    fill(ccR, ccG, ccB);
+    if (isYellow) {
+      // Luminous glow for yellow crab
+      let glow = sin(frameCount * 0.1) * 30 + 30;
+      fill(Math.min(255, ccR + glow), Math.min(255, ccG + glow), ccB);
+    }
+    push(); box(36, 16, 30); pop();
+    push(); translate(0, -8, 0); box(24, 8, 20); pop();
+    push();
+    fill(12, 12, 12);
+    translate(-8, -10, 15); box(4, 8, 4);
+    translate(16, 0, 0); box(4, 8, 4);
+    pop();
+    fill(ccDR, ccDG, ccDB);
+    let walkPhase = frameCount * 0.3 + e.id;
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = -1; i <= 1; i++) {
+        let legPhase = walkPhase + i * PI / 3 * side;
+        let lift = max(0, sin(legPhase));
+        let stride = cos(legPhase);
+        push();
+        translate(side * 16, 0, i * 10);
+        rotateZ(side * (-0.2 - lift * 0.4));
+        rotateY(stride * 0.3);
+        translate(side * 10, -3, 0); box(20, 6, 6);
+        translate(side * 8, 0, 0);
+        rotateZ(side * 0.8);
+        translate(side * 10, 0, 0); box(22, 4, 4);
+        pop();
+      }
+    }
+    fill(ccR, ccG, ccB);
+    if (isYellow) {
+      let glow = sin(frameCount * 0.1) * 30 + 30;
+      fill(Math.min(255, ccR + glow), Math.min(255, ccG + glow), ccB);
+    }
+    for (let side = -1; side <= 1; side += 2) {
+      let pincerLift = sin(frameCount * 0.1 + e.id) * 0.1;
+      push();
+      translate(side * 16, 0, 14);
+      rotateY(side * -0.6);
+      rotateZ(side * (-0.3 + pincerLift));
+      translate(side * 10, 0, 0); box(20, 6, 8);
+      translate(side * 10, 0, 0);
+      rotateY(side * -1.2);
+      translate(side * 8, 0, 0); box(16, 8, 10);
+      translate(side * 10, 0, 0); box(12, 10, 12);
+      let nip = abs(sin(frameCount * 0.2 + e.id * 3)) * 0.5;
+      push(); translate(side * 6, 0, -4); rotateY(side * -nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
+      push(); translate(side * 6, 0, 4); rotateY(side * nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
+      pop();
+    }
+  }
+
+  /** @private Renders a squid enemy (cylinder body + 8 animated tentacles). */
+  _drawSquid(e) {
+    let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
+    let d = mag3(fvX, fvY, fvZ);
+    if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
+    noStroke();
+    fill(30, 30, 35);
+    push();
+    let squeeze = (e.inkSqueeze || 0) / 12;
+    scale(1.0 + squeeze * 0.20, 1.0 - squeeze * 0.25, 1.0 + squeeze * 0.20);
+    rotateX(PI / 2);
+    cylinder(12, 40, 8, 1);
+    let tentaclePhase = frameCount * 0.1 + e.id;
+    for (let i = 0; i < 8; i++) {
+      let a = (i / 8) * TWO_PI;
+      push();
+      translate(sin(a) * 8, 20, cos(a) * 8);
+      rotateX(sin(tentaclePhase + a) * 0.4);
+      rotateZ(cos(tentaclePhase + a) * 0.4);
+      translate(0, 15, 0);
+      cylinder(2, 30, 4, 1);
+      pop();
+    }
+    pop();
+  }
+
+  /** @private Renders a scorpion enemy (armoured body, 4-pair legs, segmented tail + stinger). */
+  _drawScorpion(e) {
+    let yaw = atan2(e.vx || 0, e.vz || 0);
+    rotateY(yaw);
+    noStroke();
+    const scR = 22, scG = 180, scB = 120;
+    const scDR = 6, scDG = 100, scDB = 60;
+    const scGR = 80, scGG = 255, scGB = 160;
+
+    // Main body + armour plates
+    fill(scR, scG, scB);
+    push(); box(30, 10, 26); pop();
+    fill(scDR, scDG, scDB);
+    push(); translate(0, -5, 2); box(24, 2, 20); pop();
+    push(); translate(0, -4, -8); box(20, 2, 10); pop();
+
+    // Head/Front
+    fill(scR, scG, scB);
+    push(); translate(0, -1, 14); box(18, 6, 12); pop();
+    fill(80, 255, 80); // Eyes
+    push(); translate(-6, -5, 18); box(3, 3, 3); pop();
+    push(); translate(6, -5, 18); box(3, 3, 3); pop();
+
+    // Articulated pincers
+    fill(scR, scG, scB);
+    for (let side = -1; side <= 1; side += 2) {
+      let pPhase = frameCount * 0.1 + e.id * side;
+      push();
+      translate(side * 12, -4, 16);
+      rotateY(side * 0.4 + sin(pPhase) * 0.2);
+      translate(side * 8, 0, 6); box(16, 6, 6);
+      translate(side * 8, 0, 6);
+      rotateY(side * -0.8 + cos(pPhase) * 0.3);
+      translate(side * 10, 0, 6); box(20, 8, 10);
+      let nip = abs(sin(frameCount * 0.2 + e.id * 2)) * 0.4;
+      push(); translate(side * 6, 0, 4); rotateY(side * nip); translate(side * 6, 0, 0); box(12, 5, 3); pop();
+      push(); translate(side * 6, 0, -4); rotateY(side * -nip); translate(side * 6, 0, 0); box(12, 5, 3); pop();
+      pop();
+    }
+
+    // Articulated legs (4 pairs, metachronal wave gait)
+    fill(scDR, scDG, scDB);
+    let walkSpeed = mag2(e.vx || 0, e.vz || 0);
+    let animationSpeed = walkSpeed > 0.1 ? 0.15 : 0;
+    let walkPhase = frameCount * animationSpeed + e.id;
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 4; i++) {
+        let lp = walkPhase + i * 0.8 + (side > 0 ? PI : 0);
+        let lift = max(0, sin(lp));
+        let stride = cos(lp);
+        push();
+        translate(side * 15, 2, 8 - i * 11);
+        rotateZ(side * (-0.2 - lift * 0.4));
+        rotateY(stride * 0.35);
+        translate(side * 8, -1, 0); box(16, 5, 5);
+        translate(side * 8, 0, 0);
+        rotateZ(side * 1.1 + lift * 0.5);
+        translate(side * 10, 0, 0); box(22, 4, 4);
+        pop();
+      }
+    }
+
+    // Segmented tail + stinger
+    fill(scR, scG, scB);
+    push(); translate(0, -5, -15);
+    for (let i = 0; i < 6; i++) {
+      let wave = sin(frameCount * 0.1 + e.id + i * 0.5) * 0.1;
+      rotateX(-0.35 + wave);
+      translate(0, -7, -4);
+      box(14 - i * 2, 8 - i, 8 - i);
+    }
+    fill(scGR, scGG, scGB);
+    translate(0, -6, -3);
+    rotateX(-0.6);
+    box(5, 12, 5);
+    pop();
+  }
+
+  /** @private Renders a colossus BOSS (giant block-humanoid with walking legs and glowing eyes). */
+  _drawColossus(e) {
+    let yaw = atan2(e.vx || 0, e.vz || 0);
+    rotateY(yaw);
+    noStroke();
+    let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
+    let bodyR = lerp(40, 255, hitT), bodyG = lerp(40, 255, hitT), bodyB = lerp(55, 255, hitT);
+    let accR = lerp(255, 255, hitT), accG = lerp(60, 255, hitT), accB = lerp(20, 0, hitT);
+    const fcR = bodyR, fcG = bodyG, fcB = bodyB;
+    const acR = accR, acG = accG, acB = accB;
+    const dkR = 22, dkG = 22, dkB = 30;
+    const glR = 255, glG = 120, glB = 0;
+    let walkSpeed = mag2(e.vx || 0, e.vz || 0);
+    let walkCycle = frameCount * 0.08 * (walkSpeed > 0.1 ? 1 : 0) + (e.id || 0);
+    for (let side = -1; side <= 1; side += 2) {
+      let legPhase = walkCycle * side;
+      let thighSwing = sin(legPhase) * 0.4;
+      let shinBend = max(0, -cos(legPhase)) * 0.5;
+      push();
+      translate(side * 50, -40, 0);
+      fill(fcR, fcG, fcB);
+      rotateX(thighSwing);
+      push(); translate(0, 60, 0); box(50, 120, 50); pop();
+      translate(0, 120, 0);
+      rotateX(-shinBend);
+      push(); translate(0, 60, 0); box(40, 120, 40); pop();
+      fill(dkR, dkG, dkB);
+      translate(0, 120, 0);
+      push(); translate(0, 12, side * -6); box(60, 24, 75); pop();
+      pop();
+    }
+    fill(dkR, dkG, dkB);
+    push(); translate(0, -45, 0); box(130, 36, 90); pop();
+    fill(fcR, fcG, fcB);
+    push(); translate(0, -160, 0); box(160, 200, 110); pop();
+    fill(dkR, dkG, dkB);
+    push(); translate(-105, -210, 0); box(50, 50, 65); pop();
+    push(); translate(105, -210, 0); box(50, 50, 65); pop();
+    for (let side = -1; side <= 1; side += 2) {
+      let armSwing = sin(walkCycle * side + PI) * 0.15;
+      push();
+      translate(side * 105, -210, 0);
+      rotateX(armSwing);
+      fill(fcR, fcG, fcB);
+      push(); translate(0, 65, 0); box(45, 120, 45); pop();
+      fill(dkR, dkG, dkB);
+      push(); translate(0, 125, 0); box(40, 30, 40); pop();
+      fill(fcR, fcG, fcB);
+      push(); translate(0, 185, 0); box(40, 100, 40); pop();
+      fill(acR, acG, acB);
+      push(); translate(0, 245, 0); box(55, 55, 55); pop();
+      pop();
+    }
+    fill(dkR, dkG, dkB);
+    push(); translate(0, -270, 0); box(65, 40, 60); pop();
+    fill(fcR, fcG, fcB);
+    push(); translate(0, -320, 0); box(100, 90, 100); pop();
+    fill(glR, glG, glB);
+    push(); translate(-25, -330, 51); box(25, 18, 8); pop();
+    push(); translate(25, -330, 51); box(25, 18, 8); pop();
+    fill(dkR, dkG, dkB);
+    push(); translate(0, -348, 51); box(104, 15, 8); pop();
+  }
+
+  /** @private Renders a fighter enemy (arrowhead body, fins, animated tail — yaw/pitch aligned). */
+  _drawFighter(e) {
+    let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
+    let d = mag3(fvX, fvY, fvZ);
+    if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
+    noStroke();
+    fill(255, 150, 0);
+    beginShape(TRIANGLES);
+    this._drawTri([0, 0, 25], [-8, 0, 0], [0, 8, 0]);
+    this._drawTri([0, 0, 25], [8, 0, 0], [0, 8, 0]);
+    this._drawTri([0, 0, 25], [-8, 0, 0], [0, -8, 0]);
+    this._drawTri([0, 0, 25], [8, 0, 0], [0, -8, 0]);
+    this._drawTri([-8, 0, 0], [0, 0, -15], [0, 8, 0]);
+    this._drawTri([8, 0, 0], [0, 0, -15], [0, 8, 0]);
+    this._drawTri([-8, 0, 0], [0, 0, -15], [0, -8, 0]);
+    this._drawTri([8, 0, 0], [0, 0, -15], [0, -8, 0]);
+    endShape();
+    fill(255, 100, 0); // Dorsal fin
+    beginShape(TRIANGLES);
+    this._drawTri([-1, 8, 5], [-1, 18, -10], [-1, 8, -12]);
+    this._drawTri([1, 8, 5], [1, 18, -10], [1, 8, -12]);
+    this._drawTri([-1, 8, 5], [1, 8, 5], [0, 18, -10]);
+    endShape();
+    fill(255, 180, 50); // Pectoral fins
+    let finWarp = sin(frameCount * 0.15 + e.id) * 0.2;
+    beginShape(TRIANGLES);
+    this._drawTri([-8, 0, 5], [-22, -2, -8 + finWarp * 10], [-8, 0, -10]);
+    this._drawTri([-8, -2, 5], [-22, -2, -8 + finWarp * 10], [-8, -2, -10]);
+    this._drawTri([8, 0, 5], [22, -2, -8 + finWarp * 10], [8, 0, -10]);
+    this._drawTri([8, -2, 5], [22, -2, -8 + finWarp * 10], [8, -2, -10]);
+    endShape();
+    let tailSwing = sin(frameCount * 0.2 + e.id) * 12;
+    fill(255, 80, 0); // Animated tail
+    beginShape(TRIANGLES);
+    this._drawTri([-1, 0, -15], [tailSwing, 15, -35], [-1, 0, -22]);
+    this._drawTri([1, 0, -15], [tailSwing, 15, -35], [1, 0, -22]);
+    this._drawTri([-1, 0, -15], [tailSwing, -15, -35], [-1, 0, -22]);
+    this._drawTri([1, 0, -15], [tailSwing, -15, -35], [1, 0, -22]);
+    endShape();
+  }
+
+  /** @private Renders a bomber enemy (rotating bipyramid). */
+  _drawBomber(e) {
+    rotateY(frameCount * 0.05);
+    noStroke();
+    fill(180, 20, 180);
+    beginShape(TRIANGLES);
+    this._drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
+    this._drawTri([0, -40, 0], [-40, 0, 40], [40, 0, 40]);
+    this._drawTri([0, -40, 0], [-40, 0, -40], [-40, 0, 40]);
+    this._drawTri([0, -40, 0], [40, 0, -40], [40, 0, 40]);
+    this._drawTri([0, 40, 0], [-40, 0, -40], [40, 0, -40]);
+    this._drawTri([0, 40, 0], [-40, 0, 40], [40, 0, 40]);
+    this._drawTri([0, 40, 0], [-40, 0, -40], [-40, 0, 40]);
+    this._drawTri([0, 40, 0], [40, 0, -40], [40, 0, 40]);
+    endShape();
+  }
+
+  /** @private Renders a hunter enemy (small teardrop arrowhead + flapping wings — yaw/pitch aligned). */
+  _drawHunter(e) {
+    let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
+    let d = mag3(fvX, fvY, fvZ);
+    if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
+    noStroke();
+    fill(40, 255, 40);
+    beginShape(TRIANGLES);
+    this._drawTri([0, 0, 25], [-5, 0, 5], [0, 5, 5]);
+    this._drawTri([0, 0, 25], [5, 0, 5], [0, 5, 5]);
+    this._drawTri([0, 0, 25], [-5, 0, 5], [0, -3, 5]);
+    this._drawTri([0, 0, 25], [5, 0, 5], [0, -3, 5]);
+    this._drawTri([-5, 0, 5], [0, 0, -15], [0, 5, 5]);
+    this._drawTri([5, 0, 5], [0, 0, -15], [0, 5, 5]);
+    endShape();
+    let flap = sin(frameCount * 0.3 + e.id) * 20;
+    fill(30, 200, 30); // Wings
+    beginShape(TRIANGLES);
+    this._drawTri([-5, 0, 5], [-35, flap, -10], [-5, 0, -5]);
+    this._drawTri([-5, -1, 5], [-35, flap - 1, -10], [-5, -1, -5]);
+    this._drawTri([5, 0, 5], [35, flap, -10], [5, 0, -5]);
+    this._drawTri([5, -1, 5], [35, flap - 1, -10], [5, -1, -5]);
+    endShape();
+    fill(20, 150, 20); // Tail feathers
+    beginShape(TRIANGLES);
+    this._drawTri([0, 0, -15], [-12, 0, -30], [12, 0, -30]);
+    this._drawTri([0, -1, -15], [-12, -1, -30], [12, -1, -30]);
+    endShape();
+  }
+
+  /** @private Renders a seeder enemy (rotating double-diamond + vertical antenna). */
+  _drawSeeder(e) {
+    rotateY(frameCount * 0.15); noStroke();
+    for (let i = 0; i < SEEDER_LAYERS.length; i++) {
+      const layer = SEEDER_LAYERS[i];
+      const yOff = layer[0];
+      fill(layer[1], layer[2], layer[3]);
+      beginShape(TRIANGLES);
+      this._drawTri([0, yOff, -25], [-22, 0, 0], [22, 0, 0]);
+      this._drawTri([0, yOff, 25], [-22, 0, 0], [22, 0, 0]);
+      this._drawTri([0, yOff, -25], [-22, 0, 0], [0, yOff, 25]);
+      this._drawTri([0, yOff, -25], [22, 0, 0], [0, yOff, 25]);
+      endShape();
+    }
+    fill(255, 60, 60);
+    push(); translate(0, -14, 0); box(3, 14, 3); pop();
+  }
+
+  /**
    * Renders all enemies visible from the given ship's position.
-   * Each enemy type has a distinct 3D mesh.  All meshes apply fog-colour blending
-   * via terrain.getFogColor() and cast a ground shadow.
+   * Each enemy type has a distinct 3D mesh.  All meshes cast a ground shadow.
    *
-   * Enemy mesh summaries:
-   *   fighter — arrowhead (TRIANGLES, yaw/pitch aligned to velocity)
-   *   bomber  — spinning bipyramid (double diamond, Y-rotation)
-   *   crab    — detailed articulated body with animated legs and pincers
-   *   hunter  — small teardrop arrowhead (yaw/pitch aligned to velocity)
-   *   squid   — cylinder body + 8 animated tentacles
-   *   seeder  — rotating double diamond + vertical antenna
+   * Two rendering passes are required because p5.js box()/cylinder() primitives
+   * need the default shader to respect fill() colours, while vertex-based enemies
+   * use the terrain shader for fog and rim-lighting effects.
    *
-   * @param {{x,y,z,yaw}} s  Ship state used as the view origin for depth and culling.
+   * @param {{x,y,z,yaw}} s  Ship state used as the view origin for culling.
    */
   draw(s) {
-    // Reuse the camera params already computed in terrain.drawLandscape this frame.
-    let cam = terrain._cam || terrain.getCameraParams(s);
-    // Colossus is massive — always render it even near the edge of cull distance
     let cullSq = CULL_DIST * CULL_DIST;
-
-    const drawTri = (p0, p1, p2) => {
-      let v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
-      let v2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
-      let nx = v1[1] * v2[2] - v1[2] * v2[1];
-      let ny = v1[2] * v2[0] - v1[0] * v2[2];
-      let nz = v1[0] * v2[1] - v1[1] * v2[0];
-      let m = Math.sqrt(nx * nx + ny * ny + nz * nz);
-      if (m > 0) normal(nx / m, ny / m, nz / m);
-      vertex(p0[0], p0[1], p0[2]);
-      vertex(p1[0], p1[1], p1[2]);
-      vertex(p2[0], p2[1], p2[2]);
-    };
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // PASS 1: Box/cylinder-based enemies — p5 default shader so fill() colors work.
@@ -674,241 +1012,13 @@ class EnemyManager {
       push();
       translate(e.x, e.y, e.z);
       if (e.type === 'crab' || e.type === 'yellowCrab') translate(0, -10, 0);
-      scale(2);
+      scale(ENEMY_DRAW_SCALE);
 
-      if (e.type === 'crab' || e.type === 'yellowCrab') {
-        let yaw = atan2(e.vx || 0, e.vz || 0);
-        rotateY(yaw);
-        noStroke();
-        const isYellow = e.type === 'yellowCrab';
-        const ccR = isYellow ? 255 : 200, ccG = isYellow ? 255 : 80, ccB = isYellow ? 0 : 20;
-        const ccDR = isYellow ? 100 : 150, ccDG = isYellow ? 100 : 40, ccDB = isYellow ? 0 : 10;
-        fill(ccR, ccG, ccB);
-        if (isYellow) {
-          // Luminous glow for yellow crab
-          let glow = sin(frameCount * 0.1) * 30 + 30;
-          fill(Math.min(255, ccR + glow), Math.min(255, ccG + glow), ccB);
-        }
-        push(); box(36, 16, 30); pop();
-        push(); translate(0, -8, 0); box(24, 8, 20); pop();
-        push();
-        fill(12, 12, 12);
-        translate(-8, -10, 15); box(4, 8, 4);
-        translate(16, 0, 0); box(4, 8, 4);
-        pop();
-        fill(ccDR, ccDG, ccDB);
-        let walkPhase = frameCount * 0.3 + e.id;
-        for (let side = -1; side <= 1; side += 2) {
-          for (let i = -1; i <= 1; i++) {
-            let legPhase = walkPhase + i * PI / 3 * side;
-            let lift = max(0, sin(legPhase));
-            let stride = cos(legPhase);
-            push();
-            translate(side * 16, 0, i * 10);
-            rotateZ(side * (-0.2 - lift * 0.4));
-            rotateY(stride * 0.3);
-            translate(side * 10, -3, 0); box(20, 6, 6);
-            translate(side * 8, 0, 0);
-            rotateZ(side * 0.8);
-            translate(side * 10, 0, 0); box(22, 4, 4);
-            pop();
-          }
-        }
-        fill(ccR, ccG, ccB);
-        if (isYellow) {
-          let glow = sin(frameCount * 0.1) * 30 + 30;
-          fill(Math.min(255, ccR + glow), Math.min(255, ccG + glow), ccB);
-        }
-        for (let side = -1; side <= 1; side += 2) {
-          let pincerLift = sin(frameCount * 0.1 + e.id) * 0.1;
-          push();
-          translate(side * 16, 0, 14);
-          rotateY(side * -0.6);
-          rotateZ(side * (-0.3 + pincerLift));
-          translate(side * 10, 0, 0); box(20, 6, 8);
-          translate(side * 10, 0, 0);
-          rotateY(side * -1.2);
-          translate(side * 8, 0, 0); box(16, 8, 10);
-          translate(side * 10, 0, 0); box(12, 10, 12);
-          let nip = abs(sin(frameCount * 0.2 + e.id * 3)) * 0.5;
-          push(); translate(side * 6, 0, -4); rotateY(side * -nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
-          push(); translate(side * 6, 0, 4); rotateY(side * nip); translate(side * 8, 0, 0); box(16, 5, 4); pop();
-          pop();
-        }
-      } else if (e.type === 'squid') {
-        let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = mag3(fvX, fvY, fvZ);
-        if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
-        noStroke();
-        fill(30, 30, 35);
-        push();
-        let squeeze = (e.inkSqueeze || 0) / 12;
-        scale(1.0 + squeeze * 0.20, 1.0 - squeeze * 0.25, 1.0 + squeeze * 0.20);
-        rotateX(PI / 2);
-        cylinder(12, 40, 8, 1);
-        let tentaclePhase = frameCount * 0.1 + e.id;
-        for (let i = 0; i < 8; i++) {
-          let a = (i / 8) * TWO_PI;
-          push();
-          translate(sin(a) * 8, 20, cos(a) * 8);
-          rotateX(sin(tentaclePhase + a) * 0.4);
-          rotateZ(cos(tentaclePhase + a) * 0.4);
-          translate(0, 15, 0);
-          cylinder(2, 30, 4, 1);
-          pop();
-        }
-        pop();
-      } else if (e.type === 'scorpion') {
-        let yaw = atan2(e.vx || 0, e.vz || 0);
-        rotateY(yaw);
-        noStroke();
-        const scR = 22, scG = 180, scB = 120;
-        const scDR = 6, scDG = 100, scDB = 60;
-        const scGR = 80, scGG = 255, scGB = 160;
+      if (e.type === 'crab' || e.type === 'yellowCrab') this._drawCrab(e);
+      else if (e.type === 'squid') this._drawSquid(e);
+      else if (e.type === 'scorpion') this._drawScorpion(e);
+      else if (e.type === 'colossus') this._drawColossus(e);
 
-        // Main body + Armor plates
-        fill(scR, scG, scB);
-        push(); box(30, 10, 26); pop();
-        fill(scDR, scDG, scDB);
-        push(); translate(0, -5, 2); box(24, 2, 20); pop(); // Primary plate
-        push(); translate(0, -4, -8); box(20, 2, 10); pop(); // secondary plate
-
-        // Head/Front
-        fill(scR, scG, scB);
-        push(); translate(0, -1, 14); box(18, 6, 12); pop();
-        fill(80, 255, 80); // Eyes
-        push(); translate(-6, -5, 18); box(3, 3, 3); pop();
-        push(); translate(6, -5, 18); box(3, 3, 3); pop();
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // Large Articulated Pincers - Moved bits higher to clear ground
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        fill(scR, scG, scB);
-        for (let side = -1; side <= 1; side += 2) {
-          let pPhase = frameCount * 0.1 + e.id * side;
-          push();
-          translate(side * 12, -4, 16); // Lifted from Y:0 to Y:-4
-          rotateY(side * 0.4 + sin(pPhase) * 0.2);
-          translate(side * 8, 0, 6); box(16, 6, 6); // Arm 1
-          translate(side * 8, 0, 6);
-          rotateY(side * -0.8 + cos(pPhase) * 0.3);
-          translate(side * 10, 0, 6); box(20, 8, 10); // Claw base
-          // Pincer nips
-          let nip = abs(sin(frameCount * 0.2 + e.id * 2)) * 0.4;
-          push(); translate(side * 6, 0, 4); rotateY(side * nip); translate(side * 6, 0, 0); box(12, 5, 3); pop();
-          push(); translate(side * 6, 0, -4); rotateY(side * -nip); translate(side * 6, 0, 0); box(12, 5, 3); pop();
-          pop();
-        }
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // Articulated legs (8 legs / 4 pairs with metachronal wave)
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        fill(scDR, scDG, scDB);
-        let walkSpeed = mag2(e.vx || 0, e.vz || 0);
-        // Slowed down from 0.4 to 0.15; only animate if actually moving
-        let animationSpeed = walkSpeed > 0.1 ? 0.15 : 0;
-        let walkPhase = frameCount * animationSpeed + e.id;
-        for (let side = -1; side <= 1; side += 2) {
-          for (let i = 0; i < 4; i++) {
-            // Ripple gait: back-to-front metachronal wave. 
-            // i=0 is front, i=3 is back. To make back lead, we add phase as we go back.
-            let lp = walkPhase + i * 0.8 + (side > 0 ? PI : 0);
-            let lift = max(0, sin(lp));
-            let stride = cos(lp);
-            push();
-            // Space 4 legs along the body from middle to back
-            translate(side * 15, 2, 8 - i * 11);
-            rotateZ(side * (-0.2 - lift * 0.4));
-            rotateY(stride * 0.35); // Horizontal stride
-            // Thigh
-            translate(side * 8, -1, 0); box(16, 5, 5);
-            // Shin
-            translate(side * 8, 0, 0);
-            rotateZ(side * 1.1 + lift * 0.5);
-            translate(side * 10, 0, 0); box(22, 4, 4);
-            pop();
-          }
-        }
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // Refined Segmented Tail + Stinger
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        fill(scR, scG, scB);
-        push(); translate(0, -5, -15);
-        for (let i = 0; i < 6; i++) {
-          let wave = sin(frameCount * 0.1 + e.id + i * 0.5) * 0.1;
-          rotateX(-0.35 + wave);
-          translate(0, -7, -4);
-          box(14 - i * 2, 8 - i, 8 - i);
-        }
-        fill(scGR, scGG, scGB); // Stinger glowing tip
-        translate(0, -6, -3);
-        rotateX(-0.6);
-        box(5, 12, 5);
-        pop();
-      } else if (e.type === 'colossus') {
-        let yaw = atan2(e.vx || 0, e.vz || 0);
-        rotateY(yaw);
-        noStroke();
-        let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
-        let bodyR = lerp(40, 255, hitT), bodyG = lerp(40, 255, hitT), bodyB = lerp(55, 255, hitT);
-        let accR = lerp(255, 255, hitT), accG = lerp(60, 255, hitT), accB = lerp(20, 0, hitT);
-        const fcR = bodyR, fcG = bodyG, fcB = bodyB;
-        const acR = accR, acG = accG, acB = accB;
-        const dkR = 22, dkG = 22, dkB = 30;
-        const glR = 255, glG = 120, glB = 0;
-        let walkSpeed = mag2(e.vx || 0, e.vz || 0);
-        let walkCycle = frameCount * 0.08 * (walkSpeed > 0.1 ? 1 : 0) + (e.id || 0);
-        for (let side = -1; side <= 1; side += 2) {
-          let legPhase = walkCycle * side;
-          let thighSwing = sin(legPhase) * 0.4;
-          let shinBend = max(0, -cos(legPhase)) * 0.5;
-          let footLift = max(0, sin(legPhase)) * 40;
-          push();
-          translate(side * 50, -40, 0);
-          fill(fcR, fcG, fcB);
-          rotateX(thighSwing);
-          push(); translate(0, 60, 0); box(50, 120, 50); pop();
-          translate(0, 120, 0);
-          rotateX(-shinBend);
-          push(); translate(0, 60, 0); box(40, 120, 40); pop();
-          fill(dkR, dkG, dkB);
-          translate(0, 120, 0);
-          push(); translate(0, 12, side * -6); box(60, 24, 75); pop();
-          pop();
-        }
-        fill(dkR, dkG, dkB);
-        push(); translate(0, -45, 0); box(130, 36, 90); pop();
-        fill(fcR, fcG, fcB);
-        push(); translate(0, -160, 0); box(160, 200, 110); pop();
-        fill(dkR, dkG, dkB);
-        push(); translate(-105, -210, 0); box(50, 50, 65); pop();
-        push(); translate(105, -210, 0); box(50, 50, 65); pop();
-        for (let side = -1; side <= 1; side += 2) {
-          let armSwing = sin(walkCycle * side + PI) * 0.15;
-          push();
-          translate(side * 105, -210, 0);
-          rotateX(armSwing);
-          fill(fcR, fcG, fcB);
-          push(); translate(0, 65, 0); box(45, 120, 45); pop();
-          fill(dkR, dkG, dkB);
-          push(); translate(0, 125, 0); box(40, 30, 40); pop();
-          fill(fcR, fcG, fcB);
-          push(); translate(0, 185, 0); box(40, 100, 40); pop();
-          fill(acR, acG, acB);
-          push(); translate(0, 245, 0); box(55, 55, 55); pop();
-          pop();
-        }
-        fill(dkR, dkG, dkB);
-        push(); translate(0, -270, 0); box(65, 40, 60); pop();
-        fill(fcR, fcG, fcB);
-        push(); translate(0, -320, 0); box(100, 90, 100); pop();
-        fill(glR, glG, glB);
-        push(); translate(-25, -330, 51); box(25, 18, 8); pop();
-        push(); translate(25, -330, 51); box(25, 18, 8); pop();
-        fill(dkR, dkG, dkB);
-        push(); translate(0, -348, 51); box(104, 15, 8); pop();
-      }
       pop();
     }
 
@@ -921,147 +1031,15 @@ class EnemyManager {
 
     for (let e of this.enemies) {
       if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > cullSq) continue;
-
       const isVertexEnemy = (e.type === 'fighter' || e.type === 'bomber' ||
         e.type === 'hunter' || e.type === 'seeder');
       if (!isVertexEnemy) continue;
 
-      let depth = (e.x - cam.x) * cam.fwdX + (e.z - cam.z) * cam.fwdZ;
-      push(); translate(e.x, e.y, e.z);
-      scale(2);
-
-      if (e.type === 'fighter') {
-        let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = mag3(fvX, fvY, fvZ);
-        if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
-        noStroke();
-        fill(255, 150, 0); // Primary orange
-
-        // thickened body (faceted diamond)
-        beginShape(TRIANGLES);
-        // Nose (tip) at [0,0,25]
-        // Front facets (thickened midpoint)
-        drawTri([0, 0, 25], [-8, 0, 0], [0, 8, 0]);   // Top left
-        drawTri([0, 0, 25], [8, 0, 0], [0, 8, 0]);    // Top right
-        drawTri([0, 0, 25], [-8, 0, 0], [0, -8, 0]);  // Bottom left
-        drawTri([0, 0, 25], [8, 0, 0], [0, -8, 0]);   // Bottom right
-
-        // Rear facets (taper to back)
-        drawTri([-8, 0, 0], [0, 0, -15], [0, 8, 0]);  // Top left
-        drawTri([8, 0, 0], [0, 0, -15], [0, 8, 0]);   // Top right
-        drawTri([-8, 0, 0], [0, 0, -15], [0, -8, 0]); // Bottom left
-        drawTri([8, 0, 0], [0, 0, -15], [0, -8, 0]);  // Bottom right
-        endShape();
-
-        // 3D Dorsal fin (top) - triangular prism
-        fill(255, 100, 0);
-        beginShape(TRIANGLES);
-        // Left face
-        drawTri([-1, 8, 5], [-1, 18, -10], [-1, 8, -12]);
-        // Right face
-        drawTri([1, 8, 5], [1, 18, -10], [1, 8, -12]);
-        // Front connecting face
-        drawTri([-1, 8, 5], [1, 8, 5], [0, 18, -10]);
-        // Rear edge (thin) - not strictly needed if we just draw the faces
-        endShape();
-
-        // 3D Pectoral fins (sides) - wedge shapes
-        fill(255, 180, 50);
-        let finWarp = sin(frameCount * 0.15 + e.id) * 0.2;
-        beginShape(TRIANGLES);
-        // Left fin - top face
-        drawTri([-8, 0, 5], [-22, -2, -8 + finWarp * 10], [-8, 0, -10]);
-        // Left fin - bottom face (offset slightly)
-        drawTri([-8, -2, 5], [-22, -2, -8 + finWarp * 10], [-8, -2, -10]);
-        // Right fin - top face
-        drawTri([8, 0, 5], [22, -2, -8 + finWarp * 10], [8, 0, -10]);
-        // Right fin - bottom face
-        drawTri([8, -2, 5], [22, -2, -8 + finWarp * 10], [8, -2, -10]);
-        endShape();
-
-        // 3D Animated Tail
-        let tailSwing = sin(frameCount * 0.2 + e.id) * 12;
-        fill(255, 80, 0);
-        beginShape(TRIANGLES);
-        // Upper tail lobe (3D wedge)
-        drawTri([-1, 0, -15], [tailSwing, 15, -35], [-1, 0, -22]); // left
-        drawTri([1, 0, -15], [tailSwing, 15, -35], [1, 0, -22]);  // right
-        // Lower tail lobe (3D wedge)
-        drawTri([-1, 0, -15], [tailSwing, -15, -35], [-1, 0, -22]); // left
-        drawTri([1, 0, -15], [tailSwing, -15, -35], [1, 0, -22]);  // right
-        endShape();
-      } else if (e.type === 'bomber') {
-        rotateY(frameCount * 0.05);
-        noStroke();
-        fill(180, 20, 180);
-        beginShape(TRIANGLES);
-        drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
-        drawTri([0, -40, 0], [-40, 0, 40], [40, 0, 40]);
-        drawTri([0, -40, 0], [-40, 0, -40], [-40, 0, 40]);
-        drawTri([0, -40, 0], [40, 0, -40], [40, 0, 40]);
-        drawTri([0, 40, 0], [-40, 0, -40], [40, 0, -40]);
-        drawTri([0, 40, 0], [-40, 0, 40], [40, 0, 40]);
-        drawTri([0, 40, 0], [-40, 0, -40], [-40, 0, 40]);
-        drawTri([0, 40, 0], [40, 0, -40], [40, 0, 40]);
-        endShape();
-      } else if (e.type === 'hunter') {
-        let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
-        let d = mag3(fvX, fvY, fvZ);
-        if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
-        noStroke();
-        fill(40, 255, 40); // Primary green
-
-        // Tapered body (solid volume)
-        beginShape(TRIANGLES);
-        // Beak to mid
-        drawTri([0, 0, 25], [-5, 0, 5], [0, 5, 5]);  // Top left
-        drawTri([0, 0, 25], [5, 0, 5], [0, 5, 5]);   // Top right
-        drawTri([0, 0, 25], [-5, 0, 5], [0, -3, 5]); // Bottom left
-        drawTri([0, 0, 25], [5, 0, 5], [0, -3, 5]);  // Bottom right
-        // Mid to tail base
-        drawTri([-5, 0, 5], [0, 0, -15], [0, 5, 5]); // Top left
-        drawTri([5, 0, 5], [0, 0, -15], [0, 5, 5]);  // Top right
-        endShape();
-
-        // 3D Wings with flapping animation (airfoil volumes)
-        let flap = sin(frameCount * 0.3 + e.id) * 20;
-        fill(30, 200, 30);
-        beginShape(TRIANGLES);
-        // Left wing - top face
-        drawTri([-5, 0, 5], [-35, flap, -10], [-5, 0, -5]);
-        // Left wing - bottom face (offset slightly)
-        drawTri([-5, -1, 5], [-35, flap - 1, -10], [-5, -1, -5]);
-        // Right wing - top face
-        drawTri([5, 0, 5], [35, flap, -10], [5, 0, -5]);
-        // Right wing - bottom face
-        drawTri([5, -1, 5], [35, flap - 1, -10], [5, -1, -5]);
-        endShape();
-
-        // 3D Tail feathers (wedge volume)
-        fill(20, 150, 20);
-        beginShape(TRIANGLES);
-        // top face
-        drawTri([0, 0, -15], [-12, 0, -30], [12, 0, -30]);
-        // bottom face
-        drawTri([0, -1, -15], [-12, -1, -30], [12, -1, -30]);
-        endShape();
-      } else {
-        // Seeder
-        rotateY(frameCount * 0.15); noStroke();
-        for (let i = 0; i < SEEDER_LAYERS.length; i++) {
-          const layer = SEEDER_LAYERS[i];
-          const yOff = layer[0];
-          fill(layer[1], layer[2], layer[3]);
-          beginShape(TRIANGLES);
-          drawTri([0, yOff, -25], [-22, 0, 0], [22, 0, 0]);
-          drawTri([0, yOff, 25], [-22, 0, 0], [22, 0, 0]);
-          drawTri([0, yOff, -25], [-22, 0, 0], [0, yOff, 25]);
-          drawTri([0, yOff, -25], [22, 0, 0], [0, yOff, 25]);
-          endShape();
-        }
-        fill(255, 60, 60);
-        push(); translate(0, -14, 0); box(3, 14, 3); pop();
-      }
+      push(); translate(e.x, e.y, e.z); scale(ENEMY_DRAW_SCALE);
+      if (e.type === 'fighter') this._drawFighter(e);
+      else if (e.type === 'bomber') this._drawBomber(e);
+      else if (e.type === 'hunter') this._drawHunter(e);
+      else this._drawSeeder(e);
       pop();
     }
 

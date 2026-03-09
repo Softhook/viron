@@ -623,6 +623,8 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
 
 // ---------------------------------------------------------------------------
 // draw() helpers
+// Note: functions below are prefixed with underscore to signal "called only
+// from draw()" — matching the existing convention in player.js helpers.
 // ---------------------------------------------------------------------------
 
 /**
@@ -730,6 +732,8 @@ function _updateSentinelGlows() {
         b.pulseTimer = 0;
         terrain.addPulse(b.x, b.z, 1.0);  // infection-blue expanding ring
         if (typeof gameSFX !== 'undefined') {
+          // Stop at the first player in range — we want one pulse sound per event,
+          // not one per player.
           let hearDist = 2000;
           for (let p of players) {
             if (!p.dead && dist(p.ship.x, p.ship.y, p.ship.z, b.x, b.y, b.z) < hearDist) {
@@ -1225,12 +1229,15 @@ function checkCollisions(p) {
       if (dx * dx + dy * dy + dz * dz < radiusSq) {
         let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
         if (inf) {
+          // Infected powerup — penalty: lose a missile
           if (p.missilesRemaining > 0) p.missilesRemaining--;
           if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);
         } else {
+          // Healthy powerup — 50% missile ammo, 50% normal-shot pattern upgrade
           if (random() < 0.5) {
             p.missilesRemaining++;
           } else {
+            // Pick one of the non-default spread modes
             p.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
           }
           p.score += 500;

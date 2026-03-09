@@ -424,13 +424,13 @@ function shouldRequestFullscreen() {
 
 function handleTouchStarted() {
     // Request fullscreen immediately on first interaction from Title screen
-    if (gameState === 'menu' || gameState === 'instructions') {
+    if (gameState.mode === 'menu' || gameState.mode === 'instructions') {
         if (shouldRequestFullscreen()) {
             fullscreen(true);
         }
     }
 
-    if (gameState === 'menu') {
+    if (gameState.mode === 'menu') {
         setTimeout(() => { if (typeof startGame === 'function') startGame(1); }, 50);
     }
     return false;

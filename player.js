@@ -662,8 +662,8 @@ function _applyMobileInputs(p, isThrusting, isShooting) {
     p.mobileMissilePressed = false;
   }
 
-  // Barrier fires continuously while held (same 6-frame cadence as normal bullets)
-  if (inputs.barrier && frameCount % 6 === 0) fireBarrier(p);
+  // Barrier fires continuously while held (same 8-frame cadence as normal bullets)
+  if (inputs.barrier && frameCount % 8 === 0) fireBarrier(p);
 
   p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
   p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
@@ -894,7 +894,7 @@ function _handleWeaponFire(p, isShooting) {
     if (isShooting) {
       let des = SHIP_DESIGNS[p.designIndex];
       let isTank = (des && des.shotType === 'tank_shell');
-      let rate = isTank ? 15 : 6;
+      let rate = isTank ? 15 : 8;
       if (frameCount % rate === 0) {
         if (isTank) fireTankShell(p);
         else fireNormalPattern(p, s);
@@ -906,8 +906,8 @@ function _handleWeaponFire(p, isShooting) {
     if (isShooting && !p.shootHeld) fireMissile(p);
     p.shootHeld = isShooting;
   } else if (p.weaponMode === 2) {
-    // BARRIER: auto-repeat at the same 6-frame cadence as normal bullets
-    if (isShooting && frameCount % 6 === 0) fireBarrier(p);
+    // BARRIER: auto-repeat at the same 8-frame cadence as normal bullets
+    if (isShooting && frameCount % 8 === 0) fireBarrier(p);
     // Track shootHeld so switching modes resets missile edge-detection
     p.shootHeld = isShooting;
   }
@@ -922,7 +922,7 @@ function _handleWeaponFire(p, isShooting) {
  * the ship's physics for one frame.
  *
  * Physics model:
- *   1. Gravity applied to vy each frame (GRAV = 0.09).
+ *   1. Gravity applied to vy each frame (GRAV = 0.07).
  *   2. Thrust adds force along the ship's up vector when W/RMB is held.
  *   3. Braking multiplies all velocity components by 0.96.
  *   4. Global drag: velocity × 0.985 every frame.
@@ -935,7 +935,7 @@ function _handleWeaponFire(p, isShooting) {
  * @param {object} p  Player state object (mutated in place).
  */
 function updateShipInput(p) {
-  if (p.dead || (typeof gameState !== 'undefined' && gameState === 'gameover')) return;
+  if (p.dead || (typeof gameState !== 'undefined' && gameState.mode === 'gameover')) return;
 
   // Reset each frame so stale enemy references never persist across frames.
   p.aimTarget = null;
@@ -994,10 +994,7 @@ function killPlayer(p) {
       p.lpDeaths = (p.lpDeaths || 0) + 1;
       if (p.lpDeaths >= 3) {
         if (typeof gameState !== 'undefined') {
-          gameState = 'gameover';
-          gameOverReason = 'LAUNCH PAD TAKEN OVER';
-          levelEndTime = millis();
-          if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
+          gameState.setGameOver('LAUNCH PAD TAKEN OVER');
         }
       }
     } else {

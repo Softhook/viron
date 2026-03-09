@@ -99,24 +99,12 @@ function spawnProjectile(s, power, life) {
   let fy = sp;
   let fz = -cp * cy;
 
-  // Barrel offset: 30 units forward. Ground vehicles have guns on top (negative ly), 
+  // Barrel offset: 30 units forward. Ground vehicles have guns on top (negative ly),
   // while aircraft typically have them slightly below center (positive ly).
-  let designIdx = (typeof players !== 'undefined' && s.designIdx !== undefined) ? s.designIdx : 0;
-  // If we can't find it directly on 's', we don't have enough info here, but player.js 
-  // fireActiveWeapon passes p.designIndex which isn't in spawnProjectile's 's'.
-  // However, we can detect if it's a ground vehicle from the design context if we had it.
-
-  // Actually, let's just use a reasonable default that works for both or check if y is very low.
+  // Ship objects don't carry a designIdx; use terrain proximity as a heuristic
+  // for ground-vehicle detection instead (Ironclad Tank uses fireTankShell, so
+  // only Jeep and Hovercraft reach this path).
   let lz = -30, ly = 10;
-
-  // Heuristic: if y is close to terrain, it's probably a ground vehicle.
-  // Better: fireActiveWeapon can pass the design info. 
-  // For now, let's check if DesignIndex is available in p.
-  // Wait, spawnProjectile is called from fireNormalPattern(p, s). 
-  // I'll update fireNormalPattern to pass design info if needed, or just hardcode for ground vehicles.
-
-  // NOTE: Ironclad Tank uses its own fireTankShell, so we only care about Jeep and Hovercraft here.
-  // Let's check ground altitude as a proxy.
   if (terrain && s.y > terrain.getAltitude(s.x, s.z) - 30) {
     ly = -14; // Spawn from the top for ground vehicles
     lz = -40; // And a bit further forward
@@ -674,8 +662,8 @@ function _applyMobileInputs(p, isThrusting, isShooting) {
     p.mobileMissilePressed = false;
   }
 
-  // Barrier fires continuously while held (same 6-frame cadence as normal bullets)
-  if (inputs.barrier && frameCount % 6 === 0) fireBarrier(p);
+  // Barrier fires continuously while held (same 8-frame cadence as normal bullets)
+  if (inputs.barrier && frameCount % 8 === 0) fireBarrier(p);
 
   p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
   p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
@@ -906,7 +894,7 @@ function _handleWeaponFire(p, isShooting) {
     if (isShooting) {
       let des = SHIP_DESIGNS[p.designIndex];
       let isTank = (des && des.shotType === 'tank_shell');
-      let rate = isTank ? 15 : 6;
+      let rate = isTank ? 15 : 8;
       if (frameCount % rate === 0) {
         if (isTank) fireTankShell(p);
         else fireNormalPattern(p, s);
@@ -918,8 +906,8 @@ function _handleWeaponFire(p, isShooting) {
     if (isShooting && !p.shootHeld) fireMissile(p);
     p.shootHeld = isShooting;
   } else if (p.weaponMode === 2) {
-    // BARRIER: auto-repeat at the same 6-frame cadence as normal bullets
-    if (isShooting && frameCount % 6 === 0) fireBarrier(p);
+    // BARRIER: auto-repeat at the same 8-frame cadence as normal bullets
+    if (isShooting && frameCount % 8 === 0) fireBarrier(p);
     // Track shootHeld so switching modes resets missile edge-detection
     p.shootHeld = isShooting;
   }
@@ -947,7 +935,7 @@ function _handleWeaponFire(p, isShooting) {
  * @param {object} p  Player state object (mutated in place).
  */
 function updateShipInput(p) {
-  if (p.dead || (typeof gameState !== 'undefined' && gameState === 'gameover')) return;
+  if (p.dead || (typeof gameState !== 'undefined' && gameState.mode === 'gameover')) return;
 
   // Reset each frame so stale enemy references never persist across frames.
   p.aimTarget = null;
@@ -1006,10 +994,7 @@ function killPlayer(p) {
       p.lpDeaths = (p.lpDeaths || 0) + 1;
       if (p.lpDeaths >= 3) {
         if (typeof gameState !== 'undefined') {
-          gameState = 'gameover';
-          gameOverReason = 'LAUNCH PAD TAKEN OVER';
-          levelEndTime = millis();
-          if (typeof gameSFX !== 'undefined') gameSFX.playGameOver();
+          gameState.setGameOver('LAUNCH PAD TAKEN OVER');
         }
       }
     } else {

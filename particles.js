@@ -314,9 +314,6 @@ class ParticleSystem {
    *   • Fades particles at geometry intersections by comparing their depth
    *     against the pre-particle scene depth stored in sceneFBO.depth.
    *
-   * Explosion particles are always rendered as unlit spheres.
-   * Enemy bullets are rendered as small red spheres.
-   *
    * @param {number}         camX     Ship world X — distance-cull centre.
    * @param {number}         camZ     Ship world Z.
    * @param {number}        [camCX]   Camera world X (billboard orientation).
@@ -342,23 +339,10 @@ class ParticleSystem {
       noStroke();
 
       // ── Soft billboard particles: exhaust, squid fog, missile smoke ──────
-      // Preferred path: GLSL depth-aware soft particles when scene depth is available.
-      // Fallback path: textured billow sprites (still soft, but no depth intersection fade).
       const useDepthSoftShader = (_softShader && _cloudTex && sceneFBO);
       const useBillowSprites = (!!_cloudTex && !useDepthSoftShader);
       const disableDepthForSoft = useDepthSoftShader || useBillowSprites;
       if (disableDepthForSoft) {
-        // Soft billboard quads handle depth-fade via the sDepth texture, so
-        // disable DEPTH_TEST while drawing them so transparent quad texels
-        // don't occlude as rectangles in the fallback textured-billow path.
-        //
-        // WARNING — mobile performance: on tile-based GPUs (Adreno, Apple
-        // A-series, Mali), gl.disable(DEPTH_TEST) is a tile-flush barrier that
-        // forces the GPU to resolve ALL pending tiles before the depth-state
-        // change takes effect.  On a complex scene this stall is ~4–16 ms per
-        // frame — 24–96% of the 60fps budget.  For this reason ParticleSystem
-        // is never initialized on mobile (see setup() in sketch.js), keeping
-        // both disableDepthForSoft flags false and leaving DEPTH_TEST always on.
         drawingContext.disable(drawingContext.DEPTH_TEST);
       }
       if (useDepthSoftShader) {
@@ -373,7 +357,7 @@ class ParticleSystem {
 
       for (let i = 0; i < this.particles.length; i++) {
         let p = this.particles[i];
-        if (p.isExplosion) continue;  // Handled in the explosion loop below
+        if (p.isExplosion) continue;
         let dxC = p.x - camX;
         let dzC = p.z - camZ;
         let dSq = dxC * dxC + dzC * dzC;
@@ -390,153 +374,104 @@ class ParticleSystem {
 
         let lifeNorm = p.life / 255.0;
         let t = 1.0 - lifeNorm;
-        // Alpha in [0, 1] — fade in over the first 40 % of lifetime
         let alpha = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
-        if (p.isFog) alpha *= p.isInkBurst ? 1.15 : 0.85;  // Burst clouds are much denser/darker
-        if (p.isThrust) alpha *= 0.42; // Thrust smoke should stay soft/translucent
+        if (p.isFog) alpha *= p.isInkBurst ? 1.15 : 0.85;
+        if (p.isThrust) alpha *= 0.42;
         if (alpha <= 0.02) continue;
 
         let r, g, b;
         if (p.isFog && p.color) {
-          // Keep squid ink very dark throughout lifetime (minimal fade-to-grey).
           if (p.isInkBurst) {
             let f = Math.min(t * 0.7, 1.0);
-            r = lerp(p.color[0], 3, f);
-            g = lerp(p.color[1], 3, f);
-            b = lerp(p.color[2], 4, f);
+            r = lerp(p.color[0], 3, f); g = lerp(p.color[1], 3, f); b = lerp(p.color[2], 4, f);
           } else {
             let f = Math.min(t * 0.9, 1.0);
-            r = lerp(p.color[0], 8, f);
-            g = lerp(p.color[1], 8, f);
-            b = lerp(p.color[2], 10, f);
+            r = lerp(p.color[0], 8, f); g = lerp(p.color[1], 8, f); b = lerp(p.color[2], 10, f);
           }
         } else if (p.color) {
-          // Exhaust / powerup sparks: fade from base colour to dark grey
           let f = Math.min(t * 1.5, 1.0);
-          r = lerp(p.color[0], 30, f);
-          g = lerp(p.color[1], 30, f);
-          b = lerp(p.color[2], 30, f);
+          r = lerp(p.color[0], 30, f); g = lerp(p.color[1], 30, f); b = lerp(p.color[2], 30, f);
           if (p.isThrust) {
-            // Keep thrust in a neutral smoky-grey band (less saturated flame look)
             let grey = (r + g + b) / 3;
-            r = lerp(r, grey, 0.75);
-            g = lerp(g, grey, 0.75);
-            b = lerp(b, grey, 0.75);
+            r = lerp(r, grey, 0.75); g = lerp(g, grey, 0.75); b = lerp(b, grey, 0.75);
           }
         } else {
-          // Missile smoke: seed-derived hue cycle
           let seed = p.seed || 1.0;
-          let kr = (5 + seed * 6) % 6;
-          let kg = (3 + seed * 6) % 6;
-          let kb = (1 + seed * 6) % 6;
+          let kr = (5 + seed * 6) % 6, kg = (3 + seed * 6) % 6, kb = (1 + seed * 6) % 6;
           let vr = 255 * (1 - Math.max(Math.min(kr, 4 - kr, 1), 0));
           let vg = 255 * (1 - Math.max(Math.min(kg, 4 - kg, 1), 0));
           let vb = 255 * (1 - Math.max(Math.min(kb, 4 - kb, 1), 0));
           if (t < 0.15) {
-            let f = t / 0.15;
-            r = lerp(255, vr, f); g = lerp(255, vg, f); b = lerp(255, vb, f);
+            let f = t / 0.15; r = lerp(255, vr, f); g = lerp(255, vg, f); b = lerp(255, vb, f);
           } else if (t < 0.6) {
-            let f = (t - 0.15) / 0.45;
-            r = lerp(vr, vr * 0.4, f); g = lerp(vg, vg * 0.4, f); b = lerp(vb, vb * 0.4, f);
+            let f = (t - 0.15) / 0.45; r = lerp(vr, vr * 0.4, f); g = lerp(vg, vg * 0.4, f); b = lerp(vb, vb * 0.4, f);
           } else {
-            let f = (t - 0.6) / 0.4;
-            r = lerp(vr * 0.4, 15, f); g = lerp(vg * 0.4, 15, f); b = lerp(vb * 0.4, 15, f);
+            let f = (t - 0.6) / 0.4; r = lerp(vr * 0.4, 15, f); g = lerp(vg * 0.4, 15, f); b = lerp(vb * 0.4, 15, f);
           }
         }
 
         if (useDepthSoftShader || useBillowSprites) {
-          // Billboard: rotate the plane so its face points toward the camera.
-          let dx = (camCX ?? p.x) - p.x;
-          let dy = (camCY ?? p.y) - p.y;
-          let dz = (camCZ ?? (p.z + 1)) - p.z;
+          let dx = (camCX ?? p.x) - p.x, dy = (camCY ?? p.y) - p.y, dz = (camCZ ?? (p.z + 1)) - p.z;
           let horiz = Math.hypot(dx, dz);
           if (horiz < 0.0001 && abs(dy) < 0.0001) continue;
-          let yaw = atan2(dx, dz);
-          let pitch = -atan2(dy, Math.max(horiz, 0.0001));
-
+          let yaw = atan2(dx, dz), pitch = -atan2(dy, Math.max(horiz, 0.0001));
           let sz = p.size || 8;
-          if (p.isThrust) sz *= (1.0 + t * 1.1); // billow outward as it ages
-          if (p.isFog) {
-            if (p.isInkBurst) sz *= (1.3 + t * 4.2); // even larger rapid bloom from a single squirt
-            else sz *= (1.35 + t * 2.3);
-          }
-          push();
-          translate(p.x, p.y, p.z);
-          rotateY(yaw);
-          rotateX(pitch);
+          if (p.isThrust) sz *= (1.0 + t * 1.1);
+          if (p.isFog) sz *= (p.isInkBurst ? (1.3 + t * 4.2) : (1.35 + t * 2.3));
+          push(); translate(p.x, p.y, p.z); rotateY(yaw); rotateX(pitch);
           if (useDepthSoftShader) {
-            _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]);
-            plane(sz, sz);
+            _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]); plane(sz, sz);
           } else {
-            tint(r, g, b, alpha * 255);
-            plane(sz, sz);
+            tint(r, g, b, alpha * 255); plane(sz, sz);
           }
           pop();
         } else {
-          // Fallback: LOW-POLY unlit sphere when soft shader is unavailable (Mobile).
-          // Using detail (5,4) reduces triangles from ~700 to 40 per particle,
-          // saving over 100k vertices per frame on mobile devices.
-          push();
-          translate(p.x, p.y, p.z);
-          fill(r, g, b, alpha * 255);
-          sphere((p.size || 8) / 2, 5, 4);
-          pop();
+          push(); translate(p.x, p.y, p.z); fill(r, g, b, alpha * 255); sphere((p.size || 8) / 2, 5, 4); pop();
         }
       }
       if (useBillowSprites) noTint();
-
       if (useDepthSoftShader) resetShader();
-      if (disableDepthForSoft) {
-        // Restore depth test for any rendering that follows in the same pass.
-        drawingContext.enable(drawingContext.DEPTH_TEST);
-      }
+      if (disableDepthForSoft) drawingContext.enable(drawingContext.DEPTH_TEST);
 
-      // In the WebGL2 3-pass path (sceneFBO provided), hard particles are
-      // rendered inside Pass 1 (renderHardParticles) so they depth-test
-      // correctly against the opaque scene.  Skip them here to avoid
-      // double-drawing and so the blit in Pass 2 can stay COLOR-only.
-      if (!sceneFBO) this._drawHardGeometry(camX, camZ, cullSq);
+      if (!sceneFBO) this._drawHardGeometry(camCX ?? camX, camCY ?? 0, camCZ ?? camZ, camX, camZ, cullSq);
     } else if (!sceneFBO) {
-      // No soft particles but still need bombs / bullets in fallback path.
-      this._drawHardGeometry(camX, camZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
+      this._drawHardGeometry(camCX ?? camX, camCY ?? 0, camCZ ?? camZ, camX, camZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
     }
   }
 
   /**
    * Render hard-geometry particles (explosions, bombs, enemy bullets) with
-   * normal depth testing.  Called inside Pass 1 (sceneFBO) in the WebGL2
-   * path so they occlude correctly against the opaque scene and are captured
-   * in the depth texture used by the soft-billboard shader.
-   * @param {number} camX  Camera X (world) for culling.
-   * @param {number} camZ  Camera Z (world) for culling.
+   * normal depth testing.
+   * @param {number} cx    Camera X for perspective scaling.
+   * @param {number} cy    Camera Y for perspective scaling.
+   * @param {number} cz    Camera Z for perspective scaling.
+   * @param {number} shipX Ship X for distance culling.
+   * @param {number} shipZ Ship Z for distance culling.
    */
-  renderHardParticles(camX, camZ) {
+  renderHardParticles(cx, cy, cz, shipX, shipZ) {
     noLights(); noStroke();
-    this._drawHardGeometry(camX, camZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
+    this._drawHardGeometry(cx, cy, cz, shipX, shipZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
   }
 
   /** @private Shared draw logic for explosions, bombs, and enemy bullets. */
-  _drawHardGeometry(camX, camZ, cullSq) {
+  _drawHardGeometry(cx, cy, cz, shipX, shipZ, cullSq) {
     noLights(); noStroke();
 
-    // Explosion particles: unlit spheres (wave-front colour model)
+    // Explosion particles: unlit points (wave-front colour model)
     for (let p of this.particles) {
       if (!p.isExplosion) continue;
-      if ((p.x - camX) ** 2 + (p.z - camZ) ** 2 > cullSq) continue;
+      if ((p.x - shipX) ** 2 + (p.z - shipZ) ** 2 > cullSq) continue;
 
       let lifeNorm = p.life / 255.0;
-      let alpha = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 255 : 255;
+      // Fade out over the last 40% of life, and cap maximum alpha for better transparency
+      let alpha = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 140 : 140;
 
-      // Use LUT for wave expansion math — floor index because p.life is a float (decay-based).
-      // Increased scaling factor (2000) makes the explosion "proper big".
       const wave = _EXPLOSION_WAVE_LUT[p.life | 0] || 0;
-      // Fast box check before distance check.
       const dx = p.x - p.cx, dy = p.y - p.cy, dz = p.z - p.cz;
       if (Math.abs(dx) > wave + 100 || Math.abs(dy) > wave + 100 || Math.abs(dz) > wave + 100) continue;
 
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       const diff = wave - d;
-      // Removed wave-front culling (diff < -50) to allow fast particles to fly outward naturally.
 
       let r, g, b;
       if (diff < 40) {
@@ -552,29 +487,27 @@ class ParticleSystem {
         r = p.sr; g = p.sg; b = p.sb;
       }
 
-      // Use point() for explosion embers — ultra-fast 2D billboards.
-      // One vertex per particle. Scale by distance for perspective.
+      // One vertex per particle. Scale by camera distance for proper 3D perspective.
       stroke(r, g, b, alpha);
-      // Perspective scale: make them roughly world-space sized.
-      // 1200 is a tuning constant to match the old 3D box sizes.
-      const screenSz = (p.size || 12) * (1200 / Math.max(d, 10));
-      strokeWeight(screenSz);
+      const dToCam = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2 + (p.z - cz) ** 2);
+      // Tuning constant (750) and min-distance floor (120) prevents infinite size when camera is inside burst.
+      const screenSz = (p.size || 10) * (750 / Math.max(dToCam, 120));
+      // Cap at 64 to avoid hitting hardware POINT_SIZE limits which differ between platforms.
+      strokeWeight(constrain(screenSz, 1.5, 64));
       point(p.x, p.y, p.z);
     }
-    noStroke(); // Restore state for other rendering
+    noStroke();
 
-    // Bombs — narrow red-dark cuboids (falling capsules)
+    // Bombs 
     for (let b of this.bombs) {
       push(); translate(b.x, b.y, b.z); noStroke(); fill(200, 50, 50); box(8, 20, 8); pop();
     }
 
-    // Enemy bullets — flat red spheres.
-    let enemyBulletR = 4; // Enemy bullet size control (sphere radius)
+    // Enemy bullets 
     for (let b of this.enemyBullets) {
-      push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(enemyBulletR, 4, 3); pop();
+      push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(4, 4, 3); pop();
     }
   }
 }
 
-// Singleton instance used by all other modules
 const particleSystem = new ParticleSystem();

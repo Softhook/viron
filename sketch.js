@@ -549,7 +549,7 @@ function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
     // Render hard particles (explosions, bombs, bullets) inside the FBO so
     // they depth-test correctly and are captured in the depth texture used
     // by the soft-billboard shader.
-    particleSystem.renderHardParticles(s.x, s.z);
+    particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
     pop();
     sceneFBO.end();
 

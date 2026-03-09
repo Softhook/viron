@@ -618,10 +618,12 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
 
   // --- Respawn Indicator ---
   if (p.dead && !p.gameOver) {
+    push();
     textAlign(CENTER);
     fill(255, 255, 0, 200);
     textSize(32);
     text('Respawning...', 0, 30);
+    pop();
   }
 
   drawRadarForPlayer(p, hw, h);

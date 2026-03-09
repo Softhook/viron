@@ -32,7 +32,7 @@ function _getHUDLabelGraphic(hw, h) {
   g.clear();
   g.noStroke();
   g.textAlign(LEFT, TOP);
-  if (typeof gameFont !== 'undefined') g.textFont(gameFont);
+  if (gameState.gameFont) g.textFont(gameState.gameFont);
 
   const lx = 14;
   for (const stat of HUD_STATS) {
@@ -256,7 +256,7 @@ function drawMenu() {
 
   // CRT scanline overlay — subtle dark horizontal lines for retro feel
   // LATERAL OPT: Skip this loop on mobile to save 200+ line() calls.
-  if (!isMobile) {
+  if (!gameState.isMobile) {
     stroke(0, 0, 0, 20); strokeWeight(1);
     for (let y = -height / 2; y < height / 2; y += 4) {
       line(-width / 2, y, width / 2, y);
@@ -270,7 +270,7 @@ function drawMenu() {
   let blink2 = sin(frameCount * 0.08 + 1.5) * 0.3 + 0.7;
 
   textSize(28);
-  if (isMobile) {
+  if (gameState.isMobile) {
     fill(255, 255, 255, 255 * blink1);
     text('TAP TO START', 0, optY + 25);
   } else {
@@ -311,7 +311,7 @@ function drawInstructions() {
 
   textAlign(CENTER, CENTER);
 
-  if (isMobile) {
+  if (gameState.isMobile) {
     // --- Mobile Touch Screen Overlay ---
     if (typeof mobileController !== 'undefined') {
       // Draw the full-scale mobile zones forced to be visible
@@ -346,7 +346,7 @@ function drawInstructions() {
       });
     };
 
-    if (numPlayers === 1) {
+    if (gameState.numPlayers === 1) {
       drawConfig('MOUSE CONTROLS', [200, 255, 200], [
         'Pitch / Yaw: Move Mouse',
         'Thrust: Right-Click',
@@ -390,7 +390,7 @@ function drawInstructions() {
   fill(150, 255, 150, 255 * blink);
   textAlign(CENTER, CENTER);
   textSize(24);
-  text(isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
+  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
 
   pop();
 }
@@ -411,13 +411,13 @@ function drawGameOver() {
 
   textSize(24);
   fill(180, 200, 180);
-  text(gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
+  text(gameState.gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
 
   pop();
 
   // Auto-return to menu after 5 seconds
-  if (millis() - levelEndTime > 5000) {
-    gameState = 'menu';
+  if (millis() - gameState.levelEndTime > 5000) {
+    gameState.mode = 'menu';
   }
 }
 
@@ -439,16 +439,16 @@ function drawBackgroundLandscape() {
   perspective(PI / 3, width / height, 50, VIEW_FAR * TILE * 1.5);
 
   // Update panning animation
-  menuCam.yaw += 0.0006;
+  gameState.menuCam.yaw += 0.0006;
 
   // Position camera low to the ground, panning in a circle
-  let cx = menuCam.x + sin(menuCam.yaw) * 550;
-  let cz = menuCam.z + cos(menuCam.yaw) * 550;
+  let cx = gameState.menuCam.x + sin(gameState.menuCam.yaw) * 550;
+  let cz = gameState.menuCam.z + cos(gameState.menuCam.yaw) * 550;
   let cy = -90;
-  camera(cx, cy, cz, menuCam.x, -10, menuCam.z, 0, 1, 0);
+  camera(cx, cy, cz, gameState.menuCam.x, -10, gameState.menuCam.z, 0, 1, 0);
 
   // Fake ship for culling / terrain logic
-  let fakeShip = { x: menuCam.x, y: cy, z: menuCam.z, yaw: menuCam.yaw, pitch: 0 };
+  let fakeShip = { x: gameState.menuCam.x, y: cy, z: gameState.menuCam.z, yaw: gameState.menuCam.yaw, pitch: 0 };
 
   setSceneLighting();
   terrain.drawLandscape(fakeShip, width / height);
@@ -469,14 +469,14 @@ function drawShipSelect() {
   drawBackgroundLandscape();
 
   let pxD = pixelDensity();
-  if (numPlayers === 1) {
-    renderShipSelectView(players[0], 0, 0, width, height, pxD);
+  if (gameState.numPlayers === 1) {
+    renderShipSelectView(gameState.players[0], 0, 0, width, height, pxD);
   } else {
     let hw = floor(width / 2);
     // Left view (P1)
-    renderShipSelectView(players[0], 0, 0, hw, height, pxD);
+    renderShipSelectView(gameState.players[0], 0, 0, hw, height, pxD);
     // Right view (P2)
-    renderShipSelectView(players[1], 1, hw, hw, height, pxD);
+    renderShipSelectView(gameState.players[1], 1, hw, hw, height, pxD);
 
     // Split screen divider overlay
     setup2DViewport();
@@ -533,7 +533,7 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
   _drawShipStats(p, design, relX, vw, vh);
 
   // Selection Hints / Mobile Buttons
-  if (isMobile && !p.ready) {
+  if (gameState.isMobile && !p.ready) {
     fill(255, 40);
     rect(relX - vw / 2 + 20, -40, 60, 80, 10);
     rect(relX + vw / 2 - 80, -40, 60, 80, 10);
@@ -622,7 +622,7 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   let s = p.ship;
 
   push();
-  if (typeof gameFont !== 'undefined') textFont(gameFont);
+  if (gameState.gameFont) textFont(gameState.gameFont);
   // Set up an orthographic 2D projection for this viewport slice
   ortho(-hw / 2, hw / 2, -h / 2, h / 2, 0, 1000);
   resetMatrix();
@@ -646,7 +646,7 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   }
 
   // --- Crosshair (first-person reticle — only shown in first-person mode) ---
-  if (typeof firstPersonView !== 'undefined' && firstPersonView) {
+  if (gameState.firstPersonView) {
     stroke(0, 255, 0, 150);
     strokeWeight(2);
     noFill();
@@ -690,7 +690,7 @@ function drawRadarForPlayer(p, hw, h) {
   let gb = _getRadarBuffer(p.id, radarSize);
 
   // Throttled update on mobile: redraw into buffer every 2nd frame
-  const shouldUpdate = !isMobile || (frameCount + p.id) % 2 === 0;
+  const shouldUpdate = !gameState.isMobile || (frameCount + p.id) % 2 === 0;
 
   if (shouldUpdate) {
     gb.clear();
@@ -748,7 +748,7 @@ function drawRadarForPlayer(p, hw, h) {
     }
 
     // 5. Co-op partner
-    let other = players[1 - p.id];
+    let other = gameState.players[1 - p.id];
     if (other && !other.dead) {
       const [rox, roz] = _projectToRadar(other.ship.x, other.ship.z, s, yawSin, yawCos);
       if (Math.abs(rox) < RADAR_HALF && Math.abs(roz) < RADAR_HALF) {
@@ -785,11 +785,11 @@ function drawRadarForPlayer(p, hw, h) {
  * @param {number} h   Viewport height.
  */
 function drawControlHints(p, pi, hw, h) {
-  if (isMobile) return;
+  if (gameState.isMobile) return;
   push();
   imageMode(CENTER);
   let hints = '';
-  if (numPlayers === 1) {
+  if (gameState.numPlayers === 1) {
     hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  F/R tilt';
   } else {
     hints = pi === 0

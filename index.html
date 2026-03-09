@@ -31,6 +31,10 @@
   <script src="hud.js"></script>
   <script src="aimAssist.js"></script>
   <script src="mobileControls.js"></script>
+  <!-- IMPORTANT: Load order matters - gameState must load before gameRenderer/gameLoop -->
+  <script src="gameState.js"></script>
+  <script src="gameRenderer.js"></script>
+  <script src="gameLoop.js"></script>
   <script src="sketch.js"></script>
 </body>
 

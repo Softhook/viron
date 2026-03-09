@@ -1,182 +1,26 @@
 // =============================================================================
-// sketch.js — Game state, p5 lifecycle, main loop and event handlers
+// sketch.js — p5 lifecycle, orchestration, and event handlers
 //
-// This file is the "controller" of the game.  It owns the top-level mutable
-// state and orchestrates the update / render pipeline each frame by calling
-// into the specialised modules:
-//   constants.js → pure constants and helpers
-//   terrain.js   → Terrain class (world rendering + altitude queries)
-//   particles.js → ParticleSystem class (VFX, bombs, enemy bullets)
-//   enemies.js   → EnemyManager class (AI update + rendering)
-//   player.js    → ship physics, input, and projectile functions
-//   hud.js       → HUD, radar, menu and game-over overlays
-//   sfx.js       → GameSFX class (unchanged)
+// Thin orchestration layer that:
+//   • Manages p5 lifecycle (preload, setup, draw)
+//   • Delegates game state to gameState.js
+//   • Delegates rendering to gameRenderer.js
+//   • Delegates physics/collisions to gameLoop.js
+//   • Handles user input and menu flow
+//
+// Game logic is layered across specialized modules for testability and clarity.
 // =============================================================================
 
-// ---------------------------------------------------------------------------
-// Global game state
-// ---------------------------------------------------------------------------
-
-let trees = [], buildings = [], sentinelBuildings = [];
-
-let level = 1;            // Current level number (increases on level completion)
-let currentMaxEnemies = 2;         // Max simultaneous enemies for the current level
-
-let levelComplete = false;     // True once all Viron has been cleared
-let infectionStarted = false;     // Latches to true when the first tile is infected
-
-// Barrier tile Map — mirrors `infection` but marks immune/blocked tiles.
-// Stores {k, tx, tz, verts} objects using TileManager for fast iteration.
-// withBuckets=true: tiles are also indexed by chunk so drawLandscape only
-// iterates tiles in visible chunks instead of the entire global list.
-let barrierTiles = new TileManager(true);
-
-// In-flight barrier projectile objects — environment state, not per-player.
-// Same structure as bullets/missiles: { x, y, z, vx, vy, vz, life }.
-let inFlightBarriers = [];
-let levelEndTime = 0;         // millis() timestamp of level completion / game over
-
-let gameFont;                      // Loaded Impact font used for all HUD / menu text
-let gameState = 'menu';    // Current game mode: 'menu' | 'playing' | 'gameover'
-let gameOverReason = '';        // Human-readable reason string shown on game-over screen
-let lastAlarmTime = 0;         // millis() of the last launchpad alarm SFX (rate-limited)
-let gameStartTime = 0;         // millis() when the current game started
-
-let numPlayers = 1;         // 1 or 2 — set by startGame()
-let menuCam = { x: 1500, z: 1500, yaw: 0 }; // Title-screen camera state
-let firstPersonView = false;  // Toggle with O key; false = behind-ship (default)
-let sceneFBO = null;          // Pre-particle scene framebuffer for soft-particle depth test (WebGL2)
-
-// Mouse state tracked via raw DOM events so they work before pointer-lock
-let mouseReleasedSinceStart = true;
-let leftMouseDown = false;
-let rightMouseDown = false;
-
-let players = [];                // Array of player objects; length = numPlayers
-let smoothedMX = 0, smoothedMY = 0; // Smoothed mouse deltas for mouse-look steering
-
-let isMobile = false;             // True on any touch-capable device
-let isAndroid = false;             // True on Android (affects some edge-case behaviour)
+// Forward declarations for global access (populated after module load)
+let isMobile = false;
+let isAndroid = false;
 
 // ---------------------------------------------------------------------------
-// Utility functions
+// Utility functions (module-delegated)
 // ---------------------------------------------------------------------------
-
-/**
- * Detects whether the current device is a mobile/touch device and sets the
- * isMobile and isAndroid flags accordingly.
- */
-function checkMobile() {
-  const ua = navigator.userAgent;
-  isAndroid = /Android/i.test(ua);
-
-  // 1. Explicit UA check
-  isMobile = isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-
-  // 2. Modern iPads (MacBook-like UA but touch-enabled)
-  if (!isMobile && /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) {
-    isMobile = true;
-  }
-
-  // 3. Fallback: Check for generic mobile/tablet indicators in Desktop View
-  if (!isMobile && /Mobile|Tablet/i.test(ua)) {
-    isMobile = true;
-  }
-
-  // 4. Fallback: Any touch device that doesn't look like a standard Desktop OS
-  if (!isMobile && ('ontouchstart' in window)) {
-    const isDesktopOS = /Windows NT|Macintosh|Linux/i.test(ua);
-    if (!isDesktopOS) isMobile = true;
-  }
-
-  console.log(`[Viron] Device: ${isMobile ? 'MOBILE' : 'DESKTOP'} (UA: ${ua.slice(0, 50)}..., touch: ${navigator.maxTouchPoints})`);
-}
-
-/**
- * Applies directional + ambient lighting for the 3D scene.
- * Calls noLights() first so it is safe to call multiple times per frame without
- * accumulating duplicate light entries in p5's internal arrays (resetShader() does
- * NOT clear those arrays, so repeated calls without a reset would double the light
- * count and cost for every subsequent geometry draw).
- */
-function setSceneLighting() {
-  noLights();
-  // Reset material state to avoid specular/shininess leakage from previous draws
-  specularColor(0, 0, 0);
-  specularMaterial(0);
-  shininess(0);
-
-  // Reduced ambient: allows directional lights to drive contrast instead of washing out shadows.
-  ambientLight(AMBIENT_R, AMBIENT_G, AMBIENT_B);
-  // Warm key: directional sun at low elevation (sunrise profile).
-  directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ);
-}
-
-/**
- * Draws a sunrise sun-disc and beam wedges in world space.
- * The sun is anchored relative to the camera so it always stays at sky distance
- * and never intersects gameplay geometry.
- */
-function drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
-  // Compute the direction toward the sun using the pre-normalized
-  // SUN_DIR constants — no p5.Vector allocations needed.
-  // toSun = -SUN_DIR_N (normalised direction from camera to sun disc)
-  const toSunX = -SUN_DIR_NX, toSunY = -SUN_DIR_NY, toSunZ = -SUN_DIR_NZ;
-
-  // Push the sun far back so it renders behind all terrain (viewFarWorld),
-  // but remains within the camera far plane (viewFarWorld * 1.5).
-  // Maintaining its position relative to the camera (cx, cy, cz) is what gives it
-  // mathematically perfect zero-parallax.
-  const sunDist = viewFarWorld * 1.4;
-  const sunPosX = cx + toSunX * sunDist;
-  const sunHeight = cy + toSunY * sunDist; // negative Y is upward
-  const sunPosZ = cz + toSunZ * sunDist;
-
-  push();
-  noStroke();
-
-  // Stable additive sun glow (no beam wedges: they caused visible flicker and
-  // incorrect ray perspective in motion).
-  blendMode(ADD);
-  // Sun core + halo spheres.
-  push();
-  translate(sunPosX, sunHeight, sunPosZ);
-  emissiveMaterial(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B);
-  // Scaled up by 1.4 / 0.78 ≈ 1.8 to maintain visual size at the new huge distance
-  const sunDetailLongitude = 40, sunDetailLatitude = 32;
-  sphere(viewFarWorld * 0.038, sunDetailLongitude, sunDetailLatitude);
-  fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 80 * intensity);
-  sphere(viewFarWorld * 0.057, sunDetailLongitude, sunDetailLatitude);
-  fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 40 * intensity);
-  sphere(viewFarWorld * 0.083, sunDetailLongitude, sunDetailLatitude);
-  pop();
-
-  blendMode(BLEND);
-  pop();
-}
-
-/**
- * Switches the p5 renderer into a full-canvas 2D orthographic projection.
- * Sets the GL viewport to cover the full canvas, then pushes a new matrix
- * state with an ortho(-w/2..w/2, -h/2..h/2) projection and a reset modelview.
- * Callers MUST call pop() when finished.
- */
-function setup2DViewport() {
-  let pxD = pixelDensity();
-  drawingContext.viewport(0, 0, width * pxD, height * pxD);
-  push();
-  ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
-  resetMatrix();
-}
 
 /**
  * Finds the element in arr closest to (x, y, z) by 3D squared distance.
- * Used for enemy targeting and missile homing — each element must have x, y, z.
- * @param {Array}  arr  Array of objects with x, y, z properties.
- * @param {number} x
- * @param {number} y
- * @param {number} z
- * @returns {object|null}  Closest element, or null if arr is empty.
  */
 function findNearest(arr, x, y, z) {
   let best = null, bestD = Infinity;
@@ -189,23 +33,18 @@ function findNearest(arr, x, y, z) {
 
 const ALARM_COOLDOWN_MS = 1000;
 /**
- * Plays the launchpad alarm no more than once per cooldown window.
- * @returns {boolean} true if the alarm was played and lastAlarmTime was updated.
+ * Plays launchpad alarm no more than once per cooldown window.
  */
 function maybePlayLaunchpadAlarm() {
   const now = millis();
-  if (now - lastAlarmTime <= ALARM_COOLDOWN_MS) return false;
+  if (now - gameState.lastAlarmTime <= ALARM_COOLDOWN_MS) return false;
   if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
-  lastAlarmTime = now;
+  gameState.lastAlarmTime = now;
   return true;
 }
 
 /**
  * Removes all infected tiles within a CLEAR_R-tile square around (tx, tz).
- * Returns the number of tiles that were cleared.
- * @param {number} tx  Centre tile X.
- * @param {number} tz  Centre tile Z.
- * @returns {number}   Count of tiles cleared.
  */
 function clearInfectionRadius(tx, tz) {
   let cleared = 0;
@@ -218,12 +57,7 @@ function clearInfectionRadius(tx, tz) {
 }
 
 /**
- * Clears infection at a world-space position.  Adds 100 points to the player's
- * score and plays a clear-infection sound effect if infection was actually present.
- * @param {number} wx  World X of the impact.
- * @param {number} wz  World Z of the impact.
- * @param {object} p   Player who scored the clear (may be null for missile impacts).
- * @returns {boolean}  True if any tiles were cleared.
+ * Clears infection at a world-space position.
  */
 function clearInfectionAt(wx, wz, p) {
   let tx = toTile(wx), tz = toTile(wz);
@@ -240,627 +74,100 @@ function clearInfectionAt(wx, wz, p) {
 
 /** Loads the Impact font before setup() runs. */
 function preload() {
-  gameFont = loadFont('Impact.ttf');
+  gameState.gameFont = loadFont('Impact.ttf');
 }
 
 /**
- * p5 setup — creates the WEBGL canvas, initialises subsystems and populates
- * the static world objects (trees, buildings).
- *
- * Mobile devices receive reduced object counts and draw distances to stay at
- * a playable frame rate.
+ * p5 setup — creates the WEBGL canvas, initializes subsystems.
+ * Mobile devices receive reduced object counts and draw distances.
  */
 function setup() {
-  checkMobile();
-  if (isMobile) {
+  gameState.detectPlatform();
+  isMobile = gameState.isMobile;
+  isAndroid = gameState.isAndroid;
+
+  if (gameState.isMobile) {
     VIEW_NEAR = 20;
     VIEW_FAR = 30;
     CULL_DIST = 3500;
-    pixelDensity(1); // CAP: Modern mobile screens have 3x resolution but 1x fill-rate.
+    pixelDensity(1);
   }
+
   setAttributes('stencil', true);
   createCanvas(windowWidth, windowHeight, WEBGL);
 
-  // Soft-particle depth pre-pass is temporarily disabled.
-  // The off-screen FBO path can produce a fully black world on some systems;
-  // keep the stable single-pass renderer active until that pipeline is fixed.
-  //
-  // On mobile, skip initializing particle resources entirely.
-  // When _cloudTex is non-null, render() uses the billboard path:
-  //   • rotateY + rotateX per particle  (~130 ns of extra trig / matrix work per particle, aggregate from benchmark-particles.js)
-  //   • gl.disable(DEPTH_TEST) once per frame — on tile-based mobile GPUs
-  //     (Adreno, Apple A-series, Mali) this is a tile-flush barrier that stalls
-  //     the GPU for ~4–16 ms while all pending terrain tiles are resolved before
-  //     the depth state can change.  This alone consumes 24–96% of the 16.7 ms
-  //     60fps frame budget.
-  //
-  // Leaving _cloudTex null routes every particle through the sphere fallback:
-  //   • No orientation trig, no DEPTH_TEST toggle, no tile-flush stall.
-  //   • CPU: 2.84× cheaper per particle at mobile cull radius.
-  //   • GPU: eliminates the ~4–16 ms-per-frame tile-flush stall (2 DEPTH_TEST toggles) entirely.
-  //   • Net: recovers ~36% of the 60fps frame budget at a 200-particle load.
-  //     (Measured by benchmark-particles.js — run `node benchmark-particles.js`)
-  //
-  // Desktop is unaffected: immediate-mode GPUs have no tile-flush architecture,
-  // billboard visuals are preserved, and DEPTH_TEST toggles cost only ~1–5 μs.
-  sceneFBO = null;
-  if (!isMobile) ParticleSystem.init();
+  gameRenderer.sceneFBO = null;
+  gameRenderer.initialize(gameState.isMobile);
 
-  // Suppress context menu on right-click (right mouse is used for thrust)
+  // Suppress context menu on right-click
   document.addEventListener('contextmenu', event => event.preventDefault());
 
-  // Track mouse button state via DOM events — more reliable than p5's mousePressed
+  // Track mouse button state via DOM events
   document.addEventListener('mousedown', e => {
-    if (e.button === 0) leftMouseDown = true;
-    if (e.button === 1) e.preventDefault();
-    if (e.button === 2) rightMouseDown = true;
+    if (e.button === 0) gameState.leftMouseDown = true;
+    if (e.button === 2) gameState.rightMouseDown = true;
   });
   document.addEventListener('mouseup', e => {
-    if (e.button === 0) leftMouseDown = false;
-    if (e.button === 2) rightMouseDown = false;
+    if (e.button === 0) gameState.leftMouseDown = false;
+    if (e.button === 2) gameState.rightMouseDown = false;
   });
 
-  terrain.init();  // Compile terrain GLSL shader (must happen after canvas creation)
-  textFont(gameFont);
+  terrain.init();
+  textFont(gameState.gameFont);
 
-  // Initialize Aim Assist based on platform
   if (typeof aimAssist !== 'undefined') {
-    aimAssist.enabled = isMobile;
+    aimAssist.enabled = gameState.isMobile;
   }
 
-  // Trees are now generated procedurally from world-space noise in terrain.js.
-  // Keep the array empty so we do not maintain a global static tree map.
-  trees = [];
-
-  // menuCam starts over open terrain away from the launchpad
-
-  // Buildings — different seed from trees so positions don't correlate
+  // Populate static world objects
   randomSeed(123);
-  let numBldgs = isMobile ? 15 : 40;
+  let numBldgs = gameState.isMobile ? 15 : 40;
   for (let i = 0; i < numBldgs; i++) {
     let bx = random(-4500, 4500), bz = random(-4500, 4500);
-    buildings.push({
+    gameState.buildings.push({
       x: bx, z: bz,
-      y: terrain.getAltitude(bx, bz),  // Cached altitude — never changes
+      y: terrain.getAltitude(bx, bz),
       w: random(40, 100), h: random(50, 180), d: random(40, 100),
       type: floor(random(4)),
       col: [random(80, 200), random(80, 200), random(80, 200)]
     });
   }
 
-  // Sentinels — one per mountain peak, staggered pulse timers so they don't all fire together
+  // Sentinels at mountain peaks
   for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
     let peak = MOUNTAIN_PEAKS[i];
-    buildings.push({
+    gameState.buildings.push({
       x: peak.x, z: peak.z,
-      y: terrain.getAltitude(peak.x, peak.z),  // Cached altitude — never changes
-      w: 60, h: 280, d: 60,   // Larger than ordinary buildings — monumental scale
+      y: terrain.getAltitude(peak.x, peak.z),
+      w: 60, h: 280, d: 60,
       type: 4,
       col: [0, 220, 200],
       pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / MOUNTAIN_PEAKS.length)
     });
   }
 
-  // LATERIAL OPT: Pre-process sentinels to avoid O(N) scans in the physics update.
-  sentinelBuildings = buildings.filter(b => b.type === 4);
-
-  gameState = 'menu';
+  gameState.sentinelBuildings = gameState.buildings.filter(b => b.type === 4);
+  gameState.mode = 'menu';
 }
 
 // ---------------------------------------------------------------------------
-// Game setup functions
+// Game flow / state transitions
 // ---------------------------------------------------------------------------
 
 /**
  * Begins a new game with the given number of players.
- * Creates player objects, then calls startLevel(1).
- * @param {number} np  Number of players (1 or 2).
+ * Delegates to gameState for initialization.
  */
 function startGame(np) {
-  numPlayers = np;
-  if (typeof gameSFX !== 'undefined') gameSFX.spatialEnabled = (np === 1);
-  gameStartTime = millis();
-  mouseReleasedSinceStart = !leftMouseDown;  // Don't fire on the frame the game starts
-  if (np === 1) {
-    players = [createPlayer(0, P1_KEYS, 420, [80, 180, 255])];
-  } else {
-    players = [
-      createPlayer(0, P1_KEYS, 300, [80, 180, 255]),
-      createPlayer(1, P2_KEYS, 500, [255, 180, 80])
-    ];
-  }
-  // Reset performance monitor cooldown so this new session starts without
-  // carrying over a quality-reduction penalty from the previous game.
-  if (window._perf) window._perf.cooldown = 0;
-
-  startLevel(1);
-  gameState = 'instructions';
+  gameState.startNewGame(np);
 }
 
 /**
- * Places one guaranteed infected tile within a random distance of the player
- * spawn point at the start of each level.  The tile is chosen in a ring
- * between MIN_DIST and MAX_DIST world-space units from the launchpad centre.
- * We try up to MAX_TRIES random candidates and skip any that land on water or
- * on the launchpad itself, falling back silently if none is found.
- */
-function seedInitialInfection() {
-  const CENTER_X = (LAUNCH_MIN + LAUNCH_MAX) / 2;  // ≈ 420
-  const CENTER_Z = (LAUNCH_MIN + LAUNCH_MAX) / 2;  // ≈ 420
-  const MIN_DIST = 500;    // Closest the seed tile may be (world units)
-  const MAX_DIST = 1500;   // Farthest the seed tile may be (world units)
-  const MAX_TRIES = 50;
-
-  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
-    // Pick a random angle and radius in the annular zone
-    let angle = random(TWO_PI);
-    let dist = random(MIN_DIST, MAX_DIST);
-    let wx = CENTER_X + cos(angle) * dist;
-    let wz = CENTER_Z + sin(angle) * dist;
-
-    // Skip underwater and launchpad tiles
-    if (aboveSea(terrain.getAltitude(wx, wz))) continue;
-    if (isLaunchpad(wx, wz)) continue;
-
-    // Valid land tile — infect it and stop searching
-    let tk = tileKey(toTile(wx), toTile(wz));
-    infection.add(tk);
-    return;
-  }
-  // (Silently give up if no valid tile found in MAX_TRIES — the seeder will
-  //  create infection naturally soon after spawn.)
-}
-
-/**
- * Resets the world for a new level.
- * Respawns all ships on the launchpad, clears enemies/particles/infection,
- * then spawns the new wave of enemies (first enemy is always a seeder to
- * ensure infection starts immediately).
- *
- * Each level beyond level 1 awards one bonus missile per player.
- *
- * @param {number} lvl  The level number to start (1-indexed).
+ * Starts a specific level.
+ * Delegates to gameState for level setup.
  */
 function startLevel(lvl) {
-  if (typeof gameSFX !== 'undefined') gameSFX.playNewLevel();
-
-  if (typeof updateTimeOfDay === 'function') {
-    updateTimeOfDay(lvl);
-  }
-
-  level = lvl;
-  levelComplete = false;
-  if (lvl === 1) infectionStarted = false;
-  currentMaxEnemies = 1 + level;  // Enemy count scales linearly with level
-
-  for (let p of players) {
-    if (lvl === 1) resetShip(p, getSpawnX(p));
-    p.homingMissiles = [];
-    if (lvl > 1) {
-      p.missilesRemaining++;   // Bonus missile for completing the previous level
-    } else {
-      p.missilesRemaining = 1;
-    }
-    p.dead = false;
-    p.respawnTimer = 0;
-    p.lpDeaths = 0;
-  }
-
-  if (lvl === 1) {
-    barrierTiles.reset();    // All barrier marks reset only at the start of a new game
-    inFlightBarriers = [];   // Discard in-flight barriers for fresh start
-    infection.reset();
-    infectionStarted = false;
-    // Guarantee at least one infection tile is visible from the very start
-    seedInitialInfection();
-  }
-
-  enemyManager.clear();
-  particleSystem.clear();
-  terrain.activePulses = [];
-
-  // Every 3rd level (3, 6, 9 ...) guarantees a Colossus boss alongside normal enemies
-  let hasColossus = (lvl >= 3 && lvl % 3 === 0);
-  for (let i = 0; i < currentMaxEnemies; i++) {
-    let forceSeeder = (i === 0);
-    let forceColossus = (!forceSeeder && hasColossus && i === 1);
-    enemyManager.spawn(forceSeeder, forceColossus);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Per-player 3D viewport render
-// ---------------------------------------------------------------------------
-
-/**
- * Renders the complete 3D scene for one player's viewport using WebGL scissor
- * testing to confine drawing to the player's half of the canvas.
- *
- * Render order:
- *   1. Clear colour + depth for this viewport (sky colour background)
- *   2. Set up perspective camera positioned 550 units behind the ship
- *   3. Terrain (drawLandscape + drawTrees + drawBuildings)
- *   4. Enemies
- *   5. All player ships and projectiles
- *   6. Particles
- *   7. Clear depth buffer, then draw 2D HUD on top
- *   8. Mobile on-screen controls (single-player mobile only)
- *
- * @param {WebGLRenderingContext} gl        Raw WebGL context.
- * @param {object}                p         Player whose point-of-view to render.
- * @param {number}                pi        Player index (0 or 1).
- * @param {number}                viewX     Left pixel of this viewport.
- * @param {number}                viewW     Width  of this viewport in CSS pixels.
- * @param {number}                viewH     Height of this viewport in CSS pixels.
- * @param {number}                pxDensity devicePixelRatio from p5's pixelDensity().
- */
-function renderPlayerView(gl, p, pi, viewX, viewW, viewH, pxDensity) {
-  let s = p.ship;
-  let vx = viewX * pxDensity, vw = viewW * pxDensity, vh = viewH * pxDensity;
-
-  // Pre-compute camera parameters — shared between the opaque-scene pass and
-  // the particle pass so both use identical view/projection matrices.
-  let camNear = firstPersonView ? 5 : 50;
-  let camFar = VIEW_FAR * TILE * 1.5;
-  let cx, cy, cz, lx, ly, lz;
-  if (firstPersonView) {
-    // Cockpit eye looking along the ship's forward vector.
-    let cosPitch = cos(s.pitch), sinPitch = sin(s.pitch);
-    cx = s.x; cy = s.y - 25; cz = s.z;
-    lx = s.x + (-sin(s.yaw) * cosPitch) * 500;
-    ly = (s.y - 25) + sinPitch * 500;
-    lz = s.z + (-cos(s.yaw) * cosPitch) * 500;
-  } else {
-    // Camera sits ~300 units behind the ship (XZ plane) at a height-capped Y, looking at the ship body.
-    cy = min(s.y - 120, 140);
-    cx = s.x + 300 * sin(s.yaw);
-    cz = s.z + 300 * cos(s.yaw);
-    lx = s.x; ly = s.y; lz = s.z;
-  }
-
-  // Update spatial audio listener once per viewport.
-  if (typeof gameSFX !== 'undefined') gameSFX.updateListener(cx, cy, cz, lx, ly, lz, 0, 1, 0);
-
-  if (sceneFBO) {
-    // ═══ PASS 1 — Render opaque scene into the FBO (captures depth) ═══════
-    // The depth texture is later used by the soft-particle shader so particles
-    // fade out at terrain/geometry intersections instead of hard-clipping.
-    sceneFBO.begin();
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
-    gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    push();
-    perspective(PI / 3, viewW / viewH, camNear, camFar);
-    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
-    drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
-    setSceneLighting();
-    terrain.drawLandscape(s, viewW / viewH, firstPersonView);
-    terrain.drawTrees(s);
-    terrain.drawBuildings(s);
-    enemyManager.draw(s);
-    for (let player of players) {
-      if (!player.dead && (player !== p || !firstPersonView)) shipDisplay(player.ship, player.labelColor);
-      renderProjectiles(player, s.x, s.z);
-    }
-    renderInFlightBarriers(s.x, s.z);
-    if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
-    // Render hard particles (explosions, bombs, bullets) inside the FBO so
-    // they depth-test correctly and are captured in the depth texture used
-    // by the soft-billboard shader.
-    particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
-    pop();
-    sceneFBO.end();
-
-    // ═══ PASS 2 — Draw FBO colour to main canvas using a textured quad ══════
-    // blitFramebuffer from a non-MSAA FBO to the MSAA default canvas is
-    // GL_INVALID_OPERATION in WebGL2 (non-MSAA → MSAA blit is forbidden by
-    // spec).  p5.js itself uses this same image() pattern when it faces the
-    // same restriction (see p5.Framebuffer source, _beforeEnd antialias path).
-    // Keep the viewport and scissor aligned with the player's view slice.
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    push();
-    ortho(-viewW / 2, viewW / 2, -viewH / 2, viewH / 2, -1, 1);
-    resetMatrix();
-    imageMode(CORNER);
-    gl.disable(gl.DEPTH_TEST);
-    // Draw only the slice of the FBO that was rendered (viewX, 0, viewW, viewH)
-    image(sceneFBO, -viewW / 2, -viewH / 2, viewW, viewH, viewX, 0, viewW, viewH);
-    gl.enable(gl.DEPTH_TEST);
-    pop();
-
-    // ═══ PASS 3 — Render soft billboard particles atop the rendered scene ═
-    // Soft billboards self-manage depth fade via the sDepth texture; DEPTH_TEST
-    // is disabled inside render() for these quads and re-enabled afterwards.
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
-    push();
-    perspective(PI / 3, viewW / viewH, camNear, camFar);
-    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
-    particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, sceneFBO);
-    pop();
-
-  } else {
-    // ═══ Original single-pass rendering (WebGL1 / no-FBO fallback) ═══════
-    gl.viewport(vx, 0, vw, vh);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(vx, 0, vw, vh);
-    gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    push();
-    perspective(PI / 3, viewW / viewH, camNear, camFar);
-    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
-    drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
-    setSceneLighting();
-    terrain.drawLandscape(s, viewW / viewH, firstPersonView);
-    terrain.drawTrees(s);
-    terrain.drawBuildings(s);
-    enemyManager.draw(s);
-    for (let player of players) {
-      if (!player.dead && (player !== p || !firstPersonView)) shipDisplay(player.ship, player.labelColor);
-      renderProjectiles(player, s.x, s.z);
-    }
-    renderInFlightBarriers(s.x, s.z);
-    particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
-    if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
-    pop();
-  }
-
-  // ═══ HUD overlay (2D pass on top of 3D scene) ═══════════════════════════
-  gl.clear(gl.DEPTH_BUFFER_BIT);
-  drawPlayerHUD(p, pi, viewW, viewH);
-  if ((isMobile || (typeof mobileController !== 'undefined' && mobileController.debug)) && numPlayers === 1 && typeof mobileController !== 'undefined') {
-    mobileController.draw(width, height);
-  }
-  gl.disable(gl.SCISSOR_TEST);
-}
-
-// ---------------------------------------------------------------------------
-// draw() helpers
-// Note: functions below are prefixed with underscore to signal "called only
-// from draw()" — matching the existing convention in player.js helpers.
-// ---------------------------------------------------------------------------
-
-/**
- * Runs the frame-time percentile monitor and adjusts VIEW_NEAR/FAR + CULL_DIST.
- *
- * Uses a 60-sample circular buffer of raw deltaTime values.  Every 2 s wall-clock
- * the 90th-percentile frame time is compared against the detected display budget
- * (snapped to the nearest standard tier: 144/120/90/75/60/30 Hz).
- *
- * A 6-second cooldown after each quality reduction prevents rapid bouncing on
- * mobile devices where thermal throttling causes short spikes that quickly recover.
- */
-function _updatePerfScaling() {
-  if (!window._perf) {
-    window._perf = {
-      buf: new Float32Array(60), // circular buffer of raw frame times (ms)
-      idx: 0,
-      full: false,
-      budgetMs: 1000 / 60,      // ms-per-frame budget; refined after first 60 frames
-      budgetSet: false,
-      nextEval: 0,              // performance.now() timestamp of next evaluation
-      cooldown: 0,              // don't upgrade quality before this timestamp
-      overBudgetEvals: 0,       // consecutive eval windows that exceed reduce threshold
-      underBudgetEvals: 0,      // consecutive eval windows that satisfy restore threshold
-    };
-  }
-  const _p = window._perf;
-
-  // Record this frame's raw time (capped at 100 ms to exclude one-off load spikes).
-  _p.buf[_p.idx] = Math.min(deltaTime, 100);
-  _p.idx = (_p.idx + 1) % 60;
-  if (_p.idx === 0) _p.full = true;
-
-  // Detect display refresh rate once from the median of the first 60 samples.
-  if (!_p.budgetSet && _p.full) {
-    const sorted = _p.buf.slice().sort();  // Float32Array.sort() is numeric — no comparator needed
-    const medMs = (sorted[29] + sorted[30]) / 2;
-    const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33]; // 144/120/90/75/60/30 Hz
-    _p.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
-    if (!isMobile) _p.budgetMs = Math.max(_p.budgetMs, 1000 / 60); // desktop floor at 60 Hz
-    _p.budgetSet = true;
-  }
-
-  const _now = performance.now();
-  if (!_p.full || _now < _p.nextEval) return;
-  _p.nextEval = _now + 2000;
-
-  // 90th-percentile frame time (index 53 of 60 sorted samples).
-  const sorted = _p.buf.slice().sort();
-  const p90ms = sorted[53];
-
-  // Dead zone prevents bouncing: reduce at 1.55× budget, restore at 1.08×.
-  const reduceRatio = isMobile ? 1.40 : 1.55;
-  const restoreRatio = isMobile ? 1.15 : 1.08;
-  const canRestore = _now >= _p.cooldown;
-
-  if (p90ms > _p.budgetMs * reduceRatio) {
-    _p.overBudgetEvals++;
-    _p.underBudgetEvals = 0;
-  } else if (p90ms < _p.budgetMs * restoreRatio && canRestore) {
-    _p.underBudgetEvals++;
-    _p.overBudgetEvals = 0;
-  } else {
-    _p.overBudgetEvals = 0;
-    _p.underBudgetEvals = 0;
-  }
-
-  const minNear = isMobile ? 15 : 24;
-  const minFar  = isMobile ? 20 : 34;
-  const minCull = isMobile ? 2000 : 4200;
-
-  if (_p.overBudgetEvals >= 2) {
-    VIEW_NEAR = max(minNear, VIEW_NEAR - 1);
-    VIEW_FAR  = max(minFar,  VIEW_FAR  - 1);
-    CULL_DIST = max(minCull, CULL_DIST - 250);
-    _p.cooldown = _now + 6000;
-    _p.overBudgetEvals = 0;
-    _p.underBudgetEvals = 0;
-  } else if (_p.underBudgetEvals >= 3) {
-    VIEW_NEAR = min(35,   VIEW_NEAR + 1);
-    VIEW_FAR  = min(50,   VIEW_FAR  + 1);
-    CULL_DIST = min(6000, CULL_DIST + 150);
-    _p.cooldown = _now + 4000;
-    _p.overBudgetEvals = 0;
-    _p.underBudgetEvals = 0;
-  }
-}
-
-/**
- * Updates the sentinel glow / pulse list each frame.
- *
- * Healthy sentinels: registers their position in terrain.sentinelGlows so the
- * terrain shader draws a steady breathing ring on the ground.
- * Infected sentinels: emits an expanding infection-blue pulse every
- * SENTINEL_PULSE_INTERVAL frames as a visual + audio danger cue.
- */
-function _updateSentinelGlows() {
-  terrain.sentinelGlows = [];   // Rebuilt each frame
-  for (let b of buildings) {
-    if (b.type !== 4) continue;
-    b.pulseTimer = (b.pulseTimer || 0) + 1;
-    let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
-    if (inf) {
-      if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
-        b.pulseTimer = 0;
-        terrain.addPulse(b.x, b.z, 1.0);  // infection-blue expanding ring
-        if (typeof gameSFX !== 'undefined') {
-          // Stop at the first player in range — we want one pulse sound per event,
-          // not one per player.
-          let hearDist = 2000;
-          for (let p of players) {
-            if (!p.dead && dist(p.ship.x, p.ship.y, p.ship.z, b.x, b.y, b.z) < hearDist) {
-              gameSFX.playInfectionPulse(b.x, b.y, b.z);
-              break;
-            }
-          }
-        }
-      }
-    } else {
-      terrain.sentinelGlows.push({ x: b.x, z: b.z, radius: b.w * 1.5 });
-      if (b.pulseTimer >= SENTINEL_PULSE_INTERVAL) b.pulseTimer = 0;
-    }
-  }
-}
-
-/**
- * Computes infection proximity, pulse-overlap, and scan-sweep data for the
- * primary player, then calls gameSFX.updateAmbiance() to update the audio mix.
- * No-ops when gameSFX is not available.
- */
-function _updateAmbianceAudio() {
-  if (typeof gameSFX === 'undefined') return;
-
-  let p = players[0]; // Primary player drives ambiance
-  let proximityData = { dist: 10000 };
-
-  if (p && !p.dead && p.ship) {
-    // Nearest infected tile within an 8-tile radius for proximity sensing
-    let px = toTile(p.ship.x), pz = toTile(p.ship.z);
-    let minDistSq = 1000000;
-    for (let dz = -8; dz <= 8; dz++) {
-      for (let dx = -8; dx <= 8; dx++) {
-        let tx = px + dx, tz = pz + dz;
-        if (infection.has(tileKey(tx, tz))) {
-          let wx = tx * TILE + 60, wz = tz * TILE + 60;
-          let wy = terrain.getAltitude(wx, wz);
-          let dSq = (p.ship.x - wx) ** 2 + (p.ship.y - wy) ** 2 + (p.ship.z - wz) ** 2;
-          if (dSq < minDistSq) minDistSq = dSq;
-        }
-      }
-    }
-    proximityData.dist = Math.sqrt(minDistSq);
-
-    // Pulse-overlap: detect expanding shockwaves passing the player for the "zzz" sound
-    let nowSec = millis() / 1000.0;
-    let maxScan = 0;
-    for (let pulse of terrain.activePulses) {
-      let age = nowSec - pulse.start;
-      if (age < 0 || age > 3.0) continue;
-      let radius = pulse.type === 1.0 ? age * 300.0 : (pulse.type === 2.0 ? age * 1200.0 : age * 800.0);
-      let dist2D = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
-      let groundY = terrain.getAltitude(p.ship.x, p.ship.z);
-      let dy = p.ship.y - groundY;
-      let distToRing3D = Math.sqrt((dist2D - radius) ** 2 + dy ** 2);
-      if (distToRing3D < 120) {
-        let intensity = 1.0 - (distToRing3D / 120);
-        if (intensity > maxScan) maxScan = intensity;
-      }
-    }
-    proximityData.pulseOverlap = maxScan;
-
-    // Scan-sweep sync: replicate terrain.js shader logic to stay in phase with visuals
-    let xP = p.ship.x / TILE, zP = p.ship.z / TILE;
-    let scanPos = nowSec / 10.0;
-    let val = 1.0 - Math.abs(((xP * 0.02 + zP * 0.01 - scanPos) % 1.0 + 1.0) % 1.0 - 0.5) * 2.0;
-    proximityData.scanSweepAlpha = Math.max(0, (val - 0.98) / (1.0 - 0.98));
-  }
-
-  gameSFX.updateAmbiance(proximityData, infection.count, MAX_INF);
-}
-
-/**
- * Dispatches one 3D render pass per player (1 or 2) and draws the shared 2D
- * overlay (split-screen divider and level-complete banner).
- * @param {WebGLRenderingContext} gl  Raw WebGL context.
- */
-function _renderScene(gl) {
-  const h = height, pxDensity = pixelDensity();
-
-  if (numPlayers === 1) {
-    renderPlayerView(gl, players[0], 0, 0, width, h, pxDensity);
-  } else {
-    let hw = floor(width / 2);
-    for (let pi = 0; pi < 2; pi++) {
-      renderPlayerView(gl, players[pi], pi, pi * hw, hw, h, pxDensity);
-    }
-  }
-
-  // Shared 2D overlay: split-screen divider + level-complete banner
-  setup2DViewport();
-  if (numPlayers === 2) {
-    stroke(0, 255, 0, 180); strokeWeight(2);
-    line(0, -height / 2, 0, height / 2);
-  }
-  if (levelComplete) {
-    noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
-    text('LEVEL ' + level + ' COMPLETE', 0, 0);
-  }
-  pop();
-}
-
-/**
- * Checks level-clear conditions, advances the level after a 4-second delay, and
- * decrements respawn timers for dead players.
- */
-function _updateLevelAndRespawn() {
-  if (!levelComplete) {
-    let ic = infection.count;
-    if (ic > 0) infectionStarted = true;
-    if ((infectionStarted && ic === 0) || (enemyManager.enemies.length === 0)) {
-      levelComplete = true;
-      levelEndTime = millis();
-      if (typeof gameSFX !== 'undefined') gameSFX.playLevelComplete();
-    }
-  }
-  if (levelComplete && millis() - levelEndTime > 4000) startLevel(level + 1);
-
-  for (let p of players) {
-    if (p.dead) {
-      p.respawnTimer--;
-      if (p.respawnTimer <= 0) {
-        p.dead = false;
-        resetShip(p, getSpawnX(p));
-      }
-    }
-  }
+  gameState.startLevel(lvl);
 }
 
 // ---------------------------------------------------------------------------
@@ -868,399 +175,41 @@ function _updateLevelAndRespawn() {
 // ---------------------------------------------------------------------------
 
 /**
- * Main p5 draw loop — runs at the display refresh rate (60 / 75 / 90 / 120 / 144 Hz).
- *
- * Delegates to state-specific screens (menu / instructions / shipselect) or
- * runs the full gameplay frame:
- *   1. _updatePerfScaling   — adaptive quality control
- *   2. Physics update       — ship input, enemy AI, collisions, infection, particles
- *   3. _updateSentinelGlows — shader data for building rings / pulses
- *   4. _updateAmbianceAudio — infection proximity and ambient sound mix
- *   5. _renderScene         — 3D viewport(s) + 2D overlay
- *   6. _updateLevelAndRespawn — level clear / respawn logic
+ * Main p5 draw loop — runs at the display refresh rate.
+ * Delegates to state-specific handlers or runs full gameplay frame.
  */
 function draw() {
-  if (gameState === 'menu') { drawMenu(); return; }
-  if (gameState === 'instructions') { drawInstructions(); return; }
-  if (gameState === 'shipselect') { drawShipSelect(); return; }
+  if (gameState.mode === 'menu') { drawMenu(); return; }
+  if (gameState.mode === 'instructions') { drawInstructions(); return; }
+  if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
 
   const profiler = getVironProfiler();
   const frameStart = profiler ? performance.now() : 0;
 
-  _updatePerfScaling();
+  gameRenderer.updatePerformanceScaling();
   terrain.clearCaches();
 
-  // Process mobile touch joystick before ship input so inputs are ready
-  if (isMobile && numPlayers === 1 && typeof mobileController !== 'undefined') {
+  if (gameState.isMobile && gameState.numPlayers === 1 && typeof mobileController !== 'undefined') {
     mobileController.update(touches, width, height);
   }
 
-  // --- Physics update ---
-  for (let p of players) updateShipInput(p);
+  // Physics update pipeline
+  for (let p of gameState.players) updateShipInput(p);
   enemyManager.update();
-  for (let p of players) checkCollisions(p);
-  spreadInfection();
+  for (let p of gameState.players) GameLoop.checkCollisions(p);
+  GameLoop.spreadInfection();
   particleSystem.updatePhysics();
-  for (let p of players) updateProjectilePhysics(p);
+  for (let p of gameState.players) updateProjectilePhysics(p);
   updateBarrierPhysics();
 
-  _updateSentinelGlows();
-  _updateAmbianceAudio();
-  _renderScene(drawingContext);
-  _updateLevelAndRespawn();
+  gameRenderer.updateSentinelGlows();
+  GameLoop.updateAmbianceAudio();
+  gameRenderer.renderAllPlayers(drawingContext);
+  GameLoop.updateLevelAndRespawn();
 
-  if (gameState === 'gameover') drawGameOver();
+  if (gameState.mode === 'gameover') drawGameOver();
   if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
-
-
-// ---------------------------------------------------------------------------
-// Infection spread simulation
-// ---------------------------------------------------------------------------
-
-/**
- * Spreads infection one step every 5 frames using a 4-connected flood-fill with
- * probability INF_RATE per infected tile per update.
- *
- * Also checks two game-over conditions on every call:
- *   1. Total infected tile count ≥ MAX_INF
- *   2. All 7×7 launchpad tiles are infected (launchpad destroyed)
- */
-function spreadInfection() {
-  const profiler = getVironProfiler();
-  const profilerConfig = profiler ? profiler.config : (typeof window !== 'undefined' ? window.VIRON_PROFILE : null);
-  const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
-  const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
-  const isGameOver = gameState === 'gameover';
-  const shouldRun = isGameOver || (frameCount % 5 === 0);
-  if (!shouldRun || (levelComplete && !isGameOver)) return;
-  const spreadStart = profiler ? performance.now() : 0;
-
-  // Game over — too much infection (fast path: no Object.keys allocation needed)
-  if (infection.count >= maxInf) {
-    if (gameState !== 'gameover') {
-      gameState = 'gameover';
-      gameOverReason = 'INFECTION REACHED CRITICAL MASS';
-      levelEndTime = millis();
-      if (typeof gameSFX !== 'undefined') { gameSFX.stopAll(); gameSFX.playGameOver(); }
-    }
-  }
-
-  // Game over — launchpad fully overrun (7×7 = 49 tiles)
-  let lpInfected = 0;
-  for (let tx = 0; tx < 7; tx++) {
-    for (let tz = 0; tz < 7; tz++) {
-      if (infection.has(tileKey(tx, tz))) lpInfected++;
-    }
-  }
-  if (lpInfected >= 49) {
-    if (gameState !== 'gameover') {
-      gameState = 'gameover';
-      gameOverReason = 'LAUNCH PAD INFECTED';
-      levelEndTime = millis();
-      if (typeof gameSFX !== 'undefined') { gameSFX.stopAll(); gameSFX.playGameOver(); }
-    }
-  }
-
-
-  if (freezeSpread) {
-    if (profiler) profiler.recordSpread(performance.now() - spreadStart);
-    return;
-  }
-
-  let infObjects = infection.keys();
-  // Use a Map to ensure unique infections per frame (Set of objects doesn't deduplicate by property).
-  let freshMap = new Map();
-  const normalRate = isGameOver ? RAPID_INF_RATE : INF_RATE;
-  const yellowRate = isGameOver ? RAPID_INF_RATE : YELLOW_INF_RATE;
-
-  for (let i = 0; i < infObjects.length; i++) {
-    let t = infObjects[i];
-    const currentRate = (t.type === 'green') ? yellowRate : normalRate;
-    if (random() > currentRate) continue;
-
-    let d = ORTHO_DIRS[floor(random(4))];
-    let nx = t.tx + d[0], nz = t.tz + d[1], nk = tileKey(nx, nz);
-    let wx = nx * TILE, wz = nz * TILE;
-    if (aboveSea(terrain.getAltitude(wx, wz)) || infection.has(nk)) continue;
-    // New infection inherits the type of its parent
-    freshMap.set(nk, t.type);
-  }
-
-  // Commit all new infections after the loop (avoid modifying while iterating)
-  // Accelerated spread from infected sentinels — virus grows very fast around them
-  for (let b of sentinelBuildings) {
-    let stx = toTile(b.x), stz = toTile(b.z);
-    let sInf = infection.get(tileKey(stx, stz));
-    if (!sInf) continue;  // Only when this sentinel is infected
-    const sType = sInf.type;
-    for (let ddx = -SENTINEL_INFECTION_RADIUS; ddx <= SENTINEL_INFECTION_RADIUS; ddx++) {
-      for (let ddz = -SENTINEL_INFECTION_RADIUS; ddz <= SENTINEL_INFECTION_RADIUS; ddz++) {
-        if (ddx * ddx + ddz * ddz > SENTINEL_INFECTION_RADIUS * SENTINEL_INFECTION_RADIUS) continue;
-        if (random() > SENTINEL_INFECTION_PROBABILITY) continue;
-        let nx = stx + ddx, nz = stz + ddz;
-        let nk = tileKey(nx, nz);
-        let wx = nx * TILE, wz = nz * TILE;
-        if (!aboveSea(terrain.getAltitude(wx, wz)) && !infection.has(nk)) {
-          freshMap.set(nk, sType);
-        }
-      }
-    }
-  }
-
-  let soundCount = 0;
-  for (let [nk, nType] of freshMap) {
-    // Barrier blocking: immune tiles stop infection spread
-    if (barrierTiles.has(nk)) continue;
-
-    const o = infection.add(nk, nType);
-    if (!o) continue;
-    let wx = o.tx * TILE, wz = o.tz * TILE;
-    // Cap infection-spread sounds to 3 per update to avoid spawning too many audio nodes.
-    if (typeof gameSFX !== 'undefined' && soundCount < 3) {
-      gameSFX.playInfectionSpread(wx, terrain.getAltitude(wx, wz), wz);
-      soundCount++;
-    }
-    // Launchpad alarm and pulse
-    if (isLaunchpad(wx, wz)) {
-      maybePlayLaunchpadAlarm();
-    }
-    // Note: pulses are only added when enemies seed infection, not during natural spread
-  }
-
-  if (profiler) profiler.recordSpread(performance.now() - spreadStart);
-}
-
-// ---------------------------------------------------------------------------
-// Collision detection
-// ---------------------------------------------------------------------------
-
-/**
- * Applies damage to a Colossus enemy from a single weapon hit.
- * Removes the enemy and awards `killBonus` points if HP drops to zero.
- * @param {object} p         Player state.
- * @param {number} j         Index of the enemy in enemyManager.enemies.
- * @param {number} dmg       HP damage dealt per hit.
- * @param {number} flashDur  Frames the hit-flash effect lasts.
- * @param {number} hitScore  Score per hit.
- * @param {number} killBonus Additional score for the killing blow.
- * @returns {boolean}  True if the Colossus was killed.
- */
-function _damageColossus(p, j, dmg, flashDur, hitScore, killBonus) {
-  let e = enemyManager.enemies[j];
-  e.hp = (e.hp || 0) - dmg;
-  e.hitFlash = flashDur;
-  p.score += hitScore;
-  if (e.hp <= 0) {
-    particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-    swapRemove(enemyManager.enemies, j);
-    p.score += killBonus;
-    return true;
-  }
-  return false;
-}
-
-/**
- * Handles player bullets and tank shells hitting infected procedural trees.
- * @param {object} p  Player state.
- */
-function _checkProjectilesVsTrees(p) {
-  // Bullets vs infected trees (2-tile search radius)
-  for (let i = p.bullets.length - 1; i >= 0; i--) {
-    let b = p.bullets[i];
-    let tx0 = toTile(b.x), tz0 = toTile(b.z);
-    let hit = false;
-    for (let tz = tz0 - 2; tz <= tz0 + 2 && !hit; tz++) {
-      for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
-        let t = terrain.tryGetProceduralTree(tx, tz);
-        if (!t) continue;
-        let ty = terrain.getAltitude(t.x, t.z);
-        if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 >= 3600) continue;
-        if (b.y <= ty - t.trunkH - 30 * t.canopyScale - 10 || b.y >= ty + 10) continue;
-        if (!infection.has(tileKey(tx, tz))) continue;
-        clearInfectionRadius(tx, tz);
-        p.score += 200;
-        swapRemove(p.bullets, i);
-        hit = true; break;
-      }
-    }
-  }
-
-  // Tank shells vs infected trees (3-tile search radius, area-clear explosion)
-  for (let j = p.tankShells.length - 1; j >= 0; j--) {
-    let ts = p.tankShells[j];
-    let tx0 = toTile(ts.x), tz0 = toTile(ts.z);
-    let hitTree = false;
-    for (let tz = tz0 - 3; tz <= tz0 + 3 && !hitTree; tz++) {
-      for (let tx = tx0 - 3; tx <= tx0 + 3; tx++) {
-        let t = terrain.tryGetProceduralTree(tx, tz);
-        if (!t) continue;
-        let ty = terrain.getAltitude(t.x, t.z);
-        if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
-        if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
-        if (!infection.has(tileKey(tx, tz))) continue;
-        for (let dx = -TANK_SHELL_CLEAR_R; dx <= TANK_SHELL_CLEAR_R; dx++) {
-          for (let dz = -TANK_SHELL_CLEAR_R; dz <= TANK_SHELL_CLEAR_R; dz++) {
-            infection.remove(tileKey(tx + dx, tz + dz));
-          }
-        }
-        terrain.addPulse(ts.x, ts.z, 2.0);
-        particleSystem.addExplosion(ts.x, ts.y, ts.z);
-        swapRemove(p.tankShells, j);
-        hitTree = true; break;
-      }
-    }
-  }
-}
-
-/**
- * Runs all collision tests for one player each frame.
- * Returns early if the player is already dead.
- *
- * Tests performed (in priority order):
- *   1. Enemy bullets vs player ship      (radius 70 units squared)
- *   2. Player bullets vs each enemy      (radius 80 units squared, +100 score)
- *   3. Player missiles vs each enemy     (radius 100 units squared, +250 score)
- *   4. Enemy body vs player ship body    (radius 70 units squared)
- *   5. Floating powerup (type-3 building) vs player ship (radius = building width + 15)
- *   6. Player bullets / tank shells vs infected trees
- *
- * @param {object} p  Player state object.
- */
-function checkCollisions(p) {
-  if (p.dead) return;
-  let s = p.ship;
-
-  // --- 1. Enemy bullets vs player ---
-  for (let i = particleSystem.enemyBullets.length - 1; i >= 0; i--) {
-    let eb = particleSystem.enemyBullets[i];
-    if ((eb.x - s.x) ** 2 + (eb.y - s.y) ** 2 + (eb.z - s.z) ** 2 < 4900) {
-      killPlayer(p);
-      swapRemove(particleSystem.enemyBullets, i);
-      return;
-    }
-  }
-
-  // --- 2 & 3 & 4. Player weapons vs enemies / enemy body vs player ---
-  for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
-    let e = enemyManager.enemies[j];
-    let killed = false;
-
-    // Player bullets vs enemy
-    // Colossus: bullets deal 1 HP damage and are consumed on hit, large hit radius
-    // Other enemies: one bullet kills
-    for (let i = p.bullets.length - 1; i >= 0; i--) {
-      let b = p.bullets[i];
-      let hitRadSq = e.type === 'colossus' ? 90000 : 6400;  // 300 vs 80 unit radius
-      if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < hitRadSq) {
-        if (e.type === 'colossus') {
-          swapRemove(p.bullets, i);
-          killed = _damageColossus(p, j, 1, 12, 10, 2000);
-        } else {
-          particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-          swapRemove(enemyManager.enemies, j);
-          swapRemove(p.bullets, i);
-          p.score += 100;
-          killed = true;
-        }
-        break;
-      }
-    }
-
-    // Player missiles vs enemy (hit radius 200 px for colossus, 100 px otherwise)
-    if (!killed) {
-      for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
-        let m = p.homingMissiles[i];
-        let hitRadSq = e.type === 'colossus' ? 160000 : 10000;
-        if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < hitRadSq) {
-          if (e.type === 'colossus') {
-            swapRemove(p.homingMissiles, i);
-            killed = _damageColossus(p, j, 5, 20, 50, 2000);
-          } else {
-            particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-            swapRemove(enemyManager.enemies, j);
-            swapRemove(p.homingMissiles, i);
-            p.score += 250;
-            killed = true;
-          }
-          break;
-        }
-      }
-    }
-
-    // Player tank shells vs enemy (Large hit radius)
-    if (!killed) {
-      for (let i = p.tankShells.length - 1; i >= 0; i--) {
-        let s2 = p.tankShells[i];
-        let hitRadSq = e.type === 'colossus' ? 250000 : 22500; // 500 vs 150 unit radius
-        if ((s2.x - e.x) ** 2 + (s2.y - e.y) ** 2 + (s2.z - e.z) ** 2 < hitRadSq) {
-          if (e.type === 'colossus') {
-            swapRemove(p.tankShells, i);
-            killed = _damageColossus(p, j, 15, 30, 100, 2000);
-          } else {
-            particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-            swapRemove(enemyManager.enemies, j);
-            swapRemove(p.tankShells, i);
-            p.score += 300;
-            killed = true;
-          }
-          break;
-        }
-      }
-    }
-
-    // Enemy body vs player ship — kills the player on contact
-    // Colossus has a larger body collision radius
-    let bodyRadSq = e.type === 'colossus' ? 90000 : 4900;
-    if (!killed && ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < bodyRadSq)) {
-      killPlayer(p);
-      return;
-    }
-  }
-
-  // --- 5. Floating powerup (type-3 building) vs player ---
-  for (let i = buildings.length - 1; i >= 0; i--) {
-    let b = buildings[i];
-    if (b.type === 3) {
-      let floatY = b.y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
-      let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
-      let radiusSq = (b.w + 15) ** 2;
-
-      if (dx * dx + dy * dy + dz * dz < radiusSq) {
-        let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
-        if (inf) {
-          // Infected powerup — penalty: lose a missile
-          if (p.missilesRemaining > 0) p.missilesRemaining--;
-          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);
-        } else {
-          // Healthy powerup — 50% missile ammo, 50% normal-shot pattern upgrade
-          if (random() < 0.5) {
-            p.missilesRemaining++;
-          } else {
-            // Pick one of the non-default spread modes
-            p.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
-          }
-          p.score += 500;
-          if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true, b.x, floatY, b.z);
-        }
-        buildings.splice(i, 1);  // Consume the powerup — splice OK (no further iteration after this)
-
-        for (let j = 0; j < 20; j++) {
-          particleSystem.particles.push({
-            x: b.x, y: floatY, z: b.z,
-            vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
-            life: 255, decay: 12, size: random(4, 9),
-            color: inf ? [200, 50, 50] : [60, 180, 240]
-          });
-        }
-      }
-    }
-  }
-
-  // --- 6 & 7. Projectiles vs infected procedural trees ---
-  _checkProjectilesVsTrees(p);
-
-} // end checkCollisions
 
 
 // ---------------------------------------------------------------------------
@@ -1272,26 +221,26 @@ function checkCollisions(p) {
  * cycling during gameplay for both players.
  */
 function keyPressed() {
-  if (gameState === 'menu') {
+  if (gameState.mode === 'menu') {
     if (key === '1') startGame(1);
     else if (key === '2') startGame(2);
     return;
   }
 
-  if (gameState === 'instructions') {
+  if (gameState.mode === 'instructions') {
     // Any relevant key on desktop moves past instructions
     if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
-      gameState = 'shipselect';
+      gameState.mode = 'shipselect';
     }
     return;
   }
 
-  if (gameState === 'shipselect') {
-    for (let p of players) {
+  if (gameState.mode === 'shipselect') {
+    for (let p of gameState.players) {
       if (p.id === 0) {
         // P1 Selection (A/D or Arrows if 1P)
-        let left = (numPlayers === 1) ? (keyCode === LEFT_ARROW || keyCode === 65) : (keyCode === 65);
-        let right = (numPlayers === 1) ? (keyCode === RIGHT_ARROW || keyCode === 68) : (keyCode === 68);
+        let left = (gameState.numPlayers === 1) ? (keyCode === LEFT_ARROW || keyCode === 65) : (keyCode === 65);
+        let right = (gameState.numPlayers === 1) ? (keyCode === RIGHT_ARROW || keyCode === 68) : (keyCode === 68);
         if (left) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
         if (right) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
         if (keyCode === ENTER || keyCode === 81) p.ready = true; // Enter or Q
@@ -1304,15 +253,15 @@ function keyPressed() {
     }
 
     // Check if all players are ready
-    if (players.every(p => p.ready)) {
-      gameState = 'playing';
+    if (gameState.players.every(p => p.ready)) {
+      gameState.mode = 'playing';
       // startLevel(1) already called in startGame, but we want to ensure clean state
       startLevel(1);
     }
     return;
   }
 
-  for (let p of players) {
+  for (let p of gameState.players) {
     if (keyCode === p.keys.weaponCycle) {
       p.weaponMode = (p.weaponMode + 1) % WEAPON_MODES.length;
     }
@@ -1327,12 +276,12 @@ function keyPressed() {
 
   // Toggle first-person / behind-ship camera (O key)
   if (key === 'o' || key === 'O') {
-    firstPersonView = !firstPersonView;
+    gameState.firstPersonView = !gameState.firstPersonView;
   }
 
   // Toggle ship design (L key)
   if (key === 'l' || key === 'L') {
-    for (let p of players) {
+    for (let p of gameState.players) {
       if (typeof SHIP_DESIGNS !== 'undefined') {
         p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
       }
@@ -1357,25 +306,25 @@ function keyPressed() {
  * Returning false prevents the default browser scroll / zoom behaviour.
  */
 function touchStarted(event) {
-  if (gameState === 'menu' || gameState === 'instructions') {
+  if (gameState.mode === 'menu' || gameState.mode === 'instructions') {
     if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
       fullscreen(true);
     }
   }
 
-  if (gameState === 'menu') { startGame(1); return false; }
-  if (gameState === 'instructions') {
+  if (gameState.mode === 'menu') { startGame(1); return false; }
+  if (gameState.mode === 'instructions') {
     if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
       return false;
     }
-    gameState = 'shipselect';
+    gameState.mode = 'shipselect';
     return false;
   }
-  if (gameState === 'shipselect') {
-    let vw = width / numPlayers;
+  if (gameState.mode === 'shipselect') {
+    let vw = width / gameState.numPlayers;
     let pIdx = floor(mouseX / vw);
-    if (pIdx >= players.length) return false;
-    let p = players[pIdx];
+    if (pIdx >= gameState.players.length) return false;
+    let p = gameState.players[pIdx];
     if (p.ready) return false;
 
     let localX = mouseX % vw;
@@ -1387,8 +336,8 @@ function touchStarted(event) {
       else if (localX > vw - 120) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
     }
 
-    if (players.every(p => p.ready)) {
-      gameState = 'playing';
+    if (gameState.players.every(p => p.ready)) {
+      gameState.mode = 'playing';
       startLevel(1);
     }
     return false;
@@ -1415,18 +364,18 @@ function mousePressed() {
       fullscreen(true);
     }
 
-    if (gameState === 'menu') {
+    if (gameState.mode === 'menu') {
       startGame(1);
-    } else if (gameState === 'instructions') {
+    } else if (gameState.mode === 'instructions') {
       if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
         return;
       }
-      gameState = 'shipselect';
-    } else if (gameState === 'shipselect') {
-      let vw = width / numPlayers;
+      gameState.mode = 'shipselect';
+    } else if (gameState.mode === 'shipselect') {
+      let vw = width / gameState.numPlayers;
       let pIdx = floor(mouseX / vw);
-      if (pIdx < players.length) {
-        let p = players[pIdx];
+      if (pIdx < gameState.players.length) {
+        let p = gameState.players[pIdx];
         if (!p.ready) {
           let localX = mouseX % vw;
           if (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130) {
@@ -1435,16 +384,16 @@ function mousePressed() {
             if (localX < 120) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
             else if (localX > vw - 120) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
           }
-          if (players.every(p => p.ready)) {
-            gameState = 'playing';
+          if (gameState.players.every(p => p.ready)) {
+            gameState.mode = 'playing';
             startLevel(1);
           }
         }
       }
-    } else if (gameState === 'playing') {
+    } else if (gameState.mode === 'playing') {
       if (mouseButton === CENTER) {
-        if (players.length > 0 && !players[0].dead) {
-          players[0].weaponMode = (players[0].weaponMode + 1) % WEAPON_MODES.length;
+        if (gameState.players.length > 0 && !gameState.players[0].dead) {
+          gameState.players[0].weaponMode = (gameState.players[0].weaponMode + 1) % WEAPON_MODES.length;
         }
       }
       requestPointerLock();
@@ -1454,3 +403,42 @@ function mousePressed() {
 
 /** Resizes the p5 canvas to match the new browser window dimensions. */
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+
+// ---------------------------------------------------------------------------
+// Debug Console Commands
+// ---------------------------------------------------------------------------
+
+/**
+ * Spawns a yellow crab enemy for testing/debugging.
+ * Usage in browser console:
+ *   spawnYellowCrab()          — spawn at random location
+ *   spawnYellowCrab(100, 200)  — spawn at world coordinates (100, 200)
+ * @param {number} wx  Optional world X coordinate (default: random)
+ * @param {number} wz  Optional world Z coordinate (default: random)
+ */
+function spawnYellowCrab(wx = undefined, wz = undefined) {
+  if (gameState.mode !== 'playing') {
+    console.warn('[spawnYellowCrab] Game not in playing mode');
+    return;
+  }
+
+  // Use provided coordinates or pick random location
+  let spawnX = wx !== undefined ? wx : random(-4000, 4000);
+  let spawnZ = wz !== undefined ? wz : random(-4000, 4000);
+  let spawnY = terrain.getAltitude(spawnX, spawnZ) - 10;
+
+  let entry = {
+    x: spawnX,
+    y: spawnY,
+    z: spawnZ,
+    vx: random(-2, 2),
+    vz: random(-2, 2),
+    id: random(),
+    type: 'yellowCrab',
+    fireTimer: 0,
+    bombTimer: 0
+  };
+
+  enemyManager.enemies.push(entry);
+  console.log(`[spawnYellowCrab] Spawned at (${spawnX.toFixed(0)}, ${spawnY.toFixed(0)}, ${spawnZ.toFixed(0)})`);
+}

@@ -81,14 +81,14 @@ class EnemyManager {
     let type = 'seeder';
     if (forceColossus) {
       type = 'colossus';
-    } else if (!forceSeeder && level > 0) {
+    } else if (!forceSeeder && gameState.level > 0) {
       let r = random();
       if (r < 0.35) type = 'seeder';
       else if (r < 0.57) type = 'fighter';
       else if (r < 0.72) type = 'bomber';
       else if (r < 0.84) type = 'crab';
       else if (r < 0.90) {
-        if (level >= 4 && r < 0.87) type = 'yellowCrab'; // Steal 3% from hunters for yellow crab
+        if (gameState.level >= 4 && r < 0.87) type = 'yellowCrab'; // Steal 3% from hunters for yellow crab
         else type = 'hunter';
       }
       else if (r < 0.96) type = 'squid';
@@ -143,10 +143,10 @@ class EnemyManager {
    */
   update() {
     const alivePlayers = [];
-    for (let i = 0; i < players.length; i++) {
-      if (!players[i].dead) alivePlayers.push(players[i].ship);
+    for (let i = 0; i < gameState.players.length; i++) {
+      if (!gameState.players[i].dead) alivePlayers.push(gameState.players[i].ship);
     }
-    let refShip = alivePlayers[0] || players[0].ship;  // Fallback to P1 even if dead
+    let refShip = alivePlayers[0] || gameState.players[0].ship;  // Fallback to P1 even if dead
 
     for (let e of this.enemies) {
       if (e.type === 'fighter') this.updateFighter(e, alivePlayers, refShip);
@@ -417,7 +417,7 @@ class EnemyManager {
       // --- Mode 1: Hunt nearest healthy (uninfected) sentinel ---
       let bestDist = Infinity;
       targetX = null; targetZ = null;
-      for (let b of buildings) {
+      for (let b of gameState.buildings) {
         if (b.type !== 4) continue;
         let sk = tileKey(toTile(b.x), toTile(b.z));
         if (infection.has(sk)) continue;  // Already infected — skip

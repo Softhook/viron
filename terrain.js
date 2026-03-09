@@ -1238,9 +1238,9 @@ class Terrain {
     // constructed with withBuckets=true), we iterate only chunk buckets that
     // overlap the current view rectangle instead of the entire global tile list.
     // Cost becomes O(visible tiles) regardless of total barrier count.
-    if (typeof barrierTiles !== 'undefined' && barrierTiles.size > 0) {
+    if (gameState.barrierTiles && gameState.barrierTiles.size > 0) {
       this._drawTileOverlays(
-        barrierTiles,
+        gameState.barrierTiles,
         { default: [20, 21] },
         -0.3, cam, fovSlope, minTx, maxTx, minTz, maxTz, 'barrier',
         minCx, maxCx, minCz, maxCz
@@ -1416,7 +1416,7 @@ class Terrain {
     // Threshold tuned for robust terrain coverage; depth 5 allows precise "draping"
     const threshold = TILE * TILE * 0.4; // Tighter threshold for better geometry tracking 
     const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
-    const maxDepth = (typeof isMobile !== 'undefined' && isMobile) ? 4 : 5;
+    const maxDepth = gameState.isMobile ? 4 : 5;
 
     // Hard cap on emitted triangles to prevent push.apply overflowing V8's
     // call-stack argument limit (~65 536).  p5's addGeometry uses
@@ -1942,7 +1942,7 @@ class Terrain {
     // Apply terrain shader to natively handle fog and lighting
     this.applyShader();
 
-    for (let b of buildings) {
+    for (let b of gameState.buildings) {
       let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
       if (dSq >= cullSq || !this.inFrustum(cam, b.x, b.z)) continue;
       let y = b.y;

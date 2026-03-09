@@ -26,7 +26,7 @@ const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust:
  * @returns {number}  World-space X offset for the launchpad position.
  */
 function getSpawnX(p) {
-  return numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520);
+  return gameState.numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520);
 }
 
 /**
@@ -238,7 +238,7 @@ function fireMissile(p) {
  */
 function fireBarrier(p) {
   if (p.dead) return;
-  inFlightBarriers.push(spawnProjectile(p.ship, 14, 300));
+  gameState.inFlightBarriers.push(spawnProjectile(p.ship, 14, 300));
   if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
 }
 
@@ -461,7 +461,7 @@ function shipDisplay(s, tintColor) {
   let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
 
   // Find the player to get their design index and input state
-  let p = players.find(player => player.labelColor === tintColor);
+  let p = gameState.players.find(player => player.labelColor === tintColor);
   let designIdx = p ? (p.designIndex || 0) : 0;
   const isGround = SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].isGroundVehicle;
 
@@ -528,8 +528,8 @@ function shipDisplay(s, tintColor) {
 
   let isPushing = false;
   if (p) {
-    isPushing = keyIsDown(p.keys.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
-    if (isMobile && p.id === 0 && typeof mobileController !== 'undefined') {
+    isPushing = keyIsDown(p.keys.thrust) || (p.id === 0 && !gameState.isMobile && gameState.rightMouseDown);
+    if (gameState.isMobile && p.id === 0 && typeof mobileController !== 'undefined') {
       isPushing = isPushing || mobileController.getInputs(s, [], 0, 0).thrust;
     }
   }
@@ -627,15 +627,15 @@ function shipDisplay(s, tintColor) {
  * @param {object} p  Player state.
  */
 function _applyMouseSteering(p) {
-  if (p.id !== 0 || isMobile || !document.pointerLockElement) return;
+  if (p.id !== 0 || gameState.isMobile || !document.pointerLockElement) return;
 
-  smoothedMX = lerp(smoothedMX, movedX, MOUSE_SMOOTHING);
-  smoothedMY = lerp(smoothedMY, movedY, MOUSE_SMOOTHING);
+  gameState.smoothedMX = lerp(gameState.smoothedMX, movedX, MOUSE_SMOOTHING);
+  gameState.smoothedMY = lerp(gameState.smoothedMY, movedY, MOUSE_SMOOTHING);
 
-  let newYaw = p.ship.yaw - smoothedMX * MOUSE_SENSITIVITY;
+  let newYaw = p.ship.yaw - gameState.smoothedMX * MOUSE_SENSITIVITY;
   // Pitch polarity: behind-ship → mouse-down = nose up; first-person → nose down.
-  let pitchSign = (typeof firstPersonView !== 'undefined' && firstPersonView) ? 1 : -1;
-  let newPitch = p.ship.pitch + pitchSign * smoothedMY * MOUSE_SENSITIVITY;
+  let pitchSign = gameState.firstPersonView ? 1 : -1;
+  let newPitch = p.ship.pitch + pitchSign * gameState.smoothedMY * MOUSE_SENSITIVITY;
 
   if (aimAssist.enabled) {
     let assist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
@@ -658,7 +658,7 @@ function _applyMouseSteering(p) {
  * @returns {{isThrusting: boolean, isShooting: boolean}}  Updated flags.
  */
 function _applyMobileInputs(p, isThrusting, isShooting) {
-  if (!isMobile || p.id !== 0 || typeof mobileController === 'undefined') {
+  if (!gameState.isMobile || p.id !== 0 || typeof mobileController === 'undefined') {
     return { isThrusting, isShooting };
   }
 
@@ -958,11 +958,11 @@ function updateShipInput(p) {
 
   let k = p.keys;
   // Track mouse release so clicking to enter pointer-lock doesn't accidentally fire.
-  if (!leftMouseDown) mouseReleasedSinceStart = true;
+  if (!gameState.leftMouseDown) gameState.mouseReleasedSinceStart = true;
 
-  let isThrusting = keyIsDown(k.thrust) || (p.id === 0 && !isMobile && rightMouseDown);
+  let isThrusting = keyIsDown(k.thrust) || (p.id === 0 && !gameState.isMobile && gameState.rightMouseDown);
   let isBraking = keyIsDown(k.brake);
-  let isShooting = keyIsDown(k.shoot) || (p.id === 0 && !isMobile && leftMouseDown && mouseReleasedSinceStart);
+  let isShooting = keyIsDown(k.shoot) || (p.id === 0 && !gameState.isMobile && gameState.leftMouseDown && gameState.mouseReleasedSinceStart);
 
   ({ isThrusting, isShooting } = _applyMobileInputs(p, isThrusting, isShooting));
   _applyKeyboardSteering(p, d);
@@ -1199,17 +1199,17 @@ function updateProjectilePhysics(p) {
  * On landing, snaps to tile grid and adds key to barrierTiles (dedup is automatic).
  */
 function updateBarrierPhysics() {
-  for (let i = inFlightBarriers.length - 1; i >= 0; i--) {
-    let b = inFlightBarriers[i];
+  for (let i = gameState.inFlightBarriers.length - 1; i >= 0; i--) {
+    let b = gameState.inFlightBarriers[i];
     b.vy += 0.15;  // Gravity
     b.x += b.vx; b.y += b.vy; b.z += b.vz;
     b.life--;
     if (b.y >= terrain.getAltitude(b.x, b.z) || b.life <= 0) {
       if (b.life > 0) { // Landed (not expired)
         let tx = Math.floor(b.x / TILE), tz = Math.floor(b.z / TILE);
-        barrierTiles.add(tileKey(tx, tz));
+        gameState.barrierTiles.add(tileKey(tx, tz));
       }
-      swapRemove(inFlightBarriers, i);
+      swapRemove(gameState.inFlightBarriers, i);
     }
   }
 }
@@ -1221,10 +1221,10 @@ function updateBarrierPhysics() {
  * @param {number} camZ  Camera world Z.
  */
 function renderInFlightBarriers(camX, camZ) {
-  if (!inFlightBarriers.length) return;
+  if (!gameState.inFlightBarriers.length) return;
   const cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
   noStroke(); fill(255, 255, 255, 220);
-  for (let b of inFlightBarriers) {
+  for (let b of gameState.inFlightBarriers) {
     if ((b.x - camX) ** 2 + (b.z - camZ) ** 2 > cullSq) continue;
     push(); translate(b.x, b.y, b.z); box(8); pop();
   }

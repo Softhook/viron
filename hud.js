@@ -9,6 +9,16 @@ const RADAR_SCALE = 0.012;
 const RADAR_HALF = 68;
 const RADAR_TILE_RADIUS_SQ = 4200;
 
+// Configuration for HUD stat labels and their dynamic value functions
+const HUD_STATS = [
+  { label: 'SCORE', color: [255, 255, 255], size: 20, py: 8, getVal: p => p.score },
+  { label: 'ALT', color: [0, 255, 0], size: 16, py: 32, getVal: (p, s) => Math.max(0, Math.floor(SEA - s.y)) },
+  { label: 'VIRON', color: [255, 60, 60], size: 14, py: 54, getVal: () => (typeof infection !== 'undefined' ? infection.count : 0) },
+  { label: 'ENEMIES', color: [255, 100, 100], size: 14, py: 72, getVal: () => (typeof enemyManager !== 'undefined' ? enemyManager.enemies.length : 0) },
+  { label: 'MISSILES', color: [0, 200, 255], size: 14, py: 90, getVal: p => p.missilesRemaining },
+  { label: 'SHOT', color: [220, 220, 220], size: 14, py: 108, getVal: p => (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE') }
+];
+
 /**
  * Creates or retrieves a static graphics buffer containing the text labels
  * (SCORE, ALT, VIRON, etc.) to avoid expensive text rendering every frame.
@@ -24,15 +34,12 @@ function _getHUDLabelGraphic(hw, h) {
   g.textAlign(LEFT, TOP);
   if (typeof gameFont !== 'undefined') g.textFont(gameFont);
 
-  let lx = 14;
-  let ly = 0;
-
-  g.fill(255, 255, 255); g.textSize(20); g.text('SCORE', lx, ly + 8);
-  g.fill(0, 255, 0); g.textSize(16); g.text('ALT', lx, ly + 32);
-  g.fill(255, 60, 60); g.textSize(14); g.text('VIRON', lx, ly + 54);
-  g.fill(255, 100, 100); g.text('ENEMIES', lx, ly + 72);
-  g.fill(0, 200, 255); g.text('MISSILES', lx, ly + 90);
-  g.fill(220, 220, 220); g.text('SHOT', lx, ly + 108);
+  const lx = 14;
+  for (const stat of HUD_STATS) {
+    g.fill(...stat.color);
+    g.textSize(stat.size);
+    g.text(stat.label, lx, stat.py);
+  }
 
   HUD_LABEL_CACHE[key] = g;
   return g;
@@ -47,6 +54,18 @@ function _getRadarBuffer(pId, size) {
   g.pixelDensity(1);
   HUD_RADAR_BUFFERS[pId] = g;
   return g;
+}
+
+/**
+ * Transforms world coordinates to radar-local coordinates relative to the ship.
+ */
+function _projectToRadar(wx, wz, ship, sinYaw, cosYaw) {
+  const dx = (wx - ship.x) * RADAR_SCALE;
+  const dz = (wz - ship.z) * RADAR_SCALE;
+  return [
+    dx * cosYaw - dz * sinYaw,
+    dx * sinYaw + dz * cosYaw
+  ];
 }
 
 function _getControlHintGraphic(hint, hw, h) {
@@ -66,6 +85,111 @@ function _getControlHintGraphic(hint, hw, h) {
   HUD_HINT_CACHE[key] = g;
   return g;
 }
+
+/**
+ * Renders the primary ship details text for the selection screen.
+ */
+function _renderShipDetails(p, design, relX, vw, vh) {
+  if (!design) return;
+
+  // Global title
+  textAlign(CENTER, TOP);
+  fill(255, 255, 255, 200);
+  textSize(28);
+  text("SELECT YOUR CRAFT", relX, -vh / 2 + 50);
+
+  // Ship Name (Largest)
+  fill(...p.labelColor);
+  textSize(54);
+  text(design.name.toUpperCase(), relX, vh / 2 - 320);
+
+  // Role (Gold)
+  fill(255, 200, 0);
+  textSize(20);
+  text(design.role || "UNKNOWN ROLE", relX, vh / 2 - 270);
+
+  // Thrust type label (Subtle)
+  textSize(14);
+  fill(180, 180, 180, 200);
+  let thrustType = "VTOL / HOVER";
+  if (design.isGroundVehicle) {
+    thrustType = design.canTravelOnWater ? "AMPHIBIOUS HOVERCRAFT" : "GROUND VEHICLE";
+  } else if (design.thrustAngle !== undefined) {
+    if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
+    else if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
+  }
+  text(thrustType, relX, vh / 2 - 245);
+
+  // Description (Body text, wrapped)
+  fill(220);
+  textSize(14);
+  rectMode(CENTER);
+  text(design.desc || "", relX, vh / 2 - 215, vw * 0.85);
+  rectMode(CORNER);
+}
+
+/**
+ * Renders ship statistics bars for the selection screen.
+ */
+function _drawShipStats(p, design, relX, vw, vh) {
+  if (!design) return;
+
+  const statY = vh / 2 - 195;
+  const statW = vw * 0.4;
+  const statX = relX - statW / 2;
+
+  const stats = [
+    { label: "ACCEL", val: (design.thrust || 0.45) / (design.mass || 1.0), max: 1.6 },
+    { label: "AGILITY", val: (design.turnRate || 0.04) / (design.mass || 1.0), max: 0.12 },
+    { label: "GLIDE", val: design.lift || 0.008, max: 0.02 },
+    { label: "MISSILES", val: design.missileCapacity || 1, max: 5 }
+  ];
+
+  stats.forEach((s, i) => {
+    const y = statY + i * 18;
+    textAlign(RIGHT, TOP);
+    fill(180);
+    textSize(11);
+    text(s.label, statX - 10, y + 2);
+
+    // Bar background
+    fill(40);
+    rect(statX, y + 3, statW, 8, 2);
+    // Bar fill (using player color)
+    fill(p.labelColor[0], p.labelColor[1], p.labelColor[2], 200);
+    const fillW = map(s.val, 0, s.max, 0, statW, true);
+    rect(statX, y + 3, fillW, 8, 2);
+  });
+}
+
+/**
+ * Renders the weapon mode indicator and selector boxes.
+ */
+function _drawWeaponSelector(p, h) {
+  const wId = p.weaponMode;
+  const wName = HUD_WEAPON_LABELS[wId];
+  const wCol = HUD_WEAPON_ACTIVE_COLS[wId];
+
+  textAlign(CENTER, TOP);
+  textSize(18);
+  fill(wCol[0], wCol[1], wCol[2], 230);
+  text(wName, 0, -h / 2 + 10);
+
+  const bw = 60, bh = 6, pad = 8;
+  const totalW = (bw + pad) * 3 - pad;
+  const sx = -totalW / 2;
+  const sy = -h / 2 + 34;
+
+  rectMode(CORNER);
+  noStroke();
+  for (let i = 0; i < 3; i++) {
+    if (i === wId) fill(wCol[0], wCol[1], wCol[2], 255);
+    else fill(50, 50, 50, 150);
+    rect(sx + i * (bw + pad), sy, bw, bh);
+  }
+}
+
+
 
 // hud.js — HUD and menu rendering functions
 //
@@ -204,70 +328,60 @@ function drawInstructions() {
     textSize(48);
     text('HOW TO PLAY', 0, -height * 0.42);
 
+    const drawConfig = (title, color, items, side) => {
+      const tx = width * 0.25 * side;
+      const ty = -height * 0.1;
+      const my = -height * 0.02;
+      const lh = 35;
+
+      textSize(22);
+      fill(...color, 200);
+      text(title, tx, ty);
+
+      textSize(18);
+      fill(255, 255, 255, 180);
+      textAlign(CENTER, TOP);
+      items.forEach((item, i) => {
+        text(item, tx, my + lh * i);
+      });
+    };
+
     if (numPlayers === 1) {
-      // Split single player controls: Mouse on left, Keyboard on right
-      textSize(22);
-      fill(200, 255, 200, 200);
-      text('MOUSE CONTROLS', -width * 0.25, -height * 0.1);
-      fill(255, 200, 200, 200);
-      text('KEYBOARD ALTERNATIVES', width * 0.25, -height * 0.1);
+      drawConfig('MOUSE CONTROLS', [200, 255, 200], [
+        'Pitch / Yaw: Move Mouse',
+        'Thrust: Right-Click',
+        'Shoot: Left-Click',
+        'Cycle Weapon: Middle-Click'
+      ], -1);
 
-      textSize(18);
-      fill(255, 255, 255, 180);
-      textAlign(CENTER, TOP);
-
-      let my = -height * 0.02;
-      let lh = 35;
-
-      // Mouse list
-      text('Pitch / Yaw: Move Mouse', -width * 0.25, my);
-      text('Thrust: Right-Click', -width * 0.25, my + lh * 1);
-      text('Shoot: Left-Click', -width * 0.25, my + lh * 2);
-      text('Cycle Weapon: Middle-Click', -width * 0.25, my + lh * 3);
-
-      // Keyboard list
-      fill(255, 255, 255, 180);
-      text('Forward Tilt: F', width * 0.25, my);
-      text('Backward Tilt: R', width * 0.25, my + lh * 1);
-      text('Thrust: W', width * 0.25, my + lh * 2);
-      text('Brake: S', width * 0.25, my + lh * 3);
-      text('Shoot: Q', width * 0.25, my + lh * 4);
-      text('Cycle Weapon: E', width * 0.25, my + lh * 5);
-
+      drawConfig('KEYBOARD ALTERNATIVES', [255, 200, 200], [
+        'Forward Tilt: F',
+        'Backward Tilt: R',
+        'Thrust: W',
+        'Brake: S',
+        'Shoot: Q',
+        'Cycle Weapon: E'
+      ], 1);
     } else {
-      // P1 vs P2 layout for 2 players
-      textSize(22);
-      fill(200, 255, 200, 200);
-      text('P1 CONTROLS', -width * 0.25, -height * 0.1);
+      drawConfig('P1 CONTROLS', [200, 255, 200], [
+        'Pitch / Yaw: Mouse',
+        'Forward Tilt: F',
+        'Backward Tilt: R',
+        'Thrust: W or Right-Click',
+        'Brake: S',
+        'Shoot: Q or Left-Click',
+        'Cycle Weapon: E or Middle-Click'
+      ], -1);
 
-      textSize(18);
-      fill(255, 255, 255, 180);
-      textAlign(CENTER, TOP);
-      let lh = 35;
-      let p1y = -height * 0.02;
-
-      text('Pitch / Yaw: Mouse', -width * 0.25, p1y);
-      text('Forward Tilt: F', -width * 0.25, p1y + lh * 1);
-      text('Backward Tilt: R', -width * 0.25, p1y + lh * 2);
-      text('Thrust: W or Right-Click', -width * 0.25, p1y + lh * 3);
-      text('Brake: S', -width * 0.25, p1y + lh * 4);
-      text('Shoot: Q or Left-Click', -width * 0.25, p1y + lh * 5);
-      text('Cycle Weapon: E or Middle-Click', -width * 0.25, p1y + lh * 6);
-
-      fill(255, 200, 200, 200);
-      textSize(22);
-      text('P2 CONTROLS', width * 0.25, -height * 0.1);
-
-      textSize(18);
-      fill(255, 255, 255, 180);
-      let p2y = -height * 0.02;
-      text('Turn: Arrow Keys', width * 0.25, p2y);
-      text('Forward Tilt: \' (Quote)', width * 0.25, p2y + lh * 1);
-      text('Backward Tilt: ; (Semicolon)', width * 0.25, p2y + lh * 2);
-      text('Thrust: Up Arrow', width * 0.25, p2y + lh * 3);
-      text('Brake: Down Arrow', width * 0.25, p2y + lh * 4);
-      text('Shoot: . (Period)', width * 0.25, p2y + lh * 5);
-      text('Cycle Weapon: / (Slash)', width * 0.25, p2y + lh * 6);
+      drawConfig('P2 CONTROLS', [255, 200, 200], [
+        'Turn: Arrow Keys',
+        'Forward Tilt: \' (Quote)',
+        'Backward Tilt: ; (Semicolon)',
+        'Thrust: Up Arrow',
+        'Brake: Down Arrow',
+        'Shoot: . (Period)',
+        'Cycle Weapon: / (Slash)'
+      ], 1);
     }
   }
 
@@ -388,7 +502,7 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
   gl.enable(gl.SCISSOR_TEST);
   gl.scissor(vx * pxD, 0, vw * pxD, vh * pxD);
 
-  // Clear depth for the ship preview (background landscape is already drawn)
+  // Clear depth for the ship preview
   gl.clear(gl.DEPTH_BUFFER_BIT);
 
   push();
@@ -397,98 +511,29 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
 
   // Cinematic lighting
   directionalLight(255, 255, 255, 0.5, 1, -0.5);
-  directionalLight(120, 180, 255, -0.5, -1, 0.5); // Cool rim light
+  directionalLight(120, 180, 255, -0.5, -1, 0.5);
   ambientLight(45, 45, 55);
 
   // Rotating ship presentation
   push();
   rotateY(frameCount * 0.018);
   rotateX(sin(frameCount * 0.012) * 0.15);
-  noStroke(); // Ensure no stroke for the ship preview
+  noStroke();
   drawShipPreview(p.designIndex, p.labelColor);
   pop();
   pop();
 
   // --- 2D Overlay ---
   setup2DViewport();
-  // Adjust ortho X for the viewport slice
   let relX = (vx + vw / 2) - width / 2;
-
-  textAlign(CENTER, TOP);
   noStroke();
 
-  // Title
-  fill(255, 255, 255, 200);
-  textSize(28);
-  text("SELECT YOUR CRAFT", relX, -vh / 2 + 50);
-
-  // Ship Details
-  let design = SHIP_DESIGNS[p.designIndex];
-  if (design) {
-    // Ship Name (Largest)
-    fill(p.labelColor[0], p.labelColor[1], p.labelColor[2]);
-    textSize(54);
-    text(design.name.toUpperCase(), relX, vh / 2 - 320);
-
-    // Role (Gold)
-    fill(255, 200, 0);
-    textSize(20);
-    text(design.role || "UNKNOWN ROLE", relX, vh / 2 - 270);
-
-    // Thrust type label (Subtle)
-    textSize(14);
-    fill(180, 180, 180, 200);
-    let thrustType = "VTOL / HOVER";
-    if (design.isGroundVehicle) {
-      thrustType = design.canTravelOnWater ? "AMPHIBIOUS HOVERCRAFT" : "GROUND VEHICLE";
-    } else {
-      if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
-      if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
-    }
-    text(thrustType, relX, vh / 2 - 245);
-
-    // Description (Body text, wrapped)
-    fill(220);
-    textSize(14);
-    rectMode(CENTER);
-    text(design.desc || "", relX, vh / 2 - 215, vw * 0.85);
-    rectMode(CORNER);
-
-    // --- Stats Panel ---
-    let statY = vh / 2 - 195;
-    let statW = vw * 0.4;
-    let statX = relX - statW / 2;
-
-    const drawStat = (label, val, maxVal, row) => {
-      let y = statY + row * 18;
-      textAlign(RIGHT, TOP);
-      fill(180);
-      textSize(11);
-      text(label, statX - 10, y + 2);
-
-      // Bar background
-      fill(40);
-      rect(statX, y + 3, statW, 8, 2);
-      // Bar fill (using player color)
-      fill(p.labelColor[0], p.labelColor[1], p.labelColor[2], 200);
-      let fillW = map(val, 0, maxVal, 0, statW, true);
-      rect(statX, y + 3, fillW, 8, 2);
-    };
-
-    let effectiveThrust = (design.thrust || 0.45) / (design.mass || 1.0);
-    let effectiveTurn = (design.turnRate || 0.04) / (design.mass || 1.0);
-
-    drawStat("ACCEL", effectiveThrust, 1.6, 0);
-    drawStat("AGILITY", effectiveTurn, 0.12, 1);
-    drawStat("GLIDE", design.lift || 0.008, 0.02, 2);
-    drawStat("MISSILES", design.missileCapacity || 1, 5, 3);
-
-    textAlign(CENTER, TOP);
-  }
+  const design = SHIP_DESIGNS[p.designIndex];
+  _renderShipDetails(p, design, relX, vw, vh);
+  _drawShipStats(p, design, relX, vw, vh);
 
   // Selection Hints / Mobile Buttons
   if (isMobile && !p.ready) {
-    // Arrow buttons
     fill(255, 40);
     rect(relX - vw / 2 + 20, -40, 60, 80, 10);
     rect(relX + vw / 2 - 80, -40, 60, 80, 10);
@@ -506,20 +551,13 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     textSize(22);
     text("CONFIRM", relX, vh / 2 - 70);
     textAlign(CENTER, TOP);
-  } else if (!p.ready) {
-    /*
-    textSize(16);
-    fill(200, 200, 200, 150);
-    let hint = (pi === 0) ? "A / D TO CYCLE \u2022 ENTER TO READY" : "ARROWS TO CYCLE \u2022 . TO READY";
-    if (numPlayers === 1) hint = "LEFT / RIGHT TO CYCLE \u2022 ENTER TO START";
-    text(hint, relX, vh / 2 - 35);
-    */
   }
 
   // Ready State
   if (p.ready) {
     fill(0, 255, 0);
     textSize(36);
+    textAlign(CENTER, CENTER);
     text("READY", relX, 0);
   }
 
@@ -597,14 +635,14 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   // 1. Draw cached static labels for stat names
   image(_getHUDLabelGraphic(hw, h), -hw / 2, -h / 2);
 
-  // 2. Draw dynamic stat values (inline text calls are still needed for dynamic data)
-  let vx = lx + 80; // value column X offset
-  fill(255); textSize(20); text(p.score, vx, ly + 8);
-  fill(0, 255, 0); textSize(16); text(max(0, floor(SEA - s.y)), vx, ly + 32);
-  fill(255, 60, 60); textSize(14); text(infection.count, vx, ly + 54);
-  fill(255, 100, 100); text(enemyManager.enemies.length, vx, ly + 72);
-  fill(0, 200, 255); text(p.missilesRemaining, vx, ly + 90);
-  fill(220); text((NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE'), vx, ly + 108);
+  // 2. Draw dynamic stat values from the configurations
+  const vx = -hw / 2 + 14 + 80; // Value column X offset
+  const vy = -h / 2;
+  for (const stat of HUD_STATS) {
+    fill(...stat.color);
+    textSize(stat.size);
+    text(stat.getVal(p, s), vx, vy + stat.py);
+  }
 
   // --- Crosshair (first-person reticle — only shown in first-person mode) ---
   if (typeof firstPersonView !== 'undefined' && firstPersonView) {
@@ -627,34 +665,7 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   }
 
   drawRadarForPlayer(p, hw, h);
-  // drawControlHints(p, pi, hw, h); // Removed to hide control hints during gameplay
-
-  // --- Weapon Selector Indicator (top-centre) ---
-  let wId = p.weaponMode;
-  let wName = HUD_WEAPON_LABELS[wId];
-  let wCol = HUD_WEAPON_ACTIVE_COLS[wId];
-
-  textAlign(CENTER, TOP);
-  textSize(18);
-  fill(wCol[0], wCol[1], wCol[2], 230);
-  text(wName, 0, -h / 2 + 10);
-
-  // Selector boxes
-  let bw = 60, bh = 6, pad = 8;
-  let totalW = (bw + pad) * 3 - pad;
-  let sx = -totalW / 2;
-  let sy = -h / 2 + 34;
-
-  rectMode(CORNER);
-  noStroke();
-  for (let i = 0; i < 3; i++) {
-    if (i === wId) {
-      fill(wCol[0], wCol[1], wCol[2], 255);
-    } else {
-      fill(50, 50, 50, 150);
-    }
-    rect(sx + i * (bw + pad), sy, bw, bh);
-  }
+  _drawWeaponSelector(p, h);
 
   pop();
 }
@@ -705,11 +716,8 @@ function drawRadarForPlayer(p, hw, h) {
         let bucket = infection.buckets.get(`${shipCX + dcx},${shipCZ + dcz}`);
         if (!bucket) continue;
         for (let t of bucket) {
-          let rx = (t.tx * TILE - s.x) * RADAR_SCALE;
-          let rz = (t.tz * TILE - s.z) * RADAR_SCALE;
-          let rrx = rx * yawCos - rz * yawSin;
-          let rrz = rx * yawSin + rz * yawCos;
-          if (abs(rrx) < RADAR_HALF && abs(rrz) < RADAR_HALF) {
+          const [rrx, rrz] = _projectToRadar(t.tx * TILE, t.tz * TILE, s, yawSin, yawCos);
+          if (Math.abs(rrx) < RADAR_HALF && Math.abs(rrz) < RADAR_HALF) {
             gb.vertex(rrx, rrz);
           }
         }
@@ -723,21 +731,17 @@ function drawRadarForPlayer(p, hw, h) {
       gb.strokeWeight(4);
       gb.beginShape(POINTS);
       for (let e of enemyManager.enemies) {
-        let rx = (e.x - s.x) * RADAR_SCALE;
-        let rz = (e.z - s.z) * RADAR_SCALE;
-        let rrx = rx * yawCos - rz * yawSin;
-        let rrz = rx * yawSin + rz * yawCos;
-        if (abs(rrx) < RADAR_HALF && abs(rrz) < RADAR_HALF) {
+        const [rrx, rrz] = _projectToRadar(e.x, e.z, s, yawSin, yawCos);
+        if (Math.abs(rrx) < RADAR_HALF && Math.abs(rrz) < RADAR_HALF) {
           gb.vertex(rrx, rrz);
         }
       }
       gb.endShape();
     }
 
-    // 4. Launchpad centre marker
-    let lx = (420 - s.x) * RADAR_SCALE, lz = (420 - s.z) * RADAR_SCALE;
-    let rlx = lx * yawCos - lz * yawSin, rlz = lx * yawSin + lz * yawCos;
-    if (abs(rlx) < RADAR_HALF && abs(rlz) < RADAR_HALF) {
+    // 4. Launchpad centre marker (approximate world location)
+    const [rlx, rlz] = _projectToRadar(420, 420, s, yawSin, yawCos);
+    if (Math.abs(rlx) < RADAR_HALF && Math.abs(rlz) < RADAR_HALF) {
       gb.stroke(0, 150, 255, 220); gb.strokeWeight(5);
       gb.point(rlx, rlz);
     }
@@ -745,9 +749,8 @@ function drawRadarForPlayer(p, hw, h) {
     // 5. Co-op partner
     let other = players[1 - p.id];
     if (other && !other.dead) {
-      let ox = (other.ship.x - s.x) * RADAR_SCALE, oz = (other.ship.z - s.z) * RADAR_SCALE;
-      let rox = ox * yawCos - oz * yawSin, roz = ox * yawSin + oz * yawCos;
-      if (abs(rox) < RADAR_HALF && abs(roz) < RADAR_HALF) {
+      const [rox, roz] = _projectToRadar(other.ship.x, other.ship.z, s, yawSin, yawCos);
+      if (Math.abs(rox) < RADAR_HALF && Math.abs(roz) < RADAR_HALF) {
         gb.stroke(other.labelColor[0], other.labelColor[1], other.labelColor[2], 200);
         gb.strokeWeight(5);
         gb.point(rox, roz);

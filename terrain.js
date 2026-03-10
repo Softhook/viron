@@ -141,6 +141,7 @@ uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform vec3 uAmbientLow;
 uniform vec3 uAmbientHigh;
+uniform mat4 uInvViewMatrix;
 
 // Hash function for procedural noise
 float hash(vec2 p) {
@@ -185,6 +186,9 @@ void main() {
   // Material IDs (from R channel)
   int mat = int(vColor.r * 255.0 + 0.5);
   vec3 baseColor = vColor.rgb;
+  
+  // Define normal here so we can optionally tweak it (e.g., normal mapping for water)
+  vec3 n = normalize(vNormal);
   
   if (mat >= 10 && mat <= 11) {
     // ── Viron (Mat 10=Even, 11=Odd) ───────────────────────────────────
@@ -238,6 +242,12 @@ void main() {
       float t = uTime * 0.4;
       float n1 = fbm(wPos + vec2(t, t * 0.5));
       float n2 = fbm(wPos - vec2(t * 0.8, -t * 0.3) + n1 * 2.0);
+      
+      // Dynamic normal mapping for highly realistic reactive water ripples!
+      n.x += (n1 - 0.5) * 0.4 * noiseFade;
+      n.z += (n2 - 0.5) * 0.4 * noiseFade;
+      n = normalize(n);
+      
       float ripple = smoothstep(0.4, 0.8, n2);
       float glint = smoothstep(0.7, 1.0, n2) * 0.15;
       vec3 detail = mix(waterBase, crestColor, ripple) + vec3(glint);
@@ -255,10 +265,6 @@ void main() {
     float parity = vColor.a;
     
     // Position-based check for the Launchpad.
-    // The 0.001 bias (= 0.12 world units) handles floating-point precision at
-    // exact tile boundaries without misclassifying vertices that are genuinely
-    // on the far edge of the launchpad (the old 0.01 offset = 1.2 world units
-    // was large enough to cause a visible seam at the launchpad boundary).
     vec2 tPos = floor(vWorldPos.xz / uTileSize + 0.001);
     bool isLaunchpadFrag = (tPos.x >= 0.0 && tPos.x < 7.0 && tPos.y >= 0.0 && tPos.y < 7.0);
     if (isLaunchpadFrag) {
@@ -292,21 +298,9 @@ void main() {
       float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
       
       if (noiseFade > 0.0) {
-        // Original scale noise (provides the core granular look you had before)
-        float baseLayer = noise2D(vWorldPos.xz * 0.5);
-        
-        // Layer a second, higher-frequency noise rotated by 45 degrees
-        // to completely break up any repeating X/Y grid artifacts from the value noise
-        vec2 pR = vec2(vWorldPos.x * 0.707 - vWorldPos.z * 0.707, vWorldPos.x * 0.707 + vWorldPos.z * 0.707);
-        float detailLayer = noise2D(pR * 1.7);
-        
-        // Combine them for a naturally broken up, rugged texture
-        float ruggedNoise = baseLayer * 0.6 + detailLayer * 0.4;
-        
-        // Extra intense on cliffs for a rocky look, while keeping flats nicely textured
-        float intensity = mix(0.35, 0.85, cliffBlend); 
-        float noiseShift = 0.8 + (ruggedNoise * intensity * 1.2);
-        
+        float microNoise = noise2D(vWorldPos.xz * 0.5);
+        float intensity = mix(0.3, 0.6, cliffBlend); // Extra noise on cliffs
+        float noiseShift = 0.85 + (microNoise * intensity);
         baseColor = mix(baseColor, baseColor * noiseShift, noiseFade);
       }
     }
@@ -336,7 +330,7 @@ void main() {
   //   • warmKey * diffuse double-multiplied diffuse (quadratic → 2.1× at ndl=1, overexposed)
   //   • max(lightTerm, 0.46) floor killed all shadow contrast (shadows never darker than 46%)
   //   • Additive coolShadow+dawnFill pushed even backlit faces above 60% brightness
-  vec3 n = normalize(vNormal);
+  
   float hemi = n.y * -0.5 + 0.5;
 
   // Hemisphere ambient: warm ground-bounce low, cool sky-dome high
@@ -372,6 +366,16 @@ void main() {
     // Trees, buildings, ships, enemies: one-sided Lambert with a higher ambient floor
     // so the shadow side never goes completely black, but IS darker than the lit side.
     litBase = baseColor * max(lightTerm, vec3(0.18, 0.20, 0.25));
+  }
+
+  // --- Water Specular ---
+  if (mat == 30) {
+    vec3 worldCamPos = uInvViewMatrix[3].xyz;
+    vec3 V = normalize(worldCamPos - vWorldPos.xyz);
+    vec3 H = normalize(toSun + V);
+    float specTerm = pow(max(dot(n, H), 0.0), 64.0) * ndl;
+    vec3 specularColor = uSunColor * specTerm * 0.9;
+    litBase += specularColor * 1.5;
   }
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.

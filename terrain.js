@@ -80,6 +80,36 @@ void main() {
 }
 `;
 
+// Shared GLSL snippets embedded into both fragment shaders via template literals.
+// Both shaders declare the same uniforms (uPulses, uTime, vWorldPos, uFogDist,
+// uFogColor) so the snippets work without modification in either context.
+
+// Pulse loop: declares cyberColor and accumulates shockwave ring contributions.
+const _GLSL_PULSE_LOOP = `
+  vec3 cyberColor = vec3(0.0);
+  for (int i = 0; i < 5; i++) {
+    float age = uTime - uPulses[i].z;
+    if (age >= 0.0 && age < 3.0) {
+      float type = uPulses[i].w;
+      vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
+      float distToPulse = length(diff) * 100.0;
+      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
+      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
+      float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
+      float fade = 1.0 - (age / 3.0);
+      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
+      cyberColor += pulseColor * ring * fade * 2.0;
+    }
+  }
+`;
+
+// Fog tail: blends outColor to the sky colour beyond the view boundary.
+const _GLSL_FOG = `
+  float dist = gl_FragCoord.z / gl_FragCoord.w;
+  float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
+  outColor = mix(outColor, uFogColor, fogFactor);
+`;
+
 // --- GLSL fragment shader ---
 // Applies two effects on top of the vertex colour:
 //   1. Expanding shockwave rings (up to 5 simultaneous pulses, typed as
@@ -197,23 +227,7 @@ void main() {
     baseColor *= parity;
   }
 
-  vec3 cyberColor = vec3(0.0);
-  
-  // Expanding shockwave pulses (bombs, infection, explosions)
-  for (int i = 0; i < 5; i++) {
-    float age = uTime - uPulses[i].z;
-    if (age >= 0.0 && age < 3.0) {
-      float type = uPulses[i].w;
-      vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
-      float distToPulse = length(diff) * 100.0;
-      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
-      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
-      float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
-      float fade = 1.0 - (age / 3.0);
-      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
-      cyberColor += pulseColor * ring * fade * 2.0;
-    }
-  }
+  ${_GLSL_PULSE_LOOP}
 
   // Steady sentinel base glows — fixed-radius breathing ring for healthy sentinels
   for (int j = 0; j < 2; j++) {
@@ -246,15 +260,13 @@ void main() {
   // We need the vector TO the sun for the Lambert dot product to correctly shade surfaces.
   vec3 toSun = normalize(-uSunDir);
 
-  // Pure Lambert — direct sun
-  // ndl    = one-sided Lambert for terrain/landscape (backs go dark — correct for solid ground)
-  // ndlAbs = two-sided Lambert for ships/enemies — handles inconsistent vertex winding gracefully
-  //          An inverted normal shows the same shading as the front face, not black.
-  float ndl    = max(dot(n, toSun), 0.0);
-  float ndlAbs = abs(dot(n, toSun));
+  // Pure one-sided Lambert — direct sun contribution is zero on back-facing surfaces.
+  // abs() was previously used here ("two-sided Lambert") but caused the lighting bug
+  // where back-facing surfaces (shadow side) appeared as bright as front-facing ones.
+  float ndl = max(dot(n, toSun), 0.0);
   vec3 keyLight = uSunColor * ndl;
 
-  // Combine: brighter ambient base + warm sun key
+  // Combine: ambient base + sun key light
   vec3 lightTerm = ambient + keyLight;
   
   // Very low floor: allows genuine shadow darkness
@@ -268,14 +280,12 @@ void main() {
     litBase = baseColor * max(lightTerm, vec3(0.8));
     litBase += baseColor * 0.3; // Give it an extra emissive boost
   } else if (mat >= 1 && mat <= 2) {
-    // Terrain (landscape): one-sided Lambert — back faces are genuinely underground, so black is fine
+    // Terrain (landscape): back faces are underground — the floor above handles minimum brightness.
     litBase = baseColor * lightTerm;
   } else {
-    // Ships, trees, enemies: use two-sided Lambert (abs) so winding order inconsistencies
-    // don't produce completely black faces. A flipped normal gives the same luminance as its twin.
-    vec3 shipKeyLight = uSunColor * ndlAbs;
-    vec3 shipLightTerm = max(ambient + shipKeyLight, vec3(0.15, 0.18, 0.22));
-    litBase = baseColor * shipLightTerm;
+    // Trees, buildings, ships, enemies: one-sided Lambert with a higher ambient floor
+    // so the shadow side never goes completely black, but IS darker than the lit side.
+    litBase = baseColor * max(lightTerm, vec3(0.18, 0.20, 0.25));
   }
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.
@@ -320,10 +330,65 @@ void main() {
     }
   }
 
-  // Apply fog to smoothly hide chunk loading edges
-  float dist = gl_FragCoord.z / gl_FragCoord.w;
-  float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
-  outColor = mix(outColor, uFogColor, fogFactor);
+  ${_GLSL_FOG}
+
+  gl_FragColor = vec4(outColor, 1.0);
+}
+`;
+
+// --- GLSL fragment shader for fill-colour rendering (box/cylinder enemies) ---
+//
+// Shares TERRAIN_VERT so world-space position (vWorldPos) is available for
+// distance fog and shockwave pulse effects.  Base colour comes from the
+// uFillColor uniform rather than the aVertexColor material-ID system, so
+// p5 box()/cylinder() primitives are rendered correctly under a custom shader.
+const FILL_COLOR_FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec4 vWorldPos;
+varying vec3 vNormal;
+varying vec3 vViewNormal;
+varying vec3 vViewPos;
+
+uniform vec3  uFillColor;
+uniform vec4  uPulses[5];
+uniform float uTime;
+uniform vec2  uFogDist;
+uniform vec3  uFogColor;
+uniform vec3  uSunDir;
+uniform vec3  uSunColor;
+uniform vec3  uAmbientLow;
+uniform vec3  uAmbientHigh;
+
+void main() {
+  vec3 baseColor = uFillColor;
+
+  // Shockwave pulse rings — same logic as terrain shader.
+  ${_GLSL_PULSE_LOOP}
+
+  // One-sided Lambert + hemisphere ambient. One-sided Lambert correctly darkens
+  // back-facing surfaces; a higher ambient floor prevents completely black shadows.
+  vec3 n = normalize(vNormal);
+  float hemi = n.y * -0.5 + 0.5;
+  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
+  vec3 toSun = normalize(-uSunDir);
+  float ndl = max(dot(n, toSun), 0.0);
+  vec3 litBase = baseColor * max(ambient + uSunColor * ndl, vec3(0.18, 0.20, 0.25));
+
+  vec3 outColor = litBase + cyberColor;
+
+  // Fresnel rim — ship/enemy variant (same as the else branch in TERRAIN_FRAG).
+  vec3 V = normalize(-vViewPos);
+  float fresnel = 1.0 - max(dot(normalize(vViewNormal), V), 0.0);
+  fresnel *= fresnel;
+  float litMask = smoothstep(0.0, 0.2, ndl);
+  float rimMask = smoothstep(-0.2, 0.5, -vNormal.y);
+  outColor += uFogColor * fresnel * litMask * rimMask * 0.7;
+
+  ${_GLSL_FOG}
 
   gl_FragColor = vec4(outColor, 1.0);
 }
@@ -451,6 +516,8 @@ class Terrain {
     this._uSunColorArr = new Float32Array(3);
     this._uAmbLowArr = new Float32Array(3);
     this._uAmbHighArr = new Float32Array(3);
+    // Fill-colour uniform for the box/cylinder enemy shader path.
+    this._uFillColorArr = new Float32Array(3);
 
     // Pre-allocated overlay buffers for batching viron/barrier quads.
     // Fixed size based on MAX_INF (2000) with a 2x safety margin.
@@ -496,9 +563,14 @@ class Terrain {
   // Initialisation
   // ---------------------------------------------------------------------------
 
-  /** Compiles the GLSL shader. Must be called after the p5 WEBGL canvas exists. */
+  /** Compiles the GLSL shaders. Must be called after the p5 WEBGL canvas exists. */
   init() {
     this.shader = createShader(TERRAIN_VERT, TERRAIN_FRAG);
+    // Fill-colour shader: same vertex transform as terrain but colour comes from
+    // a per-draw uFillColor uniform instead of the aVertexColor material-ID system.
+    // Used for box/cylinder enemies (crab, squid, scorpion, colossus) so they receive
+    // the same fog, lighting and shockwave effects as vertex-based enemies and terrain.
+    this.fillShader = createShader(TERRAIN_VERT, FILL_COLOR_FRAG);
   }
 
   // ---------------------------------------------------------------------------
@@ -943,23 +1015,20 @@ class Terrain {
   // ---------------------------------------------------------------------------
 
   /**
-   * Binds the terrain GLSL shader and uploads per-frame uniforms:
-   *   • uTime     — elapsed seconds, drives pulse ring expansion
-   *   • uFogDist  — [fogStart, fogEnd] in world units
-   *   • uFogColor — sky/fog RGB colour (derived from SKY_R/G/B constants)
-   *   • uPulses   — flat array of up to 5 pulse descriptors [x, z, startTime, type]
-   * Must be called before any model() draw calls that should use the terrain shader.
+   * Uploads uniforms shared by both the terrain shader and the fill-colour shader:
+   * fog, sun direction/colour, ambient, inverse-view matrix, time, and pulse data.
+   * Accepts the target shader object as a parameter so both callers can reuse the
+   * same pre-allocated buffers without any redundant array allocations.
+   * @param {p5.Shader} sh  The shader to upload into (this.shader or this.fillShader).
    */
-  applyShader() {
-    shader(this.shader);
+  _uploadSharedUniforms(sh) {
     const fogFar = this._getFogFarWorld();
 
     // Fill pre-allocated uniform buffers in-place — avoids allocating a new JS
     // array literal for every setUniform() call each frame.
     this._uFogDistArr[0] = fogFar - 800; this._uFogDistArr[1] = fogFar + 400;
     this._uFogColorArr[0] = SKY_R / 255.0; this._uFogColorArr[1] = SKY_G / 255.0; this._uFogColorArr[2] = SKY_B / 255.0;
-    // SUN_DIR_NX/NY/NZ are the pre-normalized sun direction constants; no temp
-    // array or Math.hypot call needed.
+    // SUN_DIR_NX/NY/NZ are the pre-normalized sun direction constants.
     this._uSunDirArr[0] = SUN_DIR_NX; this._uSunDirArr[1] = SUN_DIR_NY; this._uSunDirArr[2] = SUN_DIR_NZ;
     this._uSunColorArr[0] = SHADER_SUN_R; this._uSunColorArr[1] = SHADER_SUN_G; this._uSunColorArr[2] = SHADER_SUN_B;
     this._uAmbLowArr[0] = SHADER_AMB_L_R; this._uAmbLowArr[1] = SHADER_AMB_L_G; this._uAmbLowArr[2] = SHADER_AMB_L_B;
@@ -970,36 +1039,50 @@ class Terrain {
       if (!this._invViewMat) this._invViewMat = new p5.Matrix();
       this._invViewMat.set(r.uViewMatrix);
       this._invViewMat.invert(this._invViewMat);
-      this.shader.setUniform('uInvViewMatrix', this._invViewMat.mat4);
+      sh.setUniform('uInvViewMatrix', this._invViewMat.mat4);
     }
 
-    this.shader.setUniform('uTime', millis() / 1000.0);
-    this.shader.setUniform('uFogDist', this._uFogDistArr);
-    this.shader.setUniform('uFogColor', this._uFogColorArr);
-    this.shader.setUniform('uTileSize', TILE);
-    this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
-    this.shader.setUniform('uSunDir', this._uSunDirArr);
-    this.shader.setUniform('uSunColor', this._uSunColorArr);
-    this.shader.setUniform('uAmbientLow', this._uAmbLowArr);
-    this.shader.setUniform('uAmbientHigh', this._uAmbHighArr);
+    sh.setUniform('uTime', millis() / 1000.0);
+    sh.setUniform('uFogDist', this._uFogDistArr);
+    sh.setUniform('uFogColor', this._uFogColorArr);
+    sh.setUniform('uSunDir', this._uSunDirArr);
+    sh.setUniform('uSunColor', this._uSunColorArr);
+    sh.setUniform('uAmbientLow', this._uAmbLowArr);
+    sh.setUniform('uAmbientHigh', this._uAmbHighArr);
 
     // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
     const pulseArr = this._pulseArr;
     for (let i = 0; i < 5; i++) {
       const base = i * 4;
       if (i < this.activePulses.length) {
-        pulseArr[base] = this.activePulses[i].x;
+        pulseArr[base]     = this.activePulses[i].x;
         pulseArr[base + 1] = this.activePulses[i].z;
         pulseArr[base + 2] = this.activePulses[i].start;
         pulseArr[base + 3] = this.activePulses[i].type || 0.0;
       } else {
-        pulseArr[base] = 0.0;
+        pulseArr[base]     = 0.0;
         pulseArr[base + 1] = 0.0;
         pulseArr[base + 2] = -9999.0;  // Inactive: age never reaches 0
         pulseArr[base + 3] = 0.0;
       }
     }
-    this.shader.setUniform('uPulses', pulseArr);
+    sh.setUniform('uPulses', pulseArr);
+  }
+
+  /**
+   * Binds the terrain GLSL shader and uploads per-frame uniforms:
+   *   • uTime     — elapsed seconds, drives pulse ring expansion
+   *   • uFogDist  — [fogStart, fogEnd] in world units
+   *   • uFogColor — sky/fog RGB colour (derived from SKY_R/G/B constants)
+   *   • uPulses   — flat array of up to 5 pulse descriptors [x, z, startTime, type]
+   * Must be called before any model() draw calls that should use the terrain shader.
+   */
+  applyShader() {
+    shader(this.shader);
+    this._uploadSharedUniforms(this.shader);
+
+    this.shader.setUniform('uTileSize', TILE);
+    this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
 
     // Write sentinel glow data into the pre-allocated buffer.
     const glowArr = this._glowArr;
@@ -1021,9 +1104,41 @@ class Terrain {
     this.shader.setUniform('uSentinelGlows', glowArr);
   }
 
-  // ---------------------------------------------------------------------------
-  // Draw methods
-  // ---------------------------------------------------------------------------
+  /**
+   * Binds the fill-colour shader and uploads per-frame uniforms.
+   * Replaces setSceneLighting() for box/cylinder enemies so they receive
+   * the same fog, lighting and shockwave effects as vertex-based enemies.
+   *
+   * Call setFillColor() immediately before each box()/cylinder() draw to
+   * set the per-part colour via the uFillColor uniform.
+   */
+  applyFillColorShader() {
+    if (!this.fillShader) return;
+    shader(this.fillShader);
+    this._uploadSharedUniforms(this.fillShader);
+
+    // Seed with white so the first box() draw before any setFillColor() call
+    // renders as a bright, obviously-wrong colour rather than black (which
+    // would be invisible and silently mask a missing setFillColor() call).
+    this._uFillColorArr[0] = 1.0; this._uFillColorArr[1] = 1.0; this._uFillColorArr[2] = 1.0;
+    this.fillShader.setUniform('uFillColor', this._uFillColorArr);
+  }
+
+  /**
+   * Updates the uFillColor uniform for the currently bound fill-colour shader.
+   * Must be called immediately before drawing each box()/cylinder() body part.
+   *
+   * @param {number} r  Red channel 0–255.
+   * @param {number} g  Green channel 0–255.
+   * @param {number} b  Blue channel 0–255.
+   */
+  setFillColor(r, g, b) {
+    if (!this.fillShader) return;
+    this._uFillColorArr[0] = r / 255.0;
+    this._uFillColorArr[1] = g / 255.0;
+    this._uFillColorArr[2] = b / 255.0;
+    this.fillShader.setUniform('uFillColor', this._uFillColorArr);
+  }
 
   /**
    * Renders sets of tile overlay quads using the currently bound terrain shader.
@@ -1519,15 +1634,17 @@ class Terrain {
   }
 
   /**
-   * Draws a single cached projected shadow for a tree.
-   * Hull is computed once and stored on the tree object (static geometry, fixed sun).
+   * Ensures the shadow geometry for a tree is baked and cached.
+   * Handles sun-change invalidation, hull initialisation, and geometry baking.
+   * Called once per shadow-queue entry before the batched render pass.
+   * @param {{}} t    Tree descriptor from getProceduralTreesForChunk.
+   * @param {{}} sun  Sun shadow basis from _getSunShadowBasis().
    */
-  _drawTreeShadow(t, groundY, sun) {
-    // If the sun has moved since we last baked this shadow, invalidate the cached 
-    // geometry so it re-builds at the new solar angle.
+  _ensureTreeShadowBaked(t, sun) {
+    // Invalidate cached geometry when the sun angle changes.
     if (t._bakedSun && (t._bakedSun.x !== sun.x || t._bakedSun.y !== sun.y || t._bakedSun.z !== sun.z)) {
       t._shadowGeom = null;
-      t._shadowBakeFails = 0; // sun changed → fresh bake attempt; reset failure count
+      t._shadowBakeFails = 0;
     }
 
     if (!t._shadowHull) {
@@ -1535,10 +1652,8 @@ class Terrain {
       // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
       const hrx = (vi === 2) ? 20 * sc : 17 * sc;
       const hrz = (vi === 2) ? 14 * sc : 12 * sc;
-      const casterH = h + (vi === 2 ? 24 : 18) * sc;
-      const trunkHalf = 2.5; // trunk box half-extent (full box size 5x5)
+      const trunkHalf = 2.5;
       const footprint = [];
-      // Trunk footprint (merge components into one hull to avoid crescent gaps)
       footprint.push(
         { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
         { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
@@ -1548,11 +1663,9 @@ class Terrain {
         footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
       }
       t._footprint = footprint;
-      t._shadowCasterH = casterH;
+      t._shadowCasterH = h + (vi === 2 ? 24 : 18) * sc;
       t._shadowHull = true;
     }
-
-    const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
 
     // t._shadowGeom lifecycle:
     //   undefined  → not yet attempted
@@ -1562,84 +1675,55 @@ class Terrain {
     if (t._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !t._footprint) return;
       this._isBuildingShadow = true;
+      const casterH = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
       try {
         t._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        let built = _safeBuildGeometry(() => {
-          this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
+        const built = _safeBuildGeometry(() => {
+          this._drawProjectedFootprintShadow(t.x, t.z, t.y, casterH, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
         });
-        // Use false (not null) for an empty result so the == null guard above
-        // won't trigger a rebuild every frame for a permanently-degenerate hull.
-        const tGeom = (built && built.vertices.length) ? built : false;
-        t._shadowGeom = tGeom;
-        if (tGeom) t._shadowBakeFails = 0;
+        t._shadowGeom = (built && built.vertices.length) ? built : false;
+        if (t._shadowGeom) t._shadowBakeFails = 0;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for tree:", err);
         t._shadowBakeFails = (t._shadowBakeFails || 0) + 1;
-        // Give up after 3 failures to avoid calling buildGeometry every frame.
         t._shadowGeom = (t._shadowBakeFails >= 3) ? false : null;
       } finally {
         this._isBuildingShadow = false;
       }
     }
-
-    if (!t._shadowGeom) return;
-
-    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
-    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
-    if (lightsWereOn) noLights();
-    noStroke();
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-
-    _beginShadowStencil();
-
-    push();
-    model(t._shadowGeom);
-    pop();
-
-    _endShadowStencil();
-    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
   }
 
   /**
-   * Draws a single cached projected shadow for a building.
-   *
-   * Previous design had 2-3 overlapping draw calls per building causing:
-   *   • Composited alpha overlap (type 4 reached ~70% opacity at center — unphysical)
-   *   • 2-3× more WebGL draw calls per building per frame
-   *   • O(n log n) convex hull recomputed every frame for static geometry
-   *
-   * New design: one shadow hull per building, cached after first frame,
-   * sky-tinted dark-blue shadow color (physical: sky fill colors the shadow).
+   * Ensures the shadow geometry for a static building (types 0, 1, 2, 4) is baked
+   * and cached. Handles sun-change invalidation, hull init, and geometry baking.
+   * Type 3 (floating UFO) has an animated caster height and is handled separately.
+   * @param {{}} b       Building descriptor from gameState.buildings.
+   * @param {number} groundY  Ground Y for the bake.
+   * @param {{}} sun     Sun shadow basis from _getSunShadowBasis().
+   * @param {boolean} inf  Whether the building tile is currently infected.
    */
-  _drawBuildingShadow(b, groundY, inf, sun) {
-    const bw = b.w, bh = b.h, bd = b.d;
-
-    // If the sun has moved since we last baked this shadow, invalidate the cached 
-    // geometry so it re-builds at the new solar angle.
+  _ensureBuildingShadowBaked(b, groundY, sun, inf) {
+    // Invalidate cached geometry when the sun angle changes.
     if (b._bakedSun && (b._bakedSun.x !== sun.x || b._bakedSun.y !== sun.y || b._bakedSun.z !== sun.z)) {
       b._shadowGeom = null;
-      b._shadowBakeFails = 0; // sun changed → fresh bake attempt; reset failure count
+      b._shadowBakeFails = 0;
     }
 
-    // Type 3 (floating UFO): animated caster height — cannot cache hull.
-    if (b.type === 3) {
-      const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
-      const casterH = max(35, groundY - floatY);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun, true);
-      return;
+    // Invalidate cached geometry when infection state changes (type 4 shadow alpha
+    // differs between infected/healthy, so the baked vertex colors must be rebuilt).
+    if (b._shadowGeom && b._bakedInf !== inf) {
+      b._shadowGeom = null;
+      b._shadowBakeFails = 0;
     }
 
-    // Static types (0, 1, 2, 4): compute hull once, cache on the building object.
-    // Sun direction and building position are both constant, so the hull never changes.
     if (!b._shadowHull) {
+      const bw = b.w, bh = b.h, bd = b.d;
       let footprint, casterH;
       if (b.type === 0) {
-        // Geometric structure: rectangular shadow at full height (body + funnel)
         const hw = bw * 0.5, hd = bd * 0.5;
         footprint = [{ x: -hw, z: -hd }, { x: hw, z: -hd }, { x: hw, z: hd }, { x: -hw, z: hd }];
         casterH = bh + bw * 0.35;
       } else if (b.type === 1) {
-        // Water tower: ellipse shadow at full height (cylinder + sphere dome)
         footprint = [];
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * TWO_PI;
@@ -1647,12 +1731,11 @@ class Terrain {
         }
         casterH = bh + bw * 0.5;
       } else if (b.type === 2) {
-        // Industrial complex: wide rectangular shadow at full smokestack height
         const hw = bw * 0.75, hd = bd * 0.75;
         footprint = [{ x: -hw, z: -hd }, { x: hw, z: -hd }, { x: hw, z: hd }, { x: -hw, z: hd }];
         casterH = bh;
       } else {
-        // Type 4 — sentinel tower: ellipse shadow at full tower height
+        // Type 4 — sentinel tower
         footprint = [];
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * TWO_PI;
@@ -1665,56 +1748,51 @@ class Terrain {
       b._shadowHull = true;
     }
 
-    const casterHForOpacity = b._shadowCasterH || b.h;
+    const casterH = b._shadowCasterH || b.h;
     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
 
-    // b._shadowGeom lifecycle:
-    //   undefined  → not yet attempted
-    //   null       → invalidated or bake failed (but not exhausted); rebuild next frame
-    //   false      → bake permanently skipped (degenerate hull or failures exhausted)
-    //   p5.Geometry → valid cached shadow mesh
+    // b._shadowGeom lifecycle mirrors tree shadow lifecycle (see _ensureTreeShadowBaked).
     if (b._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !b._footprint) return;
       this._isBuildingShadow = true;
       try {
         b._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        let built = _safeBuildGeometry(() => {
-          this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
+        b._bakedInf = inf;
+        const built = _safeBuildGeometry(() => {
+          this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterH, b._footprint, baseAlpha, sun, false, true);
         });
-        // Use false (not null) for an empty result so the == null guard above
-        // won't trigger a rebuild every frame for a permanently-degenerate hull.
-        const bGeom = (built && built.vertices.length) ? built : false;
-        b._shadowGeom = bGeom;
-        if (bGeom) b._shadowBakeFails = 0;
+        b._shadowGeom = (built && built.vertices.length) ? built : false;
+        if (b._shadowGeom) b._shadowBakeFails = 0;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for building:", err);
         b._shadowBakeFails = (b._shadowBakeFails || 0) + 1;
-        // Give up after 3 failures to avoid calling buildGeometry every frame.
         b._shadowGeom = (b._shadowBakeFails >= 3) ? false : null;
       } finally {
         this._isBuildingShadow = false;
       }
     }
-
-    if (!b._shadowGeom) return;
-
-    const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
-    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
-    if (lightsWereOn) noLights();
-    noStroke();
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-
-    _beginShadowStencil();
-
-    push();
-    model(b._shadowGeom);
-    pop();
-
-    _endShadowStencil();
-    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
   }
 
-
+  /**
+   * Draws a single cached projected shadow for a building.
+   *
+   * Previous design had 2-3 overlapping draw calls per building causing:
+   *   • Composited alpha overlap (type 4 reached ~70% opacity at center — unphysical)
+   *   • 2-3× more WebGL draw calls per building per frame
+   *   • O(n log n) convex hull recomputed every frame for static geometry
+   *
+   * New design: one shadow hull per building, cached after first frame.
+   * Only used for type 3 (animated UFO) which cannot be batched; the caller in
+   * drawBuildings guards `b.type === 3` before invoking this. Static types
+   * (0, 1, 2, 4) are now batched in drawBuildings via _ensureBuildingShadowBaked.
+   */
+  _drawBuildingShadow(b, groundY, sun) {
+    // Caller guarantees b.type === 3.
+    const bw = b.w, bh = b.h;
+    const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
+    const casterH = max(35, groundY - floatY);
+    this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun, true);
+  }
 
   _getPowerupGeom(b, inf) {
     const key = `pu_${(b.w).toFixed(1)}_${(b.h).toFixed(1)}_${inf}`;
@@ -1842,13 +1920,24 @@ class Terrain {
     resetShader();
     setSceneLighting();
 
-    // Draw projected component shadows in one pass.
+    // Draw all tree shadows in a single batched pass.
+    // _ensureTreeShadowBaked() handles baking for any tree that doesn't yet have a
+    // cached shadow mesh. All valid meshes are then rendered under one shared
+    // stencil/lighting setup instead of toggling WebGL state per tree.
+    //
+    // Each shadow geometry has its alpha baked into vertex colors by
+    // _drawProjectedFootprintShadow (called with isBaking=true). model() uses those
+    // baked vertex colors, so no per-tree fill() call is required here.
     const sun = this._getSunShadowBasis();
-    noStroke();
-    for (let i = 0; i < shadowQueue.length; i++) {
-      const t = shadowQueue[i];
-      this._drawTreeShadow(t, t.y, sun);
+    for (const t of shadowQueue) this._ensureTreeShadowBaked(t, sun);
+
+    noLights(); noStroke();
+    _beginShadowStencil();
+    for (const t of shadowQueue) {
+      if (t._shadowGeom) { push(); model(t._shadowGeom); pop(); }
     }
+    _endShadowStencil();
+    setSceneLighting();
   }
 
   _getBuildingGeom(b, inf) {
@@ -1979,16 +2068,41 @@ class Terrain {
 
       pop();
 
-      // Defer ground shadow drawing
+      // Defer ground shadow drawing; store inf so baking can use the right alpha.
       if (dSq < 2250000) shadowQueue.push({ b, y, inf });
     }
 
     resetShader();
     setSceneLighting();
 
-    for (let q of shadowQueue) {
-      this._drawBuildingShadow(q.b, q.y, q.inf, sun);
+    // Draw building shadows in a single batched pass.
+    // Type 3 (floating UFO) cannot be cached — draw it immediately via its own stencil.
+    // All other types bake once and render under one shared stencil setup.
+    // Shadow alpha is baked into vertex colors by _drawProjectedFootprintShadow
+    // (isBaking=true), so no per-building fill() is needed in the render loop.
+    noLights(); noStroke();
+    for (const q of shadowQueue) {
+      if (q.b.type === 3) {
+        // UFO: animated shadow, handled individually (includes its own stencil setup).
+        this._drawBuildingShadow(q.b, q.y, sun);
+      } else {
+        this._ensureBuildingShadowBaked(q.b, q.y, sun, q.inf);
+      }
     }
+
+    _beginShadowStencil();
+    // Ensure lighting is disabled for the batched static-shadow pass.
+    // Type-3 UFO shadows may have re-enabled lighting via _drawBuildingShadow().
+    noLights();
+    for (const q of shadowQueue) {
+      if (q.b.type !== 3 && q.b._shadowGeom) {
+        push();
+        model(q.b._shadowGeom);
+        pop();
+      }
+    }
+    _endShadowStencil();
+    setSceneLighting();
   }
 }
 

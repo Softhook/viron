@@ -861,7 +861,7 @@ class EnemyManager {
       fill(dkR, dkG, dkB);
       push(); translate(0, 125, 0); box(40, 30, 40); pop();
       fill(fcR, fcG, fcB);
-      push(); translate(0, 185, 0); box(40, 100, 40); pop();
+      push(); translate(0, 185, 0); box(36, 100, 36); pop();
       fill(acR, acG, acB);
       push(); translate(0, 245, 0); box(55, 55, 55); pop();
       pop();

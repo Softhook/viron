@@ -39,7 +39,7 @@ function resetShip(p, offsetX) {
   p.ship = { x: offsetX, y: LAUNCH_ALT, z: 420, vx: 0, vy: 0, vz: 0, pitch: 0, yaw: 0 };
   let d = SHIP_DESIGNS[p.designIndex || 0];
   if (d) {
-    p.missilesRemaining = d.missileCapacity || 1;
+    p.missilesRemaining = d.startingMissiles ?? d.missileCapacity ?? 1;
   } else {
     p.missilesRemaining = 1;
   }

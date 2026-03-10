@@ -70,7 +70,7 @@ class GameState {
     if (lvl === 1) resetShip(p, getSpawnX(p));
 
     p.homingMissiles = [];
-    p.missilesRemaining = (lvl > 1) ? (p.missilesRemaining + 1) : 1;
+    if (lvl > 1) p.missilesRemaining = p.missilesRemaining + 1;
     p.dead = false;
     p.respawnTimer = 0;
     p.lpDeaths = 0;

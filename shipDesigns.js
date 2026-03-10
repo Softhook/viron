@@ -47,7 +47,7 @@ const SHIP_DESIGNS = [
         mass: 1.0,
         lift: 0.006,
         brakeRate: 0.96,
-        missileCapacity: 1,
+        startingMissiles: 1,
         footprint: [{ x: -16, z: 12 }, { x: 16, z: 12 }, { x: 0, z: -32 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -77,7 +77,7 @@ const SHIP_DESIGNS = [
         mass: 0.8,
         lift: 0.009,
         brakeRate: 0.97,
-        missileCapacity: 1,
+        startingMissiles: 1,
         footprint: [{ x: -12, z: 0 }, { x: 12, z: 0 }, { x: -25, z: 15 }, { x: 25, z: 15 }, { x: 0, z: -35 }, { x: 0, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -131,7 +131,7 @@ const SHIP_DESIGNS = [
         mass: 1.8,
         lift: 0.002,
         brakeRate: 0.92,
-        missileCapacity: 3,
+        startingMissiles: 3,
         footprint: [{ x: -22, z: -20 }, { x: 22, z: -20 }, { x: 22, z: 15 }, { x: -22, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -182,7 +182,7 @@ const SHIP_DESIGNS = [
         mass: 1.2,
         lift: 0.011,
         brakeRate: 0.98,
-        missileCapacity: 1,
+        startingMissiles: 1,
         footprint: [{ x: 0, z: -25 }, { x: 22, z: 12 }, { x: -22, z: 12 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -231,7 +231,7 @@ const SHIP_DESIGNS = [
         mass: 0.9,
         lift: 0.011,
         brakeRate: 0.95,
-        missileCapacity: 2,
+        startingMissiles: 2,
         footprint: [{ x: 0, z: -45 }, { x: -8, z: 25 }, { x: 8, z: 25 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -262,7 +262,7 @@ const SHIP_DESIGNS = [
         mass: 1.1,
         lift: 0.011,
         brakeRate: 0.96,
-        missileCapacity: 2,
+        startingMissiles: 2,
         footprint: [{ x: 0, z: -35 }, { x: -25, z: 15 }, { x: 25, z: 15 }, { x: -6, z: 10 }, { x: 6, z: 10 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -299,7 +299,7 @@ const SHIP_DESIGNS = [
         mass: 0.7,
         lift: 0.009,
         brakeRate: 0.96,
-        missileCapacity: 1,
+        startingMissiles: 1,
         footprint: [{ x: 0, z: -40 }, { x: -25, z: 15 }, { x: 25, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -333,7 +333,7 @@ const SHIP_DESIGNS = [
         mass: 1.0,
         lift: 0.012,
         brakeRate: 0.96,
-        missileCapacity: 2,
+        startingMissiles: 2,
         footprint: [{ x: 0, z: -42 }, { x: -40, z: 28 }, { x: 40, z: 28 }, { x: 0, z: 22 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -378,7 +378,7 @@ const SHIP_DESIGNS = [
         mass: 0.6,
         lift: 0.016,
         brakeRate: 0.98,
-        missileCapacity: 1,
+        startingMissiles: 1,
         footprint: [{ x: 0, z: -32 }, { x: -32, z: 15 }, { x: 32, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -415,7 +415,7 @@ const SHIP_DESIGNS = [
         mass: 0.9,
         lift: 0.014,
         brakeRate: 0.97,
-        missileCapacity: 3,
+        startingMissiles: 3,
         footprint: [{ x: 0, z: -45 }, { x: -47, z: 32 }, { x: 47, z: 32 }, { x: 0, z: 15 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -464,7 +464,7 @@ const SHIP_DESIGNS = [
         mass: 0.5,
         lift: 0.010,
         brakeRate: 0.99,
-        missileCapacity: 1,
+        startingMissiles: 1,
         footprint: [{ x: 0, z: -60 }, { x: -35, z: -15 }, { x: 35, z: -15 }, { x: -9, z: 35 }, { x: 9, z: 35 }],
         draw: function (drawFace, tintColor, engineGray, light, dark, pushing, s, transform) {
             if (drawFace) {
@@ -500,7 +500,7 @@ const SHIP_DESIGNS = [
         mass: 0.7,
         lift: 0.0,
         brakeRate: 0.94,
-        missileCapacity: 1,
+        startingMissiles: 1,
         isGroundVehicle: true,
         canTravelOnWater: false,
         footprint: [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: 15, z: 15 }, { x: -15, z: 15 }],
@@ -558,7 +558,7 @@ const SHIP_DESIGNS = [
         mass: 2.5,
         lift: 0.0,
         brakeRate: 0.92,
-        missileCapacity: 5,
+        startingMissiles: 5,
         shotType: 'tank_shell',
         isGroundVehicle: true,
         canTravelOnWater: false,
@@ -608,7 +608,7 @@ const SHIP_DESIGNS = [
         mass: 1.2,
         lift: 0.0,
         brakeRate: 0.97,
-        missileCapacity: 2,
+        startingMissiles: 2,
         isGroundVehicle: true,
         canTravelOnWater: true,
         footprint: [{ x: -22, z: -30 }, { x: 22, z: -30 }, { x: 22, z: 30 }, { x: -22, z: 30 }],

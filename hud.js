@@ -142,7 +142,7 @@ function _drawShipStats(p, design, relX, vw, vh) {
     { label: "ACCEL", val: (design.thrust || 0.45) / (design.mass || 1.0), max: 1.6 },
     { label: "AGILITY", val: (design.turnRate || 0.04) / (design.mass || 1.0), max: 0.12 },
     { label: "GLIDE", val: design.lift || 0.008, max: 0.02 },
-    { label: "MISSILES", val: design.missileCapacity || 1, max: 5 }
+    { label: "MISSILES", val: design.startingMissiles ?? design.missileCapacity ?? 1, max: 5 }
   ];
 
   stats.forEach((s, i) => {

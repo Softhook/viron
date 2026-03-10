@@ -145,11 +145,10 @@ uniform mat4 uInvViewMatrix;
 
 // Hash function for procedural noise
 float hash(vec2 p) {
-  // Use a much larger modulo or none at all if possible; p5 coord space here doesn't need 10000 wrap
-  // since float32 has millions of precise digits.
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
+  // Wrap p to prevent precision breakdown at large world coordinates,
+  // then use standard robust sine hash to prevent structural patterns.
+  p = mod(p, 5000.0);
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
 }
 
 // 2D Value Noise
@@ -183,15 +182,15 @@ float fbm(vec2 p) {
 }
 
 void main() {
-  // Material IDs (from R channel)
   int mat = int(vColor.r * 255.0 + 0.5);
   vec3 baseColor = vColor.rgb;
   
-  // Define normal here so we can optionally tweak it (e.g., normal mapping for water)
   vec3 n = normalize(vNormal);
-  
+  float specularIntensity = 0.0;
+  float specularShininess = 16.0;
+
   if (mat >= 10 && mat <= 11) {
-    // ── Viron (Mat 10=Even, 11=Odd) ───────────────────────────────────
+    // ── Viron ───────────────────────────────────────────
     float xP = vWorldPos.x / uTileSize;
     float zP = vWorldPos.z / uTileSize;
     float pulse = sin(uTime * 3.6 + xP * 0.05 + zP * 0.05) * 0.5 + 0.5;
@@ -199,43 +198,53 @@ void main() {
     float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
     float af = clamp(mix(1.15, 0.7, (vWorldPos.y - 200.0) / -350.0), 0.7, 1.15);
     float parity = (mat == 10) ? 1.0 : 0.75;
+    
     vec3 cRed    = uPalette[9] * parity;
     vec3 cDark   = uPalette[10] * parity;
     vec3 cScan   = uPalette[11] * parity; 
     baseColor = mix(cDark, cRed, pulse);
     baseColor += cScan * scan * 1.5;      
     baseColor *= af;
+    // Slick biological speculator surface
+    specularIntensity = 0.45;
+    specularShininess = 12.0;
   } else if (mat >= 14 && mat <= 15) {
-    // ── Green Viron (Mat 14=Even, 15=Odd) ─────────────────────────────
+    // ── Green Viron ──────────────────────────────────────
     float xP = vWorldPos.x / uTileSize;
     float zP = vWorldPos.z / uTileSize;
     float pulse = sin(uTime * 4.8 + xP * 0.08 + zP * 0.08) * 0.5 + 0.5; // Faster pulse
     float scanPos = uTime / 8.0; // Faster scan
     float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
-    float af = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3); // Brighter
+    float af = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3);
     float parity = (mat == 14) ? 1.0 : 0.75;
+    
     vec3 gGreen = uPalette[14] * parity;
     vec3 gDark  = uPalette[15] * parity;
     vec3 gScan  = uPalette[16] * parity; 
     baseColor = mix(gDark, gGreen, pulse);
-    baseColor += gScan * scan * 2.0; // More intense scan
+    baseColor += gScan * scan * 2.0;
     baseColor *= af;
+    specularIntensity = 0.5;
+    specularShininess = 16.0;
   } else if (mat >= 20 && mat <= 21) {
-    // ── Barrier (Mat 20=Even, 21=Odd) ────────────────────────────────
+    // ── Barrier ──────────────────────────────────────────
     float xP = vWorldPos.x / uTileSize;
     float zP = vWorldPos.z / uTileSize;
     float shimmer = sin(uTime * 0.7 + xP * 0.15 + zP * 0.1) * 0.5 + 0.5;
     float parity = (mat == 20) ? 1.0 : 0.90;
     vec3 pearlBase = uPalette[12];
+    
     baseColor = pearlBase * parity * (0.88 + 0.12 * shimmer);
+    
+    // Immense reflection specular hit
+    specularIntensity = 2.0;
+    specularShininess = 64.0;
   } else if (mat == 30) {
-    // ── Sea plane (Mat 30) ────────────────────────────────────────────
+    // ── Sea plane ────────────────────────────────────────
     vec3 waterBase = vec3(15.0/255.0, 45.0/255.0, 150.0/255.0);
     vec3 crestColor = vec3(25.0/255.0, 65.0/255.0, 165.0/255.0);
-    
     float tDist = gl_FragCoord.z / gl_FragCoord.w;
     float noiseFade = 1.0 - smoothstep(1500.0, 3500.0, tDist);
-    
     vec3 finalColor = waterBase;
     if (noiseFade > 0.0) {
       vec2 wPos = vWorldPos.xz * 0.06;
@@ -254,17 +263,18 @@ void main() {
       finalColor = mix(waterBase, detail, noiseFade);
     }
     baseColor = finalColor;
+    specularIntensity = 0.9;
+    specularShininess = 64.0;
   } else if (mat >= 250 && mat <= 251) {
-    // ── Powerup (Mat 250=Healthy, 251=Infected) ────────────────────────
+    // ── Powerup ──────────────────────────────────────────
     baseColor = (mat == 250) ? vec3(60.0/255.0, 180.0/255.0, 240.0/255.0) : vec3(200.0/255.0, 50.0/255.0, 50.0/255.0);
+    specularIntensity = 0.4;
+    specularShininess = 16.0;
   } else if (mat >= 1 && mat <= 2) {
-    // ── Landscape (Mat 1=Inland, 2=Shore) ────────────────────────────
-    // Use pre-computed Organic Tags from vColor
+    // ── Landscape ────────────────────────────────────────
     float noisePatch = vColor.g;
     float rand = vColor.b;
     float parity = vColor.a;
-    
-    // Position-based check for the Launchpad.
     vec2 tPos = floor(vWorldPos.xz / uTileSize + 0.001);
     bool isLaunchpadFrag = (tPos.x >= 0.0 && tPos.x < 7.0 && tPos.y >= 0.0 && tPos.y < 7.0);
     if (isLaunchpadFrag) {
@@ -274,7 +284,6 @@ void main() {
         float idx = floor(rand * 3.0);
         baseColor = (idx < 1.0) ? uPalette[6] : (idx < 2.0 ? uPalette[7] : uPalette[8]);
       } else { // Inland
-        // Exact weight-match to original JS: (noise * 2.0 + rand * 0.2) * 6
         float val = mod(floor((noisePatch * 2.0 + rand * 0.2) * 6.0), 6.0);
         if (val < 1.0) baseColor = uPalette[0];
         else if (val < 2.0) baseColor = uPalette[1];
@@ -284,138 +293,104 @@ void main() {
         else baseColor = uPalette[5];
       }
       
-      // Slope check (Y normal component: 1.0 = flat ground, 0.0 = sheer vertical wall)
-      // We flip vNormal.y to a positive value because -Y is UP in p5.js coordinates.
       float steepness = 1.0 - max(-vNormal.y, 0.0);
-      
-      // If steepness > 0.05, start blending in a deep rocky color
       float cliffBlend = smoothstep(0.05, 0.18, steepness);
-      vec3 cliffColor = vec3(0.12, 0.11, 0.10); // Dark grey/brown rock
+      vec3 cliffColor = vec3(0.12, 0.11, 0.10);
       baseColor = mix(baseColor, cliffColor, cliffBlend);
       
-      // Organic Micro-Noise (distance faded to prevent moire aliasing)
       float tDist = gl_FragCoord.z / gl_FragCoord.w;
       float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
-      
       if (noiseFade > 0.0) {
-        float microNoise = noise2D(vWorldPos.xz * 0.5);
-        float intensity = mix(0.3, 0.6, cliffBlend); // Extra noise on cliffs
-        float noiseShift = 0.85 + (microNoise * intensity);
+        // Completely organic, non-repeating multi-frequency FBM layering
+        float f1 = fbm(vWorldPos.xz * 0.03);
+        float f2 = fbm(vWorldPos.xz * 0.13 + vec2(42.1, 13.7));
+        
+        // Rotate the high frequency layer 45 degrees to destroy value noise's inherent X/Z grid alignment
+        vec2 pR = vec2(vWorldPos.x * 0.707 - vWorldPos.z * 0.707, vWorldPos.x * 0.707 + vWorldPos.z * 0.707);
+        float f3 = noise2D(pR * 1.5);
+        
+        float ruggedNoise = f1 * 0.5 + f2 * 0.35 + f3 * 0.15;
+        
+        // Bump Mapping! Physically tilt lighting normal based on procedural terrain
+        n.x += (f1 - 0.5) * 0.3 * noiseFade * (1.0 + cliffBlend * 1.5);
+        n.z += (f2 - 0.5) * 0.3 * noiseFade * (1.0 + cliffBlend * 1.5);
+        n = normalize(n);
+        
+        float intensity = mix(0.4, 0.9, cliffBlend); 
+        float noiseShift = 0.7 + (ruggedNoise * intensity * 1.4);
         baseColor = mix(baseColor, baseColor * noiseShift, noiseFade);
       }
+      // Glossy shine on steep rock faces to give a slightly damp, sheer geological look
+      specularIntensity = mix(0.0, 0.4, cliffBlend);
+      specularShininess = 16.0;
     }
     baseColor *= parity;
   }
 
   ${_GLSL_PULSE_LOOP}
 
-  // Steady sentinel base glows — fixed-radius breathing ring for healthy sentinels
   for (int j = 0; j < 2; j++) {
-    if (uSentinelGlows[j].w < 0.5) continue;  // inactive slot
+    if (uSentinelGlows[j].w < 0.5) continue;
     vec2 diff2 = (vWorldPos.xz - uSentinelGlows[j].xy) * 0.01;
     float dist2 = length(diff2) * 100.0;
     float glowR = uSentinelGlows[j].z;
-    // Inner soft fill + sharp edge ring
-    float innerGlow = smoothstep(glowR * 1.1, 0.0, dist2) * 0.18;  // soft filled disc
+    float innerGlow = smoothstep(glowR * 1.1, 0.0, dist2) * 0.18;
     float ringW = glowR * 0.12;
     float ring2 = smoothstep(glowR - ringW, glowR, dist2) * (1.0 - smoothstep(glowR, glowR + ringW, dist2));
-    // Breathe brightness with a slow sine wave, phase-offset by x position
     float breath = 0.6 + 0.4 * sin(uTime * 1.6 + uSentinelGlows[j].x * 0.002);
     cyberColor += vec3(0.0, 0.9, 0.8) * (ring2 * breath * 2.2 + innerGlow * breath);
   }
   
-  // === Directional lighting — Lambert + hemisphere ambient + sky fill ===
-  //
-  // Previous design bugs fixed:
-  //   • warmKey * diffuse double-multiplied diffuse (quadratic → 2.1× at ndl=1, overexposed)
-  //   • max(lightTerm, 0.46) floor killed all shadow contrast (shadows never darker than 46%)
-  //   • Additive coolShadow+dawnFill pushed even backlit faces above 60% brightness
-  
   float hemi = n.y * -0.5 + 0.5;
-
-  // Hemisphere ambient: warm ground-bounce low, cool sky-dome high
   vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
-
-  // Invert uSunDir because the uniform stores the direction light TRAVELS.
-  // We need the vector TO the sun for the Lambert dot product to correctly shade surfaces.
   vec3 toSun = normalize(-uSunDir);
-
-  // Pure one-sided Lambert — direct sun contribution is zero on back-facing surfaces.
-  // abs() was previously used here ("two-sided Lambert") but caused the lighting bug
-  // where back-facing surfaces (shadow side) appeared as bright as front-facing ones.
   float ndl = max(dot(n, toSun), 0.0);
   vec3 keyLight = uSunColor * ndl;
-
-  // Combine: ambient base + sun key light
   vec3 lightTerm = ambient + keyLight;
   
-  // Very low floor: allows genuine shadow darkness
+  // High-Fidelity Blinn-Phong Specular calculation
+  vec3 worldCamPos = uInvViewMatrix[3].xyz;
+  vec3 V = normalize(worldCamPos - vWorldPos.xyz);
+  // Half-vector between Sun and Camera (used for modern specular accuracy)
+  vec3 H = normalize(toSun + V);
+  float specTerm = pow(max(dot(n, H), 0.0), specularShininess) * ndl;
+  vec3 specularColor = uSunColor * specTerm * specularIntensity;
+
   lightTerm = max(lightTerm, vec3(0.06, 0.08, 0.12));
   vec3 litBase;
   if (mat >= 10 && mat <= 21) {
-    // Keep Viron and Barrier emissive in shadow so they don't turn black
-    litBase = baseColor * max(lightTerm, vec3(0.85));
+    litBase = baseColor * max(lightTerm, vec3(0.85)) + specularColor;
   } else if (mat >= 250 && mat <= 251) {
-    // Powerups are glowing holograms but retain 3D shading
-    litBase = baseColor * max(lightTerm, vec3(0.8));
-    litBase += baseColor * 0.3; // Give it an extra emissive boost
+    litBase = baseColor * max(lightTerm, vec3(0.8)) + specularColor;
+    litBase += baseColor * 0.3;
   } else if (mat >= 1 && mat <= 2) {
-    // Terrain (landscape): back faces are underground — the floor above handles minimum brightness.
-    litBase = baseColor * lightTerm;
+    litBase = baseColor * lightTerm + specularColor;
+  } else if (mat == 30) {
+    litBase = baseColor * lightTerm + specularColor * 1.5;
   } else {
-    // Trees, buildings, ships, enemies: one-sided Lambert with a higher ambient floor
-    // so the shadow side never goes completely black, but IS darker than the lit side.
-    litBase = baseColor * max(lightTerm, vec3(0.18, 0.20, 0.25));
+    litBase = baseColor * max(lightTerm, vec3(0.18, 0.20, 0.25)) + specularColor;
   }
 
-  // --- Water Specular ---
-  if (mat == 30) {
-    vec3 worldCamPos = uInvViewMatrix[3].xyz;
-    vec3 V = normalize(worldCamPos - vWorldPos.xyz);
-    vec3 H = normalize(toSun + V);
-    float specTerm = pow(max(dot(n, H), 0.0), 64.0) * ndl;
-    vec3 specularColor = uSunColor * specTerm * 0.9;
-    litBase += specularColor * 1.5;
-  }
-
-  // Keep pulses and sentinel glows emissive so they read clearly at all times.
-  // We constrain this to ground/infection materials (mat <= 21) so that ships, trees,
-  // and floating units do not glow completely when a bomb detonates underneath them.
   vec3 outColor = litBase;
-  if (mat <= 21) {
-    outColor += cyberColor;
-  }
+  if (mat <= 21) { outColor += cyberColor; }
   
-  // --- Fresnel Rim Lighting ---
-  // V points from surface to camera in view space. Nv is the surface normal in view space.
-  vec3 V = normalize(-vViewPos);
-  float fresnel = 1.0 - max(dot(normalize(vViewNormal), V), 0.0);
-  fresnel *= fresnel; // pow(fresnel, 2.0) -> fast square
+  // Fresnel Rim Lighting
+  vec3 localViewDir = normalize(-vViewPos);
+  float fresnel = 1.0 - max(dot(normalize(vViewNormal), localViewDir), 0.0);
+  fresnel *= fresnel;
   
-  // Mask 1: Sun direction (Lambert ndl). Only rim-light the sun-facing side.
   float litMask = smoothstep(0.0, 0.2, ndl);
-  
-  // Mask 2: Ambient Hemisphere (-vNormal.y). Only rim-light top-facing surfaces (so bottoms aren't rim-lit).
-  // In p5.js coordinates, -Y is UP. So a top-facing plane has vNormal.y = -1.0.
-  // vNormal interpolation can un-normalize it slightly, but for a fast Y-mask, the raw varying is close enough.
   float rimMask = smoothstep(-0.2, 0.5, -vNormal.y);
-  
-  // Combine rim masks. Skip rim on launchpad (already white — would over-saturate).
-  // Use a fast world-position check duplicated from the launchpad branch above.
   vec2 tPosRim = floor(vWorldPos.xz / uTileSize + 0.001);
-  bool skipRim = (mat >= 1 && mat <= 2) &&
-                 (tPosRim.x >= 0.0 && tPosRim.x < 7.0 &&
-                  tPosRim.y >= 0.0 && tPosRim.y < 7.0);
+  bool skipRim = (mat >= 1 && mat <= 2) && (tPosRim.x >= 0.0 && tPosRim.x < 7.0 && tPosRim.y >= 0.0 && tPosRim.y < 7.0);
 
   vec3 rim = uFogColor * fresnel * litMask * rimMask;
   if (!skipRim) {
     if (mat == 30) {
       outColor += baseColor * rim * 3.0;
     } else if (mat >= 1 && mat <= 21) {
-      // Terrain / Trees / Infection: Soft diffuse rim
       outColor += baseColor * rim * 1.2;
     } else {
-      // Ships and Powerups: Harder specular rim
       outColor += rim * 0.7;
     }
   }

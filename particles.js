@@ -89,7 +89,7 @@ for (let i = 0; i < 256; i++) {
 // -----------------------------------------------------------------------------
 // Cap per bucket: sized to hold a full desktop explosion (400 particles) in the
 // worst case where all particles land in the same bucket, with a 50% safety
-// margin (600).  Four buckets × 600 = 2400 entries, well within stack budget.
+// margin (600).  Four buckets × 600 = 2400 entries, a modest overall memory use.
 const _EXP_BUCKET_MAX = 600;
 // Representative strokeWeight for each bucket range: [1.5,4) [4,16) [16,32) [32,64].
 // Values use the geometric mean of each range (√(lo×hi)), which perceptually

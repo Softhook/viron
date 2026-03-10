@@ -1709,6 +1709,13 @@ class Terrain {
       b._shadowBakeFails = 0;
     }
 
+    // Invalidate cached geometry when infection state changes (type 4 shadow alpha
+    // differs between infected/healthy, so the baked vertex colors must be rebuilt).
+    if (b._shadowGeom && b._bakedInf !== inf) {
+      b._shadowGeom = null;
+      b._shadowBakeFails = 0;
+    }
+
     if (!b._shadowHull) {
       const bw = b.w, bh = b.h, bd = b.d;
       let footprint, casterH;
@@ -1750,6 +1757,7 @@ class Terrain {
       this._isBuildingShadow = true;
       try {
         b._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
+        b._bakedInf = inf;
         const built = _safeBuildGeometry(() => {
           this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterH, b._footprint, baseAlpha, sun, false, true);
         });
@@ -2083,6 +2091,9 @@ class Terrain {
     }
 
     _beginShadowStencil();
+    // Ensure lighting is disabled for the batched static-shadow pass.
+    // Type-3 UFO shadows may have re-enabled lighting via _drawBuildingShadow().
+    noLights();
     for (const q of shadowQueue) {
       if (q.b.type !== 3 && q.b._shadowGeom) {
         push();

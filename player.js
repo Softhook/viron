@@ -409,10 +409,13 @@ function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
   const gy = (terrain && typeof terrain.getAltitude === 'function') ? terrain.getAltitude(x, z) : groundY;
   if (aboveSea(gy)) return;
   // WEBGL Y axis is inverted: larger Y values are deeper. Height above ground is (groundY - alt).
-  const SHADOW_HEIGHT_THRESHOLD = 0.5;
-  const shadowHeight = max(0, gy - alt);
-  if (shadowHeight <= SHADOW_HEIGHT_THRESHOLD) return;
-  const alpha = map(shadowHeight, 0, 600, 62, 16, true);
+  // Player ship physics keeps the hull center at (terrainY - 12) when grounded.
+  // Remove this built-in ride clearance from shadow projection so shadows sit under
+  // both aircraft and ground vehicles instead of appearing laterally detached.
+  const groundClearance = 12;
+  const rawShadowHeight = max(0, gy - alt - groundClearance);
+  const shadowHeight = max(rawShadowHeight, 0.08);
+  const alpha = map(rawShadowHeight, 0, 600, 62, 16, true);
 
   let shipFootprint = [
     { x: -13, z: 13 },

@@ -98,6 +98,54 @@ class GameSFX {
         param.setTargetAtTime(value, t, tau);
     }
 
+    _cancelAndHoldParam(param, t) {
+        if (!param) return;
+        if (typeof param.cancelAndHoldAtTime === 'function') {
+            param.cancelAndHoldAtTime(t);
+            return;
+        }
+        param.cancelScheduledValues(t);
+        param.setValueAtTime(param.value, t);
+    }
+
+    _safeStop(node, when) {
+        if (!node || typeof node.stop !== 'function') return;
+        try {
+            if (when === undefined) node.stop();
+            else node.stop(when);
+        } catch (e) {}
+    }
+
+    _safeDisconnect(node) {
+        if (!node || typeof node.disconnect !== 'function') return;
+        try { node.disconnect(); } catch (e) {}
+    }
+
+    _stopAndDisconnectNode(node, when) {
+        if (!node) return;
+        this._safeStop(node, when);
+        if (node._src) {
+            this._safeStop(node._src, when);
+            this._safeDisconnect(node._src);
+        }
+        this._safeDisconnect(node);
+    }
+
+    _fadeGainToZero(gainNode, t, fadeTime) {
+        if (!gainNode || !gainNode.gain) return;
+        this._cancelAndHoldParam(gainNode.gain, t);
+        gainNode.gain.linearRampToValueAtTime(0, t + fadeTime);
+    }
+
+    _stopThrustNode(node) {
+        if (!node) return;
+        this._stopAndDisconnectNode(node.osc);
+        this._stopAndDisconnectNode(node.noise);
+        this._safeDisconnect(node.filter);
+        if (node.panner) this._safeDisconnect(node.panner);
+        this._safeDisconnect(node.gain);
+    }
+
     // Create a looping noise source backed by the shared persistent buffer.
     // mul != 1 inserts a gain stage; the returned node exposes a .stop() proxy
     // and a ._src reference so _cleanupNodes can reach the inner BufferSource.
@@ -424,17 +472,7 @@ class GameSFX {
                 listener.forwardX,  listener.forwardY,  listener.forwardZ,
                 listener.upX,       listener.upY,       listener.upZ,
             ];
-            for (const p of params) {
-                if (!p) continue;
-                if (typeof p.cancelAndHoldAtTime === 'function') {
-                    // Keep the current interpolated value at t, discard future events.
-                    p.cancelAndHoldAtTime(t);
-                } else {
-                    // Older-browser fallback: cancel future events and pin current value at t.
-                    p.cancelScheduledValues(t);
-                    p.setValueAtTime(p.value, t);
-                }
-            }
+            for (const p of params) this._cancelAndHoldParam(p, t);
 
             listener.positionX.linearRampToValueAtTime(cx, endTime);
             listener.positionY.linearRampToValueAtTime(cy, endTime);
@@ -1219,15 +1257,7 @@ class GameSFX {
                     n.stopTimer = setTimeout(() => {
                         n.stopTimer = null;
                         if (this.thrustNodes[id] === n && n.stopping && n.stopSeq === stopSeq) {
-                            try { n.osc.stop(); } catch (e) {}
-                            try { n.noise.stop(); } catch (e) {}
-                            try { n.osc.disconnect(); } catch (e) {}
-                            try { n.noise.disconnect(); } catch (e) {}
-                            // Disconnect the inner BufferSource wrapped by the gain proxy.
-                            if (n.noise && n.noise._src) try { n.noise._src.disconnect(); } catch (e) {}
-                            try { n.filter.disconnect(); } catch (e) {}
-                            if (n.panner) try { n.panner.disconnect(); } catch (e) {}
-                            try { n.gain.disconnect(); } catch (e) {}
+                            this._stopThrustNode(n);
                             delete this.thrustNodes[id];
                         }
                     }, 160);
@@ -1361,18 +1391,9 @@ class GameSFX {
                     const py = n.panner.positionY;
                     const pz = n.panner.positionZ;
                     if (px && py && pz) {
-                        if (typeof px.cancelAndHoldAtTime === 'function') {
-                            px.cancelAndHoldAtTime(t);
-                            py.cancelAndHoldAtTime(t);
-                            pz.cancelAndHoldAtTime(t);
-                        } else {
-                            px.cancelScheduledValues(t);
-                            py.cancelScheduledValues(t);
-                            pz.cancelScheduledValues(t);
-                            px.setValueAtTime(px.value, t);
-                            py.setValueAtTime(py.value, t);
-                            pz.setValueAtTime(pz.value, t);
-                        }
+                        this._cancelAndHoldParam(px, t);
+                        this._cancelAndHoldParam(py, t);
+                        this._cancelAndHoldParam(pz, t);
                     }
                     n.panner.positionX.linearRampToValueAtTime(x, t + dt);
                     n.panner.positionY.linearRampToValueAtTime(y, t + dt);
@@ -1418,54 +1439,23 @@ class GameSFX {
 
         // Fade out all ambient node gains.
         for (const n of Object.values(ambientSnapshot)) {
-            if (n.gain && n.gain.gain) {
-                if (typeof n.gain.gain.cancelAndHoldAtTime === 'function') {
-                    n.gain.gain.cancelAndHoldAtTime(t);
-                } else {
-                    n.gain.gain.cancelScheduledValues(t);
-                    n.gain.gain.setValueAtTime(n.gain.gain.value, t);
-                }
-                n.gain.gain.linearRampToValueAtTime(0, t + fadeTime);
-            }
+            this._fadeGainToZero(n.gain, t, fadeTime);
         }
 
         // Fade out all thrust node gains.
         for (const n of Object.values(thrustSnapshot)) {
-            if (!n.gain || !n.gain.gain) continue;
-            if (typeof n.gain.gain.cancelAndHoldAtTime === 'function') {
-                n.gain.gain.cancelAndHoldAtTime(t);
-            } else {
-                n.gain.gain.cancelScheduledValues(t);
-                n.gain.gain.setValueAtTime(n.gain.gain.value, t);
-            }
-            n.gain.gain.linearRampToValueAtTime(0, t + fadeTime);
+            this._fadeGainToZero(n.gain, t, fadeTime);
         }
 
         // Disconnect and stop everything after the fade completes.
         setTimeout(() => {
             for (const n of Object.values(ambientSnapshot)) {
                 for (const node of Object.values(n)) {
-                    if (!node) continue;
-                    if (typeof node.stop === 'function') try { node.stop(); } catch (e) {}
-                    if (node._src) {
-                        try { node._src.stop(); } catch (e) {}
-                        try { node._src.disconnect(); } catch (e) {}
-                    }
-                    if (typeof node.disconnect === 'function') try { node.disconnect(); } catch (e) {}
+                    this._stopAndDisconnectNode(node);
                 }
             }
             for (const n of Object.values(thrustSnapshot)) {
-                try { n.osc.stop(); }   catch (e) {}
-                try { n.noise.stop(); } catch (e) {}
-                if (n.noise && n.noise._src) {
-                    try { n.noise._src.stop();       } catch (e) {}
-                    try { n.noise._src.disconnect(); } catch (e) {}
-                }
-                try { n.osc.disconnect();    } catch (e) {}
-                try { n.noise.disconnect();  } catch (e) {}
-                try { n.filter.disconnect(); } catch (e) {}
-                if (n.panner) try { n.panner.disconnect(); } catch (e) {}
-                try { n.gain.disconnect();   } catch (e) {}
+                this._stopThrustNode(n);
             }
         }, (fadeTime + 0.05) * 1000);
     }

@@ -6,6 +6,128 @@
 // Pure render-side logic with no physics or state mutations.
 // =============================================================================
 
+const POST_VERT = `
+precision highp float;
+attribute vec3 aPosition;
+attribute vec2 aTexCoord;
+uniform mat4 uProjectionMatrix;
+uniform mat4 uModelViewMatrix;
+varying vec2 vTexCoord;
+
+void main() {
+  vTexCoord = aTexCoord;
+  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+}
+`;
+
+const POST_FRAG = `
+precision highp float;
+varying vec2 vTexCoord;
+uniform sampler2D uTex;
+uniform float uTime;
+uniform vec2 uResolution;
+
+// ACES tonemapping
+vec3 ACESFilm(vec3 x) {
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
+}
+
+// Pseudo-random noise
+float hash21(vec2 p) {
+    p = fract(p * vec2(12.9898, 78.233));
+    p += dot(p, p + 34.19);
+    return fract(p.x * p.y);
+}
+
+void main() {
+  // WebGL FBO via p5 rect() and ortho() might not require y-flip.
+  vec2 uv = vTexCoord;
+  // uv.y = 1.0 - uv.y; // removed
+
+  // 1. Extreme Lens Distortion (Barrel/Pincushion) & Chromatic Aberration
+  vec2 nuv = uv - 0.5;
+  float r2 = dot(nuv, nuv);
+  float f = 1.0 + r2 * 0.15 + (sin(uTime) * 0.05); // Pulsing barrel distortion
+  vec2 duv = nuv * f + 0.5;
+  
+  if (duv.x < 0.0 || duv.x > 1.0 || duv.y < 0.0 || duv.y > 1.0) {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+  
+  // 2. Psychedelic Chromatic Aberration
+  float caSpread = 0.02 + 0.01 * sin(uTime * 2.5 + r2 * 20.0); // Wavy CA
+  vec2 caOffset = normalize(nuv) * caSpread * pow(r2, 1.5); 
+  
+  float r = texture2D(uTex, duv - caOffset).r;
+  float g = texture2D(uTex, duv).g;
+  float b = texture2D(uTex, duv + caOffset).b;
+  vec3 col = vec3(r, g, b);
+  
+  // 3. Extravagant Anamorphic Lens Flare
+  vec3 flare = vec3(0.0);
+  float wSum = 0.0;
+  // Horizontal streak for high intensity pixels
+  for(int i = -16; i <= 16; i++) {
+    float w = exp(-abs(float(i)) * 0.18);
+    vec2 off = vec2(float(i) * 0.015, 0.0);
+    vec3 smp = texture2D(uTex, fract(duv + off)).rgb;
+    float luma = dot(smp, vec3(0.299, 0.587, 0.114));
+    vec3 hl = max(vec3(0.0), smp - 0.7) * 2.5; 
+    flare += hl * w;
+    wSum += w;
+  }
+  flare /= wSum;
+  
+  // Add anamorphic blue/cyan tint
+  col += flare * vec3(0.1, 0.6, 1.5) * 1.8; 
+
+  // 4. Ghosting Lens Flare (Removed due to inverted duplicate image)
+  // vec2 ghostA = 1.0 - duv;
+  // vec2 ghostB = 0.5 + (0.5 - duv) * 0.5;
+  // vec3 ghColor = texture2D(uTex, ghostA).rgb;
+  // vec3 ghColor2 = texture2D(uTex, ghostB).rgb;
+  // col += max(vec3(0.0), ghColor - 0.5) * vec3(1.0, 0.5, 0.2) * 0.4;
+  // col += max(vec3(0.0), ghColor2 - 0.6) * vec3(0.2, 0.8, 1.0) * 0.3;
+
+  // 5. Tonal Shifts & Dramatic Coloring (Psychedelic Modulations)
+  float hueShiftX = sin(uTime * 1.1 + uv.x * 5.0) * 0.15;
+  float hueShiftY = cos(uTime * 0.8 + uv.y * 4.0) * 0.15;
+  
+  mat3 shift = mat3(
+      1.0 + hueShiftX, -hueShiftY, 0.0,
+      hueShiftY, 1.0 + hueShiftX, -hueShiftX,
+      -hueShiftX, hueShiftY, 1.0 + hueShiftY
+  );
+  col = clamp(col * shift, 0.0, 10.0);
+  
+  // Boost contrast for Hollywood look
+  col = mix(col, col * col * (3.0 - 2.0 * clamp(col, 0.0, 1.0)), 0.6);
+  
+  // 6. ACES Filmic Tone Mapping
+  col = ACESFilm(col * 1.3); // Expose up slightly before tonemapping
+  
+  // 7. Epic Vignette
+  float vig = 1.0 - smoothstep(0.3, 1.5, length(nuv));
+  col *= vig;
+  
+  // 8. Film Grain & Scanlines
+  float grain = hash21(uv * (uTime + 1.0));
+  col += (grain - 0.5) * 0.08;
+  
+  // Subtle holographic scanlines
+  float scanline = sin(uv.y * uResolution.y * 2.0) * 0.03;
+  col -= scanline * max(0.0, 1.0 - length(col)*0.5);
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
 class GameRenderer {
   constructor() {
     this.sceneFBO = null;
@@ -241,6 +363,18 @@ class GameRenderer {
   renderAllPlayers(gl) {
     const h = height, pxDensity = pixelDensity();
 
+    if (!this.masterFBO) {
+      this.masterFBO = createFramebuffer();
+      this.postShader = createShader(POST_VERT, POST_FRAG);
+    }
+    if (this.masterFBO.width !== width || this.masterFBO.height !== h) {
+      this.masterFBO.resize(width, h);
+    }
+
+    this.masterFBO.begin();
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+
     if (gameState.numPlayers === 1) {
       this.renderPlayerView(gl, gameState.players[0], 0, 0, width, h, pxDensity);
     } else {
@@ -260,6 +394,23 @@ class GameRenderer {
       noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
       text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
     }
+    pop();
+    this.masterFBO.end();
+
+    // Post-processing pass to screen
+    this.setup2DViewport();
+    gl.disable(gl.DEPTH_TEST);
+    shader(this.postShader);
+    this.postShader.setUniform('uTex', this.masterFBO);
+    this.postShader.setUniform('uTime', millis() / 1000.0);
+    this.postShader.setUniform('uResolution', [width, height]);
+    
+    noStroke();
+    rectMode(CENTER);
+    rect(0, 0, width, height);
+    
+    resetShader();
+    gl.enable(gl.DEPTH_TEST);
     pop();
   }
 

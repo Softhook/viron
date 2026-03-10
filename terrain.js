@@ -260,15 +260,13 @@ void main() {
   // We need the vector TO the sun for the Lambert dot product to correctly shade surfaces.
   vec3 toSun = normalize(-uSunDir);
 
-  // Pure Lambert — direct sun
-  // ndl    = one-sided Lambert for terrain/landscape (backs go dark — correct for solid ground)
-  // ndlAbs = two-sided Lambert for ships/enemies — handles inconsistent vertex winding gracefully
-  //          An inverted normal shows the same shading as the front face, not black.
-  float ndl    = max(dot(n, toSun), 0.0);
-  float ndlAbs = abs(dot(n, toSun));
+  // Pure one-sided Lambert — direct sun contribution is zero on back-facing surfaces.
+  // abs() was previously used here ("two-sided Lambert") but caused the lighting bug
+  // where back-facing surfaces (shadow side) appeared as bright as front-facing ones.
+  float ndl = max(dot(n, toSun), 0.0);
   vec3 keyLight = uSunColor * ndl;
 
-  // Combine: brighter ambient base + warm sun key
+  // Combine: ambient base + sun key light
   vec3 lightTerm = ambient + keyLight;
   
   // Very low floor: allows genuine shadow darkness
@@ -282,14 +280,12 @@ void main() {
     litBase = baseColor * max(lightTerm, vec3(0.8));
     litBase += baseColor * 0.3; // Give it an extra emissive boost
   } else if (mat >= 1 && mat <= 2) {
-    // Terrain (landscape): one-sided Lambert — back faces are genuinely underground, so black is fine
+    // Terrain (landscape): back faces are underground — the floor above handles minimum brightness.
     litBase = baseColor * lightTerm;
   } else {
-    // Ships, trees, enemies: use two-sided Lambert (abs) so winding order inconsistencies
-    // don't produce completely black faces. A flipped normal gives the same luminance as its twin.
-    vec3 shipKeyLight = uSunColor * ndlAbs;
-    vec3 shipLightTerm = max(ambient + shipKeyLight, vec3(0.15, 0.18, 0.22));
-    litBase = baseColor * shipLightTerm;
+    // Trees, buildings, ships, enemies: one-sided Lambert with a higher ambient floor
+    // so the shadow side never goes completely black, but IS darker than the lit side.
+    litBase = baseColor * max(lightTerm, vec3(0.18, 0.20, 0.25));
   }
 
   // Keep pulses and sentinel glows emissive so they read clearly at all times.
@@ -373,15 +369,14 @@ void main() {
   // Shockwave pulse rings — same logic as terrain shader.
   ${_GLSL_PULSE_LOOP}
 
-  // Two-sided Lambert + hemisphere ambient. abs(ndl) handles inconsistent
-  // winding in p5 primitives (mirrors the ndlAbs path in TERRAIN_FRAG).
+  // One-sided Lambert + hemisphere ambient. One-sided Lambert correctly darkens
+  // back-facing surfaces; a higher ambient floor prevents completely black shadows.
   vec3 n = normalize(vNormal);
   float hemi = n.y * -0.5 + 0.5;
   vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
   vec3 toSun = normalize(-uSunDir);
-  float ndl    = max(dot(n, toSun), 0.0);
-  float ndlAbs = abs(dot(n, toSun));
-  vec3 litBase = baseColor * max(ambient + uSunColor * ndlAbs, vec3(0.15, 0.18, 0.22));
+  float ndl = max(dot(n, toSun), 0.0);
+  vec3 litBase = baseColor * max(ambient + uSunColor * ndl, vec3(0.18, 0.20, 0.25));
 
   vec3 outColor = litBase + cyberColor;
 

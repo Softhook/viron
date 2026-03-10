@@ -639,6 +639,7 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   // 2. Draw dynamic stat values from the configurations
   const vx = -hw / 2 + 14 + 80; // Value column X offset
   const vy = -h / 2;
+  textAlign(LEFT, TOP);
   for (const stat of HUD_STATS) {
     fill(...stat.color);
     textSize(stat.size);

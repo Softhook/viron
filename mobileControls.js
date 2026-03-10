@@ -316,7 +316,7 @@ class MobileController {
                 fill(255);
                 textSize(12 * this._scale);
                 let label = btn.label;
-                if (k === 'cockpit') label += (typeof firstPersonView !== 'undefined' && firstPersonView ? ": ON" : ": OFF");
+                if (k === 'cockpit') label += (typeof gameState !== 'undefined' && gameState.firstPersonView ? ": ON" : ": OFF");
                 text(label, btn.x, btn.y);
             }
             rectMode(CORNER);
@@ -392,8 +392,8 @@ class MobileController {
                 if (k === 'switchSides') {
                     this.isSwapped = !this.isSwapped;
                 } else if (k === 'cockpit') {
-                    if (typeof firstPersonView !== 'undefined') {
-                        firstPersonView = !firstPersonView;
+                    if (typeof gameState !== 'undefined') {
+                        gameState.firstPersonView = !gameState.firstPersonView;
                     }
                 }
                 return true;

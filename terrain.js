@@ -681,7 +681,7 @@ class Terrain {
       }
     }
 
-    const maxTreesPerChunk = isMobile ? 9 : 13;
+    const maxTreesPerChunk = (typeof gameState !== 'undefined' && gameState.isMobile) ? 9 : 13;
     if (out.length > maxTreesPerChunk) {
       out.sort((a, b) => b._score - a._score);
       out.length = maxTreesPerChunk;

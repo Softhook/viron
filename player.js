@@ -695,7 +695,7 @@ function _applyKeyboardSteering(p, d) {
 
   // Aim assist for keyboard players (P2 always; P1 when not using mouse pointer-lock).
   const isKeyboardPlayer = !(p.id === 0 && document.pointerLockElement);
-  if (!isMobile && aimAssist.enabled && isKeyboardPlayer) {
+  if (!gameState.isMobile && aimAssist.enabled && isKeyboardPlayer) {
     let kAssist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
     p.ship.yaw += kAssist.yawDelta;
     p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);

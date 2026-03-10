@@ -18,6 +18,7 @@ const fs = require('fs');
 const LOAD_TIMEOUT = Number(process.env.RUNTIME_LOAD_TIMEOUT || 15000);
 const SAMPLE_MS = Number(process.env.RUNTIME_SAMPLE_MS || 7000);
 const PORT = process.env.RUNTIME_PORT ? Number(process.env.RUNTIME_PORT) : 0;
+const FREEZE_ADAPTIVE_SCALING = process.env.RUNTIME_FREEZE_ADAPTIVE === '1';
 
 const SCENARIOS = [
   { id: 'baseline', title: 'Baseline (default game loop)' },
@@ -60,34 +61,37 @@ async function createServer() {
 
 async function setupPlayableState(page, scenarioId) {
   await page.waitForFunction(
-    'typeof startGame === "function" && typeof players !== "undefined" && typeof draw !== "undefined"',
-    { timeout: 10000 }
+    'typeof startGame === "function" && typeof gameState !== "undefined" && typeof draw !== "undefined"',
+    { timeout: LOAD_TIMEOUT }
   );
 
-  const res = await page.evaluate((id) => {
+  const res = await page.evaluate((id, freezeAdaptiveScaling) => {
     // Start game and force immediate entry into gameplay state.
     startGame(1);
-    for (const p of players) p.ready = true;
-    gameState = 'playing';
+    for (const p of gameState.players) p.ready = true;
+    gameState.mode = 'playing';
     startLevel(1);
 
-    // Lock adaptive quality scaling so scenario deltas remain comparable.
-    window._perf = {
-      buf: new Float32Array(60),
-      idx: 0,
-      full: false,
-      budgetMs: 1000 / 60,
-      budgetSet: true,
-      nextEval: Number.POSITIVE_INFINITY,
-      cooldown: Number.POSITIVE_INFINITY,
-      overBudgetEvals: 0,
-      underBudgetEvals: 0,
-    };
+    // By default we use runtime adaptive scaling behavior from the game.
+    // Set RUNTIME_FREEZE_ADAPTIVE=1 to lock scaling for strictly comparable deltas.
+    if (freezeAdaptiveScaling) {
+      window._perf = {
+        buf: new Float32Array(60),
+        idx: 0,
+        full: false,
+        budgetMs: 1000 / 60,
+        budgetSet: true,
+        nextEval: Number.POSITIVE_INFINITY,
+        cooldown: Number.POSITIVE_INFINITY,
+        overBudgetEvals: 0,
+        underBudgetEvals: 0,
+      };
+    }
 
     // Build a deterministic, representative workload so each scenario starts
     // from the same state and deltas are meaningful.
     infection.reset();
-    barrierTiles.clear();
+    gameState.barrierTiles.reset();
     particleSystem.clear();
     enemyManager.clear();
 
@@ -97,7 +101,7 @@ async function setupPlayableState(page, scenarioId) {
       for (let tx = -20; tx < 40 && seeded < 1400; tx++) {
         if (tx >= 0 && tx < 7 && tz >= 0 && tz < 7) continue;
         infection.add(tileKey(tx, tz));
-        barrierTiles.add(tileKey(tx + 8, tz));
+        gameState.barrierTiles.add(tileKey(tx + 8, tz));
         seeded++;
       }
     }
@@ -145,8 +149,8 @@ async function setupPlayableState(page, scenarioId) {
       enemyManager.draw = function () { };
     } else if (id === 'no-infection') {
       infection.reset();
-      barrierTiles.clear();
-      spreadInfection = function () { };
+      gameState.barrierTiles.reset();
+      GameLoop.spreadInfection = function () { };
     } else if (id === 'no-scenery') {
       terrain.drawTrees = function () { };
       terrain.drawBuildings = function () { };
@@ -156,13 +160,13 @@ async function setupPlayableState(page, scenarioId) {
       CULL_DIST = 3500;
     } else if (id === 'no-lighting') {
       // Stub out the p5 ambient+directional light setup calls entirely.
-      window.setSceneLighting = function () { };
+      gameRenderer.setSceneLighting = function () { };
     } else if (id === 'no-shadows') {
       // Stub stencil helpers so no shadow polygons are drawn (trees + buildings).
       window._beginShadowStencil = function () { };
       window._endShadowStencil = function () { };
     } else if (id === 'cockpit-mode') {
-      firstPersonView = true;
+      gameState.firstPersonView = true;
     } else if (id === 'no-sound') {
       if (typeof gameSFX !== 'undefined') {
         gameSFX.updateAmbiance = function () { };
@@ -203,21 +207,21 @@ async function setupPlayableState(page, scenarioId) {
     // Update-phase wrappers.
     wrapFunction(window, 'updateShipInput', 'updateShipInput');
     wrapFunction(enemyManager, 'update', 'enemyManager.update');
-    wrapFunction(window, 'checkCollisions', 'checkCollisions');
-    wrapFunction(window, 'spreadInfection', 'spreadInfection');
+    wrapFunction(GameLoop, 'checkCollisions', 'checkCollisions');
+    wrapFunction(GameLoop, 'spreadInfection', 'spreadInfection');
     wrapFunction(particleSystem, 'updatePhysics', 'particleSystem.updatePhysics');
     wrapFunction(window, 'updateProjectilePhysics', 'updateProjectilePhysics');
     wrapFunction(window, 'updateBarrierPhysics', 'updateBarrierPhysics');
 
     // Render-phase wrappers.
-    wrapFunction(window, 'renderPlayerView', 'renderPlayerView');
+    wrapFunction(gameRenderer, 'renderPlayerView', 'renderPlayerView');
     wrapFunction(terrain, 'drawLandscape', 'terrain.drawLandscape');
     wrapFunction(terrain, 'drawTrees', 'terrain.drawTrees');
     wrapFunction(terrain, 'drawBuildings', 'terrain.drawBuildings');
     wrapFunction(enemyManager, 'draw', 'enemyManager.draw');
     wrapFunction(particleSystem, 'render', 'particleSystem.render');
     wrapFunction(particleSystem, 'renderHardParticles', 'particleSystem.renderHardParticles');
-    wrapFunction(window, 'setSceneLighting', 'setSceneLighting');
+    wrapFunction(gameRenderer, 'setSceneLighting', 'setSceneLighting');
     wrapFunction(window, 'renderProjectiles', 'renderProjectiles');
     wrapFunction(window, 'renderInFlightBarriers', 'renderInFlightBarriers');
     wrapFunction(window, 'drawPlayerHUD', 'drawPlayerHUD');
@@ -276,14 +280,14 @@ async function setupPlayableState(page, scenarioId) {
     };
 
     return {
-      gameState,
+      gameMode: gameState.mode,
       scenarioId: id,
-      level,
-      players: players.length,
+      level: gameState.level,
+      players: gameState.players.length,
       infectionTiles: infection.count,
       enemies: enemyManager.enemies.length,
     };
-  }, scenarioId);
+  }, scenarioId, FREEZE_ADAPTIVE_SCALING);
 
   return res;
 }
@@ -355,9 +359,6 @@ async function runScenario(url, launchOpts, scenario) {
     if (IS_MOBILE) {
       await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1');
       await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
-      await page.evaluateOnNewDocument(() => {
-        window.isMobile = true;
-      });
       console.log('--- Simulating Mobile Environment ---');
     } else {
       await page.setViewport({ width: 1600, height: 900 });

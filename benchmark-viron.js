@@ -81,10 +81,8 @@ async function run() {
       }
 
       await page.evaluateOnNewDocument((sampleFrames, maxInf, forceMobile) => {
-        if (forceMobile) {
-          window.isMobile = true;
-          window.VIEW_FAR = 30;
-        }
+        // Mobile mode is driven by UA/viewport so gameState.detectPlatform()
+        // exercises the same path used in real gameplay.
         window.VIRON_PROFILE = {
           enabled: true,
           label: 'viron',
@@ -102,7 +100,7 @@ async function run() {
       // draws a dense set of overlays without triggering immediate gameover.
       const seededCount = await page.evaluate((tileCount) => {
         startGame(1);
-        gameState = 'playing';
+        gameState.mode = 'playing';
 
         let added = 0;
         for (let tz = -20; tz < 40 && added < tileCount; tz++) {
@@ -110,7 +108,7 @@ async function run() {
             if (tx >= 0 && tx < 7 && tz >= 0 && tz < 7) continue; // skip launchpad area
             infection.add(tileKey(tx, tz));
             // Seed a parallel block of barriers
-            barrierTiles.add(tileKey(tx + 10, tz));
+            gameState.barrierTiles.add(tileKey(tx + 10, tz));
             added++;
           }
         }
@@ -125,7 +123,7 @@ async function run() {
         hasProfiler: !!window.__vironProfiler,
         cfg: window.VIRON_PROFILE,
         infectionCount: infection.count,
-        gameState,
+        gameMode: gameState.mode,
         frameCount
       }));
       console.log('Profiler status:', profStatus);

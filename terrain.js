@@ -1055,12 +1055,12 @@ class Terrain {
     for (let i = 0; i < 5; i++) {
       const base = i * 4;
       if (i < this.activePulses.length) {
-        pulseArr[base]     = this.activePulses[i].x;
+        pulseArr[base] = this.activePulses[i].x;
         pulseArr[base + 1] = this.activePulses[i].z;
         pulseArr[base + 2] = this.activePulses[i].start;
         pulseArr[base + 3] = this.activePulses[i].type || 0.0;
       } else {
-        pulseArr[base]     = 0.0;
+        pulseArr[base] = 0.0;
         pulseArr[base + 1] = 0.0;
         pulseArr[base + 2] = -9999.0;  // Inactive: age never reaches 0
         pulseArr[base + 3] = 0.0;
@@ -1221,18 +1221,65 @@ class Terrain {
       _gl.polygonOffset(-1.0, -2.0);
     }
 
+    if (!this._overlayGeoms) this._overlayGeoms = {};
+
     for (const matId in this._buckets) {
       const tileList = this._buckets[matId];
-      if (tileList.length === 0) continue;
+      const count = tileList.length;
+      if (count === 0) continue;
+
+      let geom = this._overlayGeoms[matId];
+      if (!geom) {
+        geom = new p5.Geometry(1, 1);
+        this._overlayGeoms[matId] = geom;
+      }
+
+      // Expand arrays if needed to avoid reallocation during copy
+      const reqVerts = count * 6;
+      if (geom.vertices.length < reqVerts) {
+        for (let i = geom.vertices.length; i < reqVerts; i++) {
+          geom.vertices.push(createVector(0, 0, 0));
+        }
+      }
+      if (geom.vertexNormals.length < reqVerts) {
+        for (let i = geom.vertexNormals.length; i < reqVerts; i++) {
+          geom.vertexNormals.push(createVector(0, 1, 0)); // Up normal
+        }
+      }
+      if (geom.faces.length < count * 2) {
+        for (let i = geom.faces.length; i < count * 2; i++) {
+          geom.faces.push([i * 3, i * 3 + 1, i * 3 + 2]);
+        }
+      }
+
+      // Update vertices with actual positions
+      let vIdx = 0;
+      for (let i = 0; i < count; i++) {
+        const v = tileList[i].verts;
+        for (let j = 0; j < 18; j += 3, vIdx++) {
+          let vec = geom.vertices[vIdx];
+          vec.x = v[j]; vec.y = v[j + 1]; vec.z = v[j + 2];
+        }
+      }
+
+      // Tell p5 to only render the populated portion of the geometry
+      const origFacesLength = geom.faces.length;
+      geom.faces.length = count * 2;
+      geom.vertices.length = count * 6;
+      geom.vertexNormals.length = count * 6;
+
+      const r = _renderer;
+      if (r) {
+        // Invalidate p5's internal WebGL buffer cache for this geometry
+        // so it uploads the new vertices array to the GPU.
+        delete r.geometryInHash[geom.gid];
+      }
 
       fill(parseInt(matId), 0, 0, 255);
-      beginShape(TRIANGLES);
-      normal(0, 1, 0);
-      for (let i = 0; i < tileList.length; i++) {
-        const v = tileList[i].verts;
-        for (let j = 0; j < 18; j += 3) vertex(v[j], v[j + 1], v[j + 2]);
-      }
-      endShape();
+      model(geom);
+
+      // Restore lengths so the arrays remain capacity-allocated
+      geom.faces.length = origFacesLength;
     }
 
     if (_gl && overlayCount > 0) {

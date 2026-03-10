@@ -252,6 +252,9 @@ async function setupPlayableState(page, scenarioId) {
       }
     };
 
+    window.VIRON_PROFILE = { enabled: true, sampleFrames: 120, label: 'bench' };
+    initVironProfiler();
+
     window.__runtimeBench = {
       scenarioId: id,
       startedAt: performance.now(),
@@ -260,6 +263,7 @@ async function setupPlayableState(page, scenarioId) {
         const elapsed = performance.now() - this.startedAt;
         const producedFrames = frameCount - this.startedFrame;
         const fps = producedFrames > 0 && elapsed > 0 ? (producedFrames * 1000 / elapsed) : 0;
+        const profilerSummary = window.__profilingSummary || null;
         return {
           scenarioId: this.scenarioId,
           elapsedMs: elapsed,
@@ -275,6 +279,8 @@ async function setupPlayableState(page, scenarioId) {
           viewNear: VIEW_NEAR,
           viewFar: VIEW_FAR,
           cullDist: CULL_DIST,
+          budgetMs: (window._perf && window._perf.budgetMs) || 0,
+          profiler: profilerSummary
         };
       }
     };
@@ -397,7 +403,10 @@ function printScenarioResult(r) {
   console.log(`\n━━ ${r.scenario.title} ━━`);
   console.log(`  scenario id:   ${s.scenarioId}`);
   console.log(`  frames:        ${s.producedFrames} in ${s.elapsedMs.toFixed(0)} ms`);
-  console.log(`  fps:           ${s.fps.toFixed(1)}`);
+  console.log(`  fps:           ${s.fps.toFixed(1)} (target budget: ${s.budgetMs > 0 ? (1000 / s.budgetMs).toFixed(1) : '?'})`);
+  if (s.profiler) {
+    console.log(`  internal prof: frame=${s.profiler.frameMs}ms, infection=${s.profiler.vironOverlayMs}ms, barrier=${s.profiler.barrierOverlayMs}ms, shader=${s.profiler.shaderMs}ms`);
+  }
   console.log(`  avg draw() ms: ${f.avgDrawMs.toFixed(3)}`);
   console.log(`  renderPlayerView: ${f.rpv.totalPerFrame.toFixed(3)} ms/frame`);
   console.log(`    attributed:     ${f.rpv.attributedPerFrame.toFixed(3)} ms/frame`);

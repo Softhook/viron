@@ -14,6 +14,7 @@ class GameState {
     this.levelComplete = false;
     this.levelEndTime = 0;
     this.infectionStarted = false;
+    this.levelClearArmed = false;
     this.ignitionStartTime = 0;
 
     // --- Game State Machine ---
@@ -92,6 +93,11 @@ class GameState {
     }
   }
 
+  _ensureInfectionSeededForLevel() {
+    if (infection.count > 0) return;
+    this._seedInitialInfection();
+  }
+
   /**
    * Initializes platform detection (mobile/desktop, Android/iOS).
    * Called once during setup().
@@ -157,7 +163,8 @@ class GameState {
 
     this.level = lvl;
     this.levelComplete = false;
-    if (lvl === 1) this.infectionStarted = false;
+    this.infectionStarted = false;
+    this.levelClearArmed = false;
     this.currentMaxEnemies = 1 + lvl; // Scale linearly with level
 
     for (const p of this.players) this._resetPlayerForLevel(p, lvl);
@@ -171,6 +178,7 @@ class GameState {
     terrain.activePulses = [];
 
     this._spawnLevelWave(lvl);
+    this._ensureInfectionSeededForLevel();
   }
 
   /**
@@ -259,8 +267,16 @@ class GameState {
    */
   isLevelClearable() {
     let ic = infection.count;
+    let enemyCount = enemyManager.enemies.length;
+
+    // Ignore transient startup states where arrays/maps may still be empty.
+    if (!this.levelClearArmed && (ic > 0 || enemyCount > 0)) {
+      this.levelClearArmed = true;
+    }
+    if (!this.levelClearArmed) return false;
+
     if (ic > 0) this.infectionStarted = true;
-    return (this.infectionStarted && ic === 0) || (enemyManager.enemies.length === 0);
+    return (this.infectionStarted && ic === 0) || (enemyCount === 0);
   }
 }
 

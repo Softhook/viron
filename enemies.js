@@ -44,6 +44,17 @@ class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
     this.enemies = [];
+    this.updateHandlers = {
+      fighter: (e, alivePlayers, refShip) => this.updateFighter(e, alivePlayers, refShip),
+      bomber: (e, _alivePlayers, refShip) => this.updateBomber(e, refShip),
+      crab: (e, alivePlayers, refShip) => this.updateCrab(e, alivePlayers, refShip),
+      hunter: (e, alivePlayers, refShip) => this.updateHunter(e, alivePlayers, refShip),
+      squid: (e, alivePlayers, refShip) => this.updateSquid(e, alivePlayers, refShip),
+      scorpion: (e, alivePlayers, refShip) => this.updateScorpion(e, alivePlayers, refShip),
+      colossus: (e, alivePlayers, refShip) => this.updateColossus(e, alivePlayers, refShip),
+      yellowCrab: (e, alivePlayers, refShip) => this.updateYellowCrab(e, alivePlayers, refShip),
+      seeder: (e, _alivePlayers, refShip) => this.updateSeeder(e, refShip)
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -109,6 +120,45 @@ class EnemyManager {
   _fireUpwardShot(e, shotType = 'crab', vy = -12) {
     particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy, vz: 0, life: 1000 });
     if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot(shotType, e.x, e.y - 10, e.z);
+  }
+
+  /** Shared 2D pursuit steering with velocity smoothing. */
+  _steer2D(e, tx, tz, speed, smooth) {
+    const dx = tx - e.x, dz = tz - e.z;
+    const d = mag2(dx, dz);
+    if (d > 0) {
+      e.vx = lerp(e.vx || 0, (dx / d) * speed, smooth);
+      e.vz = lerp(e.vz || 0, (dz / d) * speed, smooth);
+    }
+    return { dx, dz, d };
+  }
+
+  /** Shared 3D pursuit steering with velocity smoothing. */
+  _steer3D(e, tx, ty, tz, speed, smooth) {
+    const dx = tx - e.x, dy = ty - e.y, dz = tz - e.z;
+    const d = mag3(dx, dy, dz);
+    if (d > 0) {
+      e.vx = lerp(e.vx || 0, (dx / d) * speed, smooth);
+      e.vy = lerp(e.vy || 0, (dy / d) * speed, smooth);
+      e.vz = lerp(e.vz || 0, (dz / d) * speed, smooth);
+    }
+    return { dx, dy, dz, d };
+  }
+
+  /** Drops a bomb over land; optionally requires a clean (uninfected) tile. */
+  _tryDropBomb(e, type = 'normal', requireCleanTile = true) {
+    const gy = terrain.getAltitude(e.x, e.z);
+    if (aboveSea(gy)) return false;
+
+    const tx = toTile(e.x), tz = toTile(e.z);
+    const k = tileKey(tx, tz);
+    if (requireCleanTile && infection.has(k)) return false;
+
+    const bomb = { x: e.x, y: e.y, z: e.z, k };
+    if (type !== 'normal') bomb.type = type;
+    particleSystem.bombs.push(bomb);
+    if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop(type, e.x, e.y, e.z);
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -204,15 +254,8 @@ class EnemyManager {
     let refShip = alivePlayers[0] || gameState.players[0].ship;  // Fallback to P1 even if dead
 
     for (let e of this.enemies) {
-      if (e.type === 'fighter') this.updateFighter(e, alivePlayers, refShip);
-      else if (e.type === 'bomber') this.updateBomber(e, refShip);
-      else if (e.type === 'crab') this.updateCrab(e, alivePlayers, refShip);
-      else if (e.type === 'hunter') this.updateHunter(e, alivePlayers, refShip);
-      else if (e.type === 'squid') this.updateSquid(e, alivePlayers, refShip);
-      else if (e.type === 'scorpion') this.updateScorpion(e, alivePlayers, refShip);
-      else if (e.type === 'colossus') this.updateColossus(e, alivePlayers, refShip);
-      else if (e.type === 'yellowCrab') this.updateYellowCrab(e, alivePlayers, refShip);
-      else this.updateSeeder(e, refShip);
+      const handler = this.updateHandlers[e.type] || this.updateHandlers.seeder;
+      handler(e, alivePlayers, refShip);
     }
   }
 
@@ -237,12 +280,7 @@ class EnemyManager {
     e.bombTimer++;
     if (e.bombTimer > 600) {
       e.bombTimer = 0;
-      let gy = terrain.getAltitude(e.x, e.z);
-      if (!aboveSea(gy)) {
-        let tx = toTile(e.x), tz = toTile(e.z);
-        particleSystem.bombs.push({ x: e.x, y: e.y, z: e.z, k: tileKey(tx, tz), type: 'mega' });
-        if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('mega', e.x, e.y, e.z);
-      }
+      this._tryDropBomb(e, 'mega', false);
     }
   }
 
@@ -279,12 +317,7 @@ class EnemyManager {
   _updateCrabAI(e, alivePlayers, refShip, speed, infProb, infType, pulseScale) {
     let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
-    let dx = tShip.x - e.x, dz = tShip.z - e.z;
-    let d = mag2(dx, dz);
-    if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.05);
-      e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.05);
-    }
+    let { d } = this._steer2D(e, tShip.x, tShip.z, speed, 0.05);
 
     e.x += e.vx; e.z += e.vz;
 
@@ -312,15 +345,7 @@ class EnemyManager {
    */
   updateHunter(e, alivePlayers, refShip) {
     let tShip = this._getTargetShip(e, alivePlayers, refShip);
-
-    let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
-    let d = mag3(dx, dy, dz);
-    let speed = 5.0;
-    if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.1);
-      e.vy = lerp(e.vy || 0, (dy / d) * speed, 0.1);
-      e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.1);
-    }
+    this._steer3D(e, tShip.x, tShip.y, tShip.z, 5.0, 0.1);
 
     // Terrain avoidance: push up if within 50 units of the ground
     let gy = terrain.getAltitude(e.x, e.z);
@@ -355,15 +380,7 @@ class EnemyManager {
     let tz = e.aggressive ? tShip.z : (e.wanderZ || e.z);
     let ty = e.aggressive ? tShip.y : -600;  // Wander at high altitude
 
-    let dx = tx - e.x, dy = ty - e.y, dz = tz - e.z;
-    let d = mag3(dx, dy, dz);
-
-    let speed = 2.5;
-    if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.05);
-      e.vy = lerp(e.vy || 0, (dy / d) * speed, 0.05);
-      e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.05);
-    }
+    let { dx, dy, dz, d } = this._steer3D(e, tx, ty, tz, 2.5, 0.05);
 
     // Terrain avoidance: push up if within 150 units of the ground
     let gy = terrain.getAltitude(e.x, e.z);
@@ -393,15 +410,7 @@ class EnemyManager {
       e.bombTimer = (e.bombTimer || 0) + 1;
       if (e.bombTimer > 300 && random() < 0.002) {
         e.bombTimer = 0;
-        let gy = terrain.getAltitude(e.x, e.z);
-        if (!aboveSea(gy)) {
-          let tx = toTile(e.x), tz = toTile(e.z);
-          let k = tileKey(tx, tz);
-          if (!infection.has(k)) {
-            particleSystem.bombs.push({ x: e.x, y: e.y, z: e.z, k });
-            if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal', e.x, e.y, e.z);
-          }
-        }
+        this._tryDropBomb(e, 'normal', true);
       }
     }
   }
@@ -420,15 +429,7 @@ class EnemyManager {
     this._reflectWithinRefBounds(e, refShip, 5000);
 
     if (random() < 0.008) {
-      let gy = terrain.getAltitude(e.x, e.z);
-      if (!aboveSea(gy)) {
-        let tx = toTile(e.x), tz = toTile(e.z);
-        let k = tileKey(tx, tz);
-        if (!infection.has(k)) {
-          particleSystem.bombs.push({ x: e.x, y: e.y, z: e.z, k });
-          if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop('normal', e.x, e.y, e.z);
-        }
-      }
+      this._tryDropBomb(e, 'normal', true);
     }
   }
 
@@ -473,12 +474,7 @@ class EnemyManager {
       }
     }
 
-    let dx = targetX - e.x, dz = targetZ - e.z;
-    let d = mag2(dx, dz);
-    if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * 1.5, 0.04);
-      e.vz = lerp(e.vz || 0, (dz / d) * 1.5, 0.04);
-    }
+    this._steer2D(e, targetX, targetZ, 1.5, 0.04);
 
     e.x += e.vx; e.z += e.vz;
     // Snap to ground surface
@@ -517,13 +513,7 @@ class EnemyManager {
     let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
     // Slow, deliberate movement toward the player
-    let dx = tShip.x - e.x, dz = tShip.z - e.z;
-    let d = mag2(dx, dz);
-    let speed = 1.2;  // Slower than most enemies — weight of a giant
-    if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.025);
-      e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.025);
-    }
+    let { d } = this._steer2D(e, tShip.x, tShip.z, 1.2, 0.025);  // Slower than most enemies — weight of a giant
     e.x += e.vx; e.z += e.vz;
 
     // Snap to ground surface — the Colossus always walks on land
@@ -585,14 +575,7 @@ class EnemyManager {
   updateSquid(e, alivePlayers, refShip) {
     let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
-    let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
-    let d = mag3(dx, dy, dz);
-    let speed = 3.5;
-    if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * speed, 0.05);
-      e.vy = lerp(e.vy || 0, (dy / d) * speed, 0.05);
-      e.vz = lerp(e.vz || 0, (dz / d) * speed, 0.05);
-    }
+    let { d } = this._steer3D(e, tShip.x, tShip.y, tShip.z, 3.5, 0.05);
 
     let gy = terrain.getAltitude(e.x, e.z);
     if (e.y > gy - 150) e.vy -= 1.0;

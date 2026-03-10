@@ -142,6 +142,45 @@ uniform vec3 uSunColor;
 uniform vec3 uAmbientLow;
 uniform vec3 uAmbientHigh;
 
+// Hash function for procedural noise
+float hash(vec2 p) {
+  // Use a much larger modulo or none at all if possible; p5 coord space here doesn't need 10000 wrap
+  // since float32 has millions of precise digits.
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+// 2D Value Noise
+float noise2D(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  // Smooth Hermite interpolation
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  // Mix 4 corners - PREVIOUS VERSION WAS BUGGED, using u.x for both interpolations
+  float a = hash(i + vec2(0.0, 0.0));
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Fractional Brownian Motion (3 octaves)
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  vec2 shift = vec2(100.0);
+  // Rotate to reduce axial bias
+  mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+  for (int i = 0; i < 3; ++i) {
+    v += a * noise2D(p);
+    p = rot * p * 2.0 + shift;
+    a *= 0.5;
+  }
+  return v;
+}
+
 void main() {
   // Material IDs (from R channel)
   int mat = int(vColor.r * 255.0 + 0.5);
@@ -187,9 +226,24 @@ void main() {
     baseColor = pearlBase * parity * (0.88 + 0.12 * shimmer);
   } else if (mat == 30) {
     // ── Sea plane (Mat 30) ────────────────────────────────────────────
-    // Fixed deep-blue base colour, unaffected by shockwave pulse effects
-    // (mat 30 > 21 so it is excluded from the cyberColor accumulation below).
-    baseColor = vec3(15.0/255.0, 45.0/255.0, 150.0/255.0);
+    vec3 waterBase = vec3(15.0/255.0, 45.0/255.0, 150.0/255.0);
+    vec3 crestColor = vec3(25.0/255.0, 65.0/255.0, 165.0/255.0);
+    
+    float tDist = gl_FragCoord.z / gl_FragCoord.w;
+    float noiseFade = 1.0 - smoothstep(1500.0, 3500.0, tDist);
+    
+    vec3 finalColor = waterBase;
+    if (noiseFade > 0.0) {
+      vec2 wPos = vWorldPos.xz * 0.06;
+      float t = uTime * 0.4;
+      float n1 = fbm(wPos + vec2(t, t * 0.5));
+      float n2 = fbm(wPos - vec2(t * 0.8, -t * 0.3) + n1 * 2.0);
+      float ripple = smoothstep(0.4, 0.8, n2);
+      float glint = smoothstep(0.7, 1.0, n2) * 0.15;
+      vec3 detail = mix(waterBase, crestColor, ripple) + vec3(glint);
+      finalColor = mix(waterBase, detail, noiseFade);
+    }
+    baseColor = finalColor;
   } else if (mat >= 250 && mat <= 251) {
     // ── Powerup (Mat 250=Healthy, 251=Infected) ────────────────────────
     baseColor = (mat == 250) ? vec3(60.0/255.0, 180.0/255.0, 240.0/255.0) : vec3(200.0/255.0, 50.0/255.0, 50.0/255.0);
@@ -222,6 +276,26 @@ void main() {
         else if (val < 4.0) baseColor = uPalette[3];
         else if (val < 5.0) baseColor = uPalette[4];
         else baseColor = uPalette[5];
+      }
+      
+      // Slope check (Y normal component: 1.0 = flat ground, 0.0 = sheer vertical wall)
+      // We flip vNormal.y to a positive value because -Y is UP in p5.js coordinates.
+      float steepness = 1.0 - max(-vNormal.y, 0.0);
+      
+      // If steepness > 0.05, start blending in a deep rocky color
+      float cliffBlend = smoothstep(0.05, 0.18, steepness);
+      vec3 cliffColor = vec3(0.12, 0.11, 0.10); // Dark grey/brown rock
+      baseColor = mix(baseColor, cliffColor, cliffBlend);
+      
+      // Organic Micro-Noise (distance faded to prevent moire aliasing)
+      float tDist = gl_FragCoord.z / gl_FragCoord.w;
+      float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
+      
+      if (noiseFade > 0.0) {
+        float microNoise = noise2D(vWorldPos.xz * 0.5);
+        float intensity = mix(0.3, 0.6, cliffBlend); // Extra noise on cliffs
+        float noiseShift = 0.85 + (microNoise * intensity);
+        baseColor = mix(baseColor, baseColor * noiseShift, noiseFade);
       }
     }
     baseColor *= parity;

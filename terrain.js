@@ -80,6 +80,36 @@ void main() {
 }
 `;
 
+// Shared GLSL snippets embedded into both fragment shaders via template literals.
+// Both shaders declare the same uniforms (uPulses, uTime, vWorldPos, uFogDist,
+// uFogColor) so the snippets work without modification in either context.
+
+// Pulse loop: declares cyberColor and accumulates shockwave ring contributions.
+const _GLSL_PULSE_LOOP = `
+  vec3 cyberColor = vec3(0.0);
+  for (int i = 0; i < 5; i++) {
+    float age = uTime - uPulses[i].z;
+    if (age >= 0.0 && age < 3.0) {
+      float type = uPulses[i].w;
+      vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
+      float distToPulse = length(diff) * 100.0;
+      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
+      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
+      float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
+      float fade = 1.0 - (age / 3.0);
+      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
+      cyberColor += pulseColor * ring * fade * 2.0;
+    }
+  }
+`;
+
+// Fog tail: blends outColor to the sky colour beyond the view boundary.
+const _GLSL_FOG = `
+  float dist = gl_FragCoord.z / gl_FragCoord.w;
+  float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
+  outColor = mix(outColor, uFogColor, fogFactor);
+`;
+
 // --- GLSL fragment shader ---
 // Applies two effects on top of the vertex colour:
 //   1. Expanding shockwave rings (up to 5 simultaneous pulses, typed as
@@ -197,23 +227,7 @@ void main() {
     baseColor *= parity;
   }
 
-  vec3 cyberColor = vec3(0.0);
-  
-  // Expanding shockwave pulses (bombs, infection, explosions)
-  for (int i = 0; i < 5; i++) {
-    float age = uTime - uPulses[i].z;
-    if (age >= 0.0 && age < 3.0) {
-      float type = uPulses[i].w;
-      vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
-      float distToPulse = length(diff) * 100.0;
-      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
-      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
-      float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
-      float fade = 1.0 - (age / 3.0);
-      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
-      cyberColor += pulseColor * ring * fade * 2.0;
-    }
-  }
+  ${_GLSL_PULSE_LOOP}
 
   // Steady sentinel base glows — fixed-radius breathing ring for healthy sentinels
   for (int j = 0; j < 2; j++) {
@@ -320,10 +334,7 @@ void main() {
     }
   }
 
-  // Apply fog to smoothly hide chunk loading edges
-  float dist = gl_FragCoord.z / gl_FragCoord.w;
-  float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
-  outColor = mix(outColor, uFogColor, fogFactor);
+  ${_GLSL_FOG}
 
   gl_FragColor = vec4(outColor, 1.0);
 }
@@ -334,12 +345,7 @@ void main() {
 // Shares TERRAIN_VERT so world-space position (vWorldPos) is available for
 // distance fog and shockwave pulse effects.  Base colour comes from the
 // uFillColor uniform rather than the aVertexColor material-ID system, so
-// p5 box()/cylinder() primitives — which do not forward fill() into
-// aVertexColor when a custom shader is active — are rendered correctly.
-//
-// Provides the same fog, Lambert + hemisphere ambient, fresnel rim, and
-// shockwave-pulse visibility as TERRAIN_FRAG (ships/enemies branch), giving
-// box/cylinder enemies visual consistency with vertex-based enemies and terrain.
+// p5 box()/cylinder() primitives are rendered correctly under a custom shader.
 const FILL_COLOR_FRAG = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -364,41 +370,22 @@ uniform vec3  uAmbientHigh;
 void main() {
   vec3 baseColor = uFillColor;
 
-  // Shockwave pulse rings are visible on enemies for visual consistency:
-  // when a bomb or explosion erupts nearby the ring washes over the model.
-  vec3 cyberColor = vec3(0.0);
-  for (int i = 0; i < 5; i++) {
-    float age = uTime - uPulses[i].z;
-    if (age >= 0.0 && age < 3.0) {
-      float type = uPulses[i].w;
-      vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
-      float distToPulse = length(diff) * 100.0;
-      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
-      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
-      float ring = smoothstep(radius - ringThickness, radius, distToPulse) *
-                   (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
-      float fade = 1.0 - (age / 3.0);
-      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0)
-                      : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
-      cyberColor += pulseColor * ring * fade * 2.0;
-    }
-  }
+  // Shockwave pulse rings — same logic as terrain shader.
+  ${_GLSL_PULSE_LOOP}
 
-  // Two-sided Lambert + hemisphere ambient (matches TERRAIN_FRAG ships/enemies branch).
-  // abs(ndl) avoids completely black faces caused by inconsistent winding orders in
-  // p5 primitives, mirroring the ndlAbs logic used for vertex-based enemies.
+  // Two-sided Lambert + hemisphere ambient. abs(ndl) handles inconsistent
+  // winding in p5 primitives (mirrors the ndlAbs path in TERRAIN_FRAG).
   vec3 n = normalize(vNormal);
   float hemi = n.y * -0.5 + 0.5;
   vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
   vec3 toSun = normalize(-uSunDir);
   float ndl    = max(dot(n, toSun), 0.0);
   float ndlAbs = abs(dot(n, toSun));
-  vec3 shipKeyLight = uSunColor * ndlAbs;
-  vec3 litBase = baseColor * max(ambient + shipKeyLight, vec3(0.15, 0.18, 0.22));
+  vec3 litBase = baseColor * max(ambient + uSunColor * ndlAbs, vec3(0.15, 0.18, 0.22));
 
   vec3 outColor = litBase + cyberColor;
 
-  // Fresnel rim lighting — identical to the ships branch in TERRAIN_FRAG.
+  // Fresnel rim — ship/enemy variant (same as the else branch in TERRAIN_FRAG).
   vec3 V = normalize(-vViewPos);
   float fresnel = 1.0 - max(dot(normalize(vViewNormal), V), 0.0);
   fresnel *= fresnel;
@@ -406,10 +393,7 @@ void main() {
   float rimMask = smoothstep(-0.2, 0.5, -vNormal.y);
   outColor += uFogColor * fresnel * litMask * rimMask * 0.7;
 
-  // Distance fog — hides chunk edges and matches the terrain fog boundary.
-  float dist = gl_FragCoord.z / gl_FragCoord.w;
-  float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
-  outColor = mix(outColor, uFogColor, fogFactor);
+  ${_GLSL_FOG}
 
   gl_FragColor = vec4(outColor, 1.0);
 }
@@ -1036,23 +1020,20 @@ class Terrain {
   // ---------------------------------------------------------------------------
 
   /**
-   * Binds the terrain GLSL shader and uploads per-frame uniforms:
-   *   • uTime     — elapsed seconds, drives pulse ring expansion
-   *   • uFogDist  — [fogStart, fogEnd] in world units
-   *   • uFogColor — sky/fog RGB colour (derived from SKY_R/G/B constants)
-   *   • uPulses   — flat array of up to 5 pulse descriptors [x, z, startTime, type]
-   * Must be called before any model() draw calls that should use the terrain shader.
+   * Uploads uniforms shared by both the terrain shader and the fill-colour shader:
+   * fog, sun direction/colour, ambient, inverse-view matrix, time, and pulse data.
+   * Accepts the target shader object as a parameter so both callers can reuse the
+   * same pre-allocated buffers without any redundant array allocations.
+   * @param {p5.Shader} sh  The shader to upload into (this.shader or this.fillShader).
    */
-  applyShader() {
-    shader(this.shader);
+  _uploadSharedUniforms(sh) {
     const fogFar = this._getFogFarWorld();
 
     // Fill pre-allocated uniform buffers in-place — avoids allocating a new JS
     // array literal for every setUniform() call each frame.
     this._uFogDistArr[0] = fogFar - 800; this._uFogDistArr[1] = fogFar + 400;
     this._uFogColorArr[0] = SKY_R / 255.0; this._uFogColorArr[1] = SKY_G / 255.0; this._uFogColorArr[2] = SKY_B / 255.0;
-    // SUN_DIR_NX/NY/NZ are the pre-normalized sun direction constants; no temp
-    // array or Math.hypot call needed.
+    // SUN_DIR_NX/NY/NZ are the pre-normalized sun direction constants.
     this._uSunDirArr[0] = SUN_DIR_NX; this._uSunDirArr[1] = SUN_DIR_NY; this._uSunDirArr[2] = SUN_DIR_NZ;
     this._uSunColorArr[0] = SHADER_SUN_R; this._uSunColorArr[1] = SHADER_SUN_G; this._uSunColorArr[2] = SHADER_SUN_B;
     this._uAmbLowArr[0] = SHADER_AMB_L_R; this._uAmbLowArr[1] = SHADER_AMB_L_G; this._uAmbLowArr[2] = SHADER_AMB_L_B;
@@ -1063,36 +1044,50 @@ class Terrain {
       if (!this._invViewMat) this._invViewMat = new p5.Matrix();
       this._invViewMat.set(r.uViewMatrix);
       this._invViewMat.invert(this._invViewMat);
-      this.shader.setUniform('uInvViewMatrix', this._invViewMat.mat4);
+      sh.setUniform('uInvViewMatrix', this._invViewMat.mat4);
     }
 
-    this.shader.setUniform('uTime', millis() / 1000.0);
-    this.shader.setUniform('uFogDist', this._uFogDistArr);
-    this.shader.setUniform('uFogColor', this._uFogColorArr);
-    this.shader.setUniform('uTileSize', TILE);
-    this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
-    this.shader.setUniform('uSunDir', this._uSunDirArr);
-    this.shader.setUniform('uSunColor', this._uSunColorArr);
-    this.shader.setUniform('uAmbientLow', this._uAmbLowArr);
-    this.shader.setUniform('uAmbientHigh', this._uAmbHighArr);
+    sh.setUniform('uTime', millis() / 1000.0);
+    sh.setUniform('uFogDist', this._uFogDistArr);
+    sh.setUniform('uFogColor', this._uFogColorArr);
+    sh.setUniform('uSunDir', this._uSunDirArr);
+    sh.setUniform('uSunColor', this._uSunColorArr);
+    sh.setUniform('uAmbientLow', this._uAmbLowArr);
+    sh.setUniform('uAmbientHigh', this._uAmbHighArr);
 
     // Write pulse data into the pre-allocated buffer (avoids a new array each frame).
     const pulseArr = this._pulseArr;
     for (let i = 0; i < 5; i++) {
       const base = i * 4;
       if (i < this.activePulses.length) {
-        pulseArr[base] = this.activePulses[i].x;
+        pulseArr[base]     = this.activePulses[i].x;
         pulseArr[base + 1] = this.activePulses[i].z;
         pulseArr[base + 2] = this.activePulses[i].start;
         pulseArr[base + 3] = this.activePulses[i].type || 0.0;
       } else {
-        pulseArr[base] = 0.0;
+        pulseArr[base]     = 0.0;
         pulseArr[base + 1] = 0.0;
         pulseArr[base + 2] = -9999.0;  // Inactive: age never reaches 0
         pulseArr[base + 3] = 0.0;
       }
     }
-    this.shader.setUniform('uPulses', pulseArr);
+    sh.setUniform('uPulses', pulseArr);
+  }
+
+  /**
+   * Binds the terrain GLSL shader and uploads per-frame uniforms:
+   *   • uTime     — elapsed seconds, drives pulse ring expansion
+   *   • uFogDist  — [fogStart, fogEnd] in world units
+   *   • uFogColor — sky/fog RGB colour (derived from SKY_R/G/B constants)
+   *   • uPulses   — flat array of up to 5 pulse descriptors [x, z, startTime, type]
+   * Must be called before any model() draw calls that should use the terrain shader.
+   */
+  applyShader() {
+    shader(this.shader);
+    this._uploadSharedUniforms(this.shader);
+
+    this.shader.setUniform('uTileSize', TILE);
+    this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
 
     // Write sentinel glow data into the pre-allocated buffer.
     const glowArr = this._glowArr;
@@ -1125,54 +1120,11 @@ class Terrain {
   applyFillColorShader() {
     if (!this.fillShader) return;
     shader(this.fillShader);
-
-    const fogFar = this._getFogFarWorld();
-    this._uFogDistArr[0] = fogFar - 800; this._uFogDistArr[1] = fogFar + 400;
-    this._uFogColorArr[0] = SKY_R / 255.0; this._uFogColorArr[1] = SKY_G / 255.0; this._uFogColorArr[2] = SKY_B / 255.0;
-    this._uSunDirArr[0] = SUN_DIR_NX; this._uSunDirArr[1] = SUN_DIR_NY; this._uSunDirArr[2] = SUN_DIR_NZ;
-    this._uSunColorArr[0] = SHADER_SUN_R; this._uSunColorArr[1] = SHADER_SUN_G; this._uSunColorArr[2] = SHADER_SUN_B;
-    this._uAmbLowArr[0] = SHADER_AMB_L_R; this._uAmbLowArr[1] = SHADER_AMB_L_G; this._uAmbLowArr[2] = SHADER_AMB_L_B;
-    this._uAmbHighArr[0] = SHADER_AMB_H_R; this._uAmbHighArr[1] = SHADER_AMB_H_G; this._uAmbHighArr[2] = SHADER_AMB_H_B;
-
-    const r = _renderer;
-    if (r && r.uViewMatrix) {
-      if (!this._invViewMat) this._invViewMat = new p5.Matrix();
-      this._invViewMat.set(r.uViewMatrix);
-      this._invViewMat.invert(this._invViewMat);
-      this.fillShader.setUniform('uInvViewMatrix', this._invViewMat.mat4);
-    }
-
-    this.fillShader.setUniform('uTime', millis() / 1000.0);
-    this.fillShader.setUniform('uFogDist', this._uFogDistArr);
-    this.fillShader.setUniform('uFogColor', this._uFogColorArr);
-    this.fillShader.setUniform('uSunDir', this._uSunDirArr);
-    this.fillShader.setUniform('uSunColor', this._uSunColorArr);
-    this.fillShader.setUniform('uAmbientLow', this._uAmbLowArr);
-    this.fillShader.setUniform('uAmbientHigh', this._uAmbHighArr);
-
-    // Pulse data so shockwave rings pass visibly over enemies.
-    const pulseArr = this._pulseArr;
-    for (let i = 0; i < 5; i++) {
-      const base = i * 4;
-      if (i < this.activePulses.length) {
-        pulseArr[base]     = this.activePulses[i].x;
-        pulseArr[base + 1] = this.activePulses[i].z;
-        pulseArr[base + 2] = this.activePulses[i].start;
-        pulseArr[base + 3] = this.activePulses[i].type || 0.0;
-      } else {
-        pulseArr[base]     = 0.0;
-        pulseArr[base + 1] = 0.0;
-        pulseArr[base + 2] = -9999.0;
-        pulseArr[base + 3] = 0.0;
-      }
-    }
-    this.fillShader.setUniform('uPulses', pulseArr);
+    this._uploadSharedUniforms(this.fillShader);
 
     // Seed with white so the first box() draw before any setFillColor() call
     // renders as a bright, obviously-wrong colour rather than black (which
     // would be invisible and silently mask a missing setFillColor() call).
-    // Every draw method calls setFillColor() for its first part, so this
-    // default is only ever visible if a new draw method is added without it.
     this._uFillColorArr[0] = 1.0; this._uFillColorArr[1] = 1.0; this._uFillColorArr[2] = 1.0;
     this.fillShader.setUniform('uFillColor', this._uFillColorArr);
   }
@@ -1689,15 +1641,17 @@ class Terrain {
   }
 
   /**
-   * Draws a single cached projected shadow for a tree.
-   * Hull is computed once and stored on the tree object (static geometry, fixed sun).
+   * Ensures the shadow geometry for a tree is baked and cached.
+   * Handles sun-change invalidation, hull initialisation, and geometry baking.
+   * Called once per shadow-queue entry before the batched render pass.
+   * @param {{}} t    Tree descriptor from getProceduralTreesForChunk.
+   * @param {{}} sun  Sun shadow basis from _getSunShadowBasis().
    */
-  _drawTreeShadow(t, groundY, sun) {
-    // If the sun has moved since we last baked this shadow, invalidate the cached 
-    // geometry so it re-builds at the new solar angle.
+  _ensureTreeShadowBaked(t, sun) {
+    // Invalidate cached geometry when the sun angle changes.
     if (t._bakedSun && (t._bakedSun.x !== sun.x || t._bakedSun.y !== sun.y || t._bakedSun.z !== sun.z)) {
       t._shadowGeom = null;
-      t._shadowBakeFails = 0; // sun changed → fresh bake attempt; reset failure count
+      t._shadowBakeFails = 0;
     }
 
     if (!t._shadowHull) {
@@ -1705,10 +1659,8 @@ class Terrain {
       // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
       const hrx = (vi === 2) ? 20 * sc : 17 * sc;
       const hrz = (vi === 2) ? 14 * sc : 12 * sc;
-      const casterH = h + (vi === 2 ? 24 : 18) * sc;
-      const trunkHalf = 2.5; // trunk box half-extent (full box size 5x5)
+      const trunkHalf = 2.5;
       const footprint = [];
-      // Trunk footprint (merge components into one hull to avoid crescent gaps)
       footprint.push(
         { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
         { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
@@ -1718,11 +1670,9 @@ class Terrain {
         footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
       }
       t._footprint = footprint;
-      t._shadowCasterH = casterH;
+      t._shadowCasterH = h + (vi === 2 ? 24 : 18) * sc;
       t._shadowHull = true;
     }
-
-    const casterHForOpacity = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
 
     // t._shadowGeom lifecycle:
     //   undefined  → not yet attempted
@@ -1732,40 +1682,43 @@ class Terrain {
     if (t._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !t._footprint) return;
       this._isBuildingShadow = true;
+      const casterH = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
       try {
         t._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        let built = _safeBuildGeometry(() => {
-          this._drawProjectedFootprintShadow(t.x, t.z, groundY, casterHForOpacity, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
+        const built = _safeBuildGeometry(() => {
+          this._drawProjectedFootprintShadow(t.x, t.z, t.y, casterH, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
         });
-        // Use false (not null) for an empty result so the == null guard above
-        // won't trigger a rebuild every frame for a permanently-degenerate hull.
-        const tGeom = (built && built.vertices.length) ? built : false;
-        t._shadowGeom = tGeom;
-        if (tGeom) t._shadowBakeFails = 0;
+        t._shadowGeom = (built && built.vertices.length) ? built : false;
+        if (t._shadowGeom) t._shadowBakeFails = 0;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for tree:", err);
         t._shadowBakeFails = (t._shadowBakeFails || 0) + 1;
-        // Give up after 3 failures to avoid calling buildGeometry every frame.
         t._shadowGeom = (t._shadowBakeFails >= 3) ? false : null;
       } finally {
         this._isBuildingShadow = false;
       }
     }
+  }
 
+  /**
+   * Draws a single cached projected shadow for a tree.
+   * Hull is computed once and stored on the tree object (static geometry, fixed sun).
+   */
+  _drawTreeShadow(t, groundY, sun) {
+    this._ensureTreeShadowBaked(t, sun);
     if (!t._shadowGeom) return;
 
-    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterHForOpacity);
+    const casterH = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
+    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterH);
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
     if (lightsWereOn) noLights();
     noStroke();
     fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
 
     _beginShadowStencil();
-
     push();
     model(t._shadowGeom);
     pop();
-
     _endShadowStencil();
     if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
   }
@@ -2012,13 +1965,24 @@ class Terrain {
     resetShader();
     setSceneLighting();
 
-    // Draw projected component shadows in one pass.
+    // Draw all tree shadows in a single batched pass.
+    // _ensureTreeShadowBaked() handles baking for any tree that doesn't yet have a
+    // cached shadow mesh. All valid meshes are then rendered under one shared
+    // stencil/lighting setup instead of toggling WebGL state per tree.
+    //
+    // Each shadow geometry has its alpha baked into vertex colors by
+    // _drawProjectedFootprintShadow (called with isBaking=true). model() uses those
+    // baked vertex colors, so no per-tree fill() call is required here.
     const sun = this._getSunShadowBasis();
-    noStroke();
-    for (let i = 0; i < shadowQueue.length; i++) {
-      const t = shadowQueue[i];
-      this._drawTreeShadow(t, t.y, sun);
+    for (const t of shadowQueue) this._ensureTreeShadowBaked(t, sun);
+
+    noLights(); noStroke();
+    _beginShadowStencil();
+    for (const t of shadowQueue) {
+      if (t._shadowGeom) { push(); model(t._shadowGeom); pop(); }
     }
+    _endShadowStencil();
+    setSceneLighting();
   }
 
   _getBuildingGeom(b, inf) {

@@ -292,9 +292,21 @@ void main() {
       float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
       
       if (noiseFade > 0.0) {
-        float microNoise = noise2D(vWorldPos.xz * 0.5);
-        float intensity = mix(0.3, 0.6, cliffBlend); // Extra noise on cliffs
-        float noiseShift = 0.85 + (microNoise * intensity);
+        // Original scale noise (provides the core granular look you had before)
+        float baseLayer = noise2D(vWorldPos.xz * 0.5);
+        
+        // Layer a second, higher-frequency noise rotated by 45 degrees
+        // to completely break up any repeating X/Y grid artifacts from the value noise
+        vec2 pR = vec2(vWorldPos.x * 0.707 - vWorldPos.z * 0.707, vWorldPos.x * 0.707 + vWorldPos.z * 0.707);
+        float detailLayer = noise2D(pR * 1.7);
+        
+        // Combine them for a naturally broken up, rugged texture
+        float ruggedNoise = baseLayer * 0.6 + detailLayer * 0.4;
+        
+        // Extra intense on cliffs for a rocky look, while keeping flats nicely textured
+        float intensity = mix(0.35, 0.85, cliffBlend); 
+        float noiseShift = 0.8 + (ruggedNoise * intensity * 1.2);
+        
         baseColor = mix(baseColor, baseColor * noiseShift, noiseFade);
       }
     }

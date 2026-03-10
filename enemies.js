@@ -22,6 +22,13 @@ const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
 // Uniform scale applied to every enemy mesh in both rendering passes.
 const ENEMY_DRAW_SCALE = 2;
 
+// Colossus progression: HP increases by 30 each spawn. Size scales linearly by tier,
+// but is capped to avoid runaway boss dimensions that break camera/collision fairness.
+const COLOSSUS_HP_BASE = 30;
+const COLOSSUS_HP_STEP = 30;
+const COLOSSUS_SIZE_STEP = 0.35;
+const COLOSSUS_MAX_SIZE_MULT = 2.4;
+
 class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
@@ -122,10 +129,15 @@ class EnemyManager {
       bombTimer: 0         // Counts frames since last bomb dropped (bomber/fighter/scorpion)
     };
 
-    // Colossus gets a large HP pool — it takes many hits
+    // Colossus progression across a run: +30 HP per spawn, and larger body each time.
     if (type === 'colossus') {
-      entry.hp = 80;   // 80 hits to kill
-      entry.maxHp = 80;
+      gameState.colossusSpawnCount = (gameState.colossusSpawnCount || 0) + 1;
+      const tier = gameState.colossusSpawnCount;
+      const hp = COLOSSUS_HP_BASE + (tier - 1) * COLOSSUS_HP_STEP;
+      entry.colossusTier = tier;
+      entry.colossusScale = min(1 + (tier - 1) * COLOSSUS_SIZE_STEP, COLOSSUS_MAX_SIZE_MULT);
+      entry.hp = hp;
+      entry.maxHp = hp;
       entry.hitFlash = 0; // frames of bright flash after being hit
     }
 
@@ -476,7 +488,8 @@ class EnemyManager {
    * - Walks slowly but relentlessly toward the nearest player on two legs.
    * - Fires burst salvos of 3 aimed bullets every 120 frames when in range.
    * - Leaves virus infection in its footsteps as it marches.
-   * - Has 40 HP; bullets/missiles reduce .hp rather than destroying it outright.
+  * - HP starts at 30 and increases by +30 for each Colossus spawn in a run.
+  * - Size scales by spawn tier (capped) to match increasing threat.
    * @param {object}   e            Enemy state (carries hp, maxHp, hitFlash).
    * @param {object[]} alivePlayers Alive ship states.
    * @param {object}   refShip      Fallback target.
@@ -517,19 +530,21 @@ class EnemyManager {
         e.burstCooldown = 0;
         e.burstCount--;
         // Re-calculate direction each burst shot (target may have moved)
-        let bdx = tShip.x - e.x, bdy = tShip.y - (e.y - 240), bdz = tShip.z - e.z;
+        const colScale = e.colossusScale || 1;
+        const muzzleYOffset = 240 * colScale;
+        let bdx = tShip.x - e.x, bdy = tShip.y - (e.y - muzzleYOffset), bdz = tShip.z - e.z;
         let bd = mag3(bdx, bdy, bdz);
         if (bd > 0) {
           let spread = 0.12;
           particleSystem.enemyBullets.push({
-            x: e.x, y: e.y - 240, z: e.z,
+            x: e.x, y: e.y - muzzleYOffset, z: e.z,
             vx: (bdx / bd) * 14 + random(-spread, spread) * 14,
             vy: (bdy / bd) * 14,
             vz: (bdz / bd) * 14 + random(-spread, spread) * 14,
             // colossus bullets now persist longer
             life: 1000
           });
-          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - 240, e.z);
+          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - muzzleYOffset, e.z);
         }
       }
     }
@@ -1006,13 +1021,18 @@ class EnemyManager {
     setSceneLighting();
 
     for (let e of this.enemies) {
-      let localCullSq = (e.type === 'colossus') ? (CULL_DIST * 1.5) ** 2 : cullSq;
+      let localCullSq = cullSq;
+      if (e.type === 'colossus') {
+        const colScale = e.colossusScale || 1;
+        localCullSq = (CULL_DIST * (1.5 + (colScale - 1) * 0.4)) ** 2;
+      }
       if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > localCullSq) continue;
 
       push();
       translate(e.x, e.y, e.z);
       if (e.type === 'crab' || e.type === 'yellowCrab') translate(0, -10, 0);
-      scale(ENEMY_DRAW_SCALE);
+      if (e.type === 'colossus') scale(ENEMY_DRAW_SCALE * (e.colossusScale || 1));
+      else scale(ENEMY_DRAW_SCALE);
 
       if (e.type === 'crab' || e.type === 'yellowCrab') this._drawCrab(e);
       else if (e.type === 'squid') this._drawSquid(e);
@@ -1052,7 +1072,11 @@ class EnemyManager {
       const gy = terrain.getAltitude(e.x, e.z);
       const casterH = max(24, gy - e.y);
       let sw = 80, sh = 50;
-      if (e.type === 'colossus') { sw = 320; sh = 230; }
+      if (e.type === 'colossus') {
+        const colScale = e.colossusScale || 1;
+        sw = 320 * colScale;
+        sh = 230 * colScale;
+      }
       else if (e.type === 'bomber') { sw = 150; sh = 85; }
       else if (e.type === 'fighter') { sw = 64; sh = 60; }
       else if (e.type === 'hunter') { sw = 80; sh = 48; }

@@ -298,6 +298,10 @@ function keyPressed() {
     if (typeof updateTimeOfDay === 'function' && typeof currentTimeStep !== 'undefined') {
       updateTimeOfDay(currentTimeStep + 1);
     }
+    // Debug convenience: also jump to the next level in the same key press.
+    if (gameState.mode === 'playing' && typeof startLevel === 'function' && typeof gameState !== 'undefined') {
+      startLevel(gameState.level + 1);
+    }
   }
 }
 

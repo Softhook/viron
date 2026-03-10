@@ -11,6 +11,7 @@ class GameState {
     // --- Level & Progression ---
     this.level = 1;
     this.currentMaxEnemies = 2;
+    this.colossusSpawnCount = 0;
     this.levelComplete = false;
     this.levelEndTime = 0;
     this.infectionStarted = false;
@@ -136,6 +137,7 @@ class GameState {
   startNewGame(np) {
     this.numPlayers = np;
     this.gameStartTime = millis();
+    this.colossusSpawnCount = 0;
     this.mouseReleasedSinceStart = !this.leftMouseDown;
 
     this.players = this._createPlayers(np);

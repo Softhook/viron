@@ -29,6 +29,17 @@ const COLOSSUS_HP_STEP = 30;
 const COLOSSUS_SIZE_STEP = 0.35;
 const COLOSSUS_MAX_SIZE_MULT = 2.4;
 
+const ENEMY_COLORS = {
+  fighter: [255, 150, 0],
+  bomber: [180, 20, 180],
+  crab: [200, 80, 20],
+  hunter: [40, 255, 40],
+  squid: [100, 100, 150],
+  scorpion: [20, 180, 120],
+  colossus: [255, 60, 20],
+  yellowCrab: [255, 255, 0]
+};
+
 class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
@@ -55,17 +66,49 @@ class EnemyManager {
    * @returns {number[]} RGB array [r, g, b].
    */
   getColor(type) {
-    const ENEMY_COLORS = {
-      fighter: [255, 150, 0],
-      bomber: [180, 20, 180],
-      crab: [200, 80, 20],
-      hunter: [40, 255, 40],
-      squid: [100, 100, 150],
-      scorpion: [20, 180, 120],
-      colossus: [255, 60, 20],
-      yellowCrab: [255, 255, 0]
-    };
     return ENEMY_COLORS[type] || [220, 30, 30];  // Default: seeder red
+  }
+
+  /** Returns nearest alive ship or fallback reference ship. */
+  _getTargetShip(e, alivePlayers, refShip) {
+    return findNearest(alivePlayers, e.x, e.y, e.z) || refShip;
+  }
+
+  /** Reflects enemy velocity if it moves too far from the reference ship. */
+  _reflectWithinRefBounds(e, refShip, limit) {
+    if (abs(e.x - refShip.x) > limit) e.vx *= -1;
+    if (abs(e.z - refShip.z) > limit) e.vz *= -1;
+  }
+
+  /** Ground infection helper used by multiple ground-based enemies. */
+  _tryInfectGround(e, gy, infType = 'normal', pulseScale = 1.0, spreadNeighbors = false) {
+    if (aboveSea(gy)) return;
+
+    const tx = toTile(e.x), tz = toTile(e.z);
+    const k = tileKey(tx, tz);
+    if (infection.add(k, infType)) {
+      if (isLaunchpad(e.x, e.z)) maybePlayLaunchpadAlarm();
+      terrain.addPulse(e.x, e.z, pulseScale);
+    }
+
+    if (!spreadNeighbors) return;
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        if (random() < 0.25) {
+          let nk = tileKey(tx + di, tz + dj);
+          if (!infection.has(nk)) {
+            let nx = (tx + di) * TILE, nz = (tz + dj) * TILE;
+            if (!aboveSea(terrain.getAltitude(nx, nz))) infection.add(nk);
+          }
+        }
+      }
+    }
+  }
+
+  /** Common upward projectile used by crab/scorpion families. */
+  _fireUpwardShot(e, shotType = 'crab', vy = -12) {
+    particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy, vz: 0, life: 1000 });
+    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot(shotType, e.x, e.y - 10, e.z);
   }
 
   // ---------------------------------------------------------------------------
@@ -189,8 +232,7 @@ class EnemyManager {
     e.y += sin(frameCount * 0.02 + e.id);  // Gentle vertical oscillation
 
     // Reflect velocity when too far from the reference ship
-    if (abs(e.x - refShip.x) > 4000) e.vx *= -1;
-    if (abs(e.z - refShip.z) > 4000) e.vz *= -1;
+    this._reflectWithinRefBounds(e, refShip, 4000);
 
     e.bombTimer++;
     if (e.bombTimer > 600) {
@@ -235,8 +277,7 @@ class EnemyManager {
    * @param {number} pulseScale   Visual pulse feedback intensity.
    */
   _updateCrabAI(e, alivePlayers, refShip, speed, infProb, infType, pulseScale) {
-    let target = findNearest(alivePlayers, e.x, e.y, e.z);
-    let tShip = target || refShip;
+    let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
     let dx = tShip.x - e.x, dz = tShip.z - e.z;
     let d = mag2(dx, dz);
@@ -253,19 +294,11 @@ class EnemyManager {
     e.fireTimer++;
     if (d < 1500 && e.fireTimer > 180) {
       e.fireTimer = 0;
-      particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -12, vz: 0, life: 1000 });
-      if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab', e.x, e.y - 10, e.z);
+      this._fireUpwardShot(e, 'crab');
     }
 
     if (random() < infProb) {
-      if (!aboveSea(gyC)) {
-        let tx = toTile(e.x), tz = toTile(e.z);
-        let k = tileKey(tx, tz);
-        if (infection.add(k, infType)) {
-          if (isLaunchpad(e.x, e.z)) maybePlayLaunchpadAlarm();
-          terrain.addPulse(e.x, e.z, pulseScale);
-        }
-      }
+      this._tryInfectGround(e, gyC, infType, pulseScale);
     }
   }
 
@@ -278,8 +311,7 @@ class EnemyManager {
    * @param {object}   refShip      Fallback target.
    */
   updateHunter(e, alivePlayers, refShip) {
-    let target = findNearest(alivePlayers, e.x, e.y, e.z);
-    let tShip = target || refShip;
+    let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
     let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
     let d = mag3(dx, dy, dz);
@@ -306,8 +338,7 @@ class EnemyManager {
    * @param {object}   refShip      Fallback target.
    */
   updateFighter(e, alivePlayers, refShip) {
-    let target = findNearest(alivePlayers, e.x, e.y, e.z);
-    let tShip = target || refShip;
+    let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
     // State machine: toggle aggressive/wandering every 120 frames
     e.stateTimer = (e.stateTimer || 0) + 1;
@@ -386,8 +417,7 @@ class EnemyManager {
     e.x += e.vx; e.z += e.vz;
     e.y += sin(frameCount * 0.05 + e.id) * 2;  // Gentle vertical oscillation
 
-    if (abs(e.x - refShip.x) > 5000) e.vx *= -1;
-    if (abs(e.z - refShip.z) > 5000) e.vz *= -1;
+    this._reflectWithinRefBounds(e, refShip, 5000);
 
     if (random() < 0.008) {
       let gy = terrain.getAltitude(e.x, e.z);
@@ -422,7 +452,7 @@ class EnemyManager {
 
     if (isLaunchpad(e.x, e.z)) {
       // --- Mode 3: On the launchpad — hunt the nearest player like a crab ---
-      let tShip = findNearest(alivePlayers, e.x, e.y, e.z) || refShip;
+      let tShip = this._getTargetShip(e, alivePlayers, refShip);
       targetX = tShip.x;
       targetZ = tShip.z;
     } else {
@@ -457,28 +487,17 @@ class EnemyManager {
 
     // Infect tiles below — triggers launchpad alarm when relevant
     if (random() < 0.025) {
-      if (!aboveSea(gyS)) {
-        let tx = toTile(e.x), tz = toTile(e.z);
-        let k = tileKey(tx, tz);
-        if (infection.add(k)) {
-          if (isLaunchpad(e.x, e.z)) {
-            maybePlayLaunchpadAlarm();
-          }
-          terrain.addPulse(e.x, e.z, 1.0);
-        }
-      }
+      this._tryInfectGround(e, gyS);
     }
 
     // Fire upward bullet at nearby players every 150 frames
     e.fireTimer = (e.fireTimer || 0) + 1;
-    let target = findNearest(alivePlayers, e.x, e.y, e.z);
+    let target = this._getTargetShip(e, alivePlayers, refShip);
     if (target) {
       let pd = mag2(target.x - e.x, target.z - e.z);
       if (pd < 1200 && e.fireTimer > 150) {
         e.fireTimer = 0;
-        // scorpion shot - keep alive for extended travel
-        particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy: -10, vz: 0, life: 1000 });
-        if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('crab', e.x, e.y - 10, e.z);
+        this._fireUpwardShot(e, 'crab', -10);
       }
     }
   }
@@ -495,8 +514,7 @@ class EnemyManager {
    * @param {object}   refShip      Fallback target.
    */
   updateColossus(e, alivePlayers, refShip) {
-    let target = findNearest(alivePlayers, e.x, e.y, e.z);
-    let tShip = target || refShip;
+    let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
     // Slow, deliberate movement toward the player
     let dx = tShip.x - e.x, dz = tShip.z - e.z;
@@ -551,29 +569,7 @@ class EnemyManager {
 
     // --- Virus trail: infect tiles below the Colossus as it lumbers along ---
     if (random() < 0.06) {
-      if (!aboveSea(gyCo)) {
-        let tx = toTile(e.x), tz = toTile(e.z);
-        let k = tileKey(tx, tz);
-        if (infection.add(k)) {
-          if (isLaunchpad(e.x, e.z)) {
-            maybePlayLaunchpadAlarm();
-          }
-          terrain.addPulse(e.x, e.z, 1.0);
-        }
-        // Infect a few neighbouring tiles as well for a wide footprint
-        for (let di = -1; di <= 1; di++) {
-          for (let dj = -1; dj <= 1; dj++) {
-            if (random() < 0.25) {
-              let nk = tileKey(tx + di, tz + dj);
-              if (!infection.has(nk)) {
-                let nx = (tx + di) * TILE, nz = (tz + dj) * TILE;
-                if (!aboveSea(terrain.getAltitude(nx, nz)))
-                  infection.add(nk);
-              }
-            }
-          }
-        }
-      }
+      this._tryInfectGround(e, gyCo, 'normal', 1.0, true);
     }
   }
 
@@ -587,8 +583,7 @@ class EnemyManager {
    * @param {object}   refShip      Fallback target.
    */
   updateSquid(e, alivePlayers, refShip) {
-    let target = findNearest(alivePlayers, e.x, e.y, e.z);
-    let tShip = target || refShip;
+    let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
     let dx = tShip.x - e.x, dy = tShip.y - e.y, dz = tShip.z - e.z;
     let d = mag3(dx, dy, dz);

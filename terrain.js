@@ -329,6 +329,92 @@ void main() {
 }
 `;
 
+// --- GLSL fragment shader for fill-colour rendering (box/cylinder enemies) ---
+//
+// Shares TERRAIN_VERT so world-space position (vWorldPos) is available for
+// distance fog and shockwave pulse effects.  Base colour comes from the
+// uFillColor uniform rather than the aVertexColor material-ID system, so
+// p5 box()/cylinder() primitives — which do not forward fill() into
+// aVertexColor when a custom shader is active — are rendered correctly.
+//
+// Provides the same fog, Lambert + hemisphere ambient, fresnel rim, and
+// shockwave-pulse visibility as TERRAIN_FRAG (ships/enemies branch), giving
+// box/cylinder enemies visual consistency with vertex-based enemies and terrain.
+const FILL_COLOR_FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec4 vWorldPos;
+varying vec3 vNormal;
+varying vec3 vViewNormal;
+varying vec3 vViewPos;
+
+uniform vec3  uFillColor;
+uniform vec4  uPulses[5];
+uniform float uTime;
+uniform vec2  uFogDist;
+uniform vec3  uFogColor;
+uniform vec3  uSunDir;
+uniform vec3  uSunColor;
+uniform vec3  uAmbientLow;
+uniform vec3  uAmbientHigh;
+
+void main() {
+  vec3 baseColor = uFillColor;
+
+  // Shockwave pulse rings are visible on enemies for visual consistency:
+  // when a bomb or explosion erupts nearby the ring washes over the model.
+  vec3 cyberColor = vec3(0.0);
+  for (int i = 0; i < 5; i++) {
+    float age = uTime - uPulses[i].z;
+    if (age >= 0.0 && age < 3.0) {
+      float type = uPulses[i].w;
+      vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
+      float distToPulse = length(diff) * 100.0;
+      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
+      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
+      float ring = smoothstep(radius - ringThickness, radius, distToPulse) *
+                   (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
+      float fade = 1.0 - (age / 3.0);
+      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0)
+                      : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
+      cyberColor += pulseColor * ring * fade * 2.0;
+    }
+  }
+
+  // Two-sided Lambert + hemisphere ambient (matches TERRAIN_FRAG ships/enemies branch).
+  // abs(ndl) avoids completely black faces caused by inconsistent winding orders in
+  // p5 primitives, mirroring the ndlAbs logic used for vertex-based enemies.
+  vec3 n = normalize(vNormal);
+  float hemi = n.y * -0.5 + 0.5;
+  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
+  vec3 toSun = normalize(-uSunDir);
+  float ndl    = max(dot(n, toSun), 0.0);
+  float ndlAbs = abs(dot(n, toSun));
+  vec3 shipKeyLight = uSunColor * ndlAbs;
+  vec3 litBase = baseColor * max(ambient + shipKeyLight, vec3(0.15, 0.18, 0.22));
+
+  vec3 outColor = litBase + cyberColor;
+
+  // Fresnel rim lighting — identical to the ships branch in TERRAIN_FRAG.
+  vec3 V = normalize(-vViewPos);
+  float fresnel = 1.0 - max(dot(normalize(vViewNormal), V), 0.0);
+  fresnel *= fresnel;
+  float litMask = smoothstep(0.0, 0.2, ndl);
+  float rimMask = smoothstep(-0.2, 0.5, -vNormal.y);
+  outColor += uFogColor * fresnel * litMask * rimMask * 0.7;
+
+  // Distance fog — hides chunk edges and matches the terrain fog boundary.
+  float dist = gl_FragCoord.z / gl_FragCoord.w;
+  float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
+  outColor = mix(outColor, uFogColor, fogFactor);
+
+  gl_FragColor = vec4(outColor, 1.0);
+}
+`;
+
 // =============================================================================
 // Shadow stencil helpers
 // Shadow polygons use a NOTEQUAL/REPLACE stencil so each screen pixel is
@@ -451,6 +537,8 @@ class Terrain {
     this._uSunColorArr = new Float32Array(3);
     this._uAmbLowArr = new Float32Array(3);
     this._uAmbHighArr = new Float32Array(3);
+    // Fill-colour uniform for the box/cylinder enemy shader path.
+    this._uFillColorArr = new Float32Array(3);
 
     // Pre-allocated overlay buffers for batching viron/barrier quads.
     // Fixed size based on MAX_INF (2000) with a 2x safety margin.
@@ -496,9 +584,14 @@ class Terrain {
   // Initialisation
   // ---------------------------------------------------------------------------
 
-  /** Compiles the GLSL shader. Must be called after the p5 WEBGL canvas exists. */
+  /** Compiles the GLSL shaders. Must be called after the p5 WEBGL canvas exists. */
   init() {
     this.shader = createShader(TERRAIN_VERT, TERRAIN_FRAG);
+    // Fill-colour shader: same vertex transform as terrain but colour comes from
+    // a per-draw uFillColor uniform instead of the aVertexColor material-ID system.
+    // Used for box/cylinder enemies (crab, squid, scorpion, colossus) so they receive
+    // the same fog, lighting and shockwave effects as vertex-based enemies and terrain.
+    this.fillShader = createShader(TERRAIN_VERT, FILL_COLOR_FRAG);
   }
 
   // ---------------------------------------------------------------------------
@@ -1021,9 +1114,86 @@ class Terrain {
     this.shader.setUniform('uSentinelGlows', glowArr);
   }
 
-  // ---------------------------------------------------------------------------
-  // Draw methods
-  // ---------------------------------------------------------------------------
+  /**
+   * Binds the fill-colour shader and uploads per-frame uniforms.
+   * Replaces setSceneLighting() for box/cylinder enemies so they receive
+   * the same fog, lighting and shockwave effects as vertex-based enemies.
+   *
+   * Call setFillColor() immediately before each box()/cylinder() draw to
+   * set the per-part colour via the uFillColor uniform.
+   */
+  applyFillColorShader() {
+    if (!this.fillShader) return;
+    shader(this.fillShader);
+
+    const fogFar = this._getFogFarWorld();
+    this._uFogDistArr[0] = fogFar - 800; this._uFogDistArr[1] = fogFar + 400;
+    this._uFogColorArr[0] = SKY_R / 255.0; this._uFogColorArr[1] = SKY_G / 255.0; this._uFogColorArr[2] = SKY_B / 255.0;
+    this._uSunDirArr[0] = SUN_DIR_NX; this._uSunDirArr[1] = SUN_DIR_NY; this._uSunDirArr[2] = SUN_DIR_NZ;
+    this._uSunColorArr[0] = SHADER_SUN_R; this._uSunColorArr[1] = SHADER_SUN_G; this._uSunColorArr[2] = SHADER_SUN_B;
+    this._uAmbLowArr[0] = SHADER_AMB_L_R; this._uAmbLowArr[1] = SHADER_AMB_L_G; this._uAmbLowArr[2] = SHADER_AMB_L_B;
+    this._uAmbHighArr[0] = SHADER_AMB_H_R; this._uAmbHighArr[1] = SHADER_AMB_H_G; this._uAmbHighArr[2] = SHADER_AMB_H_B;
+
+    const r = _renderer;
+    if (r && r.uViewMatrix) {
+      if (!this._invViewMat) this._invViewMat = new p5.Matrix();
+      this._invViewMat.set(r.uViewMatrix);
+      this._invViewMat.invert(this._invViewMat);
+      this.fillShader.setUniform('uInvViewMatrix', this._invViewMat.mat4);
+    }
+
+    this.fillShader.setUniform('uTime', millis() / 1000.0);
+    this.fillShader.setUniform('uFogDist', this._uFogDistArr);
+    this.fillShader.setUniform('uFogColor', this._uFogColorArr);
+    this.fillShader.setUniform('uSunDir', this._uSunDirArr);
+    this.fillShader.setUniform('uSunColor', this._uSunColorArr);
+    this.fillShader.setUniform('uAmbientLow', this._uAmbLowArr);
+    this.fillShader.setUniform('uAmbientHigh', this._uAmbHighArr);
+
+    // Pulse data so shockwave rings pass visibly over enemies.
+    const pulseArr = this._pulseArr;
+    for (let i = 0; i < 5; i++) {
+      const base = i * 4;
+      if (i < this.activePulses.length) {
+        pulseArr[base]     = this.activePulses[i].x;
+        pulseArr[base + 1] = this.activePulses[i].z;
+        pulseArr[base + 2] = this.activePulses[i].start;
+        pulseArr[base + 3] = this.activePulses[i].type || 0.0;
+      } else {
+        pulseArr[base]     = 0.0;
+        pulseArr[base + 1] = 0.0;
+        pulseArr[base + 2] = -9999.0;
+        pulseArr[base + 3] = 0.0;
+      }
+    }
+    this.fillShader.setUniform('uPulses', pulseArr);
+
+    // Seed with white so the first box() draw before any setFillColor() call
+    // renders as a bright, obviously-wrong colour rather than black (which
+    // would be invisible and silently mask a missing setFillColor() call).
+    // Every draw method calls setFillColor() for its first part, so this
+    // default is only ever visible if a new draw method is added without it.
+    this._uFillColorArr[0] = 1.0; this._uFillColorArr[1] = 1.0; this._uFillColorArr[2] = 1.0;
+    this.fillShader.setUniform('uFillColor', this._uFillColorArr);
+  }
+
+  /**
+   * Updates the uFillColor uniform for the currently bound fill-colour shader.
+   * Must be called immediately before drawing each box()/cylinder() body part.
+   *
+   * @param {number} r  Red channel 0–255.
+   * @param {number} g  Green channel 0–255.
+   * @param {number} b  Blue channel 0–255.
+   */
+  setFillColor(r, g, b) {
+    if (!this.fillShader) return;
+    this._uFillColorArr[0] = r / 255.0;
+    this._uFillColorArr[1] = g / 255.0;
+    this._uFillColorArr[2] = b / 255.0;
+    this.fillShader.setUniform('uFillColor', this._uFillColorArr);
+  }
+
+
 
   /**
    * Renders sets of tile overlay quads using the currently bound terrain shader.

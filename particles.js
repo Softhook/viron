@@ -71,6 +71,44 @@ for (let i = 0; i < 256; i++) {
   _EXPLOSION_WAVE_LUT[i] = 2000.0 * Math.pow(1.0 - i / 255, 0.6);
 }
 
+// -----------------------------------------------------------------------------
+// Explosion particle batching — size-bucket approach
+//
+// Each point() call in p5's WebGL mode is batched into an internal VBO.  The
+// batch is flushed to the GPU whenever strokeWeight() changes, because point
+// size is a per-program uniform, not a per-vertex attribute.  A typical
+// explosion has 400 particles, each with a unique perspective-scaled size,
+// which would trigger 400 flushes under the naïve approach.
+//
+// Fix: sort particles into 4 size buckets and render each bucket with a single
+// strokeWeight() call.  Particle colours still differ per point (stroke()),
+// but colour IS a per-vertex attribute in p5's point shader so it does not
+// force a flush.  Result: 400 draw-calls → 4 draw-calls per explosion frame.
+//
+// Layout per entry: x, y, z, r, g, b, alpha  (7 floats)
+// -----------------------------------------------------------------------------
+// Cap per bucket: sized to hold a full desktop explosion (400 particles) in the
+// worst case where all particles land in the same bucket, with a 50% safety
+// margin (600).  Four buckets × 600 = 2400 entries, well within stack budget.
+const _EXP_BUCKET_MAX = 600;
+// Representative strokeWeight for each bucket range: [1.5,4) [4,16) [16,32) [32,64].
+// Values use the geometric mean of each range (√(lo×hi)), which perceptually
+// balances the range on a log scale matching how point-size affects visuals:
+//   bucket 0: √(1.5×4)  ≈ 2.45 → 2.5
+//   bucket 1: √(4×16)   = 8.0
+//   bucket 2: √(16×32)  ≈ 22.6 → 24.0  (rounded for a clean number)
+//   bucket 3: √(32×64)  ≈ 45.3 → 48.0  (rounded for a clean number)
+// The exact weight only affects particles at bucket boundaries; mid-bucket
+// particles are rendered at the correct order-of-magnitude size.
+const _EXP_BUCKET_WEIGHTS = [2.5, 8.0, 24.0, 48.0];
+const _expBucketBufs = [
+  new Float32Array(_EXP_BUCKET_MAX * 7),
+  new Float32Array(_EXP_BUCKET_MAX * 7),
+  new Float32Array(_EXP_BUCKET_MAX * 7),
+  new Float32Array(_EXP_BUCKET_MAX * 7),
+];
+const _expBucketCounts = new Int32Array(4);
+
 /**
  * Computes the RGB colour for a soft (non-explosion) particle at normalised age `t`
  * and writes the result into the shared `_softColorBuf` to avoid per-call allocation.
@@ -482,7 +520,13 @@ class ParticleSystem {
   _drawHardGeometry(cx, cy, cz, shipX, shipZ, cullSq) {
     noLights(); noStroke();
 
-    // Explosion particles: unlit points (wave-front colour model)
+    // Explosion particles: unlit points (wave-front colour model).
+    //
+    // Sort into 4 size buckets before rendering to minimise strokeWeight()
+    // changes.  Each strokeWeight() call flushes p5's internal point VBO to
+    // the GPU, so bucketing reduces draw-calls from ~N/frame down to 4.
+    _expBucketCounts[0] = _expBucketCounts[1] = _expBucketCounts[2] = _expBucketCounts[3] = 0;
+
     for (let p of this.particles) {
       if (!p.isExplosion) continue;
       if ((p.x - shipX) ** 2 + (p.z - shipZ) ** 2 > cullSq) continue;
@@ -512,14 +556,36 @@ class ParticleSystem {
         r = p.sr; g = p.sg; b = p.sb;
       }
 
-      // One vertex per particle. Scale by camera distance for proper 3D perspective.
-      stroke(r, g, b, alpha);
+      // Perspective-scale point size. Tuning constant (750) and min-distance
+      // floor (120) prevents infinite size when the camera is inside the burst.
       const dToCam = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2 + (p.z - cz) ** 2);
-      // Tuning constant (750) and min-distance floor (120) prevents infinite size when camera is inside burst.
       const screenSz = (p.size || 10) * (750 / Math.max(dToCam, 120));
-      // Cap at 64 to avoid hitting hardware POINT_SIZE limits which differ between platforms.
-      strokeWeight(constrain(screenSz, 1.5, 64));
-      point(p.x, p.y, p.z);
+      // Clamp to [1.5, 64] to respect hardware POINT_SIZE limits.
+      const clampedSz = screenSz < 1.5 ? 1.5 : screenSz > 64 ? 64 : screenSz;
+
+      // Bucket index: 0=[1.5,4) 1=[4,16) 2=[16,32) 3=[32,64]
+      const bi = clampedSz < 4 ? 0 : clampedSz < 16 ? 1 : clampedSz < 32 ? 2 : 3;
+      const cnt = _expBucketCounts[bi];
+      if (cnt >= _EXP_BUCKET_MAX) continue; // safety cap
+      const off = cnt * 7;
+      const buf = _expBucketBufs[bi];
+      buf[off]     = p.x;     buf[off + 1] = p.y;     buf[off + 2] = p.z;
+      buf[off + 3] = r;       buf[off + 4] = g;       buf[off + 5] = b;
+      buf[off + 6] = alpha;
+      _expBucketCounts[bi]++;
+    }
+
+    // Render each size bucket with a single strokeWeight() — 4 draw calls max.
+    for (let bi = 0; bi < 4; bi++) {
+      const cnt = _expBucketCounts[bi];
+      if (cnt === 0) continue;
+      strokeWeight(_EXP_BUCKET_WEIGHTS[bi]);
+      const buf = _expBucketBufs[bi];
+      for (let i = 0; i < cnt; i++) {
+        const off = i * 7;
+        stroke(buf[off + 3], buf[off + 4], buf[off + 5], buf[off + 6]);
+        point(buf[off], buf[off + 1], buf[off + 2]);
+      }
     }
     noStroke();
 

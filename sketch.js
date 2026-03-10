@@ -44,12 +44,12 @@ function maybePlayLaunchpadAlarm() {
 }
 
 /**
- * Removes all infected tiles within a CLEAR_R-tile square around (tx, tz).
+ * Removes all infected tiles within a tile square around (tx, tz).
  */
-function clearInfectionRadius(tx, tz) {
+function clearInfectionRadius(tx, tz, radius = CLEAR_R) {
   let cleared = 0;
-  for (let dx = -CLEAR_R; dx <= CLEAR_R; dx++)
-    for (let dz = -CLEAR_R; dz <= CLEAR_R; dz++) {
+  for (let dx = -radius; dx <= radius; dx++)
+    for (let dz = -radius; dz <= radius; dz++) {
       let k = tileKey(tx + dx, tz + dz);
       if (infection.remove(k)) cleared++;
     }

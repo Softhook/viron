@@ -1161,16 +1161,10 @@ function updateProjectilePhysics(p) {
         }
       }
 
-      for (let dx = -TANK_SHELL_CLEAR_R; dx <= TANK_SHELL_CLEAR_R; dx++) {
-        for (let dz = -TANK_SHELL_CLEAR_R; dz <= TANK_SHELL_CLEAR_R; dz++) {
-          let tx = toTile(s.x) + dx;
-          let tz = toTile(s.z) + dz;
-          let k = tileKey(tx, tz);
-          if (infection.remove(k)) {
-            p.score += 50;
-            // Note: Clearing the infection automatically reverts the procedural tree on this tile to its healthy state.
-          }
-        }
+      let tx = toTile(s.x), tz = toTile(s.z);
+      let cleared = clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
+      if (cleared > 0) {
+        p.score += cleared * 50;
       }
       terrain.addPulse(s.x, s.z, 2.0);
       if (typeof gameSFX !== 'undefined') {

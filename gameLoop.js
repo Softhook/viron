@@ -166,11 +166,7 @@ class GameLoop {
           if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
           if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
           if (!infection.has(tileKey(tx, tz))) continue;
-          for (let dx = -TANK_SHELL_CLEAR_R; dx <= TANK_SHELL_CLEAR_R; dx++) {
-            for (let dz = -TANK_SHELL_CLEAR_R; dz <= TANK_SHELL_CLEAR_R; dz++) {
-              infection.remove(tileKey(tx + dx, tz + dz));
-            }
-          }
+          clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
           terrain.addPulse(ts.x, ts.z, 2.0);
           particleSystem.addExplosion(ts.x, ts.y, ts.z);
           swapRemove(player.tankShells, j);

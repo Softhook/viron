@@ -53,6 +53,143 @@ class MobileController {
         this.debug = false;
     }
 
+    _resetFrameState() {
+        this.thrustActive = false;
+        this.shootActive = false;
+        this.barrierActive = false;
+        for (let b in this.btns) this.btns[b].active = false;
+    }
+
+    _isTouchOnMissileButton(touch) {
+        return Math.hypot(touch.x - this.btns.missile.x, touch.y - this.btns.missile.y) < this.btns.missile.r * 1.7;
+    }
+
+    _trackExistingMissileTouch(touch) {
+        if (this.missileTouchId !== touch.id) return false;
+        this.btns.missile.active = true;
+        this.hasUsed.missile = true;
+        return true;
+    }
+
+    _captureNewMissileTouch(touch) {
+        if (this.missileTouchId !== null || !this._isTouchOnMissileButton(touch)) return false;
+        this.missileTouchId = touch.id;
+        this.btns.missile.active = true;
+        this.hasUsed.missile = true;
+        return true;
+    }
+
+    _isAimZoneTouch(touch, w) {
+        const onRight = touch.x > w / 2;
+        return this.isSwapped ? !onRight : onRight;
+    }
+
+    _updateAimTouch(touch) {
+        if (this.aimTouchId === touch.id) {
+            this.lastAimX = touch.x;
+            this.lastAimY = touch.y;
+
+            // Keep the virtual joystick anchor from drifting too far from the finger.
+            const offsetX = touch.x - this.aimAnchorX;
+            const offsetY = touch.y - this.aimAnchorY;
+            const stretch = Math.hypot(offsetX, offsetY);
+            const maxStretch = 100 * this._scale;
+
+            if (stretch > maxStretch) {
+                const over = stretch - maxStretch;
+                this.aimAnchorX += (offsetX / stretch) * over;
+                this.aimAnchorY += (offsetY / stretch) * over;
+            }
+
+            this.hasUsed.aim = true;
+            return true;
+        }
+
+        if (this.aimTouchId === null) {
+            this.aimTouchId = touch.id;
+            this.aimAnchorX = touch.x;
+            this.aimAnchorY = touch.y;
+            this.lastAimX = touch.x;
+            this.lastAimY = touch.y;
+            this.hasUsed.aim = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    _handleActionZoneTouch(touch, w, h) {
+        if (touch.y > h / 2) {
+            this.thrustActive = true;
+            this.hasUsed.thrust = true;
+            return;
+        }
+
+        const isShoot = this._isShootTouch(touch.x, w);
+        const isBarrier = this._isBarrierTouch(touch.x, w);
+
+        if (isShoot) {
+            this.shootActive = true;
+            this.hasUsed.shoot = true;
+        } else if (isBarrier) {
+            this.barrierActive = true;
+            this.hasUsed.barrier = true;
+        }
+    }
+
+    _isShootTouch(x, w) {
+        if (!this.isSwapped) return x < w / 4;
+        return x >= w * 0.75;
+    }
+
+    _isBarrierTouch(x, w) {
+        if (!this.isSwapped) return x >= w / 4 && x < w / 2;
+        return x >= w / 2 && x < w * 0.75;
+    }
+
+    _finalizeTrackedTouches(aimFound, missileFound) {
+        if (!aimFound) this.aimTouchId = null;
+        if (!missileFound) this.missileTouchId = null;
+    }
+
+    _buildInputs() {
+        return {
+            thrust: this.thrustActive,
+            shoot: this.shootActive,
+            missile: this.btns.missile.active,
+            barrier: this.barrierActive,
+            yawDelta: 0,
+            pitchDelta: 0,
+            assistYaw: 0,
+            assistPitch: 0
+        };
+    }
+
+    _applyAimDeltas(inputs, yawRate, pitchRate) {
+        if (this.aimTouchId === null) return;
+
+        const offsetX = this.lastAimX - this.aimAnchorX;
+        const offsetY = this.lastAimY - this.aimAnchorY;
+        const maxStretch = 100 * this._scale;
+
+        // Map virtual joystick displacement to normalized steering.
+        const turnX = constrain(offsetX / maxStretch, -1.0, 1.0);
+        const turnY = constrain(offsetY / maxStretch, -1.0, 1.0);
+
+        // Inverted: drag right turns right; drag up pitches up.
+        inputs.yawDelta = -turnX * yawRate * 1.5;
+        inputs.pitchDelta = -turnY * pitchRate * 1.5;
+    }
+
+    _applyAimAssist(inputs, ship, enemies) {
+        if (!aimAssist.enabled || !ship || !enemies) return;
+        const steerMagnitude = Math.hypot(this.lastAimX - this.aimAnchorX, this.lastAimY - this.aimAnchorY);
+        const isSteering = this.aimTouchId !== null && steerMagnitude > 5 * this._scale;
+        const assist = aimAssist.getAssistDeltas(ship, enemies, isSteering);
+        inputs.assistYaw = assist.yawDelta;
+        inputs.assistPitch = assist.pitchDelta;
+    }
+
     // -------------------------------------------------------------------------
     // Dimensions & UI Scaling
     // -------------------------------------------------------------------------
@@ -88,144 +225,38 @@ class MobileController {
 
     update(touches, w, h) {
         this._updateLayout(w, h);
-
-        // Reset states for this frame
-        this.thrustActive = false;
-        this.shootActive = false;
-        this.barrierActive = false;
-        for (let b in this.btns) this.btns[b].active = false;
+        this._resetFrameState();
 
         let aimFound = false;
         let missileFound = false;
 
         for (let i = 0; i < touches.length; i++) {
-            let t = touches[i];
+            const t = touches[i];
 
-            // If this touch is already our missile touch, keep tracking it
-            if (this.missileTouchId === t.id) {
-                this.btns.missile.active = true;
-                this.hasUsed.missile = true;
+            if (this._trackExistingMissileTouch(t)) {
                 missileFound = true;
-                continue; // Skip zone/aiming logic for this finger
+                continue;
             }
 
-            // Check if a new touch hits the missile button
-            let onMissile = false;
-            // The distance check is multiplied by 1.7 to create a larger, more forgiving hit-box
-            if (this.missileTouchId === null && Math.hypot(t.x - this.btns.missile.x, t.y - this.btns.missile.y) < this.btns.missile.r * 1.7) {
-                this.missileTouchId = t.id;
-                this.btns.missile.active = true;
-                this.hasUsed.missile = true;
+            if (this._captureNewMissileTouch(t)) {
                 missileFound = true;
-                onMissile = true;
+                continue;
             }
 
-            if (!onMissile) {
-                let onRight = t.x > w / 2;
-                let isAimZone = this.isSwapped ? !onRight : onRight;
-
-                if (isAimZone) {
-                    // Aiming half (Relative Trackpad / Floating Joystick)
-                    if (this.aimTouchId === t.id) {
-                        this.lastAimX = t.x;
-                        this.lastAimY = t.y;
-
-                        // Prevent the anchor from getting dragged completely off-screen
-                        // by pulling it if the user stretches too far.
-                        let offsetX = t.x - this.aimAnchorX;
-                        let offsetY = t.y - this.aimAnchorY;
-                        let stretch = Math.hypot(offsetX, offsetY);
-                        let maxStretch = 100 * this._scale;
-
-                        if (stretch > maxStretch) {
-                            let over = stretch - maxStretch;
-                            this.aimAnchorX += (offsetX / stretch) * over;
-                            this.aimAnchorY += (offsetY / stretch) * over;
-                        }
-
-                        this.hasUsed.aim = true;
-                        aimFound = true;
-                    } else if (this.aimTouchId === null) {
-                        this.aimTouchId = t.id;
-                        this.aimAnchorX = t.x;
-                        this.aimAnchorY = t.y;
-                        this.lastAimX = t.x;
-                        this.lastAimY = t.y;
-                        this.hasUsed.aim = true;
-                        aimFound = true;
-                    }
-                } else {
-                    // Action half (Thrust / Shoot / Barrier)
-                    if (t.y > h / 2) {
-                        this.thrustActive = true;
-                        this.hasUsed.thrust = true;
-                    } else {
-                        // Horizontal logic for Shoot/Barrier depends on swap
-                        let isShoot, isBarrier;
-                        if (!this.isSwapped) {
-                            isShoot = t.x < w / 4;
-                            isBarrier = t.x >= w / 4 && t.x < w / 2;
-                        } else {
-                            // Swapped: Right side zones. Fire in corner, Barrier left of it.
-                            isShoot = t.x >= w * 0.75;
-                            isBarrier = t.x >= w / 2 && t.x < w * 0.75;
-                        }
-
-                        if (isShoot) {
-                            this.shootActive = true;
-                            this.hasUsed.shoot = true;
-                        } else if (isBarrier) {
-                            this.barrierActive = true;
-                            this.hasUsed.barrier = true;
-                        }
-                    }
-                }
+            if (this._isAimZoneTouch(t, w)) {
+                if (this._updateAimTouch(t)) aimFound = true;
+            } else {
+                this._handleActionZoneTouch(t, w, h);
             }
         }
 
-        if (!aimFound) {
-            this.aimTouchId = null;
-        }
-        if (!missileFound) {
-            this.missileTouchId = null;
-        }
+        this._finalizeTrackedTouches(aimFound, missileFound);
     }
 
     getInputs(ship, enemies, yawRate, pitchRate) {
-        let inputs = {
-            thrust: this.thrustActive,
-            shoot: this.shootActive,
-            missile: this.btns.missile.active,
-            barrier: this.barrierActive,
-            yawDelta: 0,
-            pitchDelta: 0,
-            assistYaw: 0,
-            assistPitch: 0
-        };
-
-        if (this.aimTouchId !== null) {
-            // Floating Joystick relative movement
-            let offsetX = this.lastAimX - this.aimAnchorX;
-            let offsetY = this.lastAimY - this.aimAnchorY;
-            let maxStretch = 100 * this._scale;
-
-            // Map the offset visually to a (-1 to 1) steering multiplier
-            let turnX = constrain(offsetX / maxStretch, -1.0, 1.0);
-            let turnY = constrain(offsetY / maxStretch, -1.0, 1.0);
-
-            // Maintain continuous turning while held
-            // Inverted: drag right (X+) -> turn right (yaw-), drag up (Y-) -> turn up (pitch+)
-            inputs.yawDelta = -turnX * yawRate * 1.5;
-            inputs.pitchDelta = -turnY * pitchRate * 1.5;
-        }
-
-        // Aim Assist (only activate strong assist if the user is steering)
-        if (aimAssist.enabled && ship && enemies) {
-            let isSteering = (this.aimTouchId !== null) && (Math.hypot(this.lastAimX - this.aimAnchorX, this.lastAimY - this.aimAnchorY) > 5 * this._scale);
-            let assist = aimAssist.getAssistDeltas(ship, enemies, isSteering);
-            inputs.assistYaw = assist.yawDelta;
-            inputs.assistPitch = assist.pitchDelta;
-        }
+        const inputs = this._buildInputs();
+        this._applyAimDeltas(inputs, yawRate, pitchRate);
+        this._applyAimAssist(inputs, ship, enemies);
 
         return inputs;
     }

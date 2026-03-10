@@ -1145,8 +1145,6 @@ class Terrain {
     this.fillShader.setUniform('uFillColor', this._uFillColorArr);
   }
 
-
-
   /**
    * Renders sets of tile overlay quads using the currently bound terrain shader.
    *
@@ -1701,68 +1699,29 @@ class Terrain {
   }
 
   /**
-   * Draws a single cached projected shadow for a tree.
-   * Hull is computed once and stored on the tree object (static geometry, fixed sun).
+   * Ensures the shadow geometry for a static building (types 0, 1, 2, 4) is baked
+   * and cached. Handles sun-change invalidation, hull init, and geometry baking.
+   * Type 3 (floating UFO) has an animated caster height and is handled separately.
+   * @param {{}} b       Building descriptor from gameState.buildings.
+   * @param {number} groundY  Ground Y for the bake.
+   * @param {{}} sun     Sun shadow basis from _getSunShadowBasis().
+   * @param {boolean} inf  Whether the building tile is currently infected.
    */
-  _drawTreeShadow(t, groundY, sun) {
-    this._ensureTreeShadowBaked(t, sun);
-    if (!t._shadowGeom) return;
-
-    const casterH = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
-    const shadowAlpha = TREE_SHADOW_BASE_ALPHA * this._shadowOpacityFactor(casterH);
-    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
-    if (lightsWereOn) noLights();
-    noStroke();
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-
-    _beginShadowStencil();
-    push();
-    model(t._shadowGeom);
-    pop();
-    _endShadowStencil();
-    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
-  }
-
-  /**
-   * Draws a single cached projected shadow for a building.
-   *
-   * Previous design had 2-3 overlapping draw calls per building causing:
-   *   • Composited alpha overlap (type 4 reached ~70% opacity at center — unphysical)
-   *   • 2-3× more WebGL draw calls per building per frame
-   *   • O(n log n) convex hull recomputed every frame for static geometry
-   *
-   * New design: one shadow hull per building, cached after first frame,
-   * sky-tinted dark-blue shadow color (physical: sky fill colors the shadow).
-   */
-  _drawBuildingShadow(b, groundY, inf, sun) {
-    const bw = b.w, bh = b.h, bd = b.d;
-
-    // If the sun has moved since we last baked this shadow, invalidate the cached 
-    // geometry so it re-builds at the new solar angle.
+  _ensureBuildingShadowBaked(b, groundY, sun, inf) {
+    // Invalidate cached geometry when the sun angle changes.
     if (b._bakedSun && (b._bakedSun.x !== sun.x || b._bakedSun.y !== sun.y || b._bakedSun.z !== sun.z)) {
       b._shadowGeom = null;
-      b._shadowBakeFails = 0; // sun changed → fresh bake attempt; reset failure count
+      b._shadowBakeFails = 0;
     }
 
-    // Type 3 (floating UFO): animated caster height — cannot cache hull.
-    if (b.type === 3) {
-      const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
-      const casterH = max(35, groundY - floatY);
-      this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun, true);
-      return;
-    }
-
-    // Static types (0, 1, 2, 4): compute hull once, cache on the building object.
-    // Sun direction and building position are both constant, so the hull never changes.
     if (!b._shadowHull) {
+      const bw = b.w, bh = b.h, bd = b.d;
       let footprint, casterH;
       if (b.type === 0) {
-        // Geometric structure: rectangular shadow at full height (body + funnel)
         const hw = bw * 0.5, hd = bd * 0.5;
         footprint = [{ x: -hw, z: -hd }, { x: hw, z: -hd }, { x: hw, z: hd }, { x: -hw, z: hd }];
         casterH = bh + bw * 0.35;
       } else if (b.type === 1) {
-        // Water tower: ellipse shadow at full height (cylinder + sphere dome)
         footprint = [];
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * TWO_PI;
@@ -1770,12 +1729,11 @@ class Terrain {
         }
         casterH = bh + bw * 0.5;
       } else if (b.type === 2) {
-        // Industrial complex: wide rectangular shadow at full smokestack height
         const hw = bw * 0.75, hd = bd * 0.75;
         footprint = [{ x: -hw, z: -hd }, { x: hw, z: -hd }, { x: hw, z: hd }, { x: -hw, z: hd }];
         casterH = bh;
       } else {
-        // Type 4 — sentinel tower: ellipse shadow at full tower height
+        // Type 4 — sentinel tower
         footprint = [];
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * TWO_PI;
@@ -1788,56 +1746,50 @@ class Terrain {
       b._shadowHull = true;
     }
 
-    const casterHForOpacity = b._shadowCasterH || b.h;
+    const casterH = b._shadowCasterH || b.h;
     const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
 
-    // b._shadowGeom lifecycle:
-    //   undefined  → not yet attempted
-    //   null       → invalidated or bake failed (but not exhausted); rebuild next frame
-    //   false      → bake permanently skipped (degenerate hull or failures exhausted)
-    //   p5.Geometry → valid cached shadow mesh
+    // b._shadowGeom lifecycle mirrors tree shadow lifecycle (see _ensureTreeShadowBaked).
     if (b._shadowGeom == null && !this._isBuildingShadow) {
       if (!sun || !b._footprint) return;
       this._isBuildingShadow = true;
       try {
         b._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        let built = _safeBuildGeometry(() => {
-          this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterHForOpacity, b._footprint, baseAlpha, sun, false, true);
+        const built = _safeBuildGeometry(() => {
+          this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterH, b._footprint, baseAlpha, sun, false, true);
         });
-        // Use false (not null) for an empty result so the == null guard above
-        // won't trigger a rebuild every frame for a permanently-degenerate hull.
-        const bGeom = (built && built.vertices.length) ? built : false;
-        b._shadowGeom = bGeom;
-        if (bGeom) b._shadowBakeFails = 0;
+        b._shadowGeom = (built && built.vertices.length) ? built : false;
+        if (b._shadowGeom) b._shadowBakeFails = 0;
       } catch (err) {
         console.error("[Viron] Shadow bake failed for building:", err);
         b._shadowBakeFails = (b._shadowBakeFails || 0) + 1;
-        // Give up after 3 failures to avoid calling buildGeometry every frame.
         b._shadowGeom = (b._shadowBakeFails >= 3) ? false : null;
       } finally {
         this._isBuildingShadow = false;
       }
     }
-
-    if (!b._shadowGeom) return;
-
-    const shadowAlpha = baseAlpha * this._shadowOpacityFactor(casterHForOpacity);
-    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
-    if (lightsWereOn) noLights();
-    noStroke();
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
-
-    _beginShadowStencil();
-
-    push();
-    model(b._shadowGeom);
-    pop();
-
-    _endShadowStencil();
-    if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
   }
 
-
+  /**
+   * Draws a single cached projected shadow for a building.
+   *
+   * Previous design had 2-3 overlapping draw calls per building causing:
+   *   • Composited alpha overlap (type 4 reached ~70% opacity at center — unphysical)
+   *   • 2-3× more WebGL draw calls per building per frame
+   *   • O(n log n) convex hull recomputed every frame for static geometry
+   *
+   * New design: one shadow hull per building, cached after first frame.
+   * Only used for type 3 (animated UFO) which cannot be batched; the caller in
+   * drawBuildings guards `b.type === 3` before invoking this. Static types
+   * (0, 1, 2, 4) are now batched in drawBuildings via _ensureBuildingShadowBaked.
+   */
+  _drawBuildingShadow(b, groundY, sun) {
+    // Caller guarantees b.type === 3.
+    const bw = b.w, bh = b.h;
+    const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
+    const casterH = max(35, groundY - floatY);
+    this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun, true);
+  }
 
   _getPowerupGeom(b, inf) {
     const key = `pu_${(b.w).toFixed(1)}_${(b.h).toFixed(1)}_${inf}`;
@@ -2113,16 +2065,38 @@ class Terrain {
 
       pop();
 
-      // Defer ground shadow drawing
+      // Defer ground shadow drawing; store inf so baking can use the right alpha.
       if (dSq < 2250000) shadowQueue.push({ b, y, inf });
     }
 
     resetShader();
     setSceneLighting();
 
-    for (let q of shadowQueue) {
-      this._drawBuildingShadow(q.b, q.y, q.inf, sun);
+    // Draw building shadows in a single batched pass.
+    // Type 3 (floating UFO) cannot be cached — draw it immediately via its own stencil.
+    // All other types bake once and render under one shared stencil setup.
+    // Shadow alpha is baked into vertex colors by _drawProjectedFootprintShadow
+    // (isBaking=true), so no per-building fill() is needed in the render loop.
+    noLights(); noStroke();
+    for (const q of shadowQueue) {
+      if (q.b.type === 3) {
+        // UFO: animated shadow, handled individually (includes its own stencil setup).
+        this._drawBuildingShadow(q.b, q.y, sun);
+      } else {
+        this._ensureBuildingShadowBaked(q.b, q.y, sun, q.inf);
+      }
     }
+
+    _beginShadowStencil();
+    for (const q of shadowQueue) {
+      if (q.b.type !== 3 && q.b._shadowGeom) {
+        push();
+        model(q.b._shadowGeom);
+        pop();
+      }
+    }
+    _endShadowStencil();
+    setSceneLighting();
   }
 }
 

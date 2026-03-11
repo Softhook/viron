@@ -69,16 +69,15 @@ void main() {
   float b = texture2D(uTex, duv + caOffset).b;
   vec3 col = vec3(r, g, b);
   
-  // 3. Extravagant Anamorphic Lens Flare
+  // 3. Extravagant Anamorphic Lens Flare (Optimized)
   vec3 flare = vec3(0.0);
   float wSum = 0.0;
-  // Horizontal streak for high intensity pixels
-  for(int i = -16; i <= 16; i++) {
-    float w = exp(-abs(float(i)) * 0.18);
-    vec2 off = vec2(float(i) * 0.015, 0.0);
+  // Horizontal streak for high intensity pixels, reduced to 7 taps instead of 33 for GPU performance
+  for(int i = -3; i <= 3; i++) {
+    float w = exp(-abs(float(i)) * 0.5);
+    vec2 off = vec2(float(i) * 0.08, 0.0);
     vec3 smp = texture2D(uTex, fract(duv + off)).rgb;
-    float luma = dot(smp, vec3(0.299, 0.587, 0.114));
-    vec3 hl = max(vec3(0.0), smp - 0.7) * 2.5; 
+    vec3 hl = max(vec3(0.0), smp - 0.6) * 2.0; 
     flare += hl * w;
     wSum += w;
   }

@@ -166,14 +166,13 @@ float noise2D(vec2 p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Fractional Brownian Motion (3 octaves)
+// Fractional Brownian Motion (2 octaves for speed)
 float fbm(vec2 p) {
   float v = 0.0;
   float a = 0.5;
   vec2 shift = vec2(100.0);
-  // Rotate to reduce axial bias
-  mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
-  for (int i = 0; i < 3; ++i) {
+  mat2 rot = mat2(0.877, 0.479, -0.479, 0.877); // Precalculated cos/sin 0.5
+  for (int i = 0; i < 2; ++i) { // Reduced to 2 octaves
     v += a * noise2D(p);
     p = rot * p * 2.0 + shift;
     a *= 0.5;
@@ -249,8 +248,8 @@ void main() {
     if (noiseFade > 0.0) {
       vec2 wPos = vWorldPos.xz * 0.06;
       float t = uTime * 0.4;
-      float n1 = fbm(wPos + vec2(t, t * 0.5));
-      float n2 = fbm(wPos - vec2(t * 0.8, -t * 0.3) + n1 * 2.0);
+      float n1 = noise2D(wPos + vec2(t, t * 0.5));
+      float n2 = noise2D(wPos - vec2(t * 0.8, -t * 0.3) + vec2(n1 * 2.0)); // Fixed vec2 + float error
       
       // Dynamic normal mapping for highly realistic reactive water ripples!
       n.x += (n1 - 0.5) * 0.4 * noiseFade;
@@ -301,15 +300,11 @@ void main() {
       float tDist = gl_FragCoord.z / gl_FragCoord.w;
       float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
       if (noiseFade > 0.0) {
-        // Completely organic, non-repeating multi-frequency FBM layering
-        float f1 = fbm(vWorldPos.xz * 0.03);
-        float f2 = fbm(vWorldPos.xz * 0.13 + vec2(42.1, 13.7));
+        // Significantly reduced noise calls for real-time playability
+        float f1 = noise2D(vWorldPos.xz * 0.03);
+        float f2 = noise2D(vWorldPos.xz * 0.13 + vec2(42.1, 13.7));
         
-        // Rotate the high frequency layer 45 degrees to destroy value noise's inherent X/Z grid alignment
-        vec2 pR = vec2(vWorldPos.x * 0.707 - vWorldPos.z * 0.707, vWorldPos.x * 0.707 + vWorldPos.z * 0.707);
-        float f3 = noise2D(pR * 1.5);
-        
-        float ruggedNoise = f1 * 0.5 + f2 * 0.35 + f3 * 0.15;
+        float ruggedNoise = f1 * 0.6 + f2 * 0.4;
         
         // Bump Mapping! Physically tilt lighting normal based on procedural terrain
         n.x += (f1 - 0.5) * 0.3 * noiseFade * (1.0 + cliffBlend * 1.5);

@@ -49,51 +49,20 @@ void main() {
   vec2 uv = vTexCoord;
   // uv.y = 1.0 - uv.y; // removed
 
-  // 1. Extreme Lens Distortion (Barrel/Pincushion) & Chromatic Aberration
+  // 1. Base UVs and radius calculation
   vec2 nuv = uv - 0.5;
   float r2 = dot(nuv, nuv);
-  float f = 1.0 + r2 * 0.15 + (sin(uTime) * 0.05); // Pulsing barrel distortion
-  vec2 duv = nuv * f + 0.5;
-  
-  if (duv.x < 0.0 || duv.x > 1.0 || duv.y < 0.0 || duv.y > 1.0) {
-    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-    return;
-  }
-  
-  // 2. Psychedelic Chromatic Aberration
-  float caSpread = 0.02 + 0.01 * sin(uTime * 2.5 + r2 * 20.0); // Wavy CA
-  vec2 caOffset = normalize(nuv) * caSpread * pow(r2, 1.5); 
+  vec2 duv = uv;
+  // 2. Simple Chromatic Aberration
+  float caSpread = 0.01;
+  vec2 caOffset = normalize(nuv) * caSpread * r2; 
   
   float r = texture2D(uTex, duv - caOffset).r;
   float g = texture2D(uTex, duv).g;
   float b = texture2D(uTex, duv + caOffset).b;
   vec3 col = vec3(r, g, b);
+  // 3. Anamorphic Lens Flare removed
   
-  // 3. Extravagant Anamorphic Lens Flare (Optimized)
-  vec3 flare = vec3(0.0);
-  float wSum = 0.0;
-  // Horizontal streak for high intensity pixels, reduced to 7 taps instead of 33 for GPU performance
-  for(int i = -3; i <= 3; i++) {
-    float w = exp(-abs(float(i)) * 0.5);
-    vec2 off = vec2(float(i) * 0.08, 0.0);
-    vec3 smp = texture2D(uTex, fract(duv + off)).rgb;
-    vec3 hl = max(vec3(0.0), smp - 0.6) * 2.0; 
-    flare += hl * w;
-    wSum += w;
-  }
-  flare /= wSum;
-  
-  // Add anamorphic blue/cyan tint
-  col += flare * vec3(0.1, 0.6, 1.5) * 1.8; 
-
-  // 4. Ghosting Lens Flare (Removed due to inverted duplicate image)
-  // vec2 ghostA = 1.0 - duv;
-  // vec2 ghostB = 0.5 + (0.5 - duv) * 0.5;
-  // vec3 ghColor = texture2D(uTex, ghostA).rgb;
-  // vec3 ghColor2 = texture2D(uTex, ghostB).rgb;
-  // col += max(vec3(0.0), ghColor - 0.5) * vec3(1.0, 0.5, 0.2) * 0.4;
-  // col += max(vec3(0.0), ghColor2 - 0.6) * vec3(0.2, 0.8, 1.0) * 0.3;
-
   // 5. Tonal Shifts & Dramatic Coloring (Psychedelic Modulations)
   float hueShiftX = sin(uTime * 1.1 + uv.x * 5.0) * 0.15;
   float hueShiftY = cos(uTime * 0.8 + uv.y * 4.0) * 0.15;
@@ -111,9 +80,7 @@ void main() {
   // 6. ACES Filmic Tone Mapping
   col = ACESFilm(col * 1.3); // Expose up slightly before tonemapping
   
-  // 7. Epic Vignette
-  float vig = 1.0 - smoothstep(0.3, 1.5, length(nuv));
-  col *= vig;
+  // 7. Vignette removed
   
   // 8. Film Grain & Scanlines
   float grain = hash21(uv * (uTime + 1.0));
@@ -478,6 +445,7 @@ class GameRenderer {
     if (!window._perf) {
       window._perf = {
         buf: new Float32Array(60),
+        sortedBuf: new Float32Array(60),
         idx: 0,
         full: false,
         budgetMs: 1000 / 60,
@@ -496,8 +464,9 @@ class GameRenderer {
     if (perf.idx === 0) perf.full = true;
 
     if (!perf.budgetSet && perf.full) {
-      const sorted = perf.buf.slice().sort();
-      const medMs = (sorted[29] + sorted[30]) / 2;
+      perf.sortedBuf.set(perf.buf);
+      perf.sortedBuf.sort();
+      const medMs = (perf.sortedBuf[29] + perf.sortedBuf[30]) / 2;
       const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
       perf.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
       if (!gameState.isMobile) perf.budgetMs = Math.max(perf.budgetMs, 1000 / 60);
@@ -508,8 +477,9 @@ class GameRenderer {
     if (!perf.full || now < perf.nextEval) return;
     perf.nextEval = now + 2000;
 
-    const sorted = perf.buf.slice().sort();
-    const p90ms = sorted[53];
+    perf.sortedBuf.set(perf.buf);
+    perf.sortedBuf.sort();
+    const p90ms = perf.sortedBuf[53];
     const canRestore = now >= perf.cooldown;
 
     if (p90ms > perf.budgetMs * profile.reduceRatio) {

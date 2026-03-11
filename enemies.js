@@ -20,7 +20,7 @@
 const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
 
 // Uniform scale applied to every enemy mesh in both rendering passes.
-const ENEMY_DRAW_SCALE = 2;
+const ENEMY_DRAW_SCALE = 4;
 
 // Colossus progression: HP increases by 30 each spawn. Size scales linearly by tier,
 // but is capped to avoid runaway boss dimensions that break camera/collision fairness.

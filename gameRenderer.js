@@ -26,6 +26,7 @@ varying vec2 vTexCoord;
 uniform sampler2D uTex;
 uniform float uTime;
 uniform vec2 uResolution;
+uniform bool uIsMobile;
 
 // ACES tonemapping
 vec3 ACESFilm(vec3 x) {
@@ -39,6 +40,9 @@ vec3 ACESFilm(vec3 x) {
 
 void main() {
   vec2 uv = vTexCoord;
+  if (uIsMobile) {
+      uv.y = 1.0 - uv.y;
+  }
 
   // 1. Read Base Texture
   vec3 col = texture2D(uTex, uv).rgb;
@@ -333,6 +337,7 @@ class GameRenderer {
     this.postShader.setUniform('uTex', this.masterFBO);
     this.postShader.setUniform('uTime', millis() / 1000.0);
     this.postShader.setUniform('uResolution', [width, height]);
+    this.postShader.setUniform('uIsMobile', gameState.isMobile);
     
     noStroke();
     rectMode(CENTER);

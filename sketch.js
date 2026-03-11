@@ -148,6 +148,11 @@ function setup() {
 
   gameState.sentinelBuildings = gameState.buildings.filter(b => b.type === 4);
   gameState.mode = 'menu';
+  if (window.BENCHMARK && window.BENCHMARK.setup) {
+    startGame(1);
+    gameState.mode = 'playing'; // To skip shipselect usually handled by shipselect screen
+    startLevel(1);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -182,6 +187,18 @@ function draw() {
   if (gameState.mode === 'menu') { drawMenu(); return; }
   if (gameState.mode === 'instructions') { drawInstructions(); return; }
   if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
+
+  if (window.BENCHMARK && window.BENCHMARK.active) {
+    if (!window.BENCHMARK.frames) window.BENCHMARK.frames = 0;
+    if (!window.BENCHMARK.startTime) window.BENCHMARK.startTime = performance.now();
+    window.BENCHMARK.frames++;
+    if (window.BENCHMARK.frames === 120) { // Run for 120 frames
+      let totalTime = performance.now() - window.BENCHMARK.startTime;
+      let avgMs = totalTime / 120;
+      console.log('BENCHMARK_DONE:' + avgMs.toFixed(2));
+      window.BENCHMARK.active = false;
+    }
+  }
 
   const profiler = getVironProfiler();
   const frameStart = profiler ? performance.now() : 0;

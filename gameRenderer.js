@@ -37,58 +37,21 @@ vec3 ACESFilm(vec3 x) {
     return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
 }
 
-// Pseudo-random noise
-float hash21(vec2 p) {
-    p = fract(p * vec2(12.9898, 78.233));
-    p += dot(p, p + 34.19);
-    return fract(p.x * p.y);
-}
-
 void main() {
-  // WebGL FBO via p5 rect() and ortho() might not require y-flip.
   vec2 uv = vTexCoord;
-  // uv.y = 1.0 - uv.y; // removed
 
-  // 1. Base UVs and radius calculation
-  vec2 nuv = uv - 0.5;
-  float r2 = dot(nuv, nuv);
-  vec2 duv = uv;
-  // 2. Simple Chromatic Aberration
-  float caSpread = 0.01;
-  vec2 caOffset = normalize(nuv) * caSpread * r2; 
+  // 1. Read Base Texture
+  vec3 col = texture2D(uTex, uv).rgb;
   
-  float r = texture2D(uTex, duv - caOffset).r;
-  float g = texture2D(uTex, duv).g;
-  float b = texture2D(uTex, duv + caOffset).b;
-  vec3 col = vec3(r, g, b);
-  // 3. Anamorphic Lens Flare removed
-  
-  // 5. Tonal Shifts & Dramatic Coloring (Psychedelic Modulations)
-  float hueShiftX = sin(uTime * 1.1 + uv.x * 5.0) * 0.15;
-  float hueShiftY = cos(uTime * 0.8 + uv.y * 4.0) * 0.15;
-  
-  mat3 shift = mat3(
-      1.0 + hueShiftX, -hueShiftY, 0.0,
-      hueShiftY, 1.0 + hueShiftX, -hueShiftX,
-      -hueShiftX, hueShiftY, 1.0 + hueShiftY
-  );
-  col = clamp(col * shift, 0.0, 10.0);
-  
-  // Boost contrast for Hollywood look
+  // 5. Boost contrast for Hollywood look
   col = mix(col, col * col * (3.0 - 2.0 * clamp(col, 0.0, 1.0)), 0.6);
   
   // 6. ACES Filmic Tone Mapping
-  col = ACESFilm(col * 1.3); // Expose up slightly before tonemapping
+  col = ACESFilm(col * 1.3);
   
-  // 7. Vignette removed
-  
-  // 8. Film Grain & Scanlines
-  float grain = hash21(uv * (uTime + 1.0));
-  col += (grain - 0.5) * 0.08;
-  
-  // Subtle holographic scanlines
+  // 8. Subtle holographic scanlines (Simplified without length())
   float scanline = sin(uv.y * uResolution.y * 2.0) * 0.03;
-  col -= scanline * max(0.0, 1.0 - length(col)*0.5);
+  col -= scanline; // Fixed subtractive blend
 
   gl_FragColor = vec4(col, 1.0);
 }

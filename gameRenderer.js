@@ -43,11 +43,11 @@ void main() {
   // 1. Read Base Texture
   vec3 col = texture2D(uTex, uv).rgb;
   
-  // 5. Boost contrast for Hollywood look
-  col = mix(col, col * col * (3.0 - 2.0 * clamp(col, 0.0, 1.0)), 0.6);
+  // 5. Mild contrast boost to prevent bleaching
+  col = mix(col, col * col * (3.0 - 2.0 * clamp(col, 0.0, 1.0)), 0.2);
   
-  // 6. ACES Filmic Tone Mapping
-  col = ACESFilm(col * 1.3);
+  // 6. ACES Filmic Tone Mapping (lower exposure to recover highlights)
+  col = ACESFilm(col * 0.95);
   
   // 8. Subtle holographic scanlines (Simplified without length())
   float scanline = sin(uv.y * uResolution.y * 2.0) * 0.03;

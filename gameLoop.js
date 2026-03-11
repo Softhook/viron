@@ -205,6 +205,7 @@ class GameLoop {
     }
 
     // 2, 3, 4. Player weapons vs enemies
+    let enemyScaleSq = Math.pow(ENEMY_DRAW_SCALE / 2, 2);
     for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
       let e = enemyManager.enemies[j];
       let killed = false;
@@ -212,7 +213,7 @@ class GameLoop {
       // Player bullets vs enemy
       for (let i = player.bullets.length - 1; i >= 0; i--) {
         let b = player.bullets[i];
-        let hitRadSq = e.type === 'colossus' ? (90000 * this._colossusScaleSq(e)) : 6400;
+        let hitRadSq = (e.type === 'colossus' ? (90000 * this._colossusScaleSq(e)) : 6400) * enemyScaleSq;
         if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < hitRadSq) {
           if (e.type === 'colossus') {
             swapRemove(player.bullets, i);
@@ -232,7 +233,7 @@ class GameLoop {
       if (!killed) {
         for (let i = player.homingMissiles.length - 1; i >= 0; i--) {
           let m = player.homingMissiles[i];
-          let hitRadSq = e.type === 'colossus' ? (160000 * this._colossusScaleSq(e)) : 10000;
+          let hitRadSq = (e.type === 'colossus' ? (160000 * this._colossusScaleSq(e)) : 10000) * enemyScaleSq;
           if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < hitRadSq) {
             if (e.type === 'colossus') {
               swapRemove(player.homingMissiles, i);
@@ -253,7 +254,7 @@ class GameLoop {
       if (!killed) {
         for (let i = player.tankShells.length - 1; i >= 0; i--) {
           let s2 = player.tankShells[i];
-          let hitRadSq = e.type === 'colossus' ? (250000 * this._colossusScaleSq(e)) : 22500;
+          let hitRadSq = (e.type === 'colossus' ? (250000 * this._colossusScaleSq(e)) : 22500) * enemyScaleSq;
           if ((s2.x - e.x) ** 2 + (s2.y - e.y) ** 2 + (s2.z - e.z) ** 2 < hitRadSq) {
             if (e.type === 'colossus') {
               swapRemove(player.tankShells, i);
@@ -271,7 +272,7 @@ class GameLoop {
       }
 
       // Enemy body vs player ship
-      let bodyRadSq = e.type === 'colossus' ? (90000 * this._colossusScaleSq(e)) : 4900;
+      let bodyRadSq = (e.type === 'colossus' ? (90000 * this._colossusScaleSq(e)) : 4900) * enemyScaleSq;
       if (!killed && ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < bodyRadSq)) {
         killPlayer(player);
         return;

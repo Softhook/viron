@@ -87,10 +87,14 @@ function setup() {
   isAndroid = gameState.isAndroid;
 
   if (gameState.isMobile) {
-    VIEW_NEAR = 20;
-    VIEW_FAR = 30;
-    CULL_DIST = 3500;
+    VIEW_NEAR = MOBILE_VIEW_LIMITS.near;
+    VIEW_FAR = MOBILE_VIEW_LIMITS.far;
+    CULL_DIST = MOBILE_VIEW_LIMITS.cull;
     pixelDensity(1);
+  } else {
+    VIEW_NEAR = DESKTOP_VIEW_LIMITS.near;
+    VIEW_FAR = DESKTOP_VIEW_LIMITS.far;
+    CULL_DIST = DESKTOP_VIEW_LIMITS.cull;
   }
 
   setAttributes('stencil', true);

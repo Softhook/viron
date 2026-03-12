@@ -1112,7 +1112,7 @@ class Terrain {
 
     // Fill pre-allocated uniform buffers in-place — avoids allocating a new JS
     // array literal for every setUniform() call each frame.
-    this._uFogDistArr[0] = fogFar - 800; this._uFogDistArr[1] = fogFar + 400;
+    this._uFogDistArr[0] = fogFar - 1500; this._uFogDistArr[1] = fogFar;
     this._uFogColorArr[0] = SKY_R / 255.0; this._uFogColorArr[1] = SKY_G / 255.0; this._uFogColorArr[2] = SKY_B / 255.0;
     // SUN_DIR_NX/NY/NZ are the pre-normalized sun direction constants.
     this._uSunDirArr[0] = SUN_DIR_NX; this._uSunDirArr[1] = SUN_DIR_NY; this._uSunDirArr[2] = SUN_DIR_NZ;

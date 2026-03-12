@@ -364,17 +364,13 @@ class GameRenderer {
       return {
         reduceRatio: 1.40,
         restoreRatio: 1.15,
-        minNear: 15,
-        minFar: 20,
-        minCull: 2000,
+        limits: MOBILE_VIEW_LIMITS
       };
     }
     return {
       reduceRatio: 1.55,
       restoreRatio: 1.08,
-      minNear: 24,
-      minFar: 34,
-      minCull: 4200,
+      limits: DESKTOP_VIEW_LIMITS
     };
   }
 
@@ -392,9 +388,9 @@ class GameRenderer {
    * @private
    */
   _applyPerfReduction(perf, now, profile) {
-    VIEW_NEAR = max(profile.minNear, VIEW_NEAR - 1);
-    VIEW_FAR = max(profile.minFar, VIEW_FAR - 1);
-    CULL_DIST = max(profile.minCull, CULL_DIST - 250);
+    VIEW_NEAR = max(profile.limits.near / 2, VIEW_NEAR - 1);
+    VIEW_FAR = max(profile.limits.far / 2, VIEW_FAR - 1);
+    CULL_DIST = max(profile.limits.cull / 2, CULL_DIST - 250);
     perf.cooldown = now + 6000;
     this._resetPerfCounters(perf);
   }
@@ -403,10 +399,10 @@ class GameRenderer {
    * Applies one quality-level restoration step.
    * @private
    */
-  _applyPerfRestore(perf, now) {
-    VIEW_NEAR = min(35, VIEW_NEAR + 1);
-    VIEW_FAR = min(50, VIEW_FAR + 1);
-    CULL_DIST = min(6000, CULL_DIST + 150);
+  _applyPerfRestore(perf, now, profile) {
+    VIEW_NEAR = min(profile.limits.near, VIEW_NEAR + 1);
+    VIEW_FAR = min(profile.limits.far, VIEW_FAR + 1);
+    CULL_DIST = min(profile.limits.cull, CULL_DIST + 150);
     perf.cooldown = now + 4000;
     this._resetPerfCounters(perf);
   }
@@ -470,7 +466,7 @@ class GameRenderer {
     if (perf.overBudgetEvals >= 2) {
       this._applyPerfReduction(perf, now, profile);
     } else if (perf.underBudgetEvals >= 3) {
-      this._applyPerfRestore(perf, now);
+      this._applyPerfRestore(perf, now, profile);
     }
   }
 

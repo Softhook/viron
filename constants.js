@@ -14,8 +14,11 @@ const DRAG = 0.992;            // Global air resistance (higher = thinner air, m
 const INDUCED_DRAG = 0.002;    // Extra drag proportional to how much lift is being generated
 
 // --- Rendering distances (can be adjusted dynamically for performance) ---
+const DESKTOP_VIEW_LIMITS = { far: 80, near: 60, cull: 10000 };
+const MOBILE_VIEW_LIMITS  = { far: 30, near: 20, cull: 3500 };
+
 let VIEW_NEAR = 35;            // Inner tile radius — always rendered, no frustum test
-let VIEW_FAR = 50;            // Outer tile radius — rendered with frustum culling
+let VIEW_FAR = 50;             // Outer tile radius — rendered with frustum culling
 let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
 
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---

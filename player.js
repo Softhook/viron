@@ -877,8 +877,18 @@ function _updateAircraft(p, d, isThrusting, isBraking) {
 
   // Terrain collision — soft bounce or kill on hard impact
   let g = terrain.getAltitude(s.x, s.z);
+
+  // --- Ground Effect Cushion ---
+  // Apply a slight upward force when descending near the ground.
+  // This makes it easier to flare for a soft landing.
+  let distToGround = g - s.y;
+  if (distToGround < 40 && s.vy > 0) {
+    let cushion = (1.0 - (distToGround / 40)) * 0.08;
+    s.vy = Math.max(0, s.vy - cushion);
+  }
+
   if (s.y > g - 12) {
-    if (s.vy > 2.8) killPlayer(p);
+    if (s.vy > 4.2) killPlayer(p);
     else { s.y = g - 12; s.vy = 0; s.vx *= 0.8; s.vz *= 0.8; }
   }
   return false;

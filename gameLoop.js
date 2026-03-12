@@ -14,6 +14,64 @@ class GameLoop {
   }
 
   /**
+   * Resolves a sphere-to-sphere collision by pushing the ship out along the normal.
+   * @private
+   */
+  static _resolveSphereCollision(s, ox, oy, oz, or, sr) {
+    let dx = s.x - ox, dy = s.y - oy, dz = s.z - oz;
+    let distSq = dx * dx + dy * dy + dz * dz;
+    let minD = or + sr;
+    if (distSq < minD * minD && distSq > 0) {
+      let d = Math.sqrt(distSq);
+      let overlap = minD - d;
+      let nx = dx / d, ny = dy / d, nz = dz / d;
+      s.x += nx * overlap; s.y += ny * overlap; s.z += nz * overlap;
+      // Dampen velocity along normal
+      let dot = s.vx * nx + s.vy * ny + s.vz * nz;
+      if (dot < 0) {
+        s.vx -= nx * dot * 1.8;
+        s.vy -= ny * dot * 1.8;
+        s.vz -= nz * dot * 1.8;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Resolves an AABB-to-sphere collision by pushing the ship to the nearest face.
+   * bX, bY, bZ is the BOX CENTER.
+   * @private
+   */
+  static _resolveAABBCollision(s, bx, by, bz, hw, hh, hd, sr) {
+    let dx = s.x - bx, dy = s.y - by, dz = s.z - bz;
+    let closestX = constrain(dx, -hw, hw);
+    let closestY = constrain(dy, -hh, hh);
+    let closestZ = constrain(dz, -hd, hd);
+    let distVecX = dx - closestX, distVecY = dy - closestY, distVecZ = dz - closestZ;
+    let distSq = distVecX * distVecX + distVecY * distVecY + distVecZ * distVecZ;
+
+    if (distSq < sr * sr) {
+      let d = Math.sqrt(distSq);
+      if (d === 0) {
+        // Center of sphere is inside box; push out along the shallowest axis
+        let absX = hw - Math.abs(dx), absY = hh - Math.abs(dy), absZ = hd - Math.abs(dz);
+        if (absX < absY && absX < absZ) { s.x += (dx > 0 ? absX + sr : -absX - sr); s.vx = 0; }
+        else if (absY < absX && absY < absZ) { s.y += (dy > 0 ? absY + sr : -absY - sr); s.vy = 0; }
+        else { s.z += (dz > 0 ? absZ + sr : -absZ - sr); s.vz = 0; }
+      } else {
+        let overlap = sr - d;
+        let nx = distVecX / d, ny = distVecY / d, nz = distVecZ / d;
+        s.x += nx * overlap; s.y += ny * overlap; s.z += nz * overlap;
+        let dot = s.vx * nx + s.vy * ny + s.vz * nz;
+        if (dot < 0) { s.vx -= nx * dot * 1.8; s.vy -= ny * dot * 1.8; s.vz -= nz * dot * 1.8; }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Spreads infection one step every 5 frames using 4-connected flood-fill.
    * Also checks game-over conditions.
    * @public
@@ -205,13 +263,13 @@ class GameLoop {
       }
     }
 
-    // 2, 3, 4. Player weapons vs enemies
+    // 2, 3, 4. Enemy body and weapons vs player
     let enemyScaleSq = Math.pow(ENEMY_DRAW_SCALE / 2, 2);
     for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
       let e = enemyManager.enemies[j];
       let killed = false;
 
-      // Player bullets vs enemy
+      // Player bullets/missiles vs enemy (unchanged hit detection)
       for (let i = player.bullets.length - 1; i >= 0; i--) {
         let b = player.bullets[i];
         let hitRadSq = (e.type === 'colossus' ? (90000 * this._colossusScaleSq(e)) : 6400) * enemyScaleSq;
@@ -222,16 +280,12 @@ class GameLoop {
           } else {
             particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
             if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(5);
-            swapRemove(enemyManager.enemies, j);
-            swapRemove(player.bullets, i);
-            player.score += 100;
-            killed = true;
+            swapRemove(enemyManager.enemies, j); swapRemove(player.bullets, i);
+            player.score += 100; killed = true;
           }
           break;
         }
       }
-
-      // Player missiles vs enemy
       if (!killed) {
         for (let i = player.homingMissiles.length - 1; i >= 0; i--) {
           let m = player.homingMissiles[i];
@@ -243,17 +297,13 @@ class GameLoop {
             } else {
               particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
               if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(8);
-              swapRemove(enemyManager.enemies, j);
-              swapRemove(player.homingMissiles, i);
-              player.score += 250;
-              killed = true;
+              swapRemove(enemyManager.enemies, j); swapRemove(player.homingMissiles, i);
+              player.score += 250; killed = true;
             }
             break;
           }
         }
       }
-
-      // Player tank shells vs enemy
       if (!killed) {
         for (let i = player.tankShells.length - 1; i >= 0; i--) {
           let s2 = player.tankShells[i];
@@ -265,25 +315,93 @@ class GameLoop {
             } else {
               particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
               if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(10);
-              swapRemove(enemyManager.enemies, j);
-              swapRemove(player.tankShells, i);
-              player.score += 300;
-              killed = true;
+              swapRemove(enemyManager.enemies, j); swapRemove(player.tankShells, i);
+              player.score += 300; killed = true;
             }
             break;
           }
         }
       }
 
-      // Enemy body vs player ship
-      let bodyRadSq = (e.type === 'colossus' ? (90000 * this._colossusScaleSq(e)) : 4900) * enemyScaleSq;
-      if (!killed && ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < bodyRadSq)) {
-        killPlayer(player);
-        return;
+      // --- Body-to-Body Collision & Resolution ---
+      if (!killed) {
+        let shipRad = 15;
+        let speedSq = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
+        if (e.type === 'colossus') {
+          // Multi-part collision for Colossus
+          const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
+          // Apply enemy yaw rotation to bone offsets
+          let yaw = atan2(e.vx || 0, e.vz || 0);
+          let cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+
+          // Approximate bones (Y is inverted: negative is UP)
+          const bones = [
+            { y: -160, r: 100 }, // Torso
+            { y: -320, r: 70 },  // Head
+            { y: -45, r: 80 },   // Hips
+            { x: -50, y: 20, r: 40 }, { x: 50, y: 20, r: 40 },   // Thighs
+            { x: -50, y: 140, r: 35 }, { x: 50, y: 140, r: 35 }, // Shins
+            { x: -105, y: -145, r: 40 }, { x: 105, y: -145, r: 40 }, // Upper Arms
+            { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }    // Lower Arms
+          ];
+          for (let b of bones) {
+            let lx = (b.x || 0) * cScale;
+            let lz = 0; // Colossus is mostly flat in local Z
+            let bx = e.x + lx * cosY + lz * sinY;
+            let by = e.y + (b.y || 0) * cScale;
+            let bz = e.z + lz * cosY - lx * sinY;
+            let br = b.r * cScale;
+            if ((s.x - bx) ** 2 + (s.y - by) ** 2 + (s.z - bz) ** 2 < (br + shipRad) ** 2) {
+              if (speedSq > 49.0) { killPlayer(player); return; } // Threshold raised from 4.2 (17.6) to 7.0 (49.0)
+              this._resolveSphereCollision(s, bx, by, bz, br, shipRad);
+            }
+          }
+        } else {
+          // Normal enemy check + resolution
+          let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2); // Radius in world units
+          if ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < (bodyRad + shipRad) ** 2) {
+            if (speedSq > 49.0) { killPlayer(player); return; }
+            this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
+          }
+        }
       }
     }
 
-    // 5. Floating powerup vs player
+    // 5. Environment Collisions: Buildings
+    let shipRadEnv = 15;
+    let speedSqEnv = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
+    for (let b of gameState.buildings) {
+      if (b.type === 3) continue; // UFO: ignore in blocking collision (handled in collection pass below)
+      if (Math.abs(s.x - b.x) > (b.w + 200) || Math.abs(s.z - b.z) > (b.d + 200)) continue;
+
+      let hw = b.w / 2, hh = b.h / 2, hd = b.d / 2;
+      let by = b.y - hh; // Center Y is ground - half height
+      let collided = this._resolveAABBCollision(s, b.x, by, b.z, hw, hh, hd, shipRadEnv);
+      if (collided && speedSqEnv > 49.0) { killPlayer(player); return; }
+    }
+
+    // 6. Environment Collisions: Trees
+    let tx0 = toTile(s.x), tz0 = toTile(s.z);
+    for (let tz = tz0 - 2; tz <= tz0 + 2; tz++) {
+      for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
+        let t = terrain.tryGetProceduralTree(tx, tz);
+        if (!t) continue;
+        let ty = terrain.getAltitude(t.x, t.z);
+        // Trunk collision (tall thin cylinder)
+        let trunkHW = 5, trunkHH = t.trunkH / 2;
+        if (this._resolveAABBCollision(s, t.x, ty - trunkHH, t.z, trunkHW, trunkHH, trunkHW, shipRadEnv)) {
+          if (speedSqEnv > 49.0) { killPlayer(player); return; }
+        }
+        // Canopy collision (sphere)
+        let canopyY = ty - t.trunkH; // Center of canopy cone/sphere
+        let canopyR = 30 * t.canopyScale;
+        if (this._resolveSphereCollision(s, t.x, canopyY, t.z, canopyR, shipRadEnv)) {
+          if (speedSqEnv > 49.0) { killPlayer(player); return; }
+        }
+      }
+    }
+
+    // 7. Floating powerup vs player
     for (let i = gameState.buildings.length - 1; i >= 0; i--) {
       let b = gameState.buildings[i];
       if (b.type === 3) {
@@ -297,29 +415,23 @@ class GameLoop {
             if (player.missilesRemaining > 0) player.missilesRemaining--;
             if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);
           } else {
-            if (random() < 0.5) {
-              player.missilesRemaining++;
-            } else {
-              player.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
-            }
+            if (random() < 0.5) player.missilesRemaining++;
+            else player.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
             player.score += 500;
             if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true, b.x, floatY, b.z);
           }
           swapRemove(gameState.buildings, i);
-
           for (let j = 0; j < 20; j++) {
             particleSystem.particles.push({
-              x: b.x, y: floatY, z: b.z,
-              vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
-              life: 255, decay: 12, size: random(4, 9),
-              color: inf ? [200, 50, 50] : [60, 180, 240]
+              x: b.x, y: floatY, z: b.z, vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
+              life: 255, decay: 12, size: random(4, 9), color: inf ? [200, 50, 50] : [60, 180, 240]
             });
           }
         }
       }
     }
 
-    // 6. Projectiles vs infected procedural trees
+    // 8. Projectiles vs infected procedural trees
     this._checkProjectilesVsTrees(player);
   }
 

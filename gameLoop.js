@@ -301,7 +301,7 @@ class GameLoop {
             player.score += 500;
             if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true, b.x, floatY, b.z);
           }
-          gameState.buildings.splice(i, 1);
+          swapRemove(gameState.buildings, i);
 
           for (let j = 0; j < 20; j++) {
             particleSystem.particles.push({

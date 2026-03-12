@@ -432,7 +432,11 @@ class ParticleSystem {
 
       // ── Soft billboard particles: exhaust, squid fog, missile smoke ──────
       const useDepthSoftShader = (_softShader && _cloudTex && sceneFBO);
-      const useBillowSprites = (!!_cloudTex && !useDepthSoftShader);
+      // On mobile (TBDR GPU), gl.disable(DEPTH_TEST) triggers a tile-flush
+      // barrier that stalls the pipeline for 4–16 ms.  Fall back to plain
+      // sphere rendering instead to keep the depth state unchanged.
+      const isMobile = (typeof gameState !== 'undefined' && gameState.isMobile);
+      const useBillowSprites = (!!_cloudTex && !useDepthSoftShader && !isMobile);
       const disableDepthForSoft = useDepthSoftShader || useBillowSprites;
       if (disableDepthForSoft) {
         drawingContext.disable(drawingContext.DEPTH_TEST);

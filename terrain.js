@@ -178,9 +178,7 @@ float fbm(vec2 p) {
     a *= 0.5;
   }
   return v;
-}
-
-void main() {
+}void main() {
   int mat = int(vColor.r * 255.0 + 0.5);
   vec3 baseColor = vColor.rgb;
   
@@ -190,36 +188,36 @@ void main() {
 
   if (mat >= 10 && mat <= 11) {
     // ── Viron ───────────────────────────────────────────
+    float af = clamp(mix(1.15, 0.7, (vWorldPos.y - 200.0) / -350.0), 0.7, 1.15);
+    float parity = (mat == 10) ? 1.0 : 0.75;
     float xP = vWorldPos.x / uTileSize;
     float zP = vWorldPos.z / uTileSize;
     float pulse = sin(uTime * 3.6 + xP * 0.05 + zP * 0.05) * 0.5 + 0.5;
     float scanPos = uTime / 10.0;
     float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
-    float af = clamp(mix(1.15, 0.7, (vWorldPos.y - 200.0) / -350.0), 0.7, 1.15);
-    float parity = (mat == 10) ? 1.0 : 0.75;
     
     vec3 cRed    = uPalette[9] * parity;
     vec3 cDark   = uPalette[10] * parity;
-    vec3 cScan   = uPalette[11] * parity; 
+    vec3 cScan   = uPalette[11] * parity;
     baseColor = mix(cDark, cRed, pulse);
-    baseColor += cScan * scan * 1.5;      
+    baseColor += cScan * scan * 1.5;
     baseColor *= af;
     // Slick biological speculator surface
     specularIntensity = 0.45;
     specularShininess = 12.0;
   } else if (mat >= 14 && mat <= 15) {
     // ── Green Viron ──────────────────────────────────────
+    float af = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3);
+    float parity = (mat == 14) ? 1.0 : 0.75;
     float xP = vWorldPos.x / uTileSize;
     float zP = vWorldPos.z / uTileSize;
     float pulse = sin(uTime * 4.8 + xP * 0.08 + zP * 0.08) * 0.5 + 0.5; // Faster pulse
     float scanPos = uTime / 8.0; // Faster scan
     float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
-    float af = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3);
-    float parity = (mat == 14) ? 1.0 : 0.75;
     
     vec3 gGreen = uPalette[14] * parity;
     vec3 gDark  = uPalette[15] * parity;
-    vec3 gScan  = uPalette[16] * parity; 
+    vec3 gScan  = uPalette[16] * parity;
     baseColor = mix(gDark, gGreen, pulse);
     baseColor += gScan * scan * 2.0;
     baseColor *= af;
@@ -369,47 +367,11 @@ void main() {
   vec3 outColor = litBase;
   if (mat <= 21) { outColor += cyberColor; }
   
-  // 9. Building Textures
-  if (mat >= 40 && mat <= 47) {
-    // Local tiling scale
-    float density = (mat == 46 || mat == 47) ? 0.45 : 0.75;
-    vec3 p = vWorldPos.xyz * density;
-    
-    // Tech-panel grid
-    vec2 grid = abs(fract(p.xz * 0.1) - 0.5);
-    float lines = smoothstep(0.46, 0.49, max(grid.x, grid.y));
-    
-    // Windows with fake interior "glow"
-    vec3 winCoord = p * vec3(1.0, 1.5, 1.0);
-    vec3 winFloor = floor(winCoord);
-    vec3 winFrac = fract(winCoord);
-    
-    // Randomize window state (on/off) per "room"
-    float winSeed = hash(winFloor.xy + winFloor.z * 0.12);
-    float winOn = step(0.55, winSeed);
-    
-    // Window frame/glass mask
-    float windowMask = smoothstep(0.1, 0.15, winFrac.x) * smoothstep(0.85, 0.9, winFrac.x) *
-                       smoothstep(0.1, 0.15, winFrac.y) * smoothstep(0.85, 0.9, winFrac.y) *
-                       smoothstep(0.1, 0.15, winFrac.z) * smoothstep(0.85, 0.9, winFrac.z);
-
-    // Color based on infection state - using mod() for compatibility
-    bool isInfected = (mod(float(mat), 2.0) > 0.5);
-    vec3 winColor = isInfected ? vec3(1.0, 0.2, 0.05) : vec3(0.2, 0.7, 1.0);
-    
-    // Add flickering and breathing to windows
-    float breathe = 0.7 + 0.3 * sin(uTime * 2.0 + winSeed * 10.0);
-    
-    outColor = mix(outColor, outColor * 0.7, lines); // Subtle panel shadows
-    outColor += winOn * windowMask * winColor * 0.8 * breathe;
-    
-    // Specular highlight for glass
-    specularIntensity = mix(specularIntensity, 1.5, windowMask);
-    specularShininess = mix(specularShininess, 32.0, windowMask);
-  }
-
+  // 9. Building Textures removed per user request
+  
   // 10. Subtle holographic scanlines (World-aligned topographical lines)
-  if (mat <= 47) {
+  // Only applied to landscape to keep virus, barrier, and buildings clean.
+  if (mat >= 1 && mat <= 2) {
     float worldScan = sin(vWorldPos.y * 1.5) * 0.04;
     outColor -= vec3(worldScan);
   }

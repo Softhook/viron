@@ -54,8 +54,8 @@ void main() {
   col = ACESFilm(col * 0.95);
   
   // 8. Subtle holographic scanlines (Simplified without length())
-  float scanline = sin(uv.y * uResolution.y * 2.0) * 0.03;
-  col -= scanline; // Fixed subtractive blend
+  // float scanline = sin(uv.y * uResolution.y * 2.0) * 0.03;
+  // col -= scanline; // Fixed subtractive blend
 
   gl_FragColor = vec4(col, 1.0);
 }

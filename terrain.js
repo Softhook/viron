@@ -369,6 +369,12 @@ void main() {
   vec3 outColor = litBase;
   if (mat <= 21) { outColor += cyberColor; }
   
+  // 8. Subtle holographic scanlines (World-aligned topographical lines)
+  if (mat <= 30) {
+    float worldScan = sin(vWorldPos.y * 1.5) * 0.04;
+    outColor -= worldScan;
+  }
+  
   // Fresnel Rim Lighting
   vec3 localViewDir = normalize(-vViewPos);
   float fresnel = 1.0 - max(dot(normalize(vViewNormal), localViewDir), 0.0);
@@ -439,6 +445,10 @@ void main() {
   vec3 litBase = baseColor * max(ambient + uSunColor * ndl, vec3(0.18, 0.20, 0.25));
 
   vec3 outColor = litBase + cyberColor;
+
+  // 8. Subtle holographic scanlines (World-aligned topographical lines)
+  float worldScan = sin(vWorldPos.y * 1.5) * 0.04;
+  outColor -= worldScan;
 
   // Fresnel rim — ship/enemy variant (same as the else branch in TERRAIN_FRAG).
   vec3 V = normalize(-vViewPos);

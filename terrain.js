@@ -264,8 +264,8 @@ vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout flo
   float noisePatch = vColor.g;
   float rand       = vColor.b;
   float parity     = vColor.a;
-  // Tile-grid coordinates: tileTx = X tile index, tileTz = Z tile index.
-  // Stored as the x and y of a vec2 since GLSL vec2 has no .z component.
+  // Tile-grid X and Z indices computed separately as floats (GLSL has no vec3.xz
+  // swizzle write, and vec2.y would misleadingly suggest a vertical axis).
   float tileTx = floor(vWorldPos.x / uTileSize + 0.001);
   float tileTz = floor(vWorldPos.z / uTileSize + 0.001);
   vec3  baseColor;
@@ -343,7 +343,7 @@ vec3 applyRimLighting(vec3 outColor, vec3 baseColor, int mat, float ndl) {
   float rimMask  = smoothstep(-0.2, 0.5, -vNormal.y);
   // Skip rim on launchpad landscape tiles.
   if (mat >= 1 && mat <= 2) {
-    // tileTz is the Z tile index, stored in the y component of the vec2 swizzle.
+    // tileTx and tileTz are the X/Z tile indices computed from the world position.
     float tileTx = floor(vWorldPos.x / uTileSize + 0.001);
     float tileTz = floor(vWorldPos.z / uTileSize + 0.001);
     if (tileTx >= 0.0 && tileTx < 7.0 && tileTz >= 0.0 && tileTz < 7.0) {

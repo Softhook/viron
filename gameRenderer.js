@@ -318,7 +318,10 @@ class GameRenderer {
       }
     }
 
-    // Shared 2D overlay
+    // Shared 2D overlay — drawn into masterFBO so it receives the same
+    // mobile y-flip treatment (POST_FRAG uv.y inversion) as the 3D scene.
+    // Game-over overlay is included here specifically to fix the mirror-reversed
+    // text seen on mobile when the overlay was drawn outside the FBO pipeline.
     this.setup2DViewport();
     if (gameState.numPlayers === 2) {
       stroke(0, 255, 0, 180); strokeWeight(2);
@@ -327,6 +330,9 @@ class GameRenderer {
     if (gameState.levelComplete) {
       noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
       text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
+    }
+    if (gameState.mode === 'gameover') {
+      _drawGameOverContent();
     }
     pop();
     this.masterFBO.end();

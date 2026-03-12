@@ -385,6 +385,12 @@ class TileManager {
      * @type {Map<string,object[]>|null}
      */
     this.buckets = withBuckets ? new Map() : null;
+
+    /** 
+     * NEW: List of tiles that might be able to spread (have empty neighbors).
+     * Used by GameLoop.spreadInfection() to avoid O(N) global scan.
+     */
+    this.activeList = [];
   }
 
   /** Clears all tile state. */
@@ -392,6 +398,7 @@ class TileManager {
     this.tiles.clear();
     this.count = 0;
     this.keyList.length = 0;
+    this.activeList.length = 0;
     if (this.buckets !== null) this.buckets.clear();
   }
 
@@ -406,10 +413,11 @@ class TileManager {
     if (this.tiles.has(k)) return null;
     const tx = Math.floor(k / 20001) - 10000;
     const tz = (k % 20001) - 10000;
-    const obj = { k, tx, tz, type, verts: null, _idx: this.keyList.length };
+    const obj = { k, tx, tz, type, verts: null, _idx: this.keyList.length, _activeIdx: this.activeList.length };
     this.tiles.set(k, obj);
     this.count++;
     this.keyList.push(obj);
+    this.activeList.push(obj);
     if (this.buckets !== null) {
       // tx >> 4 === Math.floor(tx / 16) for all integers (arithmetic shift).
       const bk = `${tx >> 4},${tz >> 4}`;
@@ -431,12 +439,21 @@ class TileManager {
     const obj = this.tiles.get(k);
     if (!obj) return false;
 
+    // Remove from keyList
     const idx = obj._idx;
     const last = this.keyList[this.keyList.length - 1];
-
     this.keyList[idx] = last;
     last._idx = idx;
     this.keyList.pop();
+
+    // Remove from activeList
+    const aidx = obj._activeIdx;
+    if (aidx !== undefined && aidx < this.activeList.length) {
+      const alast = this.activeList[this.activeList.length - 1];
+      this.activeList[aidx] = alast;
+      alast._activeIdx = aidx;
+      this.activeList.pop();
+    }
 
     if (this.buckets !== null && obj._bk !== undefined) {
       const arr = this.buckets.get(obj._bk);
@@ -452,7 +469,26 @@ class TileManager {
 
     this.tiles.delete(k);
     this.count--;
+
+    // When a tile is removed, its neighbors might become "frontier" again
+    this.reactivateNeighbors(obj.tx, obj.tz);
+
     return true;
+  }
+
+  /**
+   * Adds the 4-connected neighbors of (tx, tz) back to the active list
+   * if they are infected and not already active.
+   */
+  reactivateNeighbors(tx, tz) {
+    for (const d of ORTHO_DIRS) {
+      const nk = tileKey(tx + d[0], tz + d[1]);
+      const neighbor = this.tiles.get(nk);
+      if (neighbor && (neighbor._activeIdx === undefined || neighbor._activeIdx >= this.activeList.length || this.activeList[neighbor._activeIdx] !== neighbor)) {
+        neighbor._activeIdx = this.activeList.length;
+        this.activeList.push(neighbor);
+      }
+    }
   }
 
   /** Returns true if tile key k is present. */

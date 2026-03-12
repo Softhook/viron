@@ -81,18 +81,18 @@ class GameLoop {
     const profilerConfig = profiler ? profiler.config : (typeof window !== 'undefined' ? window.VIRON_PROFILE : null);
     const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
     const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
-    const isGameOver = gameState.mode === 'gameover';
+    const isGameOver = typeof gameState !== 'undefined' && gameState.mode === 'gameover';
     const shouldRun = isGameOver || (frameCount % 5 === 0);
 
     if (!shouldRun || (gameState.levelComplete && !isGameOver)) return;
     const spreadStart = profiler ? performance.now() : 0;
 
-    // Check: Too much infection?
+    // A. Check: Too much infection?
     if (infection.count >= maxInf) {
       gameState.setGameOver('INFECTION REACHED CRITICAL MASS');
     }
 
-    // Check: Launchpad fully overrun?
+    // B. Check: Launchpad fully overrun?
     let lpInfected = 0;
     for (let tx = 0; tx < 7; tx++) {
       for (let tz = 0; tz < 7; tz++) {
@@ -104,65 +104,87 @@ class GameLoop {
     }
 
     if (freezeSpread) {
-      if (profiler) profiler.recordSpread(performance.now() - spreadStart);
+      if (profiler) profiler.recordSpread(performance.now() - (spreadStart || 0));
       return;
     }
 
-    let infObjects = infection.keys();
-    let freshMap = new Map();
-    const normalRate = isGameOver ? RAPID_INF_RATE : INF_RATE;
-    const yellowRate = isGameOver ? RAPID_INF_RATE : YELLOW_INF_RATE;
+    // C. Viral spread rates (probability per tile per frame)
+    const rate = isGameOver ? RAPID_INF_RATE : INF_RATE;
+    const yellowRate = isGameOver ? Math.min(1.0, RAPID_INF_RATE * 1.2) : YELLOW_INF_RATE;
 
-    // Standard spread: 4-connected from existing infections
-    for (let i = 0; i < infObjects.length; i++) {
-      let t = infObjects[i];
-      const currentRate = (t.type === 'yellow') ? yellowRate : normalRate;
+    // 1. Standard spread: iterate "active" tiles that are likely to have empty neighbors.
+    const active = infection.activeList;
+    let soundCount = 0;
+    for (let i = active.length - 1; i >= 0; i--) {
+      let t = active[i];
+      let currentRate = (t.type === 'yellow') ? yellowRate : rate;
+      
       if (random() > currentRate) continue;
 
       let d = ORTHO_DIRS[floor(random(4))];
       let nx = t.tx + d[0], nz = t.tz + d[1], nk = tileKey(nx, nz);
-      let wx = nx * TILE, wz = nz * TILE;
-      if (aboveSea(terrain.getAltitude(wx, wz)) || infection.has(nk)) continue;
-      freshMap.set(nk, t.type);
-    }
 
-    // Accelerated spread from infected sentinels
-    for (let b of gameState.sentinelBuildings) {
-      let stx = toTile(b.x), stz = toTile(b.z);
-      let sInf = infection.get(tileKey(stx, stz));
-      if (!sInf) continue;
-      const sType = sInf.type;
-      for (let ddx = -SENTINEL_INFECTION_RADIUS; ddx <= SENTINEL_INFECTION_RADIUS; ddx++) {
-        for (let ddz = -SENTINEL_INFECTION_RADIUS; ddz <= SENTINEL_INFECTION_RADIUS; ddz++) {
-          if (ddx * ddx + ddz * ddz > SENTINEL_INFECTION_RADIUS * SENTINEL_INFECTION_RADIUS) continue;
-          if (random() > SENTINEL_INFECTION_PROBABILITY) continue;
-          let nx = stx + ddx, nz = stz + ddz;
-          let nk = tileKey(nx, nz);
-          let wx = nx * TILE, wz = nz * TILE;
-          if (!aboveSea(terrain.getAltitude(wx, wz)) && !infection.has(nk)) {
-            freshMap.set(nk, sType);
+      if (!infection.has(nk) && !gameState.barrierTiles.has(nk)) {
+        let wx = nx * TILE, wz = nz * TILE;
+        if (aboveSea(terrain.getAltitude(wx, wz))) continue;
+
+        let nObj = infection.add(nk, t.type);
+        if (nObj) {
+          if (typeof gameSFX !== 'undefined' && soundCount < 3 && random() < 0.1) {
+            gameSFX.playInfectionSpread(wx, terrain.getAltitude(wx, wz), wz);
+            soundCount++;
+          }
+          if (isLaunchpad(wx, wz)) maybePlayLaunchpadAlarm();
+        }
+      } else {
+        // Optimize: if spread fails, check if this tile is now completely surrounded.
+        if (random() < 0.05) {
+          let blocked = true;
+          for (const dd of ORTHO_DIRS) {
+            let nkk = tileKey(t.tx + dd[0], t.tz + dd[1]);
+            if (!infection.has(nkk) && !gameState.barrierTiles.has(nkk)) {
+              blocked = false; break;
+            }
+          }
+          if (blocked) {
+            const last = active[active.length - 1];
+            active[i] = last;
+            last._activeIdx = i;
+            active.pop();
+            t._activeIdx = undefined;
           }
         }
       }
     }
 
-    // Commit new infections
-    let soundCount = 0;
-    for (let [nk, nType] of freshMap) {
-      if (gameState.barrierTiles.has(nk)) continue;
-      const o = infection.add(nk, nType);
-      if (!o) continue;
-      let wx = o.tx * TILE, wz = o.tz * TILE;
-      if (typeof gameSFX !== 'undefined' && soundCount < 3) {
-        gameSFX.playInfectionSpread(wx, terrain.getAltitude(wx, wz), wz);
-        soundCount++;
-      }
-      if (isLaunchpad(wx, wz)) {
-        maybePlayLaunchpadAlarm();
+    // 2. Accelerated spread from infected sentinels
+    if (gameState.sentinelBuildings) {
+      for (let b of gameState.sentinelBuildings) {
+        let stx = toTile(b.x), stz = toTile(b.z);
+        let sInf = infection.tiles.get(tileKey(stx, stz));
+        if (!sInf) continue;
+
+        const sType = sInf.type;
+        const rad = SENTINEL_INFECTION_RADIUS;
+        for (let ddx = -rad; ddx <= rad; ddx++) {
+          for (let ddz = -rad; ddz <= rad; ddz++) {
+            if (ddx * ddx + ddz * ddz > rad * rad) continue;
+            if (random() > SENTINEL_INFECTION_PROBABILITY) continue;
+
+            let nx = stx + ddx, nz = stz + ddz;
+            let nk = tileKey(nx, nz);
+            if (!infection.has(nk) && !gameState.barrierTiles.has(nk)) {
+              let wx = nx * TILE, wz = nz * TILE;
+              if (aboveSea(terrain.getAltitude(wx, wz))) continue;
+              infection.add(nk, sType);
+              if (isLaunchpad(wx, wz)) maybePlayLaunchpadAlarm();
+            }
+          }
+        }
       }
     }
 
-    if (profiler) profiler.recordSpread(performance.now() - spreadStart);
+    if (profiler) profiler.recordSpread(performance.now() - (spreadStart || 0));
   }
 
   /**
@@ -190,18 +212,22 @@ class GameLoop {
    * @private
    */
   static _checkProjectilesVsTrees(player) {
-    // Bullets vs infected trees (2-tile search radius)
+    // Bullets vs infected trees (1-tile search radius = 3x3)
     for (let i = player.bullets.length - 1; i >= 0; i--) {
       let b = player.bullets[i];
+      // Shortcut: skip check if bullet is too high (most trees are < 100 units tall)
+      if (b.y < -300) continue; 
+
       let tx0 = toTile(b.x), tz0 = toTile(b.z);
       let hit = false;
-      for (let tz = tz0 - 2; tz <= tz0 + 2 && !hit; tz++) {
-        for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
+      for (let tz = tz0 - 1; tz <= tz0 + 1 && !hit; tz++) {
+        for (let tx = tx0 - 1; tx <= tx0 + 1; tx++) {
           let t = terrain.tryGetProceduralTree(tx, tz);
           if (!t) continue;
           let ty = terrain.getAltitude(t.x, t.z);
-          if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 >= 3600) continue;
+          // Altitude shortcut: bullet must be within tree vertical range
           if (b.y <= ty - t.trunkH - 30 * t.canopyScale - 10 || b.y >= ty + 10) continue;
+          if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 >= 3600) continue;
           if (!infection.has(tileKey(tx, tz))) continue;
           clearInfectionRadius(tx, tz);
           player.score += 200;
@@ -212,18 +238,20 @@ class GameLoop {
       }
     }
 
-    // Tank shells vs infected trees (3-tile search radius)
+    // Tank shells vs infected trees (2-tile search radius = 5x5)
     for (let j = player.tankShells.length - 1; j >= 0; j--) {
       let ts = player.tankShells[j];
+      if (ts.y < -300) continue;
+
       let tx0 = toTile(ts.x), tz0 = toTile(ts.z);
       let hitTree = false;
-      for (let tz = tz0 - 3; tz <= tz0 + 3 && !hitTree; tz++) {
-        for (let tx = tx0 - 3; tx <= tx0 + 3; tx++) {
+      for (let tz = tz0 - 2; tz <= tz0 + 2 && !hitTree; tz++) {
+        for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
           let t = terrain.tryGetProceduralTree(tx, tz);
           if (!t) continue;
           let ty = terrain.getAltitude(t.x, t.z);
-          if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
           if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
+          if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
           if (!infection.has(tileKey(tx, tz))) continue;
           clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
           terrain.addPulse(ts.x, ts.z, 2.0);
@@ -328,8 +356,12 @@ class GameLoop {
         let shipRad = 15;
         let speedSq = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
         if (e.type === 'colossus') {
-          // Multi-part collision for Colossus
+          // Broad-phase: skip if too far (center-to-center)
           const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
+          const broadRad = 500 * cScale;
+          if ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 > (broadRad + shipRad) ** 2) continue;
+
+          // Multi-part collision for Colossus
           // Apply enemy yaw rotation to bone offsets
           let yaw = atan2(e.vx || 0, e.vz || 0);
           let cosY = Math.cos(yaw), sinY = Math.sin(yaw);
@@ -354,6 +386,7 @@ class GameLoop {
             if ((s.x - bx) ** 2 + (s.y - by) ** 2 + (s.z - bz) ** 2 < (br + shipRad) ** 2) {
               if (speedSq > 49.0) { killPlayer(player); return; } // Threshold raised from 4.2 (17.6) to 7.0 (49.0)
               this._resolveSphereCollision(s, bx, by, bz, br, shipRad);
+              break; // One part is enough
             }
           }
         } else {
@@ -367,44 +400,13 @@ class GameLoop {
       }
     }
 
-    // 5. Environment Collisions: Buildings
+    // 5 & 7. Merged Environment (Buildings/Sentinels) and Powerup Pass
     let shipRadEnv = 15;
     let speedSqEnv = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
-    for (let b of gameState.buildings) {
-      if (b.type === 3) continue; // UFO: ignore in blocking collision (handled in collection pass below)
-      if (Math.abs(s.x - b.x) > (b.w + 200) || Math.abs(s.z - b.z) > (b.d + 200)) continue;
-
-      let hw = b.w / 2, hh = b.h / 2, hd = b.d / 2;
-      let by = b.y - hh; // Center Y is ground - half height
-      let collided = this._resolveAABBCollision(s, b.x, by, b.z, hw, hh, hd, shipRadEnv);
-      if (collided && speedSqEnv > 49.0) { killPlayer(player); return; }
-    }
-
-    // 6. Environment Collisions: Trees
-    let tx0 = toTile(s.x), tz0 = toTile(s.z);
-    for (let tz = tz0 - 2; tz <= tz0 + 2; tz++) {
-      for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
-        let t = terrain.tryGetProceduralTree(tx, tz);
-        if (!t) continue;
-        let ty = terrain.getAltitude(t.x, t.z);
-        // Trunk collision (tall thin cylinder)
-        let trunkHW = 5, trunkHH = t.trunkH / 2;
-        if (this._resolveAABBCollision(s, t.x, ty - trunkHH, t.z, trunkHW, trunkHH, trunkHW, shipRadEnv)) {
-          if (speedSqEnv > 49.0) { killPlayer(player); return; }
-        }
-        // Canopy collision (sphere)
-        let canopyY = ty - t.trunkH; // Center of canopy cone/sphere
-        let canopyR = 30 * t.canopyScale;
-        if (this._resolveSphereCollision(s, t.x, canopyY, t.z, canopyR, shipRadEnv)) {
-          if (speedSqEnv > 49.0) { killPlayer(player); return; }
-        }
-      }
-    }
-
-    // 7. Floating powerup vs player
     for (let i = gameState.buildings.length - 1; i >= 0; i--) {
       let b = gameState.buildings[i];
       if (b.type === 3) {
+        // Floating powerup vs player
         let floatY = b.y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
         let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
         let radiusSq = (b.w + 15) ** 2;
@@ -427,6 +429,37 @@ class GameLoop {
               life: 255, decay: 12, size: random(4, 9), color: inf ? [200, 50, 50] : [60, 180, 240]
             });
           }
+        }
+      } else {
+        // Blocking building/sentinel collision
+        if (Math.abs(s.x - b.x) > (b.w + 200) || Math.abs(s.z - b.z) > (b.d + 200)) continue;
+        let hw = b.w / 2, hh = b.h / 2, hd = b.d / 2;
+        let by = b.y - hh; // Center Y
+        let collided = this._resolveAABBCollision(s, b.x, by, b.z, hw, hh, hd, shipRadEnv);
+        if (collided && speedSqEnv > 49.0) { killPlayer(player); return; }
+      }
+    }
+
+    // 6. Environment Collisions: Trees (Optimized search)
+    let tx0 = toTile(s.x), tz0 = toTile(s.z);
+    for (let tz = tz0 - 1; tz <= tz0 + 1; tz++) {
+      for (let tx = tx0 - 1; tx <= tx0 + 1; tx++) {
+        let t = terrain.tryGetProceduralTree(tx, tz);
+        if (!t) continue;
+        let ty = terrain.getAltitude(t.x, t.z);
+        // Altitude shortcut: ship must be within tree vertical range
+        if (s.y < ty - t.trunkH - 30 * t.canopyScale - 20 || s.y > ty + 20) continue;
+
+        // Trunk collision (tall thin cylinder)
+        let trunkHW = 5, trunkHH = t.trunkH / 2;
+        if (this._resolveAABBCollision(s, t.x, ty - trunkHH, t.z, trunkHW, trunkHH, trunkHW, shipRadEnv)) {
+          if (speedSqEnv > 49.0) { killPlayer(player); return; }
+        }
+        // Canopy collision (sphere)
+        let canopyY = ty - t.trunkH; // Center of canopy
+        let canopyR = 30 * t.canopyScale;
+        if (this._resolveSphereCollision(s, t.x, canopyY, t.z, canopyR, shipRadEnv)) {
+          if (speedSqEnv > 49.0) { killPlayer(player); return; }
         }
       }
     }

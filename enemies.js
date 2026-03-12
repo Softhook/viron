@@ -301,7 +301,7 @@ class EnemyManager {
    * Yellow Crab AI: similar to Crab but spreads the faster-growing Yellow Virus.
    */
   updateYellowCrab(e, alivePlayers, refShip) {
-    this._updateCrabAI(e, alivePlayers, refShip, 1.5, 0.04, 'green', 2.0);
+    this._updateCrabAI(e, alivePlayers, refShip, 1.5, 0.04, 'yellow', 2.0);
   }
 
   /**
@@ -311,7 +311,7 @@ class EnemyManager {
    * @param {object} refShip      Fallback.
    * @param {number} speed        Movement speed factor.
    * @param {number} infProb      Probability of tile infection per frame.
-   * @param {string} infType      Type of virus to spread ('normal' or 'green' [yellow virus]).
+   * @param {string} infType      Type of virus to spread ('normal' or 'yellow' [yellow virus]).
    * @param {number} pulseScale   Visual pulse feedback intensity.
    */
   _updateCrabAI(e, alivePlayers, refShip, speed, infProb, infType, pulseScale) {

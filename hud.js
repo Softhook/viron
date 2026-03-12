@@ -210,7 +210,7 @@ function _drawWeaponSelector(p, h) {
  *
  * Layers (back to front):
  *   1. Live 3D landscape rendered with a slow-panning camera (menuCam)
- *   2. Soft green glow behind the title (2D overlay)
+ *   2. Soft yellow glow behind the title (2D overlay)
  *   3. Drop-shadow + pulsing title text "V I R O N"
  *   4. Author credit
  *   5. CRT scanline overlay
@@ -226,9 +226,9 @@ function drawMenu() {
   // --- Glow halo behind the title ---
   let glowPulse = sin(frameCount * 0.04) * 0.3 + 0.7;
   noStroke();
-  fill(160, 255, 10, 32 * glowPulse);
+  fill(255, 220, 10, 32 * glowPulse);
   ellipse(0, -height * 0.14, 580 * glowPulse, 170 * glowPulse);
-  fill(120, 200, 5, 20 * glowPulse);
+  fill(200, 180, 5, 20 * glowPulse);
   ellipse(0, -height * 0.14, 820 * glowPulse, 240 * glowPulse);
 
   textAlign(CENTER, CENTER);
@@ -239,12 +239,12 @@ function drawMenu() {
   textSize(110);
   text('V I R O N', 3, -height * 0.14 + 4);
 
-  // Pulsing title — oscillates between the two infection tile greens
+  // Pulsing title — oscillates between the infection tile colors
   let titlePulse = sin(frameCount * 0.06) * 0.5 + 0.5;  // 0..1
   fill(
-    lerp(120, 160, titlePulse),
-    lerp(200, 255, titlePulse),
-    lerp(5, 10, titlePulse)
+    lerp(220, 255, titlePulse),
+    lerp(180, 255, titlePulse),
+    lerp(0, 50, titlePulse)
   );
   textSize(110);
   text('V I R O N', 0, -height * 0.14);

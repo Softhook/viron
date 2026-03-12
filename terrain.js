@@ -206,7 +206,7 @@ float fbm(vec2 p) {
     specularIntensity = 0.45;
     specularShininess = 12.0;
   } else if (mat >= 14 && mat <= 15) {
-    // ── Green Viron ──────────────────────────────────────
+    // ── Yellow Viron ─────────────────────────────────────
     float af = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3);
     float parity = (mat == 14) ? 1.0 : 0.75;
     float xP = vWorldPos.x / uTileSize;
@@ -215,11 +215,11 @@ float fbm(vec2 p) {
     float scanPos = uTime / 8.0; // Faster scan
     float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
     
-    vec3 gGreen = uPalette[14] * parity;
-    vec3 gDark  = uPalette[15] * parity;
-    vec3 gScan  = uPalette[16] * parity;
-    baseColor = mix(gDark, gGreen, pulse);
-    baseColor += gScan * scan * 2.0;
+    vec3 yYellow = uPalette[14] * parity;
+    vec3 yDark   = uPalette[15] * parity;
+    vec3 yScan   = uPalette[16] * parity;
+    baseColor = mix(yDark, yYellow, pulse);
+    baseColor += yScan * scan * 2.0;
     baseColor *= af;
     specularIntensity = 0.5;
     specularShininess = 16.0;
@@ -1324,7 +1324,7 @@ class Terrain {
    *
    * Draw order:
    *   1. Terrain chunks (via cached geometry + terrain shader)
-   *   2. Infected tile overlays (pulsing green quads drawn on top)
+   *   2. Infected tile overlays (pulsing red/yellow quads drawn on top)
    *   3. Static sea plane (flat quad at SEA+3)
    *   4. Launchpad missile decorations (standard lighting restored first)
    *
@@ -1409,7 +1409,7 @@ class Terrain {
     if (infection.count > 0) {
       this._drawTileOverlays(
         infection,
-        { normal: [10, 11], green: [14, 15] },
+        { normal: [10, 11], yellow: [14, 15] },
         -0.5, cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection',
         minCx, maxCx, minCz, maxCz
       );

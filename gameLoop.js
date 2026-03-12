@@ -58,7 +58,7 @@ class GameLoop {
     // Standard spread: 4-connected from existing infections
     for (let i = 0; i < infObjects.length; i++) {
       let t = infObjects[i];
-      const currentRate = (t.type === 'green') ? yellowRate : normalRate;
+      const currentRate = (t.type === 'yellow') ? yellowRate : normalRate;
       if (random() > currentRate) continue;
 
       let d = ORTHO_DIRS[floor(random(4))];

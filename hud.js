@@ -396,14 +396,20 @@ function drawInstructions() {
 }
 
 /**
- * Renders the full-screen game-over overlay.
- * Shows the game-over reason string (or a default message) and automatically
- * returns to the menu after 5 seconds.
+ * Draws the game-over text content.
+ * Assumes the caller has already established a full-screen 2D ortho projection
+ * (e.g. via setup2DViewport()).  Handles the 5-second auto-return to menu.
+ *
+ * Separated from drawGameOver() so it can be called inside the masterFBO
+ * shared-2D-overlay section, ensuring the mobile y-flip applied by the
+ * POST_FRAG post-processing shader is correctly applied to the overlay (fixing
+ * the mirror-reversed / flipped text seen on some mobile platforms).
+ * @private
  */
-function drawGameOver() {
-  setup2DViewport();
+function _drawGameOverContent() {
   drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);  // Prevent 3D geometry bleeding through
 
+  if (gameState.gameFont) textFont(gameState.gameFont);
   fill(255, 60, 60);
   textAlign(CENTER, CENTER);
   textSize(80);
@@ -413,12 +419,31 @@ function drawGameOver() {
   fill(180, 200, 180);
   text(gameState.gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
 
-  pop();
+  // Prompt so players know how to exit (auto-returns after 5 s regardless).
+  textSize(18);
+  fill(180, 200, 180, 160);
+  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.35);
 
-  // Auto-return to menu after 5 seconds
+  // Auto-return to menu after 5 seconds.
   if (millis() - gameState.levelEndTime > 5000) {
     gameState.mode = 'menu';
   }
+}
+
+/**
+ * Renders the full-screen game-over overlay.
+ * Shows the game-over reason string (or a default message) and automatically
+ * returns to the menu after 5 seconds.
+ *
+ * NOTE: On mobile, gameRenderer.renderAllPlayers() calls _drawGameOverContent()
+ * inside the masterFBO so the POST_FRAG y-flip is applied uniformly (fixing
+ * mirror-reversed text on mobile).  This function is kept for direct calls
+ * on desktop / non-FBO code paths.
+ */
+function drawGameOver() {
+  setup2DViewport();
+  _drawGameOverContent();
+  pop();
 }
 
 /**

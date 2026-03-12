@@ -369,10 +369,49 @@ void main() {
   vec3 outColor = litBase;
   if (mat <= 21) { outColor += cyberColor; }
   
-  // 8. Subtle holographic scanlines (World-aligned topographical lines)
-  if (mat <= 30) {
+  // 9. Building Textures
+  if (mat >= 40 && mat <= 47) {
+    // Local tiling scale
+    float density = (mat == 46 || mat == 47) ? 0.45 : 0.75;
+    vec3 p = vWorldPos.xyz * density;
+    
+    // Tech-panel grid
+    vec2 grid = abs(fract(p.xz * 0.1) - 0.5);
+    float lines = smoothstep(0.46, 0.49, max(grid.x, grid.y));
+    
+    // Windows with fake interior "glow"
+    vec3 winCoord = p * vec3(1.0, 1.5, 1.0);
+    vec3 winFloor = floor(winCoord);
+    vec3 winFrac = fract(winCoord);
+    
+    // Randomize window state (on/off) per "room"
+    float winSeed = hash(winFloor.xy + winFloor.z * 0.12);
+    float winOn = step(0.55, winSeed);
+    
+    // Window frame/glass mask
+    float windowMask = smoothstep(0.1, 0.15, winFrac.x) * smoothstep(0.85, 0.9, winFrac.x) *
+                       smoothstep(0.1, 0.15, winFrac.y) * smoothstep(0.85, 0.9, winFrac.y) *
+                       smoothstep(0.1, 0.15, winFrac.z) * smoothstep(0.85, 0.9, winFrac.z);
+
+    // Color based on infection state - using mod() for compatibility
+    bool isInfected = (mod(float(mat), 2.0) > 0.5);
+    vec3 winColor = isInfected ? vec3(1.0, 0.2, 0.05) : vec3(0.2, 0.7, 1.0);
+    
+    // Add flickering and breathing to windows
+    float breathe = 0.7 + 0.3 * sin(uTime * 2.0 + winSeed * 10.0);
+    
+    outColor = mix(outColor, outColor * 0.7, lines); // Subtle panel shadows
+    outColor += winOn * windowMask * winColor * 0.8 * breathe;
+    
+    // Specular highlight for glass
+    specularIntensity = mix(specularIntensity, 1.5, windowMask);
+    specularShininess = mix(specularShininess, 32.0, windowMask);
+  }
+
+  // 10. Subtle holographic scanlines (World-aligned topographical lines)
+  if (mat <= 47) {
     float worldScan = sin(vWorldPos.y * 1.5) * 0.04;
-    outColor -= worldScan;
+    outColor -= vec3(worldScan);
   }
   
   // Fresnel Rim Lighting
@@ -391,6 +430,8 @@ void main() {
       outColor += baseColor * rim * 3.0;
     } else if (mat >= 1 && mat <= 21) {
       outColor += baseColor * rim * 1.2;
+    } else if (mat >= 40 && mat <= 47) {
+      outColor += baseColor * rim * 1.5;
     } else {
       outColor += rim * 0.7;
     }
@@ -448,7 +489,7 @@ void main() {
 
   // 8. Subtle holographic scanlines (World-aligned topographical lines)
   float worldScan = sin(vWorldPos.y * 1.5) * 0.04;
-  outColor -= worldScan;
+  outColor -= vec3(worldScan);
 
   // Fresnel rim — ship/enemy variant (same as the else branch in TERRAIN_FRAG).
   vec3 V = normalize(-vViewPos);
@@ -2028,23 +2069,24 @@ class Terrain {
         const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
 
         if (b.type === 0) {
-          fill(safeR(inf ? 200 : 220), inf ? 50 : 220, inf ? 50 : 220);
+          fill(inf ? 41 : 40, inf ? 50 : 220, inf ? 50 : 220);
           push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
           fill(safeR(inf ? 150 : 220), inf ? 30 : 50, inf ? 30 : 50);
           push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
         } else if (b.type === 1) {
-          fill(safeR(inf ? 200 : 150), inf ? 50 : 160, inf ? 50 : 170);
+          fill(inf ? 43 : 42, inf ? 50 : 160, inf ? 50 : 170);
           push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
           fill(safeR(inf ? 150 : 80), inf ? 30 : 180, inf ? 30 : 220);
           push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
         } else if (b.type === 2) {
-          fill(safeR(inf ? 200 : b.col[0]), inf ? 50 : b.col[1], inf ? 50 : b.col[2]);
+          fill(inf ? 45 : 44, inf ? 50 : b.col[1], inf ? 50 : b.col[2]);
           push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
           push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
           fill(safeR(inf ? 120 : 80), inf ? 20 : 80, inf ? 20 : 80);
           push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
         } else if (b.type === 4) {
-          let steelR = safeR(inf ? 160 : 52), steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
+          const matID = inf ? 47 : 46;
+          let steelR = matID, steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
           let plinthR = safeR(inf ? 130 : 38), plinthG = inf ? 28 : 52, plinthB = inf ? 28 : 72;
           let accentR = safeR(inf ? 200 : 40), accentG = inf ? 55 : 200, accentB = inf ? 20 : 185;
           let reactorR = safeR(inf ? 255 : 80), reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;

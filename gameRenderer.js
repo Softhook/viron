@@ -189,6 +189,7 @@ class GameRenderer {
     terrain.drawTrees(s);
     terrain.drawBuildings(s);
     enemyManager.draw(s);
+    this._drawEnemyBeams(s);
     for (let p of gameState.players) {
       if (!p.dead && (p !== player || !gameState.firstPersonView)) shipDisplay(p.ship, p.labelColor);
       renderProjectiles(p, s.x, s.z);
@@ -529,6 +530,91 @@ class GameRenderer {
         this._handleCleanSentinel(building);
       }
     }
+  }
+
+  /**
+   * Draws vertical light beams from the sky connecting to each enemy.
+   * @private
+   */
+  _drawEnemyBeams(s) {
+    if (typeof enemyManager === 'undefined' || !enemyManager.enemies) return;
+    
+    // Increased height significantly to simulate an 'infinite' beam. 
+    // 25,000 is far beyond the typical flight ceiling.
+    const beamHeight = 25000;
+    const beamRadius = 14;
+    const time = millis() / 1000.0;
+    
+    push();
+    noStroke();
+    // Use ADD blend for glowing volumetric effect
+    blendMode(ADD);
+    
+    for (let e of enemyManager.enemies) {
+      // Distance culling
+      let dSq = (s.x - e.x) ** 2 + (s.z - e.z) ** 2;
+      if (dSq > 6000 * 6000) continue;
+      
+      let col = enemyManager.getColor(e.type);
+      let flicker = 0.8 + 0.2 * sin(time * 25.0 + e.id * 10.0);
+      
+      push();
+      translate(e.x, e.y, e.z);
+      
+      // --- Energetic Ground Splash (Rings at base) ---
+      for (let i = 0; i < 2; i++) {
+        let expand = ((time * 1.5 + i * 0.5) % 1.0);
+        let ringAlpha = (1.0 - expand) * 120 * flicker;
+        push();
+        rotateX(HALF_PI);
+        fill(col[0], col[1], col[2], ringAlpha);
+        torus(beamRadius * (2.0 + expand * 8.0), 2.0, 16, 4);
+        pop();
+      }
+      
+      // --- The Main Volumetric Beam (Starts at enemy, goes WAY up) ---
+      push();
+      translate(0, -beamHeight / 2 - 10, 0); 
+      
+      // Outer aura
+      fill(col[0], col[1], col[2], 25 * flicker);
+      cylinder(beamRadius * 6.0, beamHeight, 6, 1, false, false);
+      
+      // Mid energy column
+      fill(col[0], col[1], col[2], 70 * flicker);
+      cylinder(beamRadius * 2.2, beamHeight, 6, 1, false, false);
+      
+      // Intelligent Core
+      fill(255, 255, 255, 200 * flicker);
+      cylinder(beamRadius * 0.5, beamHeight, 6, 1, false, false);
+      pop();
+      
+      // --- High-Speed Energy Ripples (Moving down from sky) ---
+      // We limit ripples to the lower 8000 units so they are dense around the player
+      const rippleRange = 8000;
+      for (let i = 0; i < 3; i++) {
+        let pOffset = (time * 2500.0 + e.id * 1000.0 + i * 2200.0) % rippleRange;
+        let pY = -rippleRange + pOffset;
+        
+        // Fade ripples as they get higher to simulate them emerging from the sky
+        let fadeEdge = 1500;
+        let rippleAlphaMult = 1.0;
+        if (pY < -rippleRange + fadeEdge) rippleAlphaMult = (pY + rippleRange) / fadeEdge;
+        
+        push();
+        translate(0, pY, 0);
+        fill(255, 255, 255, 130 * flicker * rippleAlphaMult);
+        cylinder(beamRadius * 4.5, 120, 6, 1, false, false);
+        fill(col[0], col[1], col[2], 90 * flicker * rippleAlphaMult);
+        cylinder(beamRadius * 9.0, 30, 8, 1, false, false);
+        pop();
+      }
+      
+      pop();
+    }
+    
+    blendMode(BLEND);
+    pop();
   }
 }
 

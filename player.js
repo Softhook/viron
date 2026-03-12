@@ -983,6 +983,7 @@ function killPlayer(p) {
   if (typeof gameSFX !== 'undefined') gameSFX.setThrust(p.id, false);
   particleSystem.addExplosion(p.ship.x, p.ship.y, p.ship.z);
   terrain.addPulse(p.ship.x, p.ship.z, 2.0);  // Yellow ship-explosion ring (type 2)
+  if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(30);
   p.dead = true;
   p.respawnTimer = 120;  // ~2 seconds at 60 fps
   p.bullets = [];
@@ -1167,6 +1168,7 @@ function updateProjectilePhysics(p) {
         p.score += cleared * 50;
       }
       terrain.addPulse(s.x, s.z, 2.0);
+      if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(15);
       if (typeof gameSFX !== 'undefined') {
         gameSFX.setThrust(p.id, false);
         gameSFX.playClearInfection(s.x, g, s.z);

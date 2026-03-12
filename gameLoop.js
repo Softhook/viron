@@ -119,6 +119,7 @@ class GameLoop {
     player.score += hitScore;
     if (e.hp <= 0) {
       particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
+      if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(60);
       swapRemove(enemyManager.enemies, enemyIdx);
       player.score += killBonus;
       return true;
@@ -220,6 +221,7 @@ class GameLoop {
             killed = this._damageColossus(player, j, 1, 12, 10, 2000);
           } else {
             particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+            if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(5);
             swapRemove(enemyManager.enemies, j);
             swapRemove(player.bullets, i);
             player.score += 100;
@@ -240,6 +242,7 @@ class GameLoop {
               killed = this._damageColossus(player, j, 5, 20, 50, 2000);
             } else {
               particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+              if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(8);
               swapRemove(enemyManager.enemies, j);
               swapRemove(player.homingMissiles, i);
               player.score += 250;
@@ -261,6 +264,7 @@ class GameLoop {
               killed = this._damageColossus(player, j, 15, 30, 100, 2000);
             } else {
               particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+              if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(10);
               swapRemove(enemyManager.enemies, j);
               swapRemove(player.tankShells, i);
               player.score += 300;

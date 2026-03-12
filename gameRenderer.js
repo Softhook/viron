@@ -64,6 +64,15 @@ void main() {
 class GameRenderer {
   constructor() {
     this.sceneFBO = null;
+    this.shakeAmount = 0;
+  }
+
+  /**
+   * Triggers or increases camera shake intensity.
+   * @param {number} amt Shake intensity (pixels of offset).
+   */
+  setShake(amt) {
+    this.shakeAmount = Math.max(this.shakeAmount, amt);
   }
 
   /**
@@ -155,6 +164,14 @@ class GameRenderer {
       lx = ship.x;
       ly = ship.y;
       lz = ship.z;
+    }
+
+    if (this.shakeAmount > 0.1) {
+      let sx = (random() - 0.5) * this.shakeAmount;
+      let sy = (random() - 0.5) * this.shakeAmount;
+      let sz = (random() - 0.5) * this.shakeAmount;
+      cx += sx; cy += sy; cz += sz;
+      lx += sx; ly += sy; lz += sz;
     }
 
     return { camNear, camFar, cx, cy, cz, lx, ly, lz };
@@ -295,6 +312,10 @@ class GameRenderer {
    * Dispatches one 3D render pass per player and draws shared 2D overlay.
    */
   renderAllPlayers(gl) {
+    // Decay camera shake
+    this.shakeAmount *= 0.88;
+    if (this.shakeAmount < 0.1) this.shakeAmount = 0;
+
     const h = height, pxDensity = pixelDensity();
 
     if (!this.masterFBO) {

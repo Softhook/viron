@@ -178,227 +178,240 @@ float fbm(vec2 p) {
     a *= 0.5;
   }
   return v;
-}void main() {
-  int mat = int(vColor.r * 255.0 + 0.5);
-  vec3 baseColor = vColor.rgb;
-  
-  vec3 n = normalize(vNormal);
+}
+
+// =============================================================================
+// Per-material colour helpers
+// Each function returns the base colour for its material family and sets the
+// specular intensity / shininess via inout parameters.  Uniforms and varyings
+// (uTime, uPalette, uTileSize, vWorldPos, vColor, vNormal) are accessed as
+// GLSL globals so callers need not thread them through every call site.
+// =============================================================================
+
+// Red Viron biological surface (mat 10 = even tile, mat 11 = odd tile).
+vec3 computeVironColor(int mat, inout float specInt, inout float specShin) {
+  float af      = clamp(mix(1.15, 0.7, (vWorldPos.y - 200.0) / -350.0), 0.7, 1.15);
+  float parity  = (mat == 10) ? 1.0 : 0.75;
+  float xP      = vWorldPos.x / uTileSize;
+  float zP      = vWorldPos.z / uTileSize;
+  float pulse   = sin(uTime * 3.6 + xP * 0.05 + zP * 0.05) * 0.5 + 0.5;
+  float scanPos = uTime / 10.0;
+  float scan    = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
+  vec3 cRed  = uPalette[9]  * parity;
+  vec3 cDark = uPalette[10] * parity;
+  vec3 cScan = uPalette[11] * parity;
+  specInt  = 0.45;
+  specShin = 12.0;
+  return (mix(cDark, cRed, pulse) + cScan * scan * 1.5) * af;
+}
+
+// Yellow Viron biological surface (mat 14 = even tile, mat 15 = odd tile).
+vec3 computeYellowVironColor(int mat, inout float specInt, inout float specShin) {
+  float af      = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3);
+  float parity  = (mat == 14) ? 1.0 : 0.75;
+  float xP      = vWorldPos.x / uTileSize;
+  float zP      = vWorldPos.z / uTileSize;
+  float pulse   = sin(uTime * 4.8 + xP * 0.08 + zP * 0.08) * 0.5 + 0.5;
+  float scanPos = uTime / 8.0;
+  float scan    = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
+  vec3 yYellow = uPalette[14] * parity;
+  vec3 yDark   = uPalette[15] * parity;
+  vec3 yScan   = uPalette[16] * parity;
+  specInt  = 0.5;
+  specShin = 16.0;
+  return (mix(yDark, yYellow, pulse) + yScan * scan * 2.0) * af;
+}
+
+// Barrier pearl surface (mat 20 = even tile, mat 21 = odd tile).
+vec3 computeBarrierColor(int mat, inout float specInt, inout float specShin) {
+  float xP      = vWorldPos.x / uTileSize;
+  float zP      = vWorldPos.z / uTileSize;
+  float shimmer = sin(uTime * 0.7 + xP * 0.15 + zP * 0.1) * 0.5 + 0.5;
+  float parity  = (mat == 20) ? 1.0 : 0.90;
+  specInt  = 2.0;
+  specShin = 64.0;
+  return uPalette[12] * parity * (0.88 + 0.12 * shimmer);
+}
+
+// Animated sea surface (mat 30) with normal-mapped ripples.
+// Modifies n in-place for downstream lighting.
+vec3 computeSeaColor(inout vec3 n, inout float specInt, inout float specShin) {
+  vec3  waterBase  = vec3(15.0/255.0, 45.0/255.0, 150.0/255.0);
+  vec3  crestColor = vec3(25.0/255.0, 65.0/255.0, 165.0/255.0);
+  float tDist      = gl_FragCoord.z / gl_FragCoord.w;
+  float noiseFade  = 1.0 - smoothstep(1500.0, 3500.0, tDist);
+  vec3  col        = waterBase;
+  if (noiseFade > 0.0) {
+    vec2  wPos = vWorldPos.xz * 0.06;
+    float t    = uTime * 0.4;
+    float n1   = noise2D(wPos + vec2(t, t * 0.5));
+    float n2   = noise2D(wPos - vec2(t * 0.8, -t * 0.3) + vec2(n1 * 2.0));
+    n.x += (n1 - 0.5) * 0.4 * noiseFade;
+    n.z += (n2 - 0.5) * 0.4 * noiseFade;
+    n = normalize(n);
+    float ripple = smoothstep(0.4, 0.8, n2);
+    float glint  = smoothstep(0.7, 1.0, n2) * 0.15;
+    col = mix(waterBase, mix(waterBase, crestColor, ripple) + vec3(glint), noiseFade);
+  }
+  specInt  = 0.9;
+  specShin = 64.0;
+  return col;
+}
+
+// Terrain / shore surface (mat 1 = inland, mat 2 = shore) with procedural
+// bump mapping.  Modifies n in-place for downstream lighting.
+vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout float specShin) {
+  float noisePatch = vColor.g;
+  float rand       = vColor.b;
+  float parity     = vColor.a;
+  // Tile-grid coordinates: tileTx = X tile index, tileTz = Z tile index.
+  // Stored as the x and y of a vec2 since GLSL vec2 has no .z component.
+  float tileTx = floor(vWorldPos.x / uTileSize + 0.001);
+  float tileTz = floor(vWorldPos.z / uTileSize + 0.001);
+  vec3  baseColor;
+  // Launchpad tiles are plain white — no bump or colour variation.
+  if (tileTx >= 0.0 && tileTx < 7.0 && tileTz >= 0.0 && tileTz < 7.0) {
+    return vec3(1.0) * parity;
+  }
+  if (mat == 2) { // Shore
+    float idx = floor(rand * 3.0);
+    baseColor = (idx < 1.0) ? uPalette[6] : (idx < 2.0 ? uPalette[7] : uPalette[8]);
+  } else { // Inland
+    float val = mod(floor((noisePatch * 2.0 + rand * 0.2) * 6.0), 6.0);
+    if      (val < 1.0) baseColor = uPalette[0];
+    else if (val < 2.0) baseColor = uPalette[1];
+    else if (val < 3.0) baseColor = uPalette[2];
+    else if (val < 4.0) baseColor = uPalette[3];
+    else if (val < 5.0) baseColor = uPalette[4];
+    else                baseColor = uPalette[5];
+  }
+  float steepness  = 1.0 - max(-vNormal.y, 0.0);
+  float cliffBlend = smoothstep(0.05, 0.18, steepness);
+  baseColor = mix(baseColor, vec3(0.12, 0.11, 0.10), cliffBlend);
+  float tDist    = gl_FragCoord.z / gl_FragCoord.w;
+  float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
+  if (noiseFade > 0.0) {
+    float f1 = noise2D(vWorldPos.xz * 0.03);
+    float f2 = noise2D(vWorldPos.xz * 0.13 + vec2(42.1, 13.7));
+    float ruggedNoise = f1 * 0.6 + f2 * 0.4;
+    // Physically tilt the lighting normal based on procedural detail (bump mapping).
+    n.x += (f1 - 0.5) * 0.3 * noiseFade * (1.0 + cliffBlend * 1.5);
+    n.z += (f2 - 0.5) * 0.3 * noiseFade * (1.0 + cliffBlend * 1.5);
+    n = normalize(n);
+    float noiseShift = 0.7 + (ruggedNoise * mix(0.4, 0.9, cliffBlend) * 1.4);
+    baseColor = mix(baseColor, baseColor * noiseShift, noiseFade);
+  }
+  // Glossy sheen on steep rock faces gives a slightly damp, sheer geological look.
+  specInt  = mix(0.0, 0.4, cliffBlend);
+  specShin = 16.0;
+  return baseColor * parity;
+}
+
+// Blinn-Phong hemisphere lighting.  Returns the lit base colour and outputs
+// ndl (Lambert term) for downstream rim-light masking.
+vec3 computeBlinnPhong(vec3 n, vec3 baseColor, int mat,
+                       float specInt, float specShin, out float ndl) {
+  float hemi       = n.y * -0.5 + 0.5;
+  vec3  ambient    = mix(uAmbientLow, uAmbientHigh, hemi);
+  vec3  toSun      = normalize(-uSunDir);
+  ndl              = max(dot(n, toSun), 0.0);
+  vec3  lightTerm  = max(ambient + uSunColor * ndl, vec3(0.06, 0.08, 0.12));
+  vec3  worldCamPos = uInvViewMatrix[3].xyz;
+  vec3  V           = normalize(worldCamPos - vWorldPos.xyz);
+  vec3  H           = normalize(toSun + V);
+  float specTerm    = pow(max(dot(n, H), 0.0), specShin) * ndl;
+  vec3  specColor   = uSunColor * specTerm * specInt;
+  if (mat >= 10 && mat <= 21) {
+    return baseColor * max(lightTerm, vec3(0.85)) + specColor;
+  } else if (mat >= 250 && mat <= 251) {
+    return baseColor * max(lightTerm, vec3(0.8)) + specColor + baseColor * 0.3;
+  } else if (mat >= 1 && mat <= 2) {
+    return baseColor * lightTerm + specColor;
+  } else if (mat == 30) {
+    return baseColor * lightTerm + specColor * 1.5;
+  } else {
+    return baseColor * max(lightTerm, vec3(0.18, 0.20, 0.25)) + specColor;
+  }
+}
+
+// Fresnel rim lighting.  Skips launchpad fragments to keep the pad clean.
+vec3 applyRimLighting(vec3 outColor, vec3 baseColor, int mat, float ndl) {
+  vec3  localViewDir = normalize(-vViewPos);
+  float fresnel  = 1.0 - max(dot(normalize(vViewNormal), localViewDir), 0.0);
+  fresnel       *= fresnel;
+  float litMask  = smoothstep(0.0, 0.2, ndl);
+  float rimMask  = smoothstep(-0.2, 0.5, -vNormal.y);
+  // Skip rim on launchpad landscape tiles.
+  if (mat >= 1 && mat <= 2) {
+    // tileTz is the Z tile index, stored in the y component of the vec2 swizzle.
+    float tileTx = floor(vWorldPos.x / uTileSize + 0.001);
+    float tileTz = floor(vWorldPos.z / uTileSize + 0.001);
+    if (tileTx >= 0.0 && tileTx < 7.0 && tileTz >= 0.0 && tileTz < 7.0) {
+      return outColor;
+    }
+  }
+  vec3 rim = uFogColor * fresnel * litMask * rimMask;
+  if (mat == 30) {
+    outColor += baseColor * rim * 3.0;
+  } else if (mat >= 1 && mat <= 21) {
+    outColor += baseColor * rim * 1.2;
+  } else if (mat >= 40 && mat <= 47) {
+    outColor += baseColor * rim * 1.5;
+  } else {
+    outColor += rim * 0.7;
+  }
+  return outColor;
+}
+
+void main() {
+  int  mat               = int(vColor.r * 255.0 + 0.5);
+  vec3 baseColor         = vColor.rgb;
+  vec3 n                 = normalize(vNormal);
   float specularIntensity = 0.0;
   float specularShininess = 16.0;
 
-  if (mat >= 10 && mat <= 11) {
-    // ── Viron ───────────────────────────────────────────
-    float af = clamp(mix(1.15, 0.7, (vWorldPos.y - 200.0) / -350.0), 0.7, 1.15);
-    float parity = (mat == 10) ? 1.0 : 0.75;
-    float xP = vWorldPos.x / uTileSize;
-    float zP = vWorldPos.z / uTileSize;
-    float pulse = sin(uTime * 3.6 + xP * 0.05 + zP * 0.05) * 0.5 + 0.5;
-    float scanPos = uTime / 10.0;
-    float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
-    
-    vec3 cRed    = uPalette[9] * parity;
-    vec3 cDark   = uPalette[10] * parity;
-    vec3 cScan   = uPalette[11] * parity;
-    baseColor = mix(cDark, cRed, pulse);
-    baseColor += cScan * scan * 1.5;
-    baseColor *= af;
-    // Slick biological speculator surface
-    specularIntensity = 0.45;
-    specularShininess = 12.0;
-  } else if (mat >= 14 && mat <= 15) {
-    // ── Yellow Viron ─────────────────────────────────────
-    float af = clamp(mix(1.3, 0.8, (vWorldPos.y - 200.0) / -350.0), 0.8, 1.3);
-    float parity = (mat == 14) ? 1.0 : 0.75;
-    float xP = vWorldPos.x / uTileSize;
-    float zP = vWorldPos.z / uTileSize;
-    float pulse = sin(uTime * 4.8 + xP * 0.08 + zP * 0.08) * 0.5 + 0.5; // Faster pulse
-    float scanPos = uTime / 8.0; // Faster scan
-    float scan = smoothstep(0.98, 1.0, 1.0 - abs(fract(xP * 0.02 + zP * 0.01 - scanPos) - 0.5) * 2.0);
-    
-    vec3 yYellow = uPalette[14] * parity;
-    vec3 yDark   = uPalette[15] * parity;
-    vec3 yScan   = uPalette[16] * parity;
-    baseColor = mix(yDark, yYellow, pulse);
-    baseColor += yScan * scan * 2.0;
-    baseColor *= af;
-    specularIntensity = 0.5;
-    specularShininess = 16.0;
-  } else if (mat >= 20 && mat <= 21) {
-    // ── Barrier ──────────────────────────────────────────
-    float xP = vWorldPos.x / uTileSize;
-    float zP = vWorldPos.z / uTileSize;
-    float shimmer = sin(uTime * 0.7 + xP * 0.15 + zP * 0.1) * 0.5 + 0.5;
-    float parity = (mat == 20) ? 1.0 : 0.90;
-    vec3 pearlBase = uPalette[12];
-    
-    baseColor = pearlBase * parity * (0.88 + 0.12 * shimmer);
-    
-    // Immense reflection specular hit
-    specularIntensity = 2.0;
-    specularShininess = 64.0;
-  } else if (mat == 30) {
-    // ── Sea plane ────────────────────────────────────────
-    vec3 waterBase = vec3(15.0/255.0, 45.0/255.0, 150.0/255.0);
-    vec3 crestColor = vec3(25.0/255.0, 65.0/255.0, 165.0/255.0);
-    float tDist = gl_FragCoord.z / gl_FragCoord.w;
-    float noiseFade = 1.0 - smoothstep(1500.0, 3500.0, tDist);
-    vec3 finalColor = waterBase;
-    if (noiseFade > 0.0) {
-      vec2 wPos = vWorldPos.xz * 0.06;
-      float t = uTime * 0.4;
-      float n1 = noise2D(wPos + vec2(t, t * 0.5));
-      float n2 = noise2D(wPos - vec2(t * 0.8, -t * 0.3) + vec2(n1 * 2.0)); // Fixed vec2 + float error
-      
-      // Dynamic normal mapping for highly realistic reactive water ripples!
-      n.x += (n1 - 0.5) * 0.4 * noiseFade;
-      n.z += (n2 - 0.5) * 0.4 * noiseFade;
-      n = normalize(n);
-      
-      float ripple = smoothstep(0.4, 0.8, n2);
-      float glint = smoothstep(0.7, 1.0, n2) * 0.15;
-      vec3 detail = mix(waterBase, crestColor, ripple) + vec3(glint);
-      finalColor = mix(waterBase, detail, noiseFade);
-    }
-    baseColor = finalColor;
-    specularIntensity = 0.9;
-    specularShininess = 64.0;
-  } else if (mat >= 250 && mat <= 251) {
-    // ── Powerup ──────────────────────────────────────────
-    baseColor = (mat == 250) ? vec3(60.0/255.0, 180.0/255.0, 240.0/255.0) : vec3(200.0/255.0, 50.0/255.0, 50.0/255.0);
+  // ── Per-material colour and specular parameters ──────────────────────────
+  if      (mat >= 10 && mat <= 11)  { baseColor = computeVironColor(mat, specularIntensity, specularShininess); }
+  else if (mat >= 14 && mat <= 15)  { baseColor = computeYellowVironColor(mat, specularIntensity, specularShininess); }
+  else if (mat >= 20 && mat <= 21)  { baseColor = computeBarrierColor(mat, specularIntensity, specularShininess); }
+  else if (mat == 30)               { baseColor = computeSeaColor(n, specularIntensity, specularShininess); }
+  else if (mat >= 250 && mat <= 251) {
+    baseColor = (mat == 250) ? vec3(60.0/255.0, 180.0/255.0, 240.0/255.0)
+                              : vec3(200.0/255.0, 50.0/255.0, 50.0/255.0);
     specularIntensity = 0.4;
     specularShininess = 16.0;
-  } else if (mat >= 1 && mat <= 2) {
-    // ── Landscape ────────────────────────────────────────
-    float noisePatch = vColor.g;
-    float rand = vColor.b;
-    float parity = vColor.a;
-    vec2 tPos = floor(vWorldPos.xz / uTileSize + 0.001);
-    bool isLaunchpadFrag = (tPos.x >= 0.0 && tPos.x < 7.0 && tPos.y >= 0.0 && tPos.y < 7.0);
-    if (isLaunchpadFrag) {
-      baseColor = vec3(1.0);
-    } else {
-      if (mat == 2) { // Shore
-        float idx = floor(rand * 3.0);
-        baseColor = (idx < 1.0) ? uPalette[6] : (idx < 2.0 ? uPalette[7] : uPalette[8]);
-      } else { // Inland
-        float val = mod(floor((noisePatch * 2.0 + rand * 0.2) * 6.0), 6.0);
-        if (val < 1.0) baseColor = uPalette[0];
-        else if (val < 2.0) baseColor = uPalette[1];
-        else if (val < 3.0) baseColor = uPalette[2];
-        else if (val < 4.0) baseColor = uPalette[3];
-        else if (val < 5.0) baseColor = uPalette[4];
-        else baseColor = uPalette[5];
-      }
-      
-      float steepness = 1.0 - max(-vNormal.y, 0.0);
-      float cliffBlend = smoothstep(0.05, 0.18, steepness);
-      vec3 cliffColor = vec3(0.12, 0.11, 0.10);
-      baseColor = mix(baseColor, cliffColor, cliffBlend);
-      
-      float tDist = gl_FragCoord.z / gl_FragCoord.w;
-      float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
-      if (noiseFade > 0.0) {
-        // Significantly reduced noise calls for real-time playability
-        float f1 = noise2D(vWorldPos.xz * 0.03);
-        float f2 = noise2D(vWorldPos.xz * 0.13 + vec2(42.1, 13.7));
-        
-        float ruggedNoise = f1 * 0.6 + f2 * 0.4;
-        
-        // Bump Mapping! Physically tilt lighting normal based on procedural terrain
-        n.x += (f1 - 0.5) * 0.3 * noiseFade * (1.0 + cliffBlend * 1.5);
-        n.z += (f2 - 0.5) * 0.3 * noiseFade * (1.0 + cliffBlend * 1.5);
-        n = normalize(n);
-        
-        float intensity = mix(0.4, 0.9, cliffBlend); 
-        float noiseShift = 0.7 + (ruggedNoise * intensity * 1.4);
-        baseColor = mix(baseColor, baseColor * noiseShift, noiseFade);
-      }
-      // Glossy shine on steep rock faces to give a slightly damp, sheer geological look
-      specularIntensity = mix(0.0, 0.4, cliffBlend);
-      specularShininess = 16.0;
-    }
-    baseColor *= parity;
   }
+  else if (mat >= 1 && mat <= 2)    { baseColor = computeLandscapeColor(mat, n, specularIntensity, specularShininess); }
 
+  // ── Shockwave pulse rings ─────────────────────────────────────────────────
   ${_GLSL_PULSE_LOOP}
 
+  // ── Sentinel steady glows ─────────────────────────────────────────────────
   for (int j = 0; j < 2; j++) {
     if (uSentinelGlows[j].w < 0.5) continue;
-    vec2 diff2 = (vWorldPos.xz - uSentinelGlows[j].xy) * 0.01;
-    float dist2 = length(diff2) * 100.0;
-    float glowR = uSentinelGlows[j].z;
+    vec2  diff2    = (vWorldPos.xz - uSentinelGlows[j].xy) * 0.01;
+    float dist2    = length(diff2) * 100.0;
+    float glowR    = uSentinelGlows[j].z;
     float innerGlow = smoothstep(glowR * 1.1, 0.0, dist2) * 0.18;
-    float ringW = glowR * 0.12;
-    float ring2 = smoothstep(glowR - ringW, glowR, dist2) * (1.0 - smoothstep(glowR, glowR + ringW, dist2));
-    float breath = 0.6 + 0.4 * sin(uTime * 1.6 + uSentinelGlows[j].x * 0.002);
+    float ringW    = glowR * 0.12;
+    float ring2    = smoothstep(glowR - ringW, glowR, dist2) *
+                     (1.0 - smoothstep(glowR, glowR + ringW, dist2));
+    float breath   = 0.6 + 0.4 * sin(uTime * 1.6 + uSentinelGlows[j].x * 0.002);
     cyberColor += vec3(0.0, 0.9, 0.8) * (ring2 * breath * 2.2 + innerGlow * breath);
   }
-  
-  float hemi = n.y * -0.5 + 0.5;
-  vec3 ambient = mix(uAmbientLow, uAmbientHigh, hemi);
-  vec3 toSun = normalize(-uSunDir);
-  float ndl = max(dot(n, toSun), 0.0);
-  vec3 keyLight = uSunColor * ndl;
-  vec3 lightTerm = ambient + keyLight;
-  
-  // High-Fidelity Blinn-Phong Specular calculation
-  vec3 worldCamPos = uInvViewMatrix[3].xyz;
-  vec3 V = normalize(worldCamPos - vWorldPos.xyz);
-  // Half-vector between Sun and Camera (used for modern specular accuracy)
-  vec3 H = normalize(toSun + V);
-  float specTerm = pow(max(dot(n, H), 0.0), specularShininess) * ndl;
-  vec3 specularColor = uSunColor * specTerm * specularIntensity;
 
-  lightTerm = max(lightTerm, vec3(0.06, 0.08, 0.12));
-  vec3 litBase;
-  if (mat >= 10 && mat <= 21) {
-    litBase = baseColor * max(lightTerm, vec3(0.85)) + specularColor;
-  } else if (mat >= 250 && mat <= 251) {
-    litBase = baseColor * max(lightTerm, vec3(0.8)) + specularColor;
-    litBase += baseColor * 0.3;
-  } else if (mat >= 1 && mat <= 2) {
-    litBase = baseColor * lightTerm + specularColor;
-  } else if (mat == 30) {
-    litBase = baseColor * lightTerm + specularColor * 1.5;
-  } else {
-    litBase = baseColor * max(lightTerm, vec3(0.18, 0.20, 0.25)) + specularColor;
-  }
-
-  vec3 outColor = litBase;
+  // ── Blinn-Phong lighting ──────────────────────────────────────────────────
+  float ndl;
+  vec3 outColor = computeBlinnPhong(n, baseColor, mat, specularIntensity, specularShininess, ndl);
   if (mat <= 21) { outColor += cyberColor; }
-  
-  // 9. Building Textures removed per user request
-  
-  // 10. Subtle holographic scanlines (World-aligned topographical lines)
-  // Only applied to landscape to keep virus, barrier, and buildings clean.
-  if (mat >= 1 && mat <= 2) {
-    float worldScan = sin(vWorldPos.y * 1.5) * 0.04;
-    outColor -= vec3(worldScan);
-  }
-  
-  // Fresnel Rim Lighting
-  vec3 localViewDir = normalize(-vViewPos);
-  float fresnel = 1.0 - max(dot(normalize(vViewNormal), localViewDir), 0.0);
-  fresnel *= fresnel;
-  
-  float litMask = smoothstep(0.0, 0.2, ndl);
-  float rimMask = smoothstep(-0.2, 0.5, -vNormal.y);
-  vec2 tPosRim = floor(vWorldPos.xz / uTileSize + 0.001);
-  bool skipRim = (mat >= 1 && mat <= 2) && (tPosRim.x >= 0.0 && tPosRim.x < 7.0 && tPosRim.y >= 0.0 && tPosRim.y < 7.0);
 
-  vec3 rim = uFogColor * fresnel * litMask * rimMask;
-  if (!skipRim) {
-    if (mat == 30) {
-      outColor += baseColor * rim * 3.0;
-    } else if (mat >= 1 && mat <= 21) {
-      outColor += baseColor * rim * 1.2;
-    } else if (mat >= 40 && mat <= 47) {
-      outColor += baseColor * rim * 1.5;
-    } else {
-      outColor += rim * 0.7;
-    }
-  }
+  // ── Topographic scanlines (landscape only) ────────────────────────────────
+  if (mat >= 1 && mat <= 2) { outColor -= vec3(sin(vWorldPos.y * 1.5) * 0.04); }
 
+  // ── Fresnel rim lighting ──────────────────────────────────────────────────
+  outColor = applyRimLighting(outColor, baseColor, mat, ndl);
+
+  // ── Distance fog ─────────────────────────────────────────────────────────
   ${_GLSL_FOG}
 
   gl_FragColor = vec4(outColor, 1.0);
@@ -1338,12 +1351,12 @@ class Terrain {
    * @param {boolean} [firstPerson=false]  Whether to render from a first-person camera.
    */
   drawLandscape(s, viewAspect, firstPerson = false) {
-    let gx = toTile(s.x), gz = toTile(s.z);
+    const gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
     // Compute camera params once and cache on the instance so drawTrees,
     // drawBuildings and enemies.draw reuse the same values this frame.
-    let cam = this.getCameraParams(s, firstPerson);
+    const cam = this.getCameraParams(s, firstPerson);
 
     // Pre-compute FOV slope once — used for chunk culling, infected-tile culling,
     // and inFrustum() calls in drawTrees/drawBuildings.
@@ -1362,9 +1375,6 @@ class Terrain {
 
     this._cam = cam;
 
-    let fovSlope = cam.fovSlope;
-    let chunkHalf = CHUNK_SIZE * TILE;   // One chunk width — used as lateral margin
-
     // p5 lighting silently overrides custom shaders that don't declare lighting
     // uniforms; disable it for the terrain pass.
     noLights();
@@ -1373,103 +1383,39 @@ class Terrain {
     this.applyShader();
     if (profiler) profiler.record('shader', performance.now() - shaderStart);
 
-    let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
-    let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
-    let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
-    let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
+    const minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
+    const maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
+    const minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
+    const maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
 
-    for (let cz = minCz; cz <= maxCz; cz++) {
-      for (let cx = minCx; cx <= maxCx; cx++) {
-        // Full frustum cull at chunk level — skip chunks behind OR to the sides.
-        // Uses the chunk centre with a one-chunk lateral margin so no
-        // partially-visible edge chunk is accidentally dropped.
-        // Skipped when cam.skipFrustum is set (cockpit view at steep pitch) because
-        // the yaw-based forward vector does not reflect the true visible area then.
-        if (!cam.skipFrustum) {
-          let chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
-          let chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
-          let dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
-          let fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
-          if (fwdDist < -chunkHalf) continue;   // More than one chunk behind
-          let rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
-          let halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
-          if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
-        }
-
-        let geom = this.getChunkGeometry(cx, cz);
-        if (geom) model(geom);
-      }
-    }
+    this._drawTerrainChunks(cam, minCx, maxCx, minCz, maxCz);
 
     const minTx = gx - VIEW_FAR, maxTx = gx + VIEW_FAR;
     const minTz = gz - VIEW_FAR, maxTz = gz + VIEW_FAR;
 
-    // Build Viron tile overlays for the full visible tile range.
-    // All infection tiles that pass normal view/frustum tests remain drawable.
+    // Viron tile overlays (infection) — pulsing red/yellow quads on top of terrain.
     if (infection.count > 0) {
       this._drawTileOverlays(
         infection,
         { normal: [10, 11], yellow: [14, 15] },
-        -0.5, cam, fovSlope, minTx, maxTx, minTz, maxTz, 'infection',
+        -0.5, cam, cam.fovSlope, minTx, maxTx, minTz, maxTz, 'infection',
         minCx, maxCx, minCz, maxCz
       );
     }
 
-    // --- Barrier tile overlays ---
-    // Reads from the global barrierTiles Map — iterates once to cull and collect
-    // visible tile vertices, then draws in exactly TWO beginShape/endShape passes
-    // (one per checkerboard parity) so fill() is never called inside an active
-    // shape.  Calling fill() mid-shape forces p5's WEBGL renderer to flush its
-    // internal vertex buffer on every colour change; with 2,000 barrier tiles
-    // alternating between two colours that would be ~2,000 GPU flushes per frame.
-    //
-    // When barrierTiles.buckets is populated (always true at runtime since it is
-    // constructed with withBuckets=true), we iterate only chunk buckets that
-    // overlap the current view rectangle instead of the entire global tile list.
-    // Cost becomes O(visible tiles) regardless of total barrier count.
+    // Barrier tile overlays — drawn in two checkerboard-parity passes so fill()
+    // is never called inside an active shape (~2,000 GPU flushes avoided per frame).
+    // Bucket-based iteration keeps cost O(visible tiles) regardless of total count.
     if (gameState.barrierTiles && gameState.barrierTiles.size > 0) {
       this._drawTileOverlays(
         gameState.barrierTiles,
         { default: [20, 21] },
-        -0.3, cam, fovSlope, minTx, maxTx, minTz, maxTz, 'barrier',
+        -0.3, cam, cam.fovSlope, minTx, maxTx, minTz, maxTz, 'barrier',
         minCx, maxCx, minCz, maxCz
       );
     }
 
-    // Static sea plane — a single flat quad at SEA covering the visible area.
-    // No per-vertex sine calculations; all four corners share the same Y so there
-    // is no per-frame geometry work beyond issuing the two-triangle draw call.
-    // The sea is drawn while the terrain shader is still active so it receives the
-    // same fog blending that hides terrain chunk pop-in at the view boundary.
-    // mat = 30 — the sea uses a dedicated material ID outside the [0, 21] range so
-    // it is never affected by shockwave pulse (cyberColor) effects; those effects are
-    // restricted to mat <= 21 (ground/infection materials).  The GLSL mat == 30 branch
-    // sets the deep-blue base colour directly.  The surface normal uses (0, -1, 0) —
-    // the correct upward-facing orientation in WEBGL's Y-inverted coordinate system —
-    // so the sea receives proper sun and sky-dome lighting instead of only dark ambient.
-    //
-    // sy = SEA (not SEA+3): placing the plane exactly at sea surface level ensures that
-    // all submerged terrain vertices (Y > SEA) are behind the sea in the depth buffer.
-    // The previous SEA+3 offset allowed vertices at Y=200–202 to win depth tests and
-    // show through the sea, causing the flickering reported on mobile.  Polygon offset
-    // (-1,-4) gives the sea a tiny depth advantage at the exact shore boundary where
-    // terrain triangles intersect the sea surface, preventing residual Z-fighting
-    // without affecting any above-water geometry (which is always closer to the camera).
-    let seaSize = VIEW_FAR * TILE * 1.5;
-    let seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
-    let sx0 = seaCx - seaSize, sx1 = seaCx + seaSize;
-    let sz0 = seaCz - seaSize, sz1 = seaCz + seaSize;
-    let sy = SEA;
-    const gl = drawingContext;
-    gl.enable(gl.POLYGON_OFFSET_FILL);
-    gl.polygonOffset(-1.0, -4.0);
-    fill(30, 45, 150);
-    beginShape(TRIANGLES);
-    normal(0, -1, 0);
-    vertex(sx0, sy, sz0); vertex(sx1, sy, sz0); vertex(sx0, sy, sz1);
-    vertex(sx1, sy, sz0); vertex(sx1, sy, sz1); vertex(sx0, sy, sz1);
-    endShape();
-    gl.disable(gl.POLYGON_OFFSET_FILL);
+    this._drawSeaPlane(s);
 
     // Exit the terrain GLSL shader and restore p5 lighting for subsequent
     // non-terrain draw calls (trees, buildings, enemies, ships).
@@ -1479,20 +1425,97 @@ class Terrain {
     resetShader();
     setSceneLighting();
 
-    // Zarch-tribute: missiles lined up along the right side of the launchpad
+    this._drawLaunchpadMissiles(cam);
+  }
+
+  /**
+   * Renders all visible terrain chunk meshes under the currently bound terrain
+   * shader, applying chunk-level frustum culling to skip non-visible chunks.
+   *
+   * Chunk-level culling uses the chunk centre with a one-chunk lateral margin so
+   * no partially-visible edge chunk is accidentally dropped.  Culling is skipped
+   * when cam.skipFrustum is set (cockpit view at steep pitch).
+   *
+   * @param {object} cam      Camera descriptor (x, z, fwdX, fwdZ, fovSlope, skipFrustum).
+   * @param {number} minCx    Min chunk-grid X to iterate.
+   * @param {number} maxCx    Max chunk-grid X to iterate.
+   * @param {number} minCz    Min chunk-grid Z to iterate.
+   * @param {number} maxCz    Max chunk-grid Z to iterate.
+   * @private
+   */
+  _drawTerrainChunks(cam, minCx, maxCx, minCz, maxCz) {
+    const chunkHalf = CHUNK_SIZE * TILE;   // One chunk width — lateral frustum margin
+    const fovSlope  = cam.fovSlope;
+    for (let cz = minCz; cz <= maxCz; cz++) {
+      for (let cx = minCx; cx <= maxCx; cx++) {
+        if (!cam.skipFrustum) {
+          const chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
+          const chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
+          const dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
+          const fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
+          if (fwdDist < -chunkHalf) continue;   // More than one chunk behind
+          const rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
+          const halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
+          if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
+        }
+        const geom = this.getChunkGeometry(cx, cz);
+        if (geom) model(geom);
+      }
+    }
+  }
+
+  /**
+   * Renders the static sea plane under the currently bound terrain shader.
+   *
+   * A single flat quad at SEA covers the visible area.  The terrain shader
+   * (mat 30) animates the surface with normal-mapped ripples.  Polygon offset
+   * (-1, -4) gives the sea a tiny depth advantage at the shore boundary to
+   * prevent Z-fighting without affecting above-water geometry.
+   *
+   * sy = SEA (not SEA+3): placing the plane exactly at sea level ensures that
+   * all submerged terrain vertices (Y > SEA) are behind the sea in the depth
+   * buffer, preventing the flickering seen when sy was elevated.
+   *
+   * @param {{x:number, z:number}} s  Ship state — used to centre the sea quad.
+   * @private
+   */
+  _drawSeaPlane(s) {
+    const seaSize = VIEW_FAR * TILE * 1.5;
+    const seaCx   = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
+    const sx0     = seaCx - seaSize, sx1 = seaCx + seaSize;
+    const sz0     = seaCz - seaSize, sz1 = seaCz + seaSize;
+    const gl      = drawingContext;
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(-1.0, -4.0);
+    fill(30, 45, 150);  // mat=30 triggers the sea GLSL branch
+    beginShape(TRIANGLES);
+    normal(0, -1, 0);   // Upward-facing in WebGL's Y-inverted coordinate system
+    vertex(sx0, SEA, sz0); vertex(sx1, SEA, sz0); vertex(sx0, SEA, sz1);
+    vertex(sx1, SEA, sz0); vertex(sx1, SEA, sz1); vertex(sx0, SEA, sz1);
+    endShape();
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+  }
+
+  /**
+   * Renders the Zarch-tribute missile decorations lined up along the launchpad.
+   * Called after resetShader() / setSceneLighting() so these use standard p5
+   * lighting rather than the terrain shader.
+   *
+   * @param {object} cam  Camera descriptor (x, z, fwdX, fwdZ) for fog depth calc.
+   * @private
+   */
+  _drawLaunchpadMissiles(cam) {
     push();
-    let mX = LAUNCH_MAX - 100;
+    const mX = LAUNCH_MAX - 100;
     for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
-      let mDepth = (mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ;
-      // Use getFogFactor() + inline lerps — both colours share the same depth so
-      // the factor only needs to be computed once per missile decoration.
-      const fogF = this.getFogFactor(mDepth);
+      // Both colours share the same depth, so compute fog factor once per missile.
+      const fogF = this.getFogFactor((mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ);
       push();
       translate(mX, LAUNCH_ALT, mZ);
       fill(lerp(60, SKY_R, fogF), lerp(60, SKY_G, fogF), lerp(60, SKY_B, fogF));
-      push(); translate(0, -10, 0); box(30, 20, 30); pop();          // Stand
+      push(); translate(0, -10, 0); box(30, 20, 30); pop();                        // Stand
       fill(lerp(255, SKY_R, fogF), lerp(140, SKY_G, fogF), lerp(20, SKY_B, fogF));
-      push(); translate(0, -70, 0); rotateX(Math.PI); cone(18, 100, 4, 1); pop();  // Rocket body
+      push(); translate(0, -70, 0); rotateX(Math.PI); cone(18, 100, 4, 1); pop(); // Rocket body
       pop();
     }
     pop();

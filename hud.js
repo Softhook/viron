@@ -337,7 +337,6 @@ function drawMenu() {
     text('PRESS 2 — MULTIPLAYER', 0, optY + 50);
   }
 
-  // --- Control hint (bottom of screen) ---
   /*
   textSize(13);
   fill(100, 140, 100, 150);
@@ -348,6 +347,7 @@ function drawMenu() {
     text('P2: ARROWS turn  UP thrust  ;/\' tilt  . shoot  / cycle weapon  DOWN brake', 0, height / 2 - 35);
   }
   */
+  drawVironProfilerOverlay();
 
   pop();
 }
@@ -448,6 +448,8 @@ function drawInstructions() {
   textAlign(CENTER, CENTER);
   textSize(24);
   text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
+
+  drawVironProfilerOverlay();
 
   pop();
 }
@@ -642,6 +644,8 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     textAlign(CENTER, CENTER);
     text("READY", relX, 0);
   }
+
+  drawVironProfilerOverlay();
 
   pop();
   gl.disable(gl.SCISSOR_TEST);

@@ -754,6 +754,7 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
 
   drawRadarForPlayer(p, hw, h);
   _drawWeaponSelector(p, h);
+  drawVironProfilerOverlay(hw, h);
 
   pop();
 }

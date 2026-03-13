@@ -627,7 +627,9 @@ class Terrain {
     // Per-render-pass uniform deduplication.
     // _renderPassId increments each time drawLandscape() starts a new player's
     // view, allowing drawTrees() and drawBuildings() to skip re-uploading the
-    // same fog/sun/ambient/palette uniforms that drawLandscape() already set.
+    // same fog/sun/ambient/invViewMatrix/time/pulse uniforms that drawLandscape()
+    // already set.  uPalette and uSentinelGlows are uploaded in applyShader()
+    // (not here) so they are unaffected by this guard.
     // Index 0 = terrain shader, index 1 = fill-colour shader.
     this._renderPassId = 0;
     this._uniformUploadedPassId = [-1, -1];

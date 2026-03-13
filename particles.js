@@ -463,6 +463,26 @@ class ParticleSystem {
         _softShader.setUniform('uInvViewportSize', _softInvViewportBuf);
         _softShader.setUniform('uTransitionSize', 0.05);
       }
+
+      // Pre-fetch the GL uniform location for uParticleColor once per render()
+      // call so the per-particle hot path can use gl.uniform4f() directly.
+      //
+      // p5's Shader.setUniform() copies every array/typed-array value via
+      // data.slice(0) for its internal change-detection cache, allocating a new
+      // object per call regardless of whether the caller passes a fresh literal
+      // or a reused Float32Array.  With ~220 visible soft particles per frame
+      // that would be 220 allocations/frame just for this uniform.
+      //
+      // Bypassing setUniform() with a direct gl.uniform4f() call has zero
+      // allocation cost — the four floats are passed as scalar arguments.
+      // The shader program is already active (shader() was called above), so
+      // no useProgram() call is needed.
+      let _directColorLoc = null;
+      if (useDepthSoftShader && _softShader && _softShader.uniforms) {
+        const _uInfo = _softShader.uniforms['uParticleColor'];
+        if (_uInfo && _uInfo.location != null) _directColorLoc = _uInfo.location;
+      }
+
       if (useBillowSprites) texture(_cloudTex);
 
       for (let i = 0; i < this.particles.length; i++) {
@@ -501,9 +521,16 @@ class ParticleSystem {
           if (p.isFog) sz *= (p.isInkBurst ? (1.3 + t * 4.2) : (1.35 + t * 2.3));
           push(); translate(p.x, p.y, p.z); rotateY(yaw); rotateX(pitch);
           if (useDepthSoftShader) {
-            _softShaderColorBuf[0] = r / 255; _softShaderColorBuf[1] = g / 255;
-            _softShaderColorBuf[2] = b / 255; _softShaderColorBuf[3] = alpha;
-            _softShader.setUniform('uParticleColor', _softShaderColorBuf); plane(sz, sz);
+            // Direct gl.uniform4f — zero allocations vs setUniform's slice(0) copy.
+            if (_directColorLoc !== null) {
+              drawingContext.uniform4f(_directColorLoc, r / 255, g / 255, b / 255, alpha);
+            } else {
+              // Fallback if location unavailable (first frame or driver quirk).
+              _softShaderColorBuf[0] = r / 255; _softShaderColorBuf[1] = g / 255;
+              _softShaderColorBuf[2] = b / 255; _softShaderColorBuf[3] = alpha;
+              _softShader.setUniform('uParticleColor', _softShaderColorBuf);
+            }
+            plane(sz, sz);
           } else {
             tint(r, g, b, alpha * 255); plane(sz, sz);
           }

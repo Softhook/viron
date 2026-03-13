@@ -122,6 +122,17 @@ class EnemyManager {
     if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot(shotType, e.x, e.y - 10, e.z);
   }
 
+  /**
+   * Returns true for enemy types whose meshes use beginShape(TRIANGLES) with
+   * explicit vertex() calls (terrain-shader pass), false for box/cylinder enemies
+   * (fill-colour-shader pass).  Checked in draw() to route each enemy to the
+   * correct render pass.
+   * @private
+   */
+  _isVertexEnemy(type) {
+    return type === 'fighter' || type === 'bomber' || type === 'hunter' || type === 'seeder';
+  }
+
   /** Shared 2D pursuit steering with velocity smoothing. */
   _steer2D(e, tx, tz, speed, smooth) {
     const dx = tx - e.x, dz = tz - e.z;
@@ -986,10 +997,34 @@ class EnemyManager {
    * need the default shader to respect fill() colours, while vertex-based enemies
    * use the terrain shader for fog and rim-lighting effects.
    *
+   * Culling is done once upfront to avoid three separate O(n) sweeps with
+   * the same distance predicate.
+   *
    * @param {{x,y,z,yaw}} s  Ship state used as the view origin for culling.
    */
   draw(s) {
-    let cullSq = CULL_DIST * CULL_DIST;
+    if (this.enemies.length === 0) return;
+
+    const cullSq = CULL_DIST * CULL_DIST;
+    const sx = s.x, sz = s.z;
+
+    // Single culling pass — build list of enemies visible this frame.
+    // The Colossus has an enlarged cull radius that grows with its tier,
+    // so its localCullSq is stored on the object for re-use in the shadow pass.
+    const vis = [];
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      let localCullSq = cullSq;
+      if (e.type === 'colossus') {
+        const colScale = e.colossusScale || 1;
+        localCullSq = (CULL_DIST * (1.5 + (colScale - 1) * 0.4)) ** 2;
+        e._shadowCullSq = localCullSq; // cache enlarged radius for shadow pass
+      }
+      if ((e.x - sx) ** 2 + (e.z - sz) ** 2 > localCullSq) continue;
+      vis.push(e);
+    }
+
+    if (vis.length === 0) return;
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // PASS 1: Box/cylinder-based enemies.
@@ -1013,13 +1048,9 @@ class EnemyManager {
       setSceneLighting();
     }
 
-    for (let e of this.enemies) {
-      let localCullSq = cullSq;
-      if (e.type === 'colossus') {
-        const colScale = e.colossusScale || 1;
-        localCullSq = (CULL_DIST * (1.5 + (colScale - 1) * 0.4)) ** 2;
-      }
-      if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > localCullSq) continue;
+    for (let i = 0; i < vis.length; i++) {
+      const e = vis[i];
+      if (this._isVertexEnemy(e.type)) continue; // vertex enemies go in PASS 2
 
       push();
       translate(e.x, e.y, e.z);
@@ -1042,11 +1073,9 @@ class EnemyManager {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     terrain.applyShader();
 
-    for (let e of this.enemies) {
-      if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > cullSq) continue;
-      const isVertexEnemy = (e.type === 'fighter' || e.type === 'bomber' ||
-        e.type === 'hunter' || e.type === 'seeder');
-      if (!isVertexEnemy) continue;
+    for (let i = 0; i < vis.length; i++) {
+      const e = vis[i];
+      if (!this._isVertexEnemy(e.type)) continue; // box/cylinder enemies already drawn in PASS 1
 
       push(); translate(e.x, e.y, e.z); scale(ENEMY_DRAW_SCALE);
       if (e.type === 'fighter') this._drawFighter(e);
@@ -1059,9 +1088,10 @@ class EnemyManager {
     resetShader();
     setSceneLighting();
 
-    // Shadow pass
-    for (let e of this.enemies) {
-      if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > cullSq) continue;
+    // Shadow pass — crab/scorpion/yellowCrab hug the ground and have no airborne shadow.
+    for (let i = 0; i < vis.length; i++) {
+      const e = vis[i];
+      if (e.type === 'crab' || e.type === 'scorpion' || e.type === 'yellowCrab') continue;
       const gy = terrain.getAltitude(e.x, e.z);
       const casterH = max(24, gy - e.y);
       let sw = 80, sh = 50;
@@ -1075,9 +1105,7 @@ class EnemyManager {
       else if (e.type === 'hunter') { sw = 80; sh = 48; }
       else if (e.type === 'squid') { sw = 110; sh = 72; }
       else if (e.type === 'seeder') { sw = 68; sh = 50; }
-      if (e.type !== 'crab' && e.type !== 'scorpion' && e.type !== 'yellowCrab') {
-        drawShadow(e.x, gy, e.z, sw, sh, casterH);
-      }
+      drawShadow(e.x, gy, e.z, sw, sh, casterH);
     }
   }
 }

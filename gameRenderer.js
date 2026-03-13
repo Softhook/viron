@@ -571,7 +571,8 @@ class GameRenderer {
   _handleCleanSentinel(building) {
     // Cache the glow descriptor on the building object the first time we see it
     // so we never allocate a { x, z, radius } literal inside this per-frame hot path.
-    // Underscore prefix marks this as a renderer-internal cache added at runtime.
+    // Assumes sentinel positions and sizes are static after world creation —
+    // valid for all current sentinel types (spawned once, never moved or resized).
     if (!building._cachedGlow) {
       building._cachedGlow = { x: building.x, z: building.z, radius: building.w * 1.5 };
     }

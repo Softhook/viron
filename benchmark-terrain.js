@@ -667,3 +667,155 @@ console.log('  _drawTri() edge vectors (200 allocs/frame)   Reduces minor GC pre
 console.log('  alivePlayers reuse (1 alloc/frame)           Reduces minor GC pressure; micro unreliable');
 console.log('  Bomber/seeder geometry cache                 ~8× fewer draw calls per enemy (browser-only)');
 console.log('');
+
+// ===========================================================================
+// 9. New hot-path fixes: geometry key caching, shadow-queue reuse, Math.pow
+//
+// These benchmarks quantify the per-frame savings from three changes made in
+// this optimisation pass:
+//
+//   (a) Geometry cache key: toFixed() rebuild vs cached string pair
+//       _getBuildingGeom / _getTreeGeom / _getPowerupGeom construct a lookup
+//       key via `toFixed()` on every call (once per visible building/tree per
+//       frame).  The fix caches both "clean" and "infected" key strings on the
+//       object the first time, so hot-path frames pay zero allocation.
+//
+//   (b) Shadow-queue array: `const shadowQueue = []` vs reused instance array
+//       drawBuildings() and drawTrees() each allocated a fresh JS array every
+//       frame (plus up to 40 { b, y, inf } wrapper objects) for the deferred
+//       shadow-render pass.  The fix reuses `this._buildingShadowQueue` and
+//       `this._treeShadowQueue`, storing only building/tree references.
+//
+//   (c) Math.pow() in checkCollisions hot loop
+//       `Math.pow(ENEMY_DRAW_SCALE / 2, 2)` is called once per
+//       checkCollisions() invocation (every frame) and returns a constant 4.0.
+//       Replaced with the precomputed constant `_ENEMY_HALF_SCALE_SQ`.
+// ===========================================================================
+
+console.log('\n━━━ 9. New hot-path optimizations: geom-key cache + shadow-queue reuse ━━━\n');
+
+// ---------------------------------------------------------------------------
+// 9a. Geometry cache key: toFixed() rebuild vs pre-cached string pair
+//
+// Simulates the per-call cost of _getBuildingGeom() / _getTreeGeom() for
+// N_BLDGS buildings visible each frame (desktop = 40; mobile ≈ 15).
+// ---------------------------------------------------------------------------
+console.log('  (a) Geometry cache key: toFixed() rebuild vs cached key pair\n');
+
+const N_BLDGS = 40;
+// Typical building data
+const mockBuilding = { type: 1, w: 60.0, h: 100.0, d: 40.0, col: [120, 150, 80] };
+const mockTree = { variant: 2, canopyScale: 1.25, trunkH: 48.0 };
+let mockInf = false;
+
+// OLD: rebuild key each call using toFixed()
+function oldBuildingKey(b, inf) {
+  return (b.type === 2)
+    ? `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_${inf}_${b.col[0]}_${b.col[1]}_${b.col[2]}`
+    : `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_${inf}`;
+}
+
+// NEW: lookup pre-cached key pair
+function newBuildingKey(b, inf) {
+  if (!b._geomKeyPair) {
+    const base = `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_`;
+    const colSuffix = (b.type === 2) ? `_${b.col[0]}_${b.col[1]}_${b.col[2]}` : '';
+    b._geomKeyPair = [base + 'false' + colSuffix, base + 'true' + colSuffix];
+  }
+  return b._geomKeyPair[inf ? 1 : 0];
+}
+
+// Warm up the new cache so the benchmark measures steady-state (not first-call)
+newBuildingKey(mockBuilding, false);
+newBuildingKey(mockBuilding, true);
+
+const t9a_old = bench(`OLD — toFixed() rebuild, ${N_BLDGS} buildings/frame     `, () => {
+  for (let i = 0; i < N_BLDGS; i++) _sink = oldBuildingKey(mockBuilding, mockInf);
+}, 500_000);
+
+const t9a_new = bench(`NEW — cached key pair lookup, ${N_BLDGS} buildings/frame  `, () => {
+  for (let i = 0; i < N_BLDGS; i++) _sink = newBuildingKey(mockBuilding, mockInf);
+}, 500_000);
+
+console.log(`\n  Speedup: ${(t9a_old / t9a_new).toFixed(2)}×   CPU time saved per frame at ${N_BLDGS} buildings\n`);
+
+// Trees use the same pattern; verify with tree key
+const t9a_tree_old = bench('OLD — toFixed() rebuild, 60 trees/frame              ', () => {
+  _sink = `tree_${mockTree.variant}_${mockTree.canopyScale.toFixed(2)}_${mockTree.trunkH.toFixed(1)}_${mockInf}`;
+}, 1_000_000);
+
+// Inline cached tree key pattern
+function newTreeKey(t, inf) {
+  if (!t._geomKeyPair) {
+    const base = `tree_${t.variant}_${t.canopyScale.toFixed(2)}_${t.trunkH.toFixed(1)}_`;
+    t._geomKeyPair = [base + 'false', base + 'true'];
+  }
+  return t._geomKeyPair[inf ? 1 : 0];
+}
+
+const mockTreeCached = { ...mockTree };  // fresh object (no _geomKeys yet)
+newTreeKey(mockTreeCached, false);   // warm newTreeKey with a fresh tree instance
+newTreeKey(mockTree, false); newTreeKey(mockTree, true); // warm steady-state
+
+const t9a_tree_new = bench('NEW — cached key pair, 60 trees/frame                ', () => {
+  _sink = newTreeKey(mockTree, mockInf);
+}, 1_000_000);
+
+console.log(`\n  Tree key speedup: ${(t9a_tree_old / t9a_tree_new).toFixed(2)}×\n`);
+
+// ---------------------------------------------------------------------------
+// 9b. Shadow-queue array allocation: new [] per frame vs .length=0 reuse
+//
+// Each frame drawBuildings() allocates `const shadowQueue = []` and fills it
+// with up to N_BLDGS `{ b, y, inf }` objects.  The fix reuses a cached array
+// and stores only building references (inf looked up from b._tileKey later).
+// ---------------------------------------------------------------------------
+console.log('  (b) Shadow-queue allocation: new [] per frame vs reused array\n');
+
+const _cachedShadowQ = [];
+
+// OLD: fresh array + wrapper objects
+const t9b_old = bench(`OLD — new [] + ${N_BLDGS} {b,y,inf} objects per frame    `, () => {
+  const q = [];
+  for (let i = 0; i < N_BLDGS; i++) q.push({ b: mockBuilding, y: 100, inf: mockInf });
+  _sink = q.length;
+}, 200_000);
+
+// NEW: reuse array, store references only
+const t9b_new = bench(`NEW — reuse array, push ${N_BLDGS} refs, .length=0 reset  `, () => {
+  _cachedShadowQ.length = 0;
+  for (let i = 0; i < N_BLDGS; i++) _cachedShadowQ.push(mockBuilding);
+  _sink = _cachedShadowQ.length;
+}, 200_000);
+
+console.log(`\n  Speedup: ${(t9b_old / t9b_new).toFixed(2)}×   (each {b,y,inf} object eliminated; array retained)\n`);
+
+// ---------------------------------------------------------------------------
+// 9c. Math.pow() vs precomputed constant in checkCollisions()
+//
+// Math.pow(ENEMY_DRAW_SCALE / 2, 2) is called once per checkCollisions()
+// (every frame).  With ENEMY_DRAW_SCALE = 4, it always returns 4.0.
+// ---------------------------------------------------------------------------
+console.log('  (c) Math.pow(ENEMY_DRAW_SCALE/2, 2) vs precomputed constant\n');
+
+const ENEMY_DRAW_SCALE_BENCH = 4;
+const _ENEMY_HALF_SCALE_SQ_BENCH = (ENEMY_DRAW_SCALE_BENCH / 2) * (ENEMY_DRAW_SCALE_BENCH / 2);
+
+const t9c_old = bench('OLD — Math.pow(ENEMY_DRAW_SCALE / 2, 2) per frame     ', () => {
+  _sink = Math.pow(ENEMY_DRAW_SCALE_BENCH / 2, 2);
+}, 10_000_000);
+
+const t9c_new = bench('NEW — _ENEMY_HALF_SCALE_SQ constant reference         ', () => {
+  _sink = _ENEMY_HALF_SCALE_SQ_BENCH;
+}, 10_000_000);
+
+console.log(`\n  Speedup: ${(t9c_old / t9c_new).toFixed(2)}×   (constant fold vs function call)\n`);
+
+console.log('━━━ Section 9 Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  Fix                                                     Measured speedup');
+console.log('  ────────────────────────────────────────────────────── ─────────────────────────────');
+console.log(`  Geometry key cache (toFixed per frame → cached pair)    ${(t9a_old / t9a_new).toFixed(2)}× per frame at ${N_BLDGS} buildings`);
+console.log(`  Tree key cache (same pattern)                           ${(t9a_tree_old / t9a_tree_new).toFixed(2)}× per key lookup`);
+console.log(`  Shadow-queue reuse (.length=0 vs new []+objects)        ${(t9b_old / t9b_new).toFixed(2)}× per frame (eliminates ${N_BLDGS} heap objects)`);
+console.log(`  Math.pow constant (checkCollisions every frame)         ${(t9c_old / t9c_new).toFixed(2)}× per frame`);
+console.log('');

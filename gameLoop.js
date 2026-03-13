@@ -6,6 +6,12 @@
 // game-over conditions when physics constraints are violated.
 // =============================================================================
 
+// ENEMY_DRAW_SCALE is defined in enemies.js (= 4). Precompute the squared
+// half-scale used in every checkCollisions() call so Math.pow() is never
+// called inside the per-enemy hot loop.
+// enemies.js loads before gameLoop.js (see index.html script order).
+const _ENEMY_HALF_SCALE_SQ = (ENEMY_DRAW_SCALE / 2) * (ENEMY_DRAW_SCALE / 2);
+
 class GameLoop {
   /** @private Returns squared size multiplier used for Colossus radius checks. */
   static _colossusScaleSq(e) {
@@ -292,7 +298,7 @@ class GameLoop {
     }
 
     // 2, 3, 4. Enemy body and weapons vs player
-    let enemyScaleSq = Math.pow(ENEMY_DRAW_SCALE / 2, 2);
+    const enemyScaleSq = _ENEMY_HALF_SCALE_SQ;
     for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
       let e = enemyManager.enemies[j];
       let killed = false;
@@ -412,7 +418,11 @@ class GameLoop {
         let radiusSq = (b.w + 15) ** 2;
 
         if (dx * dx + dy * dy + dz * dz < radiusSq) {
-          let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
+          // Cache the tile-key on the powerup building so the arithmetic is
+          // only done once even if the player hovers in range for many frames.
+          // Powerup positions are fixed at spawn; the building is removed on pickup.
+          if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+          let inf = infection.has(b._tileKey);
           if (inf) {
             if (player.missilesRemaining > 0) player.missilesRemaining--;
             if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);

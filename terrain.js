@@ -618,6 +618,14 @@ class Terrain {
     // Procedural tree chunk cache (static by world position, lazily populated).
     this._procTreeChunkCache = new Map();
 
+    // Reusable shadow-queue arrays for drawBuildings() and drawTrees().
+    // Allocated once and reset each frame with .length=0 to avoid per-frame GC.
+    // _buildingShadowInf is a parallel array of infection booleans matching
+    // _buildingShadowQueue so the shadow pass never recomputes infection.has().
+    this._buildingShadowQueue = [];
+    this._buildingShadowInf = [];
+    this._treeShadowQueue = [];
+
     // Cached per-frame sun shadow basis so multiple shadow draws don't
     // renormalize the same vector every call.
     this._sunShadowBasis = { x: 0, y: 1, z: 0 };
@@ -1923,7 +1931,13 @@ class Terrain {
   }
 
   _getPowerupGeom(b, inf) {
-    const key = `pu_${(b.w).toFixed(1)}_${(b.h).toFixed(1)}_${inf}`;
+    // Cache both key variants on the powerup object so toFixed() is paid only once.
+    // b._geomKeyPair[0] = clean key, b._geomKeyPair[1] = infected key.
+    if (!b._geomKeyPair) {
+      const base = `pu_${b.w.toFixed(1)}_${b.h.toFixed(1)}_`;
+      b._geomKeyPair = [base + 'false', base + 'true'];
+    }
+    const key = b._geomKeyPair[inf ? 1 : 0];
     if (!this._geoms) this._geoms = new Map();
     if (this._geoms.has(key)) return this._geoms.get(key);
 
@@ -1953,7 +1967,14 @@ class Terrain {
 
   _getTreeGeom(t, inf) {
     const { trunkH: h, canopyScale: sc, variant: vi } = t;
-    const key = `tree_${vi}_${sc.toFixed(2)}_${h.toFixed(1)}_${inf}`;
+    // Cache both key variants (clean + infected) on the tree object so toFixed()
+    // string allocation is paid only once per tree lifetime.
+    // t._geomKeyPair[0] = clean key, t._geomKeyPair[1] = infected key.
+    if (!t._geomKeyPair) {
+      const base = `tree_${vi}_${sc.toFixed(2)}_${h.toFixed(1)}_`;
+      t._geomKeyPair = [base + 'false', base + 'true'];
+    }
+    const key = t._geomKeyPair[inf ? 1 : 0];
     if (!this._geoms) this._geoms = new Map();
     if (this._geoms.has(key)) return this._geoms.get(key);
 
@@ -2007,7 +2028,9 @@ class Terrain {
     let cullSq = treeCullDist * treeCullDist;
     // Uses the same camera params cached by drawLandscape
     let cam = this._cam || this.getCameraParams(s);
-    const shadowQueue = [];
+    // Reuse the per-instance shadow queue array to avoid a per-frame allocation.
+    const shadowQueue = this._treeShadowQueue;
+    shadowQueue.length = 0;
 
     let gx = toTile(s.x), gz = toTile(s.z);
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
@@ -2069,9 +2092,15 @@ class Terrain {
   }
 
   _getBuildingGeom(b, inf) {
-    const key = (b.type === 2)
-      ? `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_${inf}_${b.col[0]}_${b.col[1]}_${b.col[2]}`
-      : `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_${inf}`;
+    // Cache both key variants (clean + infected) on the building so toFixed()
+    // string allocation is paid only once per building lifetime rather than
+    // every frame.  b._geomKeyPair[0] = clean key, b._geomKeyPair[1] = infected key.
+    if (!b._geomKeyPair) {
+      const base = `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_`;
+      const colSuffix = (b.type === 2) ? `_${b.col[0]}_${b.col[1]}_${b.col[2]}` : '';
+      b._geomKeyPair = [base + 'false' + colSuffix, base + 'true' + colSuffix];
+    }
+    const key = b._geomKeyPair[inf ? 1 : 0];
 
     if (!this._geoms) this._geoms = new Map();
     if (this._geoms.has(key)) return this._geoms.get(key);
@@ -2155,7 +2184,13 @@ class Terrain {
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
     let cam = this._cam || this.getCameraParams(s);
     const sun = this._getSunShadowBasis();
-    const shadowQueue = [];
+    // Reuse the per-instance shadow queue arrays to avoid per-frame allocation.
+    // _buildingShadowInf is a parallel array carrying the already-computed
+    // infection flag so the shadow pass never recomputes infection.has().
+    const shadowQueue = this._buildingShadowQueue;
+    const shadowInf   = this._buildingShadowInf;
+    shadowQueue.length = 0;
+    shadowInf.length   = 0;
 
     // Apply terrain shader to natively handle fog and lighting
     this.applyShader();
@@ -2166,7 +2201,12 @@ class Terrain {
       let y = b.y;
       if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
 
-      let inf = infection.has(tileKey(toTile(b.x), toTile(b.z)));
+      // Cache the numeric tile-key on the building so toTile() + arithmetic
+      // is only computed once per building lifetime rather than every frame.
+      // Assumes building positions are static after creation — valid for all
+      // current building types (spawned once at level start, never moved).
+      if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+      let inf = infection.has(b._tileKey);
 
       push(); translate(b.x, y, b.z); noStroke();
 
@@ -2197,8 +2237,12 @@ class Terrain {
 
       pop();
 
-      // Defer ground shadow drawing; store inf so baking can use the right alpha.
-      if (dSq < 2250000) shadowQueue.push({ b, y, inf });
+      // Defer ground shadow drawing.  Carry inf so the shadow pass reuses it
+      // without calling infection.has() a second time per building.
+      if (dSq < 2250000) {
+        shadowQueue.push(b);
+        shadowInf.push(inf);
+      }
     }
 
     resetShader();
@@ -2210,12 +2254,13 @@ class Terrain {
     // Shadow alpha is baked into vertex colors by _drawProjectedFootprintShadow
     // (isBaking=true), so no per-building fill() is needed in the render loop.
     noLights(); noStroke();
-    for (const q of shadowQueue) {
-      if (q.b.type === 3) {
+    for (let qi = 0; qi < shadowQueue.length; qi++) {
+      const b = shadowQueue[qi], inf = shadowInf[qi];
+      if (b.type === 3) {
         // UFO: animated shadow, handled individually (includes its own stencil setup).
-        this._drawBuildingShadow(q.b, q.y, sun);
+        this._drawBuildingShadow(b, b.y, sun);
       } else {
-        this._ensureBuildingShadowBaked(q.b, q.y, sun, q.inf);
+        this._ensureBuildingShadowBaked(b, b.y, sun, inf);
       }
     }
 
@@ -2223,10 +2268,10 @@ class Terrain {
     // Ensure lighting is disabled for the batched static-shadow pass.
     // Type-3 UFO shadows may have re-enabled lighting via _drawBuildingShadow().
     noLights();
-    for (const q of shadowQueue) {
-      if (q.b.type !== 3 && q.b._shadowGeom) {
+    for (const b of shadowQueue) {
+      if (b.type !== 3 && b._shadowGeom) {
         push();
-        model(q.b._shadowGeom);
+        model(b._shadowGeom);
         pop();
       }
     }

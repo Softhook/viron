@@ -24,8 +24,6 @@ const POST_FRAG = `
 precision highp float;
 varying vec2 vTexCoord;
 uniform sampler2D uTex;
-uniform float uTime;
-uniform vec2 uResolution;
 uniform bool uIsMobile;
 
 // ACES tonemapping
@@ -52,10 +50,6 @@ void main() {
   
   // 6. ACES Filmic Tone Mapping (lower exposure to recover highlights)
   col = ACESFilm(col * 0.95);
-  
-  // 8. Subtle holographic scanlines (Simplified without length())
-  // float scanline = sin(uv.y * uResolution.y * 2.0) * 0.03;
-  // col -= scanline; // Fixed subtractive blend
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -85,6 +79,9 @@ class GameRenderer {
       ParticleSystem.init();
     }
     this.sceneFBO = null;
+    // Patch limits into the static perf profiles now that constants are defined.
+    GameRenderer._PERF_PROFILE_MOBILE.limits  = MOBILE_VIEW_LIMITS;
+    GameRenderer._PERF_PROFILE_DESKTOP.limits = DESKTOP_VIEW_LIMITS;
   }
 
   /**
@@ -375,6 +372,7 @@ class GameRenderer {
     if (!this.masterFBO) {
       this.masterFBO = createFramebuffer();
       this.postShader = createShader(POST_VERT, POST_FRAG);
+      this._postShaderReady = false;
     }
     if (this.masterFBO.width !== width || this.masterFBO.height !== h) {
       this.masterFBO.resize(width, h);
@@ -398,14 +396,18 @@ class GameRenderer {
     this._drawShared2DOverlay();
     this.masterFBO.end();
 
-    // Post-processing pass to screen
+    // Post-processing pass to screen — only uTex changes each frame.
+    // uIsMobile is false on desktop and never changes; set it once after the
+    // shader is first bound (shader() triggers lazy compilation in p5).
     this.setup2DViewport();
     gl.disable(gl.DEPTH_TEST);
     shader(this.postShader);
+    if (!this._postShaderReady) {
+      // Desktop-only path; no y-flip needed — set once after shader compiles.
+      this.postShader.setUniform('uIsMobile', false);
+      this._postShaderReady = true;
+    }
     this.postShader.setUniform('uTex', this.masterFBO);
-    this.postShader.setUniform('uTime', millis() / 1000.0);
-    this.postShader.setUniform('uResolution', [width, height]);
-    this.postShader.setUniform('uIsMobile', false); // Desktop-only path; no y-flip needed
     
     noStroke();
     rectMode(CENTER);
@@ -418,21 +420,14 @@ class GameRenderer {
 
   /**
    * Returns platform-tuned performance scaling thresholds.
+   * Returns a reference to one of two pre-built static objects so that
+   * updatePerformanceScaling() (called every frame) does not allocate.
    * @private
    */
   _getPerfProfile() {
-    if (gameState.isMobile) {
-      return {
-        reduceRatio: 1.40,
-        restoreRatio: 1.15,
-        limits: MOBILE_VIEW_LIMITS
-      };
-    }
-    return {
-      reduceRatio: 1.55,
-      restoreRatio: 1.08,
-      limits: DESKTOP_VIEW_LIMITS
-    };
+    return gameState.isMobile
+      ? GameRenderer._PERF_PROFILE_MOBILE
+      : GameRenderer._PERF_PROFILE_DESKTOP;
   }
 
   /**
@@ -541,12 +536,15 @@ class GameRenderer {
 
   /**
    * True when any living player is close enough to hear a pulse.
+   * Uses squared distance to avoid a sqrt per player per pulse.
    * @private
    */
   _canAnyPlayerHearPulse(x, y, z, hearDist) {
+    const hearDistSq = hearDist * hearDist;
     for (let p of gameState.players) {
-      if (!p.dead && dist(p.ship.x, p.ship.y, p.ship.z, x, y, z) < hearDist) {
-        return true;
+      if (!p.dead) {
+        let dx = p.ship.x - x, dy = p.ship.y - y, dz = p.ship.z - z;
+        if (dx * dx + dy * dy + dz * dz < hearDistSq) return true;
       }
     }
     return false;
@@ -571,7 +569,14 @@ class GameRenderer {
    * @private
    */
   _handleCleanSentinel(building) {
-    terrain.sentinelGlows.push({ x: building.x, z: building.z, radius: building.w * 1.5 });
+    // Cache the glow descriptor on the building object the first time we see it
+    // so we never allocate a { x, z, radius } literal inside this per-frame hot path.
+    // Assumes sentinel positions and sizes are static after world creation —
+    // valid for all current sentinel types (spawned once, never moved or resized).
+    if (!building._cachedGlow) {
+      building._cachedGlow = { x: building.x, z: building.z, radius: building.w * 1.5 };
+    }
+    terrain.sentinelGlows.push(building._cachedGlow);
     if (building.pulseTimer >= SENTINEL_PULSE_INTERVAL) building.pulseTimer = 0;
   }
 
@@ -580,7 +585,7 @@ class GameRenderer {
    * Regenerated every frame to reflect infection state.
    */
   updateSentinelGlows() {
-    terrain.sentinelGlows = [];
+    terrain.sentinelGlows.length = 0;  // reuse array — avoid per-frame GC allocation
     for (let building of gameState.buildings) {
       if (building.type !== 4) continue;
       building.pulseTimer = (building.pulseTimer || 0) + 1;
@@ -678,6 +683,20 @@ class GameRenderer {
     pop();
   }
 }
+
+// Static performance profiles — referenced by _getPerfProfile() so that method
+// never allocates an object.  MOBILE_VIEW_LIMITS and DESKTOP_VIEW_LIMITS are
+// defined in constants.js before this file loads.
+GameRenderer._PERF_PROFILE_MOBILE = {
+  reduceRatio: 1.40,
+  restoreRatio: 1.15,
+  limits: null  // patched to MOBILE_VIEW_LIMITS in initialize() once constants are ready
+};
+GameRenderer._PERF_PROFILE_DESKTOP = {
+  reduceRatio: 1.55,
+  restoreRatio: 1.08,
+  limits: null  // patched to DESKTOP_VIEW_LIMITS in initialize()
+};
 
 // Single global renderer instance
 const gameRenderer = new GameRenderer();

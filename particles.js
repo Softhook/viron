@@ -71,6 +71,9 @@ for (let i = 0; i < 256; i++) {
   _EXPLOSION_WAVE_LUT[i] = 2000.0 * Math.pow(1.0 - i / 255, 0.6);
 }
 
+// Module-level cap so addFogParticle() does not re-declare it on every call.
+const _MAX_FOG_PARTICLES = 220;
+
 // Pre-allocated uniform upload buffers for the soft-particle shader.
 // Avoids creating new array literals inside the render() hot path each frame.
 // _softCameraRangeBuf  — [camNear, camFar] (set once per render() call)
@@ -212,8 +215,7 @@ class ParticleSystem {
    * @param {{x:number,y:number,z:number,vx:number,vy:number,vz:number,life:number,decay:number,size:number,color:number[],isInkBurst?:boolean}} p
    */
   addFogParticle(p) {
-    const MAX_FOG_PARTICLES = 220;
-    if (this.fogCount >= MAX_FOG_PARTICLES) return false;
+    if (this.fogCount >= _MAX_FOG_PARTICLES) return false;
     this.particles.push({
       x: p.x, y: p.y, z: p.z,
       isFog: true,

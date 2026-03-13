@@ -71,6 +71,13 @@ for (let i = 0; i < 256; i++) {
   _EXPLOSION_WAVE_LUT[i] = 2000.0 * Math.pow(1.0 - i / 255, 0.6);
 }
 
+// Pre-allocated uniform upload buffers for the soft-particle shader.
+// Avoids creating new array literals inside the render() hot path each frame.
+// _softCameraRangeBuf  — [camNear, camFar] (set once per render() call)
+// _softInvViewportBuf  — [1/(w*pxD), 1/(h*pxD)] (set once per render() call)
+const _softCameraRangeBuf  = new Float32Array(2);
+const _softInvViewportBuf  = new Float32Array(2);
+
 // -----------------------------------------------------------------------------
 // Explosion particle batching — size-bucket approach
 //
@@ -126,6 +133,11 @@ const _expBucketCounts = new Int32Array(4);
 // Shared buffer — avoids a per-particle heap allocation inside the render loop.
 // Safe because _calcSoftParticleColor is called non-reentrantly once per particle.
 const _softColorBuf = [0, 0, 0];
+
+// Pre-allocated RGBA Float32Array passed to the soft-particle shader each frame.
+// Eliminates the temporary [r/255, g/255, b/255, alpha] array literal that would
+// otherwise be allocated once per visible soft particle per frame (~220/frame → GC).
+const _softShaderColorBuf = new Float32Array(4);
 function _calcSoftParticleColor(p, t) {
   let r, g, b;
   if (p.isFog && p.color) {
@@ -445,8 +457,10 @@ class ParticleSystem {
         shader(_softShader);
         _softShader.setUniform('sTexture', _cloudTex);
         _softShader.setUniform('sDepth', sceneFBO.depth);
-        _softShader.setUniform('uCameraRange', [camNear, camFar]);
-        _softShader.setUniform('uInvViewportSize', [1 / (width * pxD), 1 / (height * pxD)]);
+        _softCameraRangeBuf[0] = camNear; _softCameraRangeBuf[1] = camFar;
+        _softShader.setUniform('uCameraRange', _softCameraRangeBuf);
+        _softInvViewportBuf[0] = 1 / (width * pxD); _softInvViewportBuf[1] = 1 / (height * pxD);
+        _softShader.setUniform('uInvViewportSize', _softInvViewportBuf);
         _softShader.setUniform('uTransitionSize', 0.05);
       }
       if (useBillowSprites) texture(_cloudTex);
@@ -487,7 +501,9 @@ class ParticleSystem {
           if (p.isFog) sz *= (p.isInkBurst ? (1.3 + t * 4.2) : (1.35 + t * 2.3));
           push(); translate(p.x, p.y, p.z); rotateY(yaw); rotateX(pitch);
           if (useDepthSoftShader) {
-            _softShader.setUniform('uParticleColor', [r / 255, g / 255, b / 255, alpha]); plane(sz, sz);
+            _softShaderColorBuf[0] = r / 255; _softShaderColorBuf[1] = g / 255;
+            _softShaderColorBuf[2] = b / 255; _softShaderColorBuf[3] = alpha;
+            _softShader.setUniform('uParticleColor', _softShaderColorBuf); plane(sz, sz);
           } else {
             tint(r, g, b, alpha * 255); plane(sz, sz);
           }

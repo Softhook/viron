@@ -624,6 +624,14 @@ class Terrain {
     this._sunShadowFrame = -Infinity;
     this._getSunShadowBasis();
 
+    // Per-render-pass uniform deduplication.
+    // _renderPassId increments each time drawLandscape() starts a new player's
+    // view, allowing drawTrees() and drawBuildings() to skip re-uploading the
+    // same fog/sun/ambient/palette uniforms that drawLandscape() already set.
+    // Index 0 = terrain shader, index 1 = fill-colour shader.
+    this._renderPassId = 0;
+    this._uniformUploadedPassId = [-1, -1];
+
   }
 
   /**
@@ -1105,9 +1113,24 @@ class Terrain {
    * fog, sun direction/colour, ambient, inverse-view matrix, time, and pulse data.
    * Accepts the target shader object as a parameter so both callers can reuse the
    * same pre-allocated buffers without any redundant array allocations.
+   *
+   * Within a single player's render pass (landscape → trees → buildings → enemies)
+   * the camera and all environment constants are unchanged, so the heavy uniforms
+   * (fog, sun, ambient, palette, invViewMatrix) are only uploaded on the FIRST bind
+   * within that pass.  uTime and uPulses are also constant within a pass so they
+   * are always part of the single full upload, not re-uploaded on subsequent binds.
+   *
    * @param {p5.Shader} sh  The shader to upload into (this.shader or this.fillShader).
    */
   _uploadSharedUniforms(sh) {
+    const shIdx = (sh === this.shader) ? 0 : 1;
+
+    // If this shader was already fully uploaded for the current render pass
+    // (identified by _renderPassId, incremented at the top of drawLandscape()),
+    // the WebGL program already holds the correct values — skip all uploads.
+    if (this._uniformUploadedPassId[shIdx] === this._renderPassId) return;
+    this._uniformUploadedPassId[shIdx] = this._renderPassId;
+
     const fogFar = this._getFogFarWorld();
 
     // Fill pre-allocated uniform buffers in-place — avoids allocating a new JS
@@ -1353,6 +1376,12 @@ class Terrain {
   drawLandscape(s, viewAspect, firstPerson = false) {
     const gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
+
+    // Start a new render pass for this player's viewport.
+    // Incrementing here lets _uploadSharedUniforms() skip re-uploading the
+    // fog/sun/ambient uniforms when drawTrees() and drawBuildings() call
+    // applyShader() later in the same _drawSharedWorld() call.
+    this._renderPassId++;
 
     // Compute camera params once and cache on the instance so drawTrees,
     // drawBuildings and enemies.draw reuse the same values this frame.

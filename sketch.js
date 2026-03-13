@@ -227,10 +227,6 @@ function draw() {
   GameLoop.updateAmbianceAudio();
   gameRenderer.renderAllPlayers(drawingContext);
   GameLoop.updateLevelAndRespawn();
-
-  // Game-over overlay is now drawn inside renderAllPlayers() within the
-  // masterFBO so the POST_FRAG mobile y-flip is applied uniformly, preventing
-  // mirror-reversed text on mobile devices.
   if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
 

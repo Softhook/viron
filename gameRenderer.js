@@ -317,6 +317,29 @@ class GameRenderer {
   }
 
   /**
+   * Draws shared 2D overlays: split-screen divider, level-complete banner,
+   * and game-over screen.  Called from renderAllPlayers() in both the mobile
+   * (direct-to-canvas) and desktop (masterFBO) branches so the code is not
+   * duplicated between the two paths.
+   * @private
+   */
+  _drawShared2DOverlay() {
+    this.setup2DViewport();
+    if (gameState.numPlayers === 2) {
+      stroke(0, 255, 0, 180); strokeWeight(2);
+      line(0, -height / 2, 0, height / 2);
+    }
+    if (gameState.levelComplete) {
+      noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
+      text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
+    }
+    if (gameState.mode === 'gameover') {
+      _drawGameOverContent();
+    }
+    pop();
+  }
+
+  /**
    * Dispatches one 3D render pass per player and draws shared 2D overlay.
    */
   renderAllPlayers(gl) {
@@ -344,19 +367,7 @@ class GameRenderer {
         }
       }
 
-      this.setup2DViewport();
-      if (gameState.numPlayers === 2) {
-        stroke(0, 255, 0, 180); strokeWeight(2);
-        line(0, -height / 2, 0, height / 2);
-      }
-      if (gameState.levelComplete) {
-        noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
-        text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
-      }
-      if (gameState.mode === 'gameover') {
-        _drawGameOverContent();
-      }
-      pop();
+      this._drawShared2DOverlay();
       return;
     }
 
@@ -384,19 +395,7 @@ class GameRenderer {
 
     // Shared 2D overlay — drawn into masterFBO so it receives the same
     // ACES tonemapping and contrast post-processing as the 3D scene.
-    this.setup2DViewport();
-    if (gameState.numPlayers === 2) {
-      stroke(0, 255, 0, 180); strokeWeight(2);
-      line(0, -height / 2, 0, height / 2);
-    }
-    if (gameState.levelComplete) {
-      noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
-      text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
-    }
-    if (gameState.mode === 'gameover') {
-      _drawGameOverContent();
-    }
-    pop();
+    this._drawShared2DOverlay();
     this.masterFBO.end();
 
     // Post-processing pass to screen

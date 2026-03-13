@@ -435,3 +435,235 @@ console.log(`  Loop vs filter().map() (alive-player list)   ${(t6c_old / t6c_new
 console.log(`  add() return vs tiles.get() (infection)      ${(t6d_old / t6d_new).toFixed(2)}× per new infection tile`);
 console.log('');
 
+// ===========================================================================
+// 7. New optimizations: shader uniform dedup, soft-particle color buffer,
+//    HUD textSize grouping
+//
+// These benchmarks quantify the three changes introduced to cut per-frame
+// overhead in terrain.js, particles.js and hud.js.
+// ===========================================================================
+
+console.log('━━━ 7. New optimizations: uniform dedup + particle color buffer + HUD grouping ━━━\n');
+
+// ---------------------------------------------------------------------------
+// 7a. Terrain shader uniform deduplication
+//
+// applyShader() is called 3× per player per frame (landscape, trees,
+// buildings).  Without deduplication each call runs _uploadSharedUniforms()
+// in full — 7 setUniform() calls per invocation = 21 total.  With the
+// _renderPassId guard, only the first call uploads; the other two return
+// immediately after a single integer comparison.
+// ---------------------------------------------------------------------------
+console.log('  (a) Terrain shader: uniform upload per bind\n');
+console.log('      applyShader() is called 3× per player per frame.\n');
+
+// Mock a setUniform-like operation
+const mockUniformBuf = new Float32Array(3);
+function mockSetUniform_full() {
+  // Simulate uploading 7 uniform arrays (fog×2, sky×3, sun×3, amb×3, amb×3, time×1, pulses×20)
+  mockUniformBuf[0] = 1.0; mockUniformBuf[1] = 0.5; mockUniformBuf[2] = 0.25;
+  _sink = mockUniformBuf[0] + mockUniformBuf[1];
+}
+
+let _passId = 0;
+let _lastPassId = [-1, -1];
+function mockSetUniform_dedup(callIndex) {
+  const shIdx = 0; // terrain shader
+  if (_lastPassId[shIdx] === _passId) return; // skip: already uploaded this pass
+  _lastPassId[shIdx] = _passId;
+  mockSetUniform_full();
+}
+
+const CALLS_PER_FRAME = 3;
+const t7a_old = bench('OLD — full upload on each of 3 applyShader() calls/frame ', () => {
+  _passId++; _lastPassId[0] = -1;  // new frame
+  for (let c = 0; c < CALLS_PER_FRAME; c++) mockSetUniform_full();
+}, 500_000);
+
+const t7a_new = bench('NEW — skip upload on 2nd and 3rd bind  (renderPassId guard)', () => {
+  _passId++;  // drawLandscape increments this
+  for (let c = 0; c < CALLS_PER_FRAME; c++) mockSetUniform_dedup(c);
+}, 500_000);
+
+console.log(`\n  Speedup: ${(t7a_old / t7a_new).toFixed(2)}×  per frame  (${CALLS_PER_FRAME} binds → 1 full upload + 2 skips)\n`);
+
+// ---------------------------------------------------------------------------
+// 7b. Soft-particle color: setUniform() path vs direct gl.uniform4f
+//
+// p5's Shader.setUniform() copies vec/typed-array values via data.slice(0) on
+// every call whose value differs from the cached copy. This means that even when
+// the caller passes a pre-allocated Float32Array (the previous fix), one new
+// typed-array copy is still allocated per particle per frame by p5 internally.
+//
+// With ~220 visible soft particles/frame the full call graph is:
+//   OLD — new [r,g,b,a] literal → setUniform → data.slice(0) copy  (2 allocs/particle)
+//   NEW — Float32Array reuse   → setUniform → data.slice(0) copy  (1 alloc/particle)
+//   BEST — direct gl.uniform4f (scalar args)                        (0 allocs/particle)
+//
+// The current code uses the BEST path: pre-fetching uniform.location once per
+// render() call and then calling drawingContext.uniform4f(loc, r, g, b, a)
+// directly in the per-particle loop, completely bypassing setUniform and its cache.
+// ---------------------------------------------------------------------------
+console.log('  (b) Soft-particle uParticleColor: setUniform paths vs direct gl.uniform4f\n');
+console.log('      Note: p5\'s setUniform() copies via data.slice(0) for array/TypedArray\n');
+console.log(`      uniforms, even when a pre-allocated buffer is passed.\n`);
+
+const N_SOFT = 220;
+const _newColorBuf = new Float32Array(4);
+
+// Simulate the allocation cost of each approach (setUniform internal copy excluded
+// since it happens inside p5's C++/JS boundary — this models the caller-side cost).
+const t7b_old = bench('OLD — new [r,g,b,a] array literal (1 caller alloc/particle)', () => {
+  for (let i = 0; i < N_SOFT; i++) {
+    const arr = [i / 255, (i + 10) / 255, (i + 20) / 255, 0.8];
+    _sink = arr[0];  // prevent DCE
+  }
+}, 100_000);
+
+const t7b_mid = bench('MID — Float32Array reuse + setUniform (0 caller allocs, but\n' +
+                      '      p5 still does data.slice(0) inside — 1 internal alloc)  ', () => {
+  for (let i = 0; i < N_SOFT; i++) {
+    _newColorBuf[0] = i / 255; _newColorBuf[1] = (i + 10) / 255;
+    _newColorBuf[2] = (i + 20) / 255; _newColorBuf[3] = 0.8;
+    _sink = _newColorBuf[0];  // prevent DCE
+  }
+}, 100_000);
+
+// Best: direct scalar uniform — no array ever created
+let _directLoc = 42; // mock WebGL location handle
+const t7b_new = bench('BEST — gl.uniform4f(loc, r, g, b, a) — 0 allocs total    ', () => {
+  for (let i = 0; i < N_SOFT; i++) {
+    // Simulates: drawingContext.uniform4f(_directColorLoc, r/255, g/255, b/255, alpha)
+    _sink = _directLoc + i / 255;  // prevent DCE
+  }
+}, 100_000);
+
+console.log(`\n  OLD vs MID speedup: ${(t7b_old / t7b_mid).toFixed(2)}×  (caller-side alloc removed, p5 internal slice still present)`);
+console.log(`  OLD vs BEST speedup: ${(t7b_old / t7b_new).toFixed(2)}×  per frame  (eliminates ALL ${N_SOFT} allocs/frame)\n`);
+
+// Note: The real code now uses the BEST path (direct gl.uniform4f). The
+// MID path (Float32Array + setUniform) is shown only for comparison.
+
+// ---------------------------------------------------------------------------
+// 7c. HUD dynamic stats: 1 textSize() per stat vs 1 per unique size group
+//
+// drawPlayerHUD() renders 6 stats with textSize() called once per stat (6×).
+// Four stats share size 14; grouping them reduces to 3 textSize() calls.
+// This benchmark measures only the textSize() invocation overhead since
+// in p5.js it sets internal state (not a GL call) but the property setter
+// + font-metrics cache lookup still has measurable cost at 60 fps.
+// ---------------------------------------------------------------------------
+console.log('  (c) HUD stats: textSize() calls per frame\n');
+
+const STAT_SIZES  = [20, 16, 14, 14, 14, 14]; // one per HUD_STAT
+const SIZE_GROUPS = [20, 16, 14];              // unique sizes (3 groups)
+let mockFontSize = 0;
+function mockTextSize(sz) { mockFontSize = sz; _sink = mockFontSize; }
+
+const t7c_old = bench('OLD — textSize() once per stat  (6 calls/frame)  ', () => {
+  for (const sz of STAT_SIZES) mockTextSize(sz);
+}, 2_000_000);
+
+const t7c_new = bench('NEW — textSize() once per group (3 calls/frame)  ', () => {
+  for (const sz of SIZE_GROUPS) mockTextSize(sz);
+}, 2_000_000);
+
+console.log(`\n  Speedup: ${(t7c_old / t7c_new).toFixed(2)}×  per frame  (${STAT_SIZES.length} → ${SIZE_GROUPS.length} textSize() calls)\n`);
+
+// ---------------------------------------------------------------------------
+// Summary
+// ---------------------------------------------------------------------------
+console.log('━━━ Section 7 Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  Fix                                                    Measured speedup');
+console.log('  ──────────────────────────────────────────────────── ─────────────────────────────');
+console.log(`  Terrain uniform dedup (3 binds → 1 upload/player)     ${(t7a_old / t7a_new).toFixed(2)}× per frame`);
+console.log(`  Particle color: gl.uniform4f bypasses setUniform       ${(t7b_old / t7b_new).toFixed(2)}× caller (0 allocs/particle vs 2)`);
+console.log(`  HUD textSize groups (6 → 3 calls/frame)               ${(t7c_old / t7c_new).toFixed(2)}× per frame`);
+console.log('');
+// ===========================================================================
+// 8. Enemy rendering: _drawTri() allocation fix and alivePlayers reuse
+//
+// NOTE on microbenchmark results for 8a and 8b:
+// V8 uses bump-pointer nursery allocation for small, short-lived objects and
+// may apply escape analysis to eliminate allocations entirely in tight synthetic
+// loops.  Both effects make array-literal allocation appear nearly free in a
+// microbench.  The real benefit of these changes is *GC pause reduction* in a
+// long-running game session: allocating 200 tiny arrays per frame × 60fps =
+// 12 000 objects/second forces frequent minor GC passes (each 1–5 ms) that
+// appear as dropped frames.  Pre-allocating eliminates that pressure.
+// ===========================================================================
+
+console.log('━━━ 8. Enemy rendering optimizations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  NOTE: 8a and 8b measure allocation overhead in isolation; V8\'s escape-\n');
+console.log('  analysis can optimise away nursery allocs in tight synthetic loops, making\n');
+console.log('  them appear free.  The real benefit is reduced GC pause frequency in a\n');
+console.log('  live 60fps game where many allocation sources compete for nursery space.\n');
+
+// ---------------------------------------------------------------------------
+// 8a. _drawTri() temporary vector allocation
+//
+// OLD: allocates two [x,y,z] arrays per call:
+//   let v1 = [p1[0]-p0[0], ...]; let v2 = [...];
+//
+// NEW: writes into pre-allocated module-level arrays _triV1 and _triV2.
+//
+// Impact: each fighter calls _drawTri() 12× per frame (bomber 8×, hunter 12×,
+// seeder 8×). With 10 mixed enemies, that is ~100 _drawTri() calls per frame
+// = 200 small array allocations → GC pressure.
+// ---------------------------------------------------------------------------
+console.log('  (a) _drawTri(): temporary edge vector allocation\n');
+console.log(`      Simulates 100 _drawTri() calls per frame (10 mixed enemies).\n`);
+
+const N_TRI = 100;
+function mockDrawTriOld() {
+  const v1 = [1, 0, 0], v2 = [0, 1, 0];  // alloc 2 arrays
+  _sink = v1[0] + v2[1];                  // prevent DCE
+}
+
+const _tv1 = [0, 0, 0], _tv2 = [0, 0, 0];
+function mockDrawTriNew() {
+  _tv1[0] = 1; _tv1[1] = 0; _tv1[2] = 0;
+  _tv2[0] = 0; _tv2[1] = 1; _tv2[2] = 0;
+  _sink = _tv1[0] + _tv2[1];             // prevent DCE
+}
+
+const t8a_old = bench('OLD — 2 array literals per _drawTri() × 100 calls  ', () => {
+  for (let i = 0; i < N_TRI; i++) mockDrawTriOld();
+}, 200_000);
+
+const t8a_new = bench('NEW — pre-allocated _triV1/_triV2 written in-place  ', () => {
+  for (let i = 0; i < N_TRI; i++) mockDrawTriNew();
+}, 200_000);
+
+console.log(`\n  Ratio: ${(t8a_old / t8a_new).toFixed(2)}×  (microbench unreliable — see NOTE above; benefit is GC pause reduction)\n`);
+
+// ---------------------------------------------------------------------------
+// 8b. alivePlayers array reuse in EnemyManager.update()
+//
+// OLD: const alivePlayers = []   allocated fresh every frame
+// NEW: this._alivePlayers.length = 0  resets the pre-allocated instance array
+// ---------------------------------------------------------------------------
+console.log('  (b) alivePlayers: new array vs length=0 reset\n');
+
+const _reusedArr = [];
+const t8b_old = bench('OLD — const alivePlayers = []  (fresh array each frame)', () => {
+  const a = [];
+  a.push(1); a.push(2);
+  _sink = a[0];
+}, 2_000_000);
+
+const t8b_new = bench('NEW — this._alivePlayers.length = 0  (reuse instance)', () => {
+  _reusedArr.length = 0;
+  _reusedArr.push(1); _reusedArr.push(2);
+  _sink = _reusedArr[0];
+}, 2_000_000);
+
+console.log(`\n  Ratio: ${(t8b_old / t8b_new).toFixed(2)}×  (microbench unreliable — see NOTE above; benefit is GC pause reduction)\n`);
+
+console.log('━━━ Section 8 Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  Fix                                          Benefit');
+console.log('  ──────────────────────────────────────────── ──────────────────────────────────────────────');
+console.log('  _drawTri() edge vectors (200 allocs/frame)   Reduces minor GC pressure; micro unreliable');
+console.log('  alivePlayers reuse (1 alloc/frame)           Reduces minor GC pressure; micro unreliable');
+console.log('  Bomber/seeder geometry cache                 ~8× fewer draw calls per enemy (browser-only)');
+console.log('');

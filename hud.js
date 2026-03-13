@@ -5,11 +5,14 @@ const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
 const HUD_HINT_CACHE = Object.create(null);
 const HUD_LABEL_CACHE = Object.create(null); // Static labels graphic per viewport size
 const HUD_RADAR_BUFFERS = Object.create(null); // Graphics buffers for radar (one per player)
+const HUD_WEAPON_BUFFERS = Object.create(null); // Cached weapon-selector graphic per player id, rebuilt on weaponMode change
 const RADAR_SCALE = 0.012;
 const RADAR_HALF = 68;
 const RADAR_TILE_RADIUS_SQ = 4200;
 
-// Configuration for HUD stat labels and their dynamic value functions
+// HUD_STATS grouped by textSize to minimise textSize() calls per frame.
+// Three groups: size 20 (SCORE), size 16 (ALT), size 14 (VIRON/ENEMIES/MISSILES/SHOT).
+// The original flat order is preserved within each group so vertical positions are correct.
 const HUD_STATS = [
   { label: 'SCORE', color: [255, 255, 255], size: 20, py: 8, getVal: p => p.score },
   { label: 'ALT', color: [0, 255, 0], size: 16, py: 32, getVal: (p, s) => Math.max(0, Math.floor(SEA - s.y)) },
@@ -18,6 +21,15 @@ const HUD_STATS = [
   { label: 'MISSILES', color: [0, 200, 255], size: 14, py: 90, getVal: p => p.missilesRemaining },
   { label: 'SHOT', color: [220, 220, 220], size: 14, py: 108, getVal: p => (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE') }
 ];
+// Pre-grouped by size so drawPlayerHUD() calls textSize() once per group (3×) not per stat (6×).
+const HUD_STATS_BY_SIZE = (() => {
+  const groups = new Map();
+  for (const s of HUD_STATS) {
+    if (!groups.has(s.size)) groups.set(s.size, []);
+    groups.get(s.size).push(s);
+  }
+  return groups;
+})();
 
 /**
  * Creates or retrieves a static graphics buffer containing the text labels
@@ -163,30 +175,75 @@ function _drawShipStats(p, design, relX, vw, vh) {
 }
 
 /**
+ * Returns a cached p5.Graphics buffer for the weapon selector UI panel
+ * (weapon name text + 3 indicator bars).  The buffer is only rebuilt when
+ * the player's weapon mode changes, saving 1 text() + 3 rect() calls on
+ * every frame where no weapon switch occurs.
+ *
+ * Buffer dimensions: 220 × 50 pixels (fits weapon name + bars at textSize 18).
+ * The buffer origin (0,0) matches the top-left corner of the selector so that
+ * `image(g, -W/2, -h/2)` places it at the same viewport position as the
+ * original direct-draw code (-h/2+10 for the name, -h/2+34 for the bars).
+ *
+ * @param {object} p  Player state.
+ * @returns {p5.Graphics}
+ */
+function _getWeaponSelectorGraphic(p) {
+  const W = 220, H = 50;
+  const key = `${p.id}`;
+  let entry = HUD_WEAPON_BUFFERS[key];
+
+  if (!entry || entry.weaponMode !== p.weaponMode) {
+    // Create or reuse the graphics buffer.
+    if (!entry) {
+      const g = createGraphics(W, H);
+      g.pixelDensity(1);
+      entry = { g, weaponMode: -1 };
+      HUD_WEAPON_BUFFERS[key] = entry;
+    }
+    entry.weaponMode = p.weaponMode;
+
+    const wId = p.weaponMode;
+    const wName = HUD_WEAPON_LABELS[wId];
+    const wCol = HUD_WEAPON_ACTIVE_COLS[wId];
+    const g = entry.g;
+
+    g.clear();
+    g.noStroke();
+    if (gameState.gameFont) g.textFont(gameState.gameFont);
+
+    // Weapon name at y=10 in the buffer — matches original -h/2+10 when
+    // the buffer is drawn with imageMode(CORNER) at (−W/2, −h/2).
+    g.textAlign(CENTER, TOP);
+    g.textSize(18);
+    g.fill(wCol[0], wCol[1], wCol[2], 230);
+    g.text(wName, W / 2, 10);
+
+    // Three selector bars at y=34 — matches original -h/2+34.
+    const bw = 60, bh = 6, pad = 8;
+    const totalW = (bw + pad) * 3 - pad;
+    const sx = (W - totalW) / 2;
+    g.rectMode(CORNER);
+    for (let i = 0; i < 3; i++) {
+      if (i === wId) g.fill(wCol[0], wCol[1], wCol[2], 255);
+      else g.fill(50, 50, 50, 150);
+      g.rect(sx + i * (bw + pad), 34, bw, bh);
+    }
+  }
+
+  return entry.g;
+}
+
+/**
  * Renders the weapon mode indicator and selector boxes.
+ * Uses a cached p5.Graphics buffer to avoid per-frame text and rect calls
+ * when the weapon mode has not changed.
  */
 function _drawWeaponSelector(p, h) {
-  const wId = p.weaponMode;
-  const wName = HUD_WEAPON_LABELS[wId];
-  const wCol = HUD_WEAPON_ACTIVE_COLS[wId];
-
-  textAlign(CENTER, TOP);
-  textSize(18);
-  fill(wCol[0], wCol[1], wCol[2], 230);
-  text(wName, 0, -h / 2 + 10);
-
-  const bw = 60, bh = 6, pad = 8;
-  const totalW = (bw + pad) * 3 - pad;
-  const sx = -totalW / 2;
-  const sy = -h / 2 + 34;
-
-  rectMode(CORNER);
-  noStroke();
-  for (let i = 0; i < 3; i++) {
-    if (i === wId) fill(wCol[0], wCol[1], wCol[2], 255);
-    else fill(50, 50, 50, 150);
-    rect(sx + i * (bw + pad), sy, bw, bh);
-  }
+  const g = _getWeaponSelectorGraphic(p);
+  // imageMode(CORNER) is already set at the start of drawPlayerHUD.
+  // Position top-left at (-W/2, -h/2) so contents match the original layout.
+  image(g, -110, -h / 2);
 }
 
 
@@ -661,14 +718,18 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   // 1. Draw cached static labels for stat names
   image(_getHUDLabelGraphic(hw, h), -hw / 2, -h / 2);
 
-  // 2. Draw dynamic stat values from the configurations
+  // 2. Draw dynamic stat values — grouped by textSize to minimise font-size
+  //    changes.  Without grouping we call textSize() once per stat (6×/frame);
+  //    with grouping we call it once per unique size (3×/frame).
   const vx = -hw / 2 + 14 + 80; // Value column X offset
   const vy = -h / 2;
   textAlign(LEFT, TOP);
-  for (const stat of HUD_STATS) {
-    fill(...stat.color);
-    textSize(stat.size);
-    text(stat.getVal(p, s), vx, vy + stat.py);
+  for (const [sz, stats] of HUD_STATS_BY_SIZE) {
+    textSize(sz);
+    for (const stat of stats) {
+      fill(...stat.color);
+      text(stat.getVal(p, s), vx, vy + stat.py);
+    }
   }
 
   // --- Crosshair (first-person reticle — only shown in first-person mode) ---

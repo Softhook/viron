@@ -9,6 +9,9 @@ const LAUNCH_ALT = 100;        // Fixed Y altitude of the flat launchpad surface
 const GRAV = 0.09;             // Per-frame gravitational acceleration applied to ships
 const LAUNCH_MIN = 0;          // Launchpad world-space minimum X and Z coordinate
 const LAUNCH_MAX = 840;        // Launchpad world-space maximum X and Z coordinate
+// Number of launchpad tiles on each axis: floor(LAUNCH_MAX / TILE) = 7.
+// GameLoop.spreadInfection() checks tiles [0, LAUNCHPAD_TILE_SIZE) × [0, LAUNCHPAD_TILE_SIZE).
+const LAUNCHPAD_TILE_SIZE = 7;
 const LIFT_FACTOR = 0.008;     // Per-frame lift acceleration coefficient (scales with forward velocity)
 const DRAG = 0.992;            // Global air resistance (higher = thinner air, more gliding)
 const INDUCED_DRAG = 0.002;    // Extra drag proportional to how much lift is being generated
@@ -318,17 +321,33 @@ const P2_KEYS = {
 // Pure helper functions — no side-effects, no p5 calls
 // =============================================================================
 
-/** Returns a numeric Map key string for a tile coordinate pair.
+/** Returns a numeric Map key for a tile coordinate pair.
  * Encodes X and Z into a single positive integer: (X+10000)*20001 + (Z+10000).
  * Safe for coordinates from -10000 to 10000.
  */
 const tileKey = (tx, tz) => (tx + 10000) * 20001 + (tz + 10000);
+
+/**
+ * Returns a numeric Map key for a chunk-grid coordinate pair.
+ * Chunk coordinates are tile coordinates divided by CHUNK_SIZE (= tx >> 4).
+ * Uses the same offset/scale as tileKey so chunk keys are guaranteed collision-
+ * free for any cx, cz in [-10000, 10000].  This avoids the string template
+ * allocation `${cx},${cz}` that was previously used as a Map key in the hot
+ * tile-overlay render path.
+ */
+const chunkKey = (cx, cz) => (cx + 10000) * 20001 + (cz + 10000);
 
 /** Converts a world-space coordinate to its containing tile index. */
 const toTile = v => Math.floor(v / TILE);
 
 /** Returns true if world-space (x, z) falls inside the flat launchpad area. */
 const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_MIN && z <= LAUNCH_MAX;
+
+/**
+ * Returns true if tile coordinates (tx, tz) fall inside the launchpad tile grid.
+ * Used by TileManager to maintain the incremental launchpadCount field.
+ */
+const isTileOnLaunchpad = (tx, tz) => tx >= 0 && tx < LAUNCHPAD_TILE_SIZE && tz >= 0 && tz < LAUNCHPAD_TILE_SIZE;
 
 /** Returns true when terrain depth y indicates a submerged tile (y ≥ SEA means underwater; WEBGL Y axis is inverted, larger values are deeper). */
 const aboveSea = y => y >= SEA - 1;
@@ -380,17 +399,27 @@ class TileManager {
     this.keyList = [];
     /**
      * Optional chunk-bucket index.  null when withBuckets=false (infection).
-     * When present, keyed by "cx,cz" (CHUNK_SIZE=16 grid); value is a
-     * tile-object array using the same swap-with-last O(1) removal trick.
-     * @type {Map<string,object[]>|null}
+     * When present, keyed by numeric chunkKey(cx,cz) (CHUNK_SIZE=16 grid);
+     * value is a tile-object array using the same swap-with-last O(1) removal
+     * trick.  Numeric keys avoid per-frame string allocation in the hot
+     * tile-overlay render path.
+     * @type {Map<number,object[]>|null}
      */
     this.buckets = withBuckets ? new Map() : null;
 
     /** 
-     * NEW: List of tiles that might be able to spread (have empty neighbors).
+     * List of tiles that might be able to spread (have empty neighbors).
      * Used by GameLoop.spreadInfection() to avoid O(N) global scan.
      */
     this.activeList = [];
+
+    /**
+     * Number of infection tiles currently occupying the launchpad area
+     * (tx in [0, LAUNCHPAD_TILE_SIZE), tz in [0, LAUNCHPAD_TILE_SIZE)).
+     * Maintained incrementally so GameLoop.spreadInfection() can check the
+     * game-over condition in O(1) instead of scanning all 49 launchpad tiles.
+     */
+    this.launchpadCount = 0;
   }
 
   /** Clears all tile state. */
@@ -399,6 +428,7 @@ class TileManager {
     this.count = 0;
     this.keyList.length = 0;
     this.activeList.length = 0;
+    this.launchpadCount = 0;
     if (this.buckets !== null) this.buckets.clear();
   }
 
@@ -420,13 +450,16 @@ class TileManager {
     this.activeList.push(obj);
     if (this.buckets !== null) {
       // tx >> 4 === Math.floor(tx / 16) for all integers (arithmetic shift).
-      const bk = `${tx >> 4},${tz >> 4}`;
+      // Use a numeric chunkKey (same offset/scale as tileKey) so the Map lookup
+      // in _drawTileOverlays() never allocates a temporary string.
+      const bk = chunkKey(tx >> 4, tz >> 4);
       obj._bk = bk;
       let arr = this.buckets.get(bk);
       if (!arr) { arr = []; this.buckets.set(bk, arr); }
       obj._bidx = arr.length;
       arr.push(obj);
     }
+    if (isTileOnLaunchpad(tx, tz)) this.launchpadCount++;
     return obj;
   }
 
@@ -466,6 +499,8 @@ class TileManager {
         if (arr.length === 0) this.buckets.delete(obj._bk);
       }
     }
+
+    if (isTileOnLaunchpad(obj.tx, obj.tz)) this.launchpadCount--;
 
     this.tiles.delete(k);
     this.count--;

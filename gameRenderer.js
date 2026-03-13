@@ -118,8 +118,9 @@ class GameRenderer {
     translate(sunPosX, sunHeight, sunPosZ);
     emissiveMaterial(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B);
     // Mobile: low-detail disc only (no glow halo spheres).
-    // Desktop: reduced from 40×32 to 16×12 (576 vs 3840 triangles) — the sun is
-    // always a small distant disc, so the extra polygons buy nothing visually.
+    // Desktop: reduced from 40×32 to 16×12 — p5 generates 2*detailX*detailY
+    // triangles per sphere, so 40×32 = 2,560 → 16×12 = 384 triangles each.
+    // The sun is always a small distant disc, so the extra polygons buy nothing visually.
     if (gameState.isMobile) {
       sphere(viewFarWorld * 0.038, 8, 6);
     } else {
@@ -382,7 +383,7 @@ class GameRenderer {
     }
 
     // Shared 2D overlay — drawn into masterFBO so it receives the same
-    // y-flip treatment (POST_FRAG uv.y inversion) as the 3D scene on desktop.
+    // ACES tonemapping and contrast post-processing as the 3D scene.
     this.setup2DViewport();
     if (gameState.numPlayers === 2) {
       stroke(0, 255, 0, 180); strokeWeight(2);

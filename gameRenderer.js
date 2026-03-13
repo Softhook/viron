@@ -117,12 +117,19 @@ class GameRenderer {
     push();
     translate(sunPosX, sunHeight, sunPosZ);
     emissiveMaterial(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B);
-    const sunDetailLongitude = 40, sunDetailLatitude = 32;
-    sphere(viewFarWorld * 0.038, sunDetailLongitude, sunDetailLatitude);
-    fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 80 * intensity);
-    sphere(viewFarWorld * 0.057, sunDetailLongitude, sunDetailLatitude);
-    fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 40 * intensity);
-    sphere(viewFarWorld * 0.083, sunDetailLongitude, sunDetailLatitude);
+    // Mobile: low-detail disc only (no glow halo spheres).
+    // Desktop: reduced from 40×32 to 16×12 (576 vs 3840 triangles) — the sun is
+    // always a small distant disc, so the extra polygons buy nothing visually.
+    if (gameState.isMobile) {
+      sphere(viewFarWorld * 0.038, 8, 6);
+    } else {
+      const sunDetailLongitude = 16, sunDetailLatitude = 12;
+      sphere(viewFarWorld * 0.038, sunDetailLongitude, sunDetailLatitude);
+      fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 80 * intensity);
+      sphere(viewFarWorld * 0.057, sunDetailLongitude, sunDetailLatitude);
+      fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 40 * intensity);
+      sphere(viewFarWorld * 0.083, sunDetailLongitude, sunDetailLatitude);
+    }
     pop();
     blendMode(BLEND);
     pop();
@@ -318,6 +325,41 @@ class GameRenderer {
 
     const h = height, pxDensity = pixelDensity();
 
+    if (gameState.isMobile) {
+      // Mobile: render directly to the canvas without an intermediate masterFBO.
+      // Bypassing the FBO eliminates the expensive tile-flush stall that
+      // Apple Silicon tile-based GPUs incur on every FBO begin()/end() pair, and
+      // saves the full-screen post-processing resolve pass.  ACES tonemapping and
+      // the contrast boost are cosmetic extras; correctness is not affected.
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+
+      if (gameState.numPlayers === 1) {
+        this.renderPlayerView(gl, gameState.players[0], 0, 0, width, h, pxDensity);
+      } else {
+        let hw = floor(width / 2);
+        for (let pi = 0; pi < 2; pi++) {
+          this.renderPlayerView(gl, gameState.players[pi], pi, pi * hw, hw, h, pxDensity);
+        }
+      }
+
+      this.setup2DViewport();
+      if (gameState.numPlayers === 2) {
+        stroke(0, 255, 0, 180); strokeWeight(2);
+        line(0, -height / 2, 0, height / 2);
+      }
+      if (gameState.levelComplete) {
+        noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
+        text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
+      }
+      if (gameState.mode === 'gameover') {
+        _drawGameOverContent();
+      }
+      pop();
+      return;
+    }
+
+    // Desktop: full masterFBO + post-processing (ACES tonemapping, contrast boost).
     if (!this.masterFBO) {
       this.masterFBO = createFramebuffer();
       this.postShader = createShader(POST_VERT, POST_FRAG);
@@ -340,9 +382,7 @@ class GameRenderer {
     }
 
     // Shared 2D overlay — drawn into masterFBO so it receives the same
-    // mobile y-flip treatment (POST_FRAG uv.y inversion) as the 3D scene.
-    // Game-over overlay is included here specifically to fix the mirror-reversed
-    // text seen on mobile when the overlay was drawn outside the FBO pipeline.
+    // y-flip treatment (POST_FRAG uv.y inversion) as the 3D scene on desktop.
     this.setup2DViewport();
     if (gameState.numPlayers === 2) {
       stroke(0, 255, 0, 180); strokeWeight(2);
@@ -365,7 +405,7 @@ class GameRenderer {
     this.postShader.setUniform('uTex', this.masterFBO);
     this.postShader.setUniform('uTime', millis() / 1000.0);
     this.postShader.setUniform('uResolution', [width, height]);
-    this.postShader.setUniform('uIsMobile', gameState.isMobile);
+    this.postShader.setUniform('uIsMobile', false); // Desktop-only path; no y-flip needed
     
     noStroke();
     rectMode(CENTER);
@@ -557,20 +597,31 @@ class GameRenderer {
 
   /**
    * Draws vertical light beams from the sky connecting to each enemy.
+   *
+   * Mobile: skipped entirely — blendMode(ADD) over multiple overlapping
+   * transparent cylinders is expensive on tile-based GPUs (Apple Silicon iPads)
+   * and the effect is purely cosmetic.
+   *
+   * Desktop: reduced from 11 to 7 draw calls per in-range enemy by:
+   *   • Dropping the near-invisible outer-aura cylinder (alpha 25)
+   *   • Reducing torus rings from 2 to 1
+   *   • Reducing ripple passes from 3 to 2
+   *   • Lowering torus radial segments from 16 to 8
    * @private
    */
   _drawEnemyBeams(s) {
     if (typeof enemyManager === 'undefined' || !enemyManager.enemies) return;
-    
-    // Increased height significantly to simulate an 'infinite' beam. 
-    // 25,000 is far beyond the typical flight ceiling.
+
+    // Skip on mobile: blendMode(ADD) with overlapping transparent geometry
+    // causes severe tile-flush stalls on Apple Silicon tile-based GPUs.
+    if (gameState.isMobile) return;
+
     const beamHeight = 25000;
     const beamRadius = 14;
     const time = millis() / 1000.0;
     
     push();
     noStroke();
-    // Use ADD blend for glowing volumetric effect
     blendMode(ADD);
     
     for (let e of enemyManager.enemies) {
@@ -584,52 +635,39 @@ class GameRenderer {
       push();
       translate(e.x, e.y, e.z);
       
-      // --- Energetic Ground Splash (Rings at base) ---
-      for (let i = 0; i < 2; i++) {
-        let expand = ((time * 1.5 + i * 0.5) % 1.0);
-        let ringAlpha = (1.0 - expand) * 120 * flicker;
-        push();
-        rotateX(HALF_PI);
-        fill(col[0], col[1], col[2], ringAlpha);
-        torus(beamRadius * (2.0 + expand * 8.0), 2.0, 16, 4);
-        pop();
-      }
-      
-      // --- The Main Volumetric Beam (Starts at enemy, goes WAY up) ---
+      // --- Energetic Ground Splash (single ring; was 2) ---
+      let expand = (time * 1.5) % 1.0;
+      let ringAlpha = (1.0 - expand) * 120 * flicker;
       push();
-      translate(0, -beamHeight / 2 - 10, 0); 
+      rotateX(HALF_PI);
+      fill(col[0], col[1], col[2], ringAlpha);
+      torus(beamRadius * (2.0 + expand * 8.0), 2.0, 8, 4); // 16 → 8 segments
+      pop();
       
-      // Outer aura
-      fill(col[0], col[1], col[2], 25 * flicker);
-      cylinder(beamRadius * 6.0, beamHeight, 6, 1, false, false);
-      
-      // Mid energy column
+      // --- Main Volumetric Beam (outer aura dropped; mid + core remain) ---
+      push();
+      translate(0, -beamHeight / 2 - 10, 0);
       fill(col[0], col[1], col[2], 70 * flicker);
       cylinder(beamRadius * 2.2, beamHeight, 6, 1, false, false);
-      
-      // Intelligent Core
       fill(255, 255, 255, 200 * flicker);
       cylinder(beamRadius * 0.5, beamHeight, 6, 1, false, false);
       pop();
       
-      // --- High-Speed Energy Ripples (Moving down from sky) ---
-      // We limit ripples to the lower 8000 units so they are dense around the player
+      // --- High-Speed Energy Ripples (2 passes; was 3) ---
       const rippleRange = 8000;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 2; i++) {
         let pOffset = (time * 2500.0 + e.id * 1000.0 + i * 2200.0) % rippleRange;
         let pY = -rippleRange + pOffset;
-        
-        // Fade ripples as they get higher to simulate them emerging from the sky
         let fadeEdge = 1500;
         let rippleAlphaMult = 1.0;
+        // Fade ripples as they emerge from the sky so they don't pop in abruptly.
         if (pY < -rippleRange + fadeEdge) rippleAlphaMult = (pY + rippleRange) / fadeEdge;
-        
         push();
         translate(0, pY, 0);
         fill(255, 255, 255, 130 * flicker * rippleAlphaMult);
         cylinder(beamRadius * 4.5, 120, 6, 1, false, false);
         fill(col[0], col[1], col[2], 90 * flicker * rippleAlphaMult);
-        cylinder(beamRadius * 9.0, 30, 8, 1, false, false);
+        cylinder(beamRadius * 9.0, 30, 6, 1, false, false); // 8 → 6 segments
         pop();
       }
       

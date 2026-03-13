@@ -620,7 +620,10 @@ class Terrain {
 
     // Reusable shadow-queue arrays for drawBuildings() and drawTrees().
     // Allocated once and reset each frame with .length=0 to avoid per-frame GC.
+    // _buildingShadowInf is a parallel array of infection booleans matching
+    // _buildingShadowQueue so the shadow pass never recomputes infection.has().
     this._buildingShadowQueue = [];
+    this._buildingShadowInf = [];
     this._treeShadowQueue = [];
 
     // Cached per-frame sun shadow basis so multiple shadow draws don't
@@ -2093,9 +2096,7 @@ class Terrain {
     // string allocation is paid only once per building lifetime rather than
     // every frame.  b._geomKeyPair[0] = clean key, b._geomKeyPair[1] = infected key.
     if (!b._geomKeyPair) {
-      const base = (b.type === 2)
-        ? `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_`
-        : `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_`;
+      const base = `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_`;
       const colSuffix = (b.type === 2) ? `_${b.col[0]}_${b.col[1]}_${b.col[2]}` : '';
       b._geomKeyPair = [base + 'false' + colSuffix, base + 'true' + colSuffix];
     }
@@ -2183,9 +2184,13 @@ class Terrain {
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
     let cam = this._cam || this.getCameraParams(s);
     const sun = this._getSunShadowBasis();
-    // Reuse the per-instance shadow queue array to avoid a per-frame allocation.
+    // Reuse the per-instance shadow queue arrays to avoid per-frame allocation.
+    // _buildingShadowInf is a parallel array carrying the already-computed
+    // infection flag so the shadow pass never recomputes infection.has().
     const shadowQueue = this._buildingShadowQueue;
+    const shadowInf   = this._buildingShadowInf;
     shadowQueue.length = 0;
+    shadowInf.length   = 0;
 
     // Apply terrain shader to natively handle fog and lighting
     this.applyShader();
@@ -2232,9 +2237,12 @@ class Terrain {
 
       pop();
 
-      // Defer ground shadow drawing.  Push building reference only; inf is
-      // re-derived from the cached b._tileKey in the shadow pass below.
-      if (dSq < 2250000) shadowQueue.push(b);
+      // Defer ground shadow drawing.  Carry inf so the shadow pass reuses it
+      // without calling infection.has() a second time per building.
+      if (dSq < 2250000) {
+        shadowQueue.push(b);
+        shadowInf.push(inf);
+      }
     }
 
     resetShader();
@@ -2246,8 +2254,8 @@ class Terrain {
     // Shadow alpha is baked into vertex colors by _drawProjectedFootprintShadow
     // (isBaking=true), so no per-building fill() is needed in the render loop.
     noLights(); noStroke();
-    for (const b of shadowQueue) {
-      const inf = infection.has(b._tileKey);
+    for (let qi = 0; qi < shadowQueue.length; qi++) {
+      const b = shadowQueue[qi], inf = shadowInf[qi];
       if (b.type === 3) {
         // UFO: animated shadow, handled individually (includes its own stencil setup).
         this._drawBuildingShadow(b, b.y, sun);

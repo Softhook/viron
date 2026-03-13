@@ -753,7 +753,7 @@ function newTreeKey(t, inf) {
   return t._geomKeyPair[inf ? 1 : 0];
 }
 
-const mockTreeCached = { ...mockTree };  // fresh object (no _geomKeys yet)
+const mockTreeCached = { ...mockTree };  // fresh object (no _geomKeyPair yet)
 newTreeKey(mockTreeCached, false);   // warm newTreeKey with a fresh tree instance
 newTreeKey(mockTree, false); newTreeKey(mockTree, true); // warm steady-state
 

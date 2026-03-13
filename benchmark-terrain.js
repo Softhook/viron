@@ -553,3 +553,90 @@ console.log(`  Terrain uniform dedup (3 binds → 1 upload/player)     ${(t7a_ol
 console.log(`  Particle color buffer (220 allocs → 0/frame)          ${(t7b_old / t7b_new).toFixed(2)}× per frame (soft path)`);
 console.log(`  HUD textSize groups (6 → 3 calls/frame)               ${(t7c_old / t7c_new).toFixed(2)}× per frame`);
 console.log('');
+// ===========================================================================
+// 8. Enemy rendering: _drawTri() allocation fix and alivePlayers reuse
+//
+// NOTE on microbenchmark results for 8a and 8b:
+// V8 uses bump-pointer nursery allocation for small, short-lived objects and
+// may apply escape analysis to eliminate allocations entirely in tight synthetic
+// loops.  Both effects make array-literal allocation appear nearly free in a
+// microbench.  The real benefit of these changes is *GC pause reduction* in a
+// long-running game session: allocating 200 tiny arrays per frame × 60fps =
+// 12 000 objects/second forces frequent minor GC passes (each 1–5 ms) that
+// appear as dropped frames.  Pre-allocating eliminates that pressure.
+// ===========================================================================
+
+console.log('━━━ 8. Enemy rendering optimizations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  NOTE: 8a and 8b measure allocation overhead in isolation; V8\'s escape-\n');
+console.log('  analysis can optimise away nursery allocs in tight synthetic loops, making\n');
+console.log('  them appear free.  The real benefit is reduced GC pause frequency in a\n');
+console.log('  live 60fps game where many allocation sources compete for nursery space.\n');
+
+// ---------------------------------------------------------------------------
+// 8a. _drawTri() temporary vector allocation
+//
+// OLD: allocates two [x,y,z] arrays per call:
+//   let v1 = [p1[0]-p0[0], ...]; let v2 = [...];
+//
+// NEW: writes into pre-allocated module-level arrays _triV1 and _triV2.
+//
+// Impact: each fighter calls _drawTri() 12× per frame (bomber 8×, hunter 12×,
+// seeder 8×). With 10 mixed enemies, that is ~100 _drawTri() calls per frame
+// = 200 small array allocations → GC pressure.
+// ---------------------------------------------------------------------------
+console.log('  (a) _drawTri(): temporary edge vector allocation\n');
+console.log(`      Simulates 100 _drawTri() calls per frame (10 mixed enemies).\n`);
+
+const N_TRI = 100;
+function mockDrawTriOld() {
+  const v1 = [1, 0, 0], v2 = [0, 1, 0];  // alloc 2 arrays
+  _sink = v1[0] + v2[1];                  // prevent DCE
+}
+
+const _tv1 = [0, 0, 0], _tv2 = [0, 0, 0];
+function mockDrawTriNew() {
+  _tv1[0] = 1; _tv1[1] = 0; _tv1[2] = 0;
+  _tv2[0] = 0; _tv2[1] = 1; _tv2[2] = 0;
+  _sink = _tv1[0] + _tv2[1];             // prevent DCE
+}
+
+const t8a_old = bench('OLD — 2 array literals per _drawTri() × 100 calls  ', () => {
+  for (let i = 0; i < N_TRI; i++) mockDrawTriOld();
+}, 200_000);
+
+const t8a_new = bench('NEW — pre-allocated _triV1/_triV2 written in-place  ', () => {
+  for (let i = 0; i < N_TRI; i++) mockDrawTriNew();
+}, 200_000);
+
+console.log(`\n  Ratio: ${(t8a_old / t8a_new).toFixed(2)}×  (microbench unreliable — see NOTE above; benefit is GC pause reduction)\n`);
+
+// ---------------------------------------------------------------------------
+// 8b. alivePlayers array reuse in EnemyManager.update()
+//
+// OLD: const alivePlayers = []   allocated fresh every frame
+// NEW: this._alivePlayers.length = 0  resets the pre-allocated instance array
+// ---------------------------------------------------------------------------
+console.log('  (b) alivePlayers: new array vs length=0 reset\n');
+
+const _reusedArr = [];
+const t8b_old = bench('OLD — const alivePlayers = []  (fresh array each frame)', () => {
+  const a = [];
+  a.push(1); a.push(2);
+  _sink = a[0];
+}, 2_000_000);
+
+const t8b_new = bench('NEW — this._alivePlayers.length = 0  (reuse instance)', () => {
+  _reusedArr.length = 0;
+  _reusedArr.push(1); _reusedArr.push(2);
+  _sink = _reusedArr[0];
+}, 2_000_000);
+
+console.log(`\n  Ratio: ${(t8b_old / t8b_new).toFixed(2)}×  (microbench unreliable — see NOTE above; benefit is GC pause reduction)\n`);
+
+console.log('━━━ Section 8 Summary ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+console.log('  Fix                                          Benefit');
+console.log('  ──────────────────────────────────────────── ──────────────────────────────────────────────');
+console.log('  _drawTri() edge vectors (200 allocs/frame)   Reduces minor GC pressure; micro unreliable');
+console.log('  alivePlayers reuse (1 alloc/frame)           Reduces minor GC pressure; micro unreliable');
+console.log('  Bomber/seeder geometry cache                 ~8× fewer draw calls per enemy (browser-only)');
+console.log('');

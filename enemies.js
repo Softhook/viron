@@ -40,6 +40,12 @@ const ENEMY_COLORS = {
   yellowCrab: [255, 255, 0]
 };
 
+// Pre-allocated edge vectors for _drawTri() — eliminates 2 array literal allocations
+// per call (one per call site × 12 calls for fighter = 24 allocations/fighter/frame).
+// Safe: _drawTri() is non-re-entrant (single-threaded JS; never called from a callback).
+const _triV1 = [0, 0, 0];
+const _triV2 = [0, 0, 0];
+
 class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
@@ -55,6 +61,9 @@ class EnemyManager {
       yellowCrab: (e, alivePlayers, refShip) => this.updateYellowCrab(e, alivePlayers, refShip),
       seeder: (e, _alivePlayers, refShip) => this.updateSeeder(e, refShip)
     };
+    // Reusable alive-player list — reset with .length=0 each frame to avoid
+    // allocating a fresh array every update() call (which is called at 60 fps).
+    this._alivePlayers = [];
   }
 
   // ---------------------------------------------------------------------------
@@ -258,7 +267,8 @@ class EnemyManager {
    * dispatches to the appropriate per-type update method.
    */
   update() {
-    const alivePlayers = [];
+    const alivePlayers = this._alivePlayers;
+    alivePlayers.length = 0;
     for (let i = 0; i < gameState.players.length; i++) {
       if (!gameState.players[i].dead) alivePlayers.push(gameState.players[i].ship);
     }
@@ -639,11 +649,11 @@ class EnemyManager {
    * @param {number[]} p2  [x,y,z] of third vertex.
    */
   _drawTri(p0, p1, p2) {
-    let v1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
-    let v2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
-    let nx = v1[1] * v2[2] - v1[2] * v2[1];
-    let ny = v1[2] * v2[0] - v1[0] * v2[2];
-    let nz = v1[0] * v2[1] - v1[1] * v2[0];
+    _triV1[0] = p1[0] - p0[0]; _triV1[1] = p1[1] - p0[1]; _triV1[2] = p1[2] - p0[2];
+    _triV2[0] = p2[0] - p0[0]; _triV2[1] = p2[1] - p0[1]; _triV2[2] = p2[2] - p0[2];
+    let nx = _triV1[1] * _triV2[2] - _triV1[2] * _triV2[1];
+    let ny = _triV1[2] * _triV2[0] - _triV1[0] * _triV2[2];
+    let nz = _triV1[0] * _triV2[1] - _triV1[1] * _triV2[0];
     let m = Math.sqrt(nx * nx + ny * ny + nz * nz);
     if (m > 0) normal(nx / m, ny / m, nz / m);
     vertex(p0[0], p0[1], p0[2]);
@@ -924,21 +934,32 @@ class EnemyManager {
     endShape();
   }
 
-  /** @private Renders a bomber enemy (rotating bipyramid). */
+  /** @private Renders a bomber enemy (rotating bipyramid).
+   *
+   * The bipyramid geometry is static — only the rotation changes frame to frame.
+   * The mesh is baked once into a cached p5.Geometry on first draw and re-used
+   * thereafter, replacing 8 _drawTri() calls (16 array allocs + 24 vertex() calls)
+   * per enemy per frame with a single model() draw call.
+   */
   _drawBomber(e) {
     rotateY(frameCount * 0.05);
     noStroke();
-    fill(180, 20, 180);
-    beginShape(TRIANGLES);
-    this._drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
-    this._drawTri([0, -40, 0], [-40, 0, 40], [40, 0, 40]);
-    this._drawTri([0, -40, 0], [-40, 0, -40], [-40, 0, 40]);
-    this._drawTri([0, -40, 0], [40, 0, -40], [40, 0, 40]);
-    this._drawTri([0, 40, 0], [-40, 0, -40], [40, 0, -40]);
-    this._drawTri([0, 40, 0], [-40, 0, 40], [40, 0, 40]);
-    this._drawTri([0, 40, 0], [-40, 0, -40], [-40, 0, 40]);
-    this._drawTri([0, 40, 0], [40, 0, -40], [40, 0, 40]);
-    endShape();
+    if (!EnemyManager._bomberGeom) {
+      EnemyManager._bomberGeom = _safeBuildGeometry(() => {
+        fill(180, 20, 180);
+        beginShape(TRIANGLES);
+        this._drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
+        this._drawTri([0, -40, 0], [-40, 0, 40], [40, 0, 40]);
+        this._drawTri([0, -40, 0], [-40, 0, -40], [-40, 0, 40]);
+        this._drawTri([0, -40, 0], [40, 0, -40], [40, 0, 40]);
+        this._drawTri([0, 40, 0], [-40, 0, -40], [40, 0, -40]);
+        this._drawTri([0, 40, 0], [-40, 0, 40], [40, 0, 40]);
+        this._drawTri([0, 40, 0], [-40, 0, -40], [-40, 0, 40]);
+        this._drawTri([0, 40, 0], [40, 0, -40], [40, 0, 40]);
+        endShape();
+      });
+    }
+    if (EnemyManager._bomberGeom) model(EnemyManager._bomberGeom);
   }
 
   /** @private Renders a hunter enemy (small teardrop arrowhead + flapping wings — yaw/pitch aligned). */
@@ -971,22 +992,33 @@ class EnemyManager {
     endShape();
   }
 
-  /** @private Renders a seeder enemy (rotating double-diamond + vertical antenna). */
+  /** @private Renders a seeder enemy (rotating double-diamond + vertical antenna).
+   *
+   * The double-diamond and antenna geometry are static — only the rotation changes.
+   * The mesh is baked once into a cached p5.Geometry on first draw, replacing
+   * 8 _drawTri() calls (16 array allocs + 24 vertex() calls) + 1 box() per seeder
+   * per frame with a single model() draw call.
+   */
   _drawSeeder(e) {
     rotateY(frameCount * 0.15); noStroke();
-    for (let i = 0; i < SEEDER_LAYERS.length; i++) {
-      const layer = SEEDER_LAYERS[i];
-      const yOff = layer[0];
-      fill(layer[1], layer[2], layer[3]);
-      beginShape(TRIANGLES);
-      this._drawTri([0, yOff, -25], [-22, 0, 0], [22, 0, 0]);
-      this._drawTri([0, yOff, 25], [-22, 0, 0], [22, 0, 0]);
-      this._drawTri([0, yOff, -25], [-22, 0, 0], [0, yOff, 25]);
-      this._drawTri([0, yOff, -25], [22, 0, 0], [0, yOff, 25]);
-      endShape();
+    if (!EnemyManager._seederGeom) {
+      EnemyManager._seederGeom = _safeBuildGeometry(() => {
+        for (let i = 0; i < SEEDER_LAYERS.length; i++) {
+          const layer = SEEDER_LAYERS[i];
+          const yOff = layer[0];
+          fill(layer[1], layer[2], layer[3]);
+          beginShape(TRIANGLES);
+          this._drawTri([0, yOff, -25], [-22, 0, 0], [22, 0, 0]);
+          this._drawTri([0, yOff, 25], [-22, 0, 0], [22, 0, 0]);
+          this._drawTri([0, yOff, -25], [-22, 0, 0], [0, yOff, 25]);
+          this._drawTri([0, yOff, -25], [22, 0, 0], [0, yOff, 25]);
+          endShape();
+        }
+        fill(255, 60, 60);
+        push(); translate(0, -14, 0); box(3, 14, 3); pop();
+      });
     }
-    fill(255, 60, 60);
-    push(); translate(0, -14, 0); box(3, 14, 3); pop();
+    if (EnemyManager._seederGeom) model(EnemyManager._seederGeom);
   }
 
   /**
@@ -1109,6 +1141,12 @@ class EnemyManager {
     }
   }
 }
+
+// Static geometry caches shared across all EnemyManager instances.
+// Populated on first draw() call once the WebGL canvas exists.
+// null = not yet built; p5.Geometry = cached mesh for that enemy type.
+/** @type {p5.Geometry|null} */ EnemyManager._bomberGeom = null;
+/** @type {p5.Geometry|null} */ EnemyManager._seederGeom = null;
 
 // Singleton instance used by all other modules
 const enemyManager = new EnemyManager();

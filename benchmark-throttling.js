@@ -17,7 +17,12 @@
 const SIM_SECONDS = 180;
 const DT_CAP = 100;
 
-// ── View limits must match constants.js exactly ────────────────────────────
+// ── View limits — local copies of DESKTOP_VIEW_LIMITS / MOBILE_VIEW_LIMITS
+// from constants.js.  This benchmark runs in plain Node.js and cannot import
+// the browser-only game constants, so the values are duplicated here.
+// Keep these in sync with constants.js whenever the game limits change:
+//   constants.js: DESKTOP_VIEW_LIMITS = { far: 80, near: 60, cull: 10000 }
+//   constants.js: MOBILE_VIEW_LIMITS  = { far: 30, near: 20, cull: 3500  }
 const DESKTOP_VIEW_LIMITS = { far: 80, near: 60, cull: 10000 };
 const MOBILE_VIEW_LIMITS  = { far: 30, near: 20, cull: 3500  };
 

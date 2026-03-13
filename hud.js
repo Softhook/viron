@@ -801,7 +801,7 @@ function drawRadarForPlayer(p, hw, h) {
     gb.beginShape(POINTS);
     for (let dcz = -3; dcz <= 3; dcz++) {
       for (let dcx = -3; dcx <= 3; dcx++) {
-        let bucket = infection.buckets.get(`${shipCX + dcx},${shipCZ + dcz}`);
+        let bucket = infection.buckets.get(chunkKey(shipCX + dcx, shipCZ + dcz));
         if (!bucket) continue;
         for (let t of bucket) {
           const [rrx, rrz] = _projectToRadar(t.tx * TILE, t.tz * TILE, s, yawSin, yawCos);

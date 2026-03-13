@@ -1323,7 +1323,7 @@ class Terrain {
     if (manager.buckets && minCx !== undefined) {
       for (let cz = minCz; cz <= maxCz; cz++) {
         for (let cx = minCx; cx <= maxCx; cx++) {
-          const arr = manager.buckets.get(`${cx},${cz}`);
+          const arr = manager.buckets.get(chunkKey(cx, cz));
           if (arr) {
             for (let i = 0; i < arr.length; i++) processTile(arr[i]);
           }

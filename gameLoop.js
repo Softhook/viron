@@ -99,13 +99,9 @@ class GameLoop {
     }
 
     // B. Check: Launchpad fully overrun?
-    let lpInfected = 0;
-    for (let tx = 0; tx < 7; tx++) {
-      for (let tz = 0; tz < 7; tz++) {
-        if (infection.has(tileKey(tx, tz))) lpInfected++;
-      }
-    }
-    if (lpInfected >= 49) {
+    // infection.launchpadCount is maintained incrementally by TileManager.add()
+    // and remove(), so this is O(1) instead of the previous O(LAUNCHPAD_TILE_SIZE²).
+    if (infection.launchpadCount >= LAUNCHPAD_TILE_SIZE * LAUNCHPAD_TILE_SIZE) {
       gameState.setGameOver('LAUNCH PAD INFECTED');
     }
 

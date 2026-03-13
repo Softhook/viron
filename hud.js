@@ -645,7 +645,12 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
     text("READY", relX, 0);
   }
 
-  drawVironProfilerOverlay();
+  if (window.VIRON_PROFILE && window.VIRON_PROFILE.enabled) {
+    textAlign(LEFT, TOP);
+    textSize(14);
+    fill(0, 255, 0);
+    text('MS  ' + (window.__profilingSummary ? window.__profilingSummary.frameMs : '...'), relX - vw / 2 + 14, -vh / 2 + 126);
+  }
 
   pop();
   gl.disable(gl.SCISSOR_TEST);

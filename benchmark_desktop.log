@@ -1,0 +1,315 @@
+
+━━ Baseline (default game loop) ━━
+  scenario id:   baseline
+  frames:        292 in 7008 ms
+  fps:           41.7 (target budget: 60.0)
+  internal prof: frame=7.56ms, infection=0.315ms, barrier=1.208ms, shader=0.022ms
+  avg draw() ms: 9.577
+  renderPlayerView: 9.036 ms/frame
+    attributed:     8.083 ms/frame
+    unattributed:   0.953 ms/frame (10.5% of renderPlayerView)
+  entities:      enemies=10, infection=262, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.953 ms    10.5%   calls=292
+    renderPlayerView             9.036 ms    94.3%   calls=292
+    terrain.drawLandscape        2.033 ms    21.2%   calls=292
+    particleSystem.render        1.915 ms    20.0%   calls=292
+    terrain.drawTrees            1.889 ms    19.7%   calls=292
+    enemyManager.draw            0.912 ms     9.5%   calls=292
+    drawPlayerHUD                0.784 ms     8.2%   calls=292
+    drawRadarForPlayer           0.448 ms     4.7%   calls=292
+    shipDisplay                  0.241 ms     2.5%   calls=292
+    terrain.drawBuildings        0.236 ms     2.5%   calls=292
+
+━━ HUD disabled ━━
+  scenario id:   no-hud
+  frames:        317 in 7004 ms
+  fps:           45.3 (target budget: 60.0)
+  internal prof: frame=6.47ms, infection=0.258ms, barrier=1.191ms, shader=0.013ms
+  avg draw() ms: 7.028
+  renderPlayerView: 6.749 ms/frame
+    attributed:     5.915 ms/frame
+    unattributed:   0.834 ms/frame (12.4% of renderPlayerView)
+  entities:      enemies=10, infection=256, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.834 ms    12.4%   calls=317
+    renderPlayerView             6.749 ms    96.0%   calls=317
+    terrain.drawLandscape        1.900 ms    27.0%   calls=317
+    particleSystem.render        1.869 ms    26.6%   calls=317
+    terrain.drawTrees            1.144 ms    16.3%   calls=317
+    enemyManager.draw            0.450 ms     6.4%   calls=317
+    terrain.drawBuildings        0.251 ms     3.6%   calls=317
+    shipDisplay                  0.244 ms     3.5%   calls=317
+    setSceneLighting             0.053 ms     0.8%   calls=5494
+    enemyManager.update          0.052 ms     0.7%   calls=317
+
+━━ Radar disabled ━━
+  scenario id:   no-radar
+  frames:        309 in 7001 ms
+  fps:           44.1 (target budget: 60.0)
+  internal prof: frame=6.82ms, infection=0.29ms, barrier=1.166ms, shader=0.018ms
+  avg draw() ms: 7.399
+  renderPlayerView: 7.135 ms/frame
+    attributed:     6.263 ms/frame
+    unattributed:   0.872 ms/frame (12.2% of renderPlayerView)
+  entities:      enemies=10, infection=256, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.872 ms    12.2%   calls=309
+    renderPlayerView             7.135 ms    96.4%   calls=309
+    terrain.drawLandscape        1.927 ms    26.0%   calls=309
+    particleSystem.render        1.882 ms    25.4%   calls=309
+    terrain.drawTrees            1.283 ms    17.3%   calls=309
+    enemyManager.draw            0.468 ms     6.3%   calls=309
+    drawPlayerHUD                0.256 ms     3.5%   calls=309
+    shipDisplay                  0.254 ms     3.4%   calls=309
+    terrain.drawBuildings        0.139 ms     1.9%   calls=309
+    enemyManager.update          0.060 ms     0.8%   calls=309
+
+━━ Trees disabled ━━
+  scenario id:   no-trees
+  frames:        308 in 7004 ms
+  fps:           44.0 (target budget: 60.0)
+  internal prof: frame=6.19ms, infection=0.307ms, barrier=1.211ms, shader=0.017ms
+  avg draw() ms: 6.723
+  renderPlayerView: 6.459 ms/frame
+    attributed:     5.563 ms/frame
+    unattributed:   0.896 ms/frame (13.9% of renderPlayerView)
+  entities:      enemies=10, infection=256, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.896 ms    13.9%   calls=308
+    renderPlayerView             6.459 ms    96.1%   calls=308
+    terrain.drawLandscape        1.979 ms    29.4%   calls=308
+    particleSystem.render        1.898 ms    28.2%   calls=308
+    drawPlayerHUD                0.663 ms     9.9%   calls=308
+    enemyManager.draw            0.510 ms     7.6%   calls=308
+    drawRadarForPlayer           0.410 ms     6.1%   calls=308
+    shipDisplay                  0.249 ms     3.7%   calls=308
+    terrain.drawBuildings        0.202 ms     3.0%   calls=308
+    setSceneLighting             0.056 ms     0.8%   calls=4117
+
+━━ Particles disabled ━━
+  scenario id:   no-particles
+  frames:        414 in 7006 ms
+  fps:           59.1 (target budget: 60.0)
+  internal prof: frame=5.49ms, infection=0.292ms, barrier=1.521ms, shader=0.008ms
+  avg draw() ms: 5.868
+  renderPlayerView: 5.677 ms/frame
+    attributed:     4.980 ms/frame
+    unattributed:   0.697 ms/frame (12.3% of renderPlayerView)
+  entities:      enemies=10, infection=258, particles=0
+  view:          VIEW_NEAR=60, VIEW_FAR=80, CULL_DIST=10000
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.697 ms    12.3%   calls=414
+    renderPlayerView             5.677 ms    96.7%   calls=414
+    terrain.drawLandscape        2.149 ms    36.6%   calls=414
+    terrain.drawTrees            1.198 ms    20.4%   calls=414
+    drawPlayerHUD                0.633 ms    10.8%   calls=414
+    enemyManager.draw            0.485 ms     8.3%   calls=414
+    drawRadarForPlayer           0.454 ms     7.7%   calls=414
+    shipDisplay                  0.246 ms     4.2%   calls=414
+    terrain.drawBuildings        0.214 ms     3.6%   calls=414
+    setSceneLighting             0.050 ms     0.9%   calls=6757
+
+━━ Enemies disabled ━━
+  scenario id:   no-enemies
+  frames:        352 in 7003 ms
+  fps:           50.3 (target budget: 60.0)
+  internal prof: frame=4.9ms, infection=0.272ms, barrier=1.243ms, shader=0.013ms
+  avg draw() ms: 5.479
+  renderPlayerView: 5.278 ms/frame
+    attributed:     4.919 ms/frame
+    unattributed:   0.359 ms/frame (6.8% of renderPlayerView)
+  entities:      enemies=3, infection=252, particles=0
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.359 ms     6.8%   calls=352
+    renderPlayerView             5.278 ms    96.3%   calls=352
+    terrain.drawLandscape        2.034 ms    37.1%   calls=352
+    particleSystem.render        1.014 ms    18.5%   calls=352
+    terrain.drawTrees            0.668 ms    12.2%   calls=352
+    drawPlayerHUD                0.665 ms    12.1%   calls=352
+    drawRadarForPlayer           0.422 ms     7.7%   calls=352
+    shipDisplay                  0.282 ms     5.2%   calls=352
+    terrain.drawBuildings        0.213 ms     3.9%   calls=352
+    setSceneLighting             0.040 ms     0.7%   calls=3168
+
+━━ Infection spread disabled ━━
+  scenario id:   no-infection
+  frames:        301 in 7001 ms
+  fps:           43.0 (target budget: 60.0)
+  internal prof: frame=5.79ms, infection=0.075ms, barrier=0ms, shader=0.015ms
+  avg draw() ms: 6.803
+  renderPlayerView: 6.465 ms/frame
+    attributed:     5.512 ms/frame
+    unattributed:   0.953 ms/frame (14.7% of renderPlayerView)
+  entities:      enemies=10, infection=13, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.953 ms    14.7%   calls=301
+    renderPlayerView             6.465 ms    95.0%   calls=301
+    particleSystem.render        1.948 ms    28.6%   calls=301
+    terrain.drawTrees            1.323 ms    19.5%   calls=301
+    enemyManager.draw            0.554 ms     8.2%   calls=301
+    terrain.drawLandscape        0.544 ms     8.0%   calls=301
+    drawPlayerHUD                0.503 ms     7.4%   calls=301
+    terrain.drawBuildings        0.306 ms     4.5%   calls=301
+    shipDisplay                  0.264 ms     3.9%   calls=301
+    drawRadarForPlayer           0.164 ms     2.4%   calls=301
+
+━━ Trees/Buildings disabled ━━
+  scenario id:   no-scenery
+  frames:        304 in 7002 ms
+  fps:           43.4 (target budget: 60.0)
+  internal prof: frame=6.67ms, infection=0.289ms, barrier=1.184ms, shader=0.01ms
+  avg draw() ms: 6.822
+  renderPlayerView: 6.570 ms/frame
+    attributed:     5.646 ms/frame
+    unattributed:   0.924 ms/frame (14.1% of renderPlayerView)
+  entities:      enemies=10, infection=261, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.924 ms    14.1%   calls=304
+    renderPlayerView             6.570 ms    96.3%   calls=304
+    particleSystem.render        2.169 ms    31.8%   calls=304
+    terrain.drawLandscape        1.978 ms    29.0%   calls=304
+    drawPlayerHUD                0.690 ms    10.1%   calls=304
+    enemyManager.draw            0.507 ms     7.4%   calls=304
+    drawRadarForPlayer           0.427 ms     6.3%   calls=304
+    shipDisplay                  0.248 ms     3.6%   calls=304
+    enemyManager.update          0.054 ms     0.8%   calls=304
+    setSceneLighting             0.048 ms     0.7%   calls=3490
+
+━━ Reduced view distance (30/20/3500) ━━
+  scenario id:   low-view
+  frames:        307 in 7003 ms
+  fps:           43.8 (target budget: 60.0)
+  internal prof: frame=6.69ms, infection=0.307ms, barrier=1.195ms, shader=0.02ms
+  avg draw() ms: 7.102
+  renderPlayerView: 6.808 ms/frame
+    attributed:     5.897 ms/frame
+    unattributed:   0.911 ms/frame (13.4% of renderPlayerView)
+  entities:      enemies=10, infection=256, particles=220
+  view:          VIEW_NEAR=30, VIEW_FAR=40, CULL_DIST=5000
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.911 ms    13.4%   calls=307
+    renderPlayerView             6.808 ms    95.9%   calls=307
+    particleSystem.render        1.930 ms    27.2%   calls=307
+    terrain.drawLandscape        1.832 ms    25.8%   calls=307
+    drawPlayerHUD                0.671 ms     9.4%   calls=307
+    terrain.drawTrees            0.549 ms     7.7%   calls=307
+    drawRadarForPlayer           0.419 ms     5.9%   calls=307
+    enemyManager.draw            0.409 ms     5.8%   calls=307
+    shipDisplay                  0.250 ms     3.5%   calls=307
+    terrain.drawBuildings        0.191 ms     2.7%   calls=307
+
+━━ Scene lighting disabled (setSceneLighting stub) ━━
+  scenario id:   no-lighting
+  frames:        304 in 7004 ms
+  fps:           43.4 (target budget: 60.0)
+  internal prof: frame=7.15ms, infection=0.31ms, barrier=1.22ms, shader=0.014ms
+  avg draw() ms: 7.842
+  renderPlayerView: 7.536 ms/frame
+    attributed:     6.687 ms/frame
+    unattributed:   0.848 ms/frame (11.3% of renderPlayerView)
+  entities:      enemies=10, infection=256, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.848 ms    11.3%   calls=304
+    renderPlayerView             7.536 ms    96.1%   calls=304
+    terrain.drawLandscape        1.961 ms    25.0%   calls=304
+    particleSystem.render        1.883 ms    24.0%   calls=304
+    terrain.drawTrees            1.160 ms    14.8%   calls=304
+    drawPlayerHUD                0.781 ms    10.0%   calls=304
+    enemyManager.draw            0.466 ms     5.9%   calls=304
+    drawRadarForPlayer           0.428 ms     5.5%   calls=304
+    shipDisplay                  0.237 ms     3.0%   calls=304
+    terrain.drawBuildings        0.192 ms     2.4%   calls=304
+
+━━ Shadow polygons disabled (stencil stubs) ━━
+  scenario id:   no-shadows
+  frames:        302 in 7002 ms
+  fps:           43.1 (target budget: 60.0)
+  internal prof: frame=7.5ms, infection=0.311ms, barrier=1.191ms, shader=0.012ms
+  avg draw() ms: 8.212
+  renderPlayerView: 7.906 ms/frame
+    attributed:     6.996 ms/frame
+    unattributed:   0.910 ms/frame (11.5% of renderPlayerView)
+  entities:      enemies=10, infection=265, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.910 ms    11.5%   calls=302
+    renderPlayerView             7.906 ms    96.3%   calls=302
+    terrain.drawLandscape        1.976 ms    24.1%   calls=302
+    particleSystem.render        1.884 ms    22.9%   calls=302
+    terrain.drawTrees            1.428 ms    17.4%   calls=302
+    drawPlayerHUD                0.674 ms     8.2%   calls=302
+    enemyManager.draw            0.521 ms     6.3%   calls=302
+    drawRadarForPlayer           0.426 ms     5.2%   calls=302
+    shipDisplay                  0.246 ms     3.0%   calls=302
+    terrain.drawBuildings        0.196 ms     2.4%   calls=302
+
+━━ Cockpit Mode (First Person) ━━
+  scenario id:   cockpit-mode
+  frames:        312 in 7002 ms
+  fps:           44.6 (target budget: 60.0)
+  internal prof: frame=7ms, infection=0.232ms, barrier=1.092ms, shader=0.016ms
+  avg draw() ms: 7.698
+  renderPlayerView: 7.427 ms/frame
+    attributed:     6.532 ms/frame
+    unattributed:   0.894 ms/frame (12.0% of renderPlayerView)
+  entities:      enemies=10, infection=258, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.894 ms    12.0%   calls=312
+    renderPlayerView             7.427 ms    96.5%   calls=312
+    particleSystem.render        1.874 ms    24.3%   calls=312
+    terrain.drawLandscape        1.742 ms    22.6%   calls=312
+    terrain.drawTrees            1.431 ms    18.6%   calls=312
+    drawPlayerHUD                0.759 ms     9.9%   calls=312
+    enemyManager.draw            0.452 ms     5.9%   calls=312
+    drawRadarForPlayer           0.439 ms     5.7%   calls=312
+    terrain.drawBuildings        0.213 ms     2.8%   calls=312
+    setSceneLighting             0.056 ms     0.7%   calls=4632
+
+━━ Sound disabled (GameSFX/gameSFX stubs) ━━
+  scenario id:   no-sound
+  frames:        303 in 7005 ms
+  fps:           43.3 (target budget: 60.0)
+  internal prof: frame=7.59ms, infection=0.304ms, barrier=1.245ms, shader=0.014ms
+  avg draw() ms: 8.253
+  renderPlayerView: 7.982 ms/frame
+    attributed:     7.083 ms/frame
+    unattributed:   0.898 ms/frame (11.3% of renderPlayerView)
+  entities:      enemies=10, infection=262, particles=220
+  view:          VIEW_NEAR=59, VIEW_FAR=79, CULL_DIST=9750
+  top contributors (ms/frame, % of draw):
+    renderPlayerView.unattributed   0.898 ms    11.3%   calls=303
+    renderPlayerView             7.982 ms    96.7%   calls=303
+    terrain.drawLandscape        2.029 ms    24.6%   calls=303
+    particleSystem.render        1.890 ms    22.9%   calls=303
+    terrain.drawTrees            1.477 ms    17.9%   calls=303
+    drawPlayerHUD                0.688 ms     8.3%   calls=303
+    enemyManager.draw            0.488 ms     5.9%   calls=303
+    drawRadarForPlayer           0.434 ms     5.3%   calls=303
+    shipDisplay                  0.251 ms     3.0%   calls=303
+    terrain.drawBuildings        0.194 ms     2.4%   calls=303
+
+━━ Scenario Deltas (avg draw ms/frame) ━━
+  no-hud         vs baseline: -2.549 ms/frame JS cost, +3.6 FPS
+  no-radar       vs baseline: -2.178 ms/frame JS cost, +2.5 FPS
+  no-trees       vs baseline: -2.854 ms/frame JS cost, +2.3 FPS
+  no-particles   vs baseline: -3.709 ms/frame JS cost, +17.4 FPS
+  no-enemies     vs baseline: -4.098 ms/frame JS cost, +8.6 FPS
+  no-infection   vs baseline: -2.774 ms/frame JS cost, +1.3 FPS
+  no-scenery     vs baseline: -2.755 ms/frame JS cost, +1.7 FPS
+  low-view       vs baseline: -2.475 ms/frame JS cost, +2.2 FPS
+  no-lighting    vs baseline: -1.735 ms/frame JS cost, +1.7 FPS
+  no-shadows     vs baseline: -1.365 ms/frame JS cost, +1.5 FPS
+  cockpit-mode   vs baseline: -1.879 ms/frame JS cost, +2.9 FPS
+  no-sound       vs baseline: -1.324 ms/frame JS cost, +1.6 FPS
+
+Runtime breakdown benchmark complete.

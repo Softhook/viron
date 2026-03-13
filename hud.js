@@ -887,3 +887,23 @@ function drawControlHints(p, pi, hw, h) {
   image(g, 0, h / 2 - 12);
   pop();
 }
+
+/**
+ * Renders a tiny performance readout in the top-right corner if the Viron
+ * profiler is enabled. Shows the latest sampled frame milliseconds.
+ */
+function drawVironProfilerOverlay(viewW, viewH) {
+  if (typeof window === 'undefined' || !window.VIRON_PROFILE || !window.VIRON_PROFILE.enabled) return;
+  const summary = window.__profilingSummary;
+  if (!summary) return;
+
+  push();
+  // Viewport-relative coordinates from ortho set up in caller or setup2DViewport
+  textAlign(LEFT, BOTTOM);
+  textSize(12);
+  fill(0, 255, 0, 150);
+  noStroke();
+  // Positioned relative to the bottom-left of the current viewport slice
+  text(summary.frameMs + "ms", -viewW / 2 + 10, viewH / 2 - 10);
+  pop();
+}

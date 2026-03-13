@@ -558,7 +558,7 @@ const infection = new TileManager(true);
 // =============================================================================
 function createVironProfiler(cfg) {
   if (typeof performance === 'undefined') return null;
-  const sampleFrames = cfg.sampleFrames || 180;
+  const sampleFrames = cfg.sampleFrames || 60;
   const label = cfg.label || 'default';
   const totals = {
     frame: 0,
@@ -604,17 +604,17 @@ function createVironProfiler(cfg) {
     config: cfg,
     now: () => performance.now(),
     record(name, delta) {
-      if (!active) return;
+      if (!active || (typeof gameState !== 'undefined' && gameState.mode !== 'playing')) return;
       if (name === 'spread') totals.spread += delta;
       else if (name === 'shader') totals.shader += delta;
     },
     recordSpread(delta) {
-      if (!active) return;
+      if (!active || (typeof gameState !== 'undefined' && gameState.mode !== 'playing')) return;
       totals.spread += delta;
       totals.spreadSteps++;
     },
     recordOverlay(tag, tiles, delta) {
-      if (!active) return;
+      if (!active || (typeof gameState !== 'undefined' && gameState.mode !== 'playing')) return;
       if (tag === 'infection') {
         totals.overlayInfection += delta;
         totals.overlayInfectionTiles += tiles;
@@ -642,7 +642,7 @@ function createVironProfiler(cfg) {
       return true;
     },
     frameEnd(frameDelta) {
-      if (!active) return;
+      if (!active || (typeof gameState !== 'undefined' && gameState.mode !== 'playing')) return;
       totals.frame += frameDelta;
       totals.frames++;
       if (totals.frames >= sampleFrames) logSummaryAndReset();

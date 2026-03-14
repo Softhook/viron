@@ -18,7 +18,7 @@ const INDUCED_DRAG = 0.002;    // Extra drag proportional to how much lift is be
 
 // --- Rendering distances (can be adjusted dynamically for performance) ---
 const DESKTOP_VIEW_LIMITS = { far: 80, near: 60, cull: 10000 };
-const MOBILE_VIEW_LIMITS  = { far: 30, near: 20, cull: 3500 };
+const MOBILE_VIEW_LIMITS  = { far: 45, near: 30, cull: 4500 };
 
 let VIEW_NEAR = 35;            // Inner tile radius — always rendered, no frustum test
 let VIEW_FAR = 50;             // Outer tile radius — rendered with frustum culling

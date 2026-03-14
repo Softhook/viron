@@ -457,8 +457,8 @@ class GameRenderer {
    */
   _applyPerfRestore(perf, now, profile) {
     VIEW_NEAR = min(profile.limits.near, VIEW_NEAR + 1);
-    VIEW_FAR = min(profile.limits.far, VIEW_FAR + 1);
-    CULL_DIST = min(profile.limits.cull, CULL_DIST + 150);
+    VIEW_FAR = min(profile.limits.far, VIEW_FAR + 2);
+    CULL_DIST = min(profile.limits.cull, CULL_DIST + 250);
     perf.cooldown = now + 4000;
     this._resetPerfCounters(perf);
   }
@@ -496,7 +496,7 @@ class GameRenderer {
       const medMs = (perf.sortedBuf[29] + perf.sortedBuf[30]) / 2;
       const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
       perf.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
-      if (!gameState.isMobile) perf.budgetMs = Math.max(perf.budgetMs, 1000 / 60);
+      perf.budgetMs = Math.max(perf.budgetMs, 1000 / 60);
       perf.budgetSet = true;
     }
 

@@ -43,6 +43,8 @@ function resetShip(p, offsetX) {
   } else {
     p.missilesRemaining = 1;
   }
+  p.normalShotMode = 'single';
+  p.weaponMode = 0; // Reset to NORMAL weapon mode
 }
 
 /**
@@ -998,6 +1000,8 @@ function killPlayer(p) {
   p.respawnTimer = 120;  // 120 physics ticks = 2 s (physics always runs at 60 Hz)
   p.bullets = [];
   p.tankShells = [];
+  p.normalShotMode = 'single';
+  p.weaponMode = 0; // Reset to NORMAL weapon mode
 
   // --- "Launch Pad Taken Over" detection ---
   // If the player dies on the launch pad while an enemy is also on the pad,

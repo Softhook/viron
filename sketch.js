@@ -330,7 +330,6 @@ function keyPressed() {
   if (key === 'p' || key === 'P') {
     aimAssist.enabled = !aimAssist.enabled;
     aimAssist.debug = aimAssist.enabled;
-    mobileController.debug = aimAssist.enabled;
   }
 
   // Toggle first-person / behind-ship camera (O key)

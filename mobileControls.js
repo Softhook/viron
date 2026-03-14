@@ -409,6 +409,7 @@ class MobileController {
         }
 
         pop();
+        pop();
     }
     /**
      * Checks if a point (mouse/touch) hits any settings buttons on the Instructions screen.

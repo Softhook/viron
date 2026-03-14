@@ -899,18 +899,12 @@ function drawVironProfilerOverlay(viewW, viewH) {
   if (!summary) return;
 
   push();
-  // Viewport-relative coordinates from ortho
-  textAlign(CENTER, TOP);
-  textSize(11);
+  // Viewport-relative coordinates from ortho set up in caller or setup2DViewport
+  textAlign(LEFT, BOTTOM);
+  textSize(12);
+  fill(0, 255, 0, 150);
   noStroke();
-
-  // Background "pill" for readability
-  fill(0, 0, 0, 100);
-  rectMode(CENTER);
-  rect(0, -viewH / 2 + 56, 60, 18, 5);
-
-  // Milliseconds text
-  fill(0, 255, 0, 220);
-  text(summary.frameMs + "ms", 0, -viewH / 2 + 50);
+  // Positioned relative to the bottom-left of the current viewport slice
+  text(summary.frameMs + "ms", -viewW / 2 + 10, viewH / 2 - 10);
   pop();
 }

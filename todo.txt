@@ -1,18 +1,18 @@
 
-Allow the player to fire a barrier that the virus can't cross. This allows strategic positioning to enclose areas or protect areas 
-Use a key to toggle between different weapons selected. This could toggle between missile, barrier, and normal fire.
-We'd need an indicator at the top of the screen which one is selected 
+game start screen can happen underneath the so 
 
-Try and make it so that the player sees directly from the ship position 
-
+Change the weapon toggle. Make proper keyboard commands 
 
 update. the package.json
 
-install jest create tests
+change building to create chinsee village aethetic
+remove factory building
+
+tower defence structure
+
 
 more sound effects
 
-background hum
 
 use open typeface
 

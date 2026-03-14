@@ -80,7 +80,7 @@ class GameRenderer {
     }
     this.sceneFBO = null;
     // Patch limits into the static perf profiles now that constants are defined.
-    GameRenderer._PERF_PROFILE_MOBILE.limits  = MOBILE_VIEW_LIMITS;
+    GameRenderer._PERF_PROFILE_MOBILE.limits = MOBILE_VIEW_LIMITS;
     GameRenderer._PERF_PROFILE_DESKTOP.limits = DESKTOP_VIEW_LIMITS;
   }
 
@@ -166,6 +166,11 @@ class GameRenderer {
       cy = min(ship.y - 120, 140);
       cx = ship.x + 300 * sin(ship.yaw);
       cz = ship.z + 300 * cos(ship.yaw);
+
+      // Constrain altitude to be above terrain and sea level
+      let terrainY = terrain.getAltitude(cx, cz);
+      cy = min(cy, terrainY - 60); // Maintain safety margin above surface
+
       lx = ship.x;
       ly = ship.y;
       lz = ship.z;
@@ -408,11 +413,11 @@ class GameRenderer {
       this._postShaderReady = true;
     }
     this.postShader.setUniform('uTex', this.masterFBO);
-    
+
     noStroke();
     rectMode(CENTER);
     rect(0, 0, width, height);
-    
+
     resetShader();
     gl.enable(gl.DEPTH_TEST);
     pop();
@@ -641,22 +646,22 @@ class GameRenderer {
     const beamHeight = 25000;
     const beamRadius = 14;
     const time = millis() / 1000.0;
-    
+
     push();
     noStroke();
     blendMode(ADD);
-    
+
     for (let e of enemyManager.enemies) {
       // Distance culling
       let dSq = (s.x - e.x) ** 2 + (s.z - e.z) ** 2;
       if (dSq > 6000 * 6000) continue;
-      
+
       let col = enemyManager.getColor(e.type);
       let flicker = 0.8 + 0.2 * sin(time * 25.0 + e.id * 10.0);
-      
+
       push();
       translate(e.x, e.y, e.z);
-      
+
       // --- Energetic Ground Splash (single ring; was 2) ---
       let expand = (time * 1.5) % 1.0;
       let ringAlpha = (1.0 - expand) * 120 * flicker;
@@ -665,7 +670,7 @@ class GameRenderer {
       fill(col[0], col[1], col[2], ringAlpha);
       torus(beamRadius * (2.0 + expand * 8.0), 2.0, 8, 4); // 16 → 8 segments
       pop();
-      
+
       // --- Main Volumetric Beam (outer aura dropped; mid + core remain) ---
       push();
       translate(0, -beamHeight / 2 - 10, 0);
@@ -674,7 +679,7 @@ class GameRenderer {
       fill(255, 255, 255, 200 * flicker);
       cylinder(beamRadius * 0.5, beamHeight, 6, 1, false, false);
       pop();
-      
+
       // --- High-Speed Energy Ripples (2 passes; was 3) ---
       const rippleRange = 8000;
       for (let i = 0; i < 2; i++) {
@@ -692,10 +697,10 @@ class GameRenderer {
         cylinder(beamRadius * 9.0, 30, 6, 1, false, false); // 8 → 6 segments
         pop();
       }
-      
+
       pop();
     }
-    
+
     blendMode(BLEND);
     pop();
   }

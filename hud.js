@@ -518,7 +518,7 @@ function drawBackgroundLandscape() {
 
   // 2. 3D Scene drawing
   push();
-  perspective(PI / 3, width / height, 50, VIEW_FAR * TILE * 1.5);
+  perspective(PI / 3, width / height, 10, VIEW_FAR * TILE * 1.5);
 
   // Update panning animation
   gameState.menuCam.yaw += 0.0006;
@@ -526,7 +526,10 @@ function drawBackgroundLandscape() {
   // Position camera low to the ground, panning in a circle
   let cx = gameState.menuCam.x + sin(gameState.menuCam.yaw) * 550;
   let cz = gameState.menuCam.z + cos(gameState.menuCam.yaw) * 550;
-  let cy = -90;
+  
+  // Constrain altitude to be above terrain and sea level
+  let terrainY = terrain.getAltitude(cx, cz);
+  let cy = min(-90, terrainY - 60); // Maintain at least 60 units above surface, but stay low
   camera(cx, cy, cz, gameState.menuCam.x, -10, gameState.menuCam.z, 0, 1, 0);
 
   // Fake ship for culling / terrain logic

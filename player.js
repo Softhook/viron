@@ -665,8 +665,8 @@ function _applyMobileInputs(p, isThrusting, isShooting) {
     p.mobileMissilePressed = false;
   }
 
-  // Barrier fires continuously while held (same 8-frame cadence as normal bullets)
-  if (inputs.barrier && frameCount % 8 === 0) fireBarrier(p);
+  // Barrier fires continuously while held (same 8-tick cadence as normal bullets)
+  if (inputs.barrier && _simTick % 8 === 0) fireBarrier(p);
 
   p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
   p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
@@ -748,7 +748,7 @@ function _updateGroundVehicle(p, d, isThrusting, isBraking) {
     s.vx += dVec.x * pw;
     s.vz += dVec.z * pw;
     // Dust particles when near the ground
-    if (frameCount % 4 === 0 && s.y > groundY - 5) {
+    if (_simTick % 4 === 0 && s.y > groundY - 5) {
       particleSystem.particles.push({
         x: s.x, y: s.y + 10, z: s.z,
         vx: random(-1.5, 1.5), vy: -random(1, 3), vz: random(-1.5, 1.5),
@@ -822,7 +822,7 @@ function _updateAircraft(p, d, isThrusting, isBraking) {
     const totalParticles = particleSystem.particles.length;
     const fogLoad = particleSystem.fogCount;
     const emitEvery = totalParticles > 700 ? 5 : (totalParticles > 500 || fogLoad > 130 ? 4 : 3);
-    if (frameCount % emitEvery === 0) {
+    if (_simTick % emitEvery === 0) {
       let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
       let cx = Math.cos(s.pitch), sx = Math.sin(s.pitch);
       let tLocal = (pt) => {
@@ -908,7 +908,7 @@ function _handleWeaponFire(p, isShooting) {
       let des = SHIP_DESIGNS[p.designIndex];
       let isTank = (des && des.shotType === 'tank_shell');
       let rate = isTank ? 15 : 8;
-      if (frameCount % rate === 0) {
+      if (_simTick % rate === 0) {
         if (isTank) fireTankShell(p);
         else fireNormalPattern(p, s);
       }
@@ -920,7 +920,7 @@ function _handleWeaponFire(p, isShooting) {
     p.shootHeld = isShooting;
   } else if (p.weaponMode === 2) {
     // BARRIER: auto-repeat at the same 8-frame cadence as normal bullets
-    if (isShooting && frameCount % 8 === 0) fireBarrier(p);
+    if (isShooting && _simTick % 8 === 0) fireBarrier(p);
     // Track shootHeld so switching modes resets missile edge-detection
     p.shootHeld = isShooting;
   }
@@ -935,11 +935,11 @@ function _handleWeaponFire(p, isShooting) {
  * the ship's physics for one frame.
  *
  * Physics model:
- *   1. Gravity applied to vy each frame (GRAV = 0.09).
+ *   1. Gravity applied to vy each tick (GRAV = 0.09).
  *   2. Thrust adds force along the ship's up vector when W/RMB is held.
  *   3. Braking multiplies all velocity components by 0.96.
- *   4. Global drag: velocity × 0.985 every frame.
- *   5. Collision with the ground: land softly if approach speed < 2.8 m/f,
+ *   4. Global drag: velocity × 0.985 every tick.
+ *   5. Collision with the ground: land softly if approach speed < 2.8 units/tick,
  *      kill the player on hard impact.
  *   6. Collision with the sea: instant kill.
  *
@@ -995,7 +995,7 @@ function killPlayer(p) {
   terrain.addPulse(p.ship.x, p.ship.z, 2.0);  // Yellow ship-explosion ring (type 2)
   if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(30);
   p.dead = true;
-  p.respawnTimer = 120;  // ~2 seconds at 60 fps
+  p.respawnTimer = 120;  // 120 physics ticks = 2 s (physics always runs at 60 Hz)
   p.bullets = [];
   p.tankShells = [];
 
@@ -1056,7 +1056,7 @@ function updateProjectilePhysics(p) {
             }
           }
         }
-        if (!bestTarget && frameCount % 2 === 0) {
+        if (!bestTarget && _simTick % 2 === 0) {
           let bTx = Math.floor(b.x / 120), bTz = Math.floor(b.z / 120);
           for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
             for (let tx = bTx - 2; tx <= bTx + 2; tx++) {
@@ -1130,7 +1130,7 @@ function updateProjectilePhysics(p) {
     m.x += m.vx; m.y += m.vy; m.z += m.vz;
     m.life--;
 
-    if (frameCount % 2 === 0) {
+    if (_simTick % 2 === 0) {
       particleSystem.particles.push({
         x: m.x, y: m.y, z: m.z,
         vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),

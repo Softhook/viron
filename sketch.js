@@ -16,6 +16,25 @@ let isMobile = false;
 let isAndroid = false;
 
 // ---------------------------------------------------------------------------
+// Fixed-timestep physics
+//
+// Game logic (bullets, enemies, infection) runs at a fixed 60 Hz tick rate
+// regardless of the display refresh rate.  The accumulator collects elapsed
+// wall-clock time each draw() call; whole ticks are drained from it before
+// the frame is rendered.  This keeps gameplay identical on 60, 75, 144 Hz
+// and throttled-mobile screens.
+//
+//   _SIM_DT   — physics step duration in ms (1000 / 60 ≈ 16.667 ms)
+//   _physAccum — leftover ms not yet consumed by a completed physics tick
+//   _simTick  — monotonically incrementing tick counter (replaces frameCount
+//               inside every physics function so timing is Hz-independent)
+// ---------------------------------------------------------------------------
+const _SIM_DT = 1000 / 60;     // ~16.667 ms per physics step
+const _MAX_PHYSICS_STEP_MS = 100; // deltaTime cap — prevents spiral-of-death on tab-switch / GC pauses
+let _physAccum = 0;
+let _simTick = 0;
+
+// ---------------------------------------------------------------------------
 // Utility functions (module-delegated)
 // ---------------------------------------------------------------------------
 
@@ -146,6 +165,8 @@ function setup() {
       w: 60, h: 280, d: 60,
       type: 4,
       col: [0, 220, 200],
+      // pulseTimer: ms stagger offset so sentinels don't all pulse simultaneously.
+      // Read once by gameRenderer.updateSentinelGlows() to initialize _lastPulseMs.
       pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / MOUNTAIN_PEAKS.length)
     });
   }
@@ -166,8 +187,12 @@ function setup() {
 /**
  * Begins a new game with the given number of players.
  * Delegates to gameState for initialization.
+ * Resets the physics accumulator so stale menu time does not cause a burst
+ * of extra ticks on the first gameplay frame.
  */
 function startGame(np) {
+  _physAccum = 0;
+  _simTick = 0;
   gameState.startNewGame(np);
 }
 
@@ -186,6 +211,10 @@ function startLevel(lvl) {
 /**
  * Main p5 draw loop — runs at the display refresh rate.
  * Delegates to state-specific handlers or runs full gameplay frame.
+ *
+ * Physics is advanced in fixed 16.667 ms steps via the accumulator so
+ * gameplay runs identically on any display refresh rate (60, 75, 144 Hz…).
+ * Rendering always executes once per display frame.
  */
 function draw() {
   if (gameState.mode === 'menu') { drawMenu(); return; }
@@ -214,19 +243,30 @@ function draw() {
     mobileController.update(touches, width, height);
   }
 
-  // Physics update pipeline
-  for (let p of gameState.players) updateShipInput(p);
-  enemyManager.update();
-  for (let p of gameState.players) GameLoop.checkCollisions(p);
-  GameLoop.spreadInfection();
-  particleSystem.updatePhysics();
-  for (let p of gameState.players) updateProjectilePhysics(p);
-  updateBarrierPhysics();
+  // Fixed-timestep physics accumulator.
+  // Cap raw delta to _MAX_PHYSICS_STEP_MS to avoid a spiral-of-death after
+  // tab switches, debugger pauses, or severe thermal throttle spikes.
+  const rawDt = Math.min(deltaTime, _MAX_PHYSICS_STEP_MS);
+  _physAccum += rawDt;
+  while (_physAccum >= _SIM_DT) {
+    _physAccum -= _SIM_DT;
+    _simTick++;
 
+    // Physics update pipeline (runs at a steady 60 Hz equivalent)
+    for (let p of gameState.players) updateShipInput(p);
+    enemyManager.update();
+    for (let p of gameState.players) GameLoop.checkCollisions(p);
+    GameLoop.spreadInfection();
+    particleSystem.updatePhysics();
+    for (let p of gameState.players) updateProjectilePhysics(p);
+    updateBarrierPhysics();
+    GameLoop.updateLevelAndRespawn();
+  }
+
+  // Rendering — executes once per display frame regardless of Hz
   gameRenderer.updateSentinelGlows();
   GameLoop.updateAmbianceAudio();
   gameRenderer.renderAllPlayers(drawingContext);
-  GameLoop.updateLevelAndRespawn();
   if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
 

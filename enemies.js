@@ -293,7 +293,7 @@ class EnemyManager {
    */
   updateBomber(e, refShip) {
     e.x += e.vx * 1.5; e.z += e.vz * 1.5;
-    e.y += sin(frameCount * 0.02 + e.id);  // Gentle vertical oscillation
+    e.y += sin(_simTick * 0.02 + e.id);  // Gentle vertical oscillation
 
     // Reflect velocity when too far from the reference ship
     this._reflectWithinRefBounds(e, refShip, 4000);
@@ -445,7 +445,7 @@ class EnemyManager {
    */
   updateSeeder(e, refShip) {
     e.x += e.vx; e.z += e.vz;
-    e.y += sin(frameCount * 0.05 + e.id) * 2;  // Gentle vertical oscillation
+    e.y += sin(_simTick * 0.05 + e.id) * 2;  // Gentle vertical oscillation
 
     this._reflectWithinRefBounds(e, refShip, 5000);
 

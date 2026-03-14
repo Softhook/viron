@@ -280,7 +280,7 @@ class ParticleSystem {
     }
 
     let isCustom = baseColor !== undefined && baseColor !== null;
-    let count = (typeof gameState !== 'undefined' && gameState.isMobile) ? 120 : 400;
+    let count = (typeof gameState !== 'undefined' && gameState.isMobile) ? 220 : 400;
 
     for (let i = 0; i < count; i++) {
       let speed = random(5.0, 45.0);

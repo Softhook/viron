@@ -1667,7 +1667,7 @@ class Terrain {
     // Threshold tuned for robust terrain coverage; depth 5 allows precise "draping"
     const threshold = TILE * TILE * 0.4; // Tighter threshold for better geometry tracking 
     const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
-    const maxDepth = gameState.isMobile ? 3 : 5;
+    const maxDepth = gameState.isMobile ? 4 : 5;
 
     // Hard cap on emitted triangles to prevent push.apply overflowing V8's
     // call-stack argument limit (~65 536).  p5's addGeometry uses
@@ -2063,7 +2063,7 @@ class Terrain {
             pop();
           }
 
-          if (dSq < (gameState.isMobile ? 1440000 : 9000000)) shadowQueue.push(t);
+          if (dSq < 9000000) shadowQueue.push(t);
         }
       }
     }
@@ -2239,7 +2239,7 @@ class Terrain {
 
       // Defer ground shadow drawing.  Carry inf so the shadow pass reuses it
       // without calling infection.has() a second time per building.
-      if (dSq < (gameState.isMobile ? 1000000 : 2250000)) {
+      if (dSq < 2250000) {
         shadowQueue.push(b);
         shadowInf.push(inf);
       }

@@ -565,6 +565,32 @@ function _safeBuildGeometry(callback) {
 }
 
 // =============================================================================
+// Raw-WebGL shadow helpers
+// =============================================================================
+
+/**
+ * Pre-allocated buffer for the shadow MVP matrix computed each draw pass.
+ * Reused every frame to avoid a Float32Array allocation per-pass.
+ * @private
+ */
+const _shadowMVPBuf = new Float32Array(16);
+
+/**
+ * Multiplies two column-major 4×4 matrices and writes the result into r.
+ * r = a × b  (all three arguments are Float32Array(16) in column-major order).
+ * @private
+ */
+function _mat4Mul16(r, a, b) {
+  for (let c = 0; c < 4; c++) {
+    const b0=b[c*4], b1=b[c*4+1], b2=b[c*4+2], b3=b[c*4+3];
+    r[c*4]   = a[0]*b0 + a[4]*b1 + a[8]*b2  + a[12]*b3;
+    r[c*4+1] = a[1]*b0 + a[5]*b1 + a[9]*b2  + a[13]*b3;
+    r[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
+    r[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
+  }
+}
+
+// =============================================================================
 // Terrain class
 // =============================================================================
 class Terrain {
@@ -626,6 +652,15 @@ class Terrain {
     this._buildingShadowInf = [];
     this._treeShadowQueue = [];
 
+    // Raw WebGL shadow shader: bypasses p5 retained-mode model() which silently
+    // produces zero output inside the masterFBO rendering path.
+    // Lazily compiled on the first shadow draw.
+    this._shadowGLReady = false;
+    this._shadowGLProg  = null;
+    this._shadowGLMVPLoc   = null;
+    this._shadowGLColorLoc = null;
+    this._shadowGLPosLoc   = null;
+
     // Cached per-frame sun shadow basis so multiple shadow draws don't
     // renormalize the same vector every call.
     this._sunShadowBasis = { x: 0, y: 1, z: 0 };
@@ -677,9 +712,137 @@ class Terrain {
     this.fillShader = createShader(TERRAIN_VERT, FILL_COLOR_FRAG);
   }
 
-  // ---------------------------------------------------------------------------
-  // Pulse effects
-  // ---------------------------------------------------------------------------
+  /**
+   * Compiles the minimal raw WebGL program used to draw pre-baked shadow VBOs.
+   * Called lazily on the first frame that requires shadow rendering.
+   * p5's retained-mode model() path silently produces zero output inside the
+   * masterFBO, so shadows use a dedicated raw WebGL draw path instead.
+   * @private
+   */
+  _initShadowGL() {
+    const gl = drawingContext;
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, [
+      'attribute vec3 aPos;',
+      'uniform mat4 uMVP;',
+      'void main(){gl_Position=uMVP*vec4(aPos,1.0);}'
+    ].join('\n'));
+    gl.compileShader(vs);
+
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, [
+      'precision lowp float;',
+      'uniform vec4 uCol;',
+      'void main(){gl_FragColor=uCol;}'
+    ].join('\n'));
+    gl.compileShader(fs);
+
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+
+    this._shadowGLProg      = prog;
+    this._shadowGLMVPLoc    = gl.getUniformLocation(prog, 'uMVP');
+    this._shadowGLColorLoc  = gl.getUniformLocation(prog, 'uCol');
+    this._shadowGLPosLoc    = gl.getAttribLocation(prog, 'aPos');
+    this._shadowGLReady     = true;
+  }
+
+  /**
+   * Extracts the triangle vertices from a baked shadow p5.Geometry into a
+   * flat Float32Array, uploads it to a WebGL VBO, and stores the VBO handle
+   * plus the pre-computed shadow alpha on `owner`.
+   *
+   * Called once per bake (not per frame).  The flat array avoids per-frame
+   * face/vertex index lookups; the VBO avoids per-frame CPU→GPU uploads.
+   *
+   * @param {{}} owner       Tree or building descriptor — VBO stored here.
+   * @param {p5.Geometry} geom  Baked shadow geometry.
+   * @param {number} casterH    Caster height used for the opacity factor.
+   * @param {number} baseAlpha  Base alpha in [0, 255] before opacity factor.
+   * @private
+   */
+  _uploadShadowVBO(owner, geom, casterH, baseAlpha) {
+    const gl = drawingContext;
+    const faces = geom.faces, verts = geom.vertices;
+    const flat = new Float32Array(faces.length * 9); // 3 verts × 3 floats
+    let vi = 0;
+    for (let fi = 0; fi < faces.length; fi++) {
+      const f = faces[fi];
+      const v0 = verts[f[0]], v1 = verts[f[1]], v2 = verts[f[2]];
+      flat[vi++]=v0.x; flat[vi++]=v0.y; flat[vi++]=v0.z;
+      flat[vi++]=v1.x; flat[vi++]=v1.y; flat[vi++]=v1.z;
+      flat[vi++]=v2.x; flat[vi++]=v2.y; flat[vi++]=v2.z;
+    }
+    if (owner._shadowVBO) gl.deleteBuffer(owner._shadowVBO);
+    const vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, flat, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    owner._shadowVBO        = vbo;
+    owner._shadowVBOCount   = faces.length * 3;
+    // Store the final alpha in [0, 1] so the render pass just reads it.
+    // Ambient colour (AMBIENT_R/G/B) is applied fresh each frame, so
+    // time-of-day changes are reflected without requiring a re-bake.
+    owner._shadowBaseAlpha  = (baseAlpha * this._shadowOpacityFactor(casterH)) / 255;
+  }
+
+  /**
+   * Draws all shadow VBOs in `queue` using the raw WebGL shadow shader.
+   * One stencil guard spans the entire loop so each screen pixel receives
+   * at most one shadow layer regardless of how many polygons overlap it.
+   *
+   * Objects without a `_shadowVBO` (e.g. type-3 UFO buildings whose shadow
+   * is animated and rendered via _drawBuildingShadow) are silently skipped.
+   *
+   * @param {Array} queue  Array of tree or building descriptors.
+   * @private
+   */
+  _drawRawShadows(queue) {
+    if (queue.length === 0) return;
+    if (!this._shadowGLReady) this._initShadowGL();
+
+    const gl = drawingContext;
+
+    // MVP = P × V  (shadow geometry is in world space, model matrix = identity).
+    _mat4Mul16(_shadowMVPBuf, _renderer.uPMatrix.mat4, _renderer.uViewMatrix.mat4);
+
+    // Per-frame ambient-scaled shadow base colour (RGB, normalised to [0,1]).
+    const baseR = AMBIENT_R * SHADOW_AMBIENT_RG_SCALE / 255;
+    const baseG = AMBIENT_G * SHADOW_AMBIENT_RG_SCALE / 255;
+    const baseB = AMBIENT_B * SHADOW_AMBIENT_B_SCALE / 255;
+
+    // Bind shadow program and upload shared uniforms.
+    gl.useProgram(this._shadowGLProg);
+    gl.uniformMatrix4fv(this._shadowGLMVPLoc, false, _shadowMVPBuf);
+    gl.enableVertexAttribArray(this._shadowGLPosLoc);
+
+    // Premultiplied-alpha blending — matches p5's BLEND mode (ONE, ONE_MINUS_SRC_ALPHA).
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+    // Stencil guard: each fragment is drawn at most once (NOTEQUAL→REPLACE).
+    _beginShadowStencil();
+
+    for (const obj of queue) {
+      if (!obj._shadowVBO) continue;
+      const a = obj._shadowBaseAlpha || 0;
+      // Output premultiplied RGBA (rgb already multiplied by alpha).
+      gl.uniform4f(this._shadowGLColorLoc, baseR * a, baseG * a, baseB * a, a);
+      gl.bindBuffer(gl.ARRAY_BUFFER, obj._shadowVBO);
+      gl.vertexAttribPointer(this._shadowGLPosLoc, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, obj._shadowVBOCount);
+    }
+
+    _endShadowStencil();
+
+    // Restore attribute and buffer state so p5 is unaffected by the raw GL calls.
+    gl.disableVertexAttribArray(this._shadowGLPosLoc);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  }
+
+
 
   /**
    * Registers a new expanding shockwave ring on the terrain surface.
@@ -1781,6 +1944,8 @@ class Terrain {
     if (t._bakedSun && (t._bakedSun.x !== sun.x || t._bakedSun.y !== sun.y || t._bakedSun.z !== sun.z)) {
       t._shadowGeom = null;
       t._shadowBakeFails = 0;
+      // Release the raw-GL VBO so it is rebuilt at the new sun angle.
+      if (t._shadowVBO) { drawingContext.deleteBuffer(t._shadowVBO); t._shadowVBO = null; }
     }
 
     if (!t._shadowHull) {
@@ -1818,7 +1983,11 @@ class Terrain {
           this._drawProjectedFootprintShadow(t.x, t.z, t.y, casterH, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
         });
         t._shadowGeom = (built && built.vertices.length) ? built : false;
-        if (t._shadowGeom) t._shadowBakeFails = 0;
+        if (t._shadowGeom) {
+          t._shadowBakeFails = 0;
+          // Upload baked positions to a GPU VBO for the raw-WebGL shadow pass.
+          this._uploadShadowVBO(t, t._shadowGeom, casterH, TREE_SHADOW_BASE_ALPHA);
+        }
       } catch (err) {
         console.error("[Viron] Shadow bake failed for tree:", err);
         t._shadowBakeFails = (t._shadowBakeFails || 0) + 1;
@@ -1843,6 +2012,8 @@ class Terrain {
     if (b._bakedSun && (b._bakedSun.x !== sun.x || b._bakedSun.y !== sun.y || b._bakedSun.z !== sun.z)) {
       b._shadowGeom = null;
       b._shadowBakeFails = 0;
+      // Release the raw-GL VBO so it is rebuilt at the new sun angle.
+      if (b._shadowVBO) { drawingContext.deleteBuffer(b._shadowVBO); b._shadowVBO = null; }
     }
 
     // Invalidate cached geometry when infection state changes (type 4 shadow alpha
@@ -1850,6 +2021,7 @@ class Terrain {
     if (b._shadowGeom && b._bakedInf !== inf) {
       b._shadowGeom = null;
       b._shadowBakeFails = 0;
+      if (b._shadowVBO) { drawingContext.deleteBuffer(b._shadowVBO); b._shadowVBO = null; }
     }
 
     if (!b._shadowHull) {
@@ -1898,7 +2070,11 @@ class Terrain {
           this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterH, b._footprint, baseAlpha, sun, false, true);
         });
         b._shadowGeom = (built && built.vertices.length) ? built : false;
-        if (b._shadowGeom) b._shadowBakeFails = 0;
+        if (b._shadowGeom) {
+          b._shadowBakeFails = 0;
+          // Upload baked positions to a GPU VBO for the raw-WebGL shadow pass.
+          this._uploadShadowVBO(b, b._shadowGeom, casterH, baseAlpha);
+        }
       } catch (err) {
         console.error("[Viron] Shadow bake failed for building:", err);
         b._shadowBakeFails = (b._shadowBakeFails || 0) + 1;
@@ -2071,24 +2247,16 @@ class Terrain {
     resetShader();
     setSceneLighting();
 
-    // Draw all tree shadows in a single batched pass.
+    // Draw all tree shadows via raw WebGL VBOs (fastest path; bypasses p5 model()).
     // _ensureTreeShadowBaked() handles baking for any tree that doesn't yet have a
-    // cached shadow mesh. All valid meshes are then rendered under one shared
-    // stencil/lighting setup instead of toggling WebGL state per tree.
-    //
-    // Each shadow geometry has its alpha baked into vertex colors by
-    // _drawProjectedFootprintShadow (called with isBaking=true). model() uses those
-    // baked vertex colors, so no per-tree fill() call is required here.
+    // cached shadow mesh (and uploads it to a GPU VBO via _uploadShadowVBO).
+    // _drawRawShadows() renders all VBOs under one stencil guard, preventing
+    // overdraw without toggling WebGL state per tree.
     const sun = this._getSunShadowBasis();
     for (const t of shadowQueue) this._ensureTreeShadowBaked(t, sun);
 
     noLights(); noStroke();
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, TREE_SHADOW_BASE_ALPHA);
-    _beginShadowStencil();
-    for (const t of shadowQueue) {
-      if (t._shadowGeom) { push(); model(t._shadowGeom); pop(); }
-    }
-    _endShadowStencil();
+    this._drawRawShadows(shadowQueue);
     setSceneLighting();
   }
 
@@ -2253,11 +2421,10 @@ class Terrain {
     resetShader();
     setSceneLighting();
 
-    // Draw building shadows in a single batched pass.
-    // Type 3 (floating UFO) cannot be cached — draw it immediately via its own stencil.
-    // All other types bake once and render under one shared stencil setup.
-    // Shadow alpha is baked into vertex colors by _drawProjectedFootprintShadow
-    // (isBaking=true), so no per-building fill() is needed in the render loop.
+    // Draw building shadows via raw WebGL VBOs (fastest path; bypasses p5 model()).
+    // Type 3 (floating UFO) has an animated caster height and cannot be cached;
+    // it is drawn immediately via _drawBuildingShadow (which handles its own stencil).
+    // Static types (0, 1, 2, 4) are baked once and rendered via _drawRawShadows.
     noLights(); noStroke();
     for (let qi = 0; qi < shadowQueue.length; qi++) {
       const b = shadowQueue[qi], inf = shadowInf[qi];
@@ -2269,18 +2436,9 @@ class Terrain {
       }
     }
 
-    _beginShadowStencil();
-    // Ensure lighting is disabled for the batched static-shadow pass.
-    // Type-3 UFO shadows may have re-enabled lighting via _drawBuildingShadow().
-    noLights();
-    for (const b of shadowQueue) {
-      if (b.type !== 3 && b._shadowGeom) {
-        push();
-        model(b._shadowGeom);
-        pop();
-      }
-    }
-    _endShadowStencil();
+    // Static types (0, 1, 2, 4): draw via raw WebGL VBOs.
+    // Type-3 UFO objects have no _shadowVBO and are skipped automatically.
+    this._drawRawShadows(shadowQueue);
     setSceneLighting();
   }
 }

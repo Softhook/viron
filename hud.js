@@ -754,6 +754,7 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
 
   drawRadarForPlayer(p, hw, h);
   _drawWeaponSelector(p, h);
+  drawVironProfilerOverlay(hw, h);
 
   pop();
 }
@@ -894,27 +895,22 @@ function drawControlHints(p, pi, hw, h) {
  */
 function drawVironProfilerOverlay(viewW, viewH) {
   if (typeof window === 'undefined' || !window.VIRON_PROFILE || !window.VIRON_PROFILE.enabled) return;
-  
   const summary = window.__profilingSummary;
-  const isSampling = !summary;
-  const displayValue = isSampling ? "SAMPLING..." : summary.frameMs + "ms";
+  if (!summary) return;
 
   push();
-  // Using global width/height if called from global pass
-  const w = viewW || width;
-  const h = viewH || height;
-  
+  // Viewport-relative coordinates from ortho
   textAlign(CENTER, TOP);
   textSize(11);
   noStroke();
 
-  // Background "pill" - brighter for mobile visibility
-  fill(0, 0, 0, 180);
+  // Background "pill" for readability
+  fill(0, 0, 0, 100);
   rectMode(CENTER);
-  rect(0, -h / 2 + 56, 100, 22, 5);
+  rect(0, -viewH / 2 + 56, 60, 18, 5);
 
-  // Text - bright neon green
-  fill(0, 255, 0); 
-  text(displayValue, 0, -h / 2 + 50);
+  // Milliseconds text
+  fill(0, 255, 0, 220);
+  text(summary.frameMs + "ms", 0, -viewH / 2 + 50);
   pop();
 }

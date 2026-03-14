@@ -1885,7 +1885,7 @@ class Terrain {
     }
 
     const casterH = b._shadowCasterH || b.h;
-    const baseAlpha = (b.type === 4) ? (inf ? 44 : 38) : (b.type === 0 ? 50 : 46);
+    const baseAlpha = (b.type === 4) ? (inf ? 75 : 65) : (b.type === 0 ? 85 : 80);
 
     // b._shadowGeom lifecycle mirrors tree shadow lifecycle (see _ensureTreeShadowBaked).
     if (b._shadowGeom == null && !this._isBuildingShadow) {
@@ -1927,7 +1927,7 @@ class Terrain {
     const bw = b.w, bh = b.h;
     const floatY = groundY - bh - 100 - sin(millis() * 0.0012 + b.x) * 50;
     const casterH = max(35, groundY - floatY);
-    this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun, true);
+    this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 70, sun, true);
   }
 
   _getPowerupGeom(b, inf) {

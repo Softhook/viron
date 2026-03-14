@@ -27,7 +27,7 @@ let CULL_DIST = 6000;          // Max world distance for rendering enemies / par
 // --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
 let SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky (horizon/fog colour)
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
-let AMBIENT_R = 110, AMBIENT_G = 100, AMBIENT_B = 125; // Warmer ambient
+let AMBIENT_R = 80, AMBIENT_G = 75, AMBIENT_B = 95; // Warmer ambient
 
 // --- Global sunrise light model (single source of truth) ---
 // SUN_DIR is the direction light travels from the sun into the world.
@@ -43,14 +43,14 @@ let SUN_DIR_NZ = 0;
 const SUN_DIR_MIN_Y = 0.12;
 // Shadow tuning: fades with caster height and clamps alpha floor to avoid fully disappearing tall-caster shadows.
 const SHADOW_HEIGHT_FADE_RATE = 0.0016;
-const SHADOW_HEIGHT_FADE_MIN = 0.35;
+const SHADOW_HEIGHT_FADE_MIN = 0.45;
 const SHADOW_OPACITY_MAX = 1;
 // Shadow projection clamp: avoid projecting shadows past the far view plane.
 const SHADOW_MAX_VIEW_FRACTION = 0.9;
 // Adjust shadow color scales to compensate for the brighter ambient constants
-const SHADOW_AMBIENT_RG_SCALE = 0.40;
-const SHADOW_AMBIENT_B_SCALE = 0.45;
-const TREE_SHADOW_BASE_ALPHA = 40;
+const SHADOW_AMBIENT_RG_SCALE = 0.20;
+const SHADOW_AMBIENT_B_SCALE = 0.25;
+const TREE_SHADOW_BASE_ALPHA = 75;
 const TREE_DEFAULT_TRUNK_HEIGHT = 40;
 
 /**

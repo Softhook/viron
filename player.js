@@ -393,7 +393,7 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
     { x: hw, z: hh },
     { x: -hw, z: hh }
   ];
-  _drawProjectedShadowFromFootprint(x, groundY, z, rectPts, casterH, yaw, 46);
+  _drawProjectedShadowFromFootprint(x, groundY, z, rectPts, casterH, yaw, 80);
 }
 
 /**
@@ -417,7 +417,7 @@ function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
   const groundClearance = 12;
   const rawShadowHeight = max(0, gy - alt - groundClearance);
   const shadowHeight = max(rawShadowHeight, 0.08);
-  const alpha = map(rawShadowHeight, 0, 600, 62, 16, true);
+  const alpha = map(rawShadowHeight, 0, 600, 95, 40, true);
 
   let shipFootprint = [
     { x: -13, z: 13 },

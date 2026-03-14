@@ -151,9 +151,10 @@ function _drawShipStats(p, design, relX, vw, vh) {
   const statX = relX - statW / 2;
 
   const stats = [
-    { label: "ACCEL", val: (design.thrust || 0.45) / (design.mass || 1.0), max: 1.6 },
+    { label: "SPEED", val: (design.thrust || 0.45) / (1 - (design.drag || 0.992)), max: 250 },
     { label: "AGILITY", val: (design.turnRate || 0.04) / (design.mass || 1.0), max: 0.12 },
-    { label: "GLIDE", val: design.lift || 0.008, max: 0.02 },
+    { label: "GLIDE", val: 1 / (1 - (design.drag || 0.992)), max: 350 },
+    { label: "LIFT", val: design.lift || 0.0, max: 0.02 },
     { label: "MISSILES", val: design.startingMissiles ?? design.missileCapacity ?? 1, max: 5 }
   ];
 

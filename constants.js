@@ -661,16 +661,9 @@ function initVironProfiler() {
 
 function getVironProfiler() {
   if (typeof window === 'undefined') return null;
-  let cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
+  const cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
     ? window.VIRON_PROFILE
     : null;
-    
-  // AUTO-ENABLE on mobile for testing if not explicitly defined
-  if (!cfg && typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-    window.VIRON_PROFILE = { enabled: true };
-    cfg = window.VIRON_PROFILE;
-  }
-
   if (!window.__vironProfiler && cfg) initVironProfiler();
   else if (window.__vironProfiler && window.__vironProfiler.config !== cfg) initVironProfiler();
   return window.__vironProfiler;

@@ -585,11 +585,11 @@ const _shadowMVPBuf = new Float32Array(16);
  */
 function _mat4Mul16(r, a, b) {
   for (let c = 0; c < 4; c++) {
-    const b0=b[c*4], b1=b[c*4+1], b2=b[c*4+2], b3=b[c*4+3];
-    r[c*4]   = a[0]*b0 + a[4]*b1 + a[8]*b2  + a[12]*b3;
-    r[c*4+1] = a[1]*b0 + a[5]*b1 + a[9]*b2  + a[13]*b3;
-    r[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
-    r[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    r[c * 4]     = a[0] * b0 + a[4] * b1 + a[8]  * b2 + a[12] * b3;
+    r[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9]  * b2 + a[13] * b3;
+    r[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+    r[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
   }
 }
 
@@ -774,9 +774,9 @@ class Terrain {
     for (let fi = 0; fi < faces.length; fi++) {
       const f = faces[fi];
       const v0 = verts[f[0]], v1 = verts[f[1]], v2 = verts[f[2]];
-      flat[vi++]=v0.x; flat[vi++]=v0.y; flat[vi++]=v0.z;
-      flat[vi++]=v1.x; flat[vi++]=v1.y; flat[vi++]=v1.z;
-      flat[vi++]=v2.x; flat[vi++]=v2.y; flat[vi++]=v2.z;
+      flat[vi++] = v0.x; flat[vi++] = v0.y; flat[vi++] = v0.z;
+      flat[vi++] = v1.x; flat[vi++] = v1.y; flat[vi++] = v1.z;
+      flat[vi++] = v2.x; flat[vi++] = v2.y; flat[vi++] = v2.z;
     }
     if (owner._shadowVBO) gl.deleteBuffer(owner._shadowVBO);
     const vbo = gl.createBuffer();
@@ -816,6 +816,13 @@ class Terrain {
     const baseG = AMBIENT_G * SHADOW_AMBIENT_RG_SCALE / 255;
     const baseB = AMBIENT_B * SHADOW_AMBIENT_B_SCALE / 255;
 
+    // Save the program p5 currently has active so we can restore it afterwards.
+    // Without this restore, p5's subsequent setUniform() calls would use uniform
+    // locations from its own terrain/fill shaders against the wrong active program,
+    // producing: "INVALID_OPERATION: uniformMatrix4fv: location is not from the
+    // associated program".
+    const savedProg = gl.getParameter(gl.CURRENT_PROGRAM);
+
     // Bind shadow program and upload shared uniforms.
     gl.useProgram(this._shadowGLProg);
     gl.uniformMatrix4fv(this._shadowGLMVPLoc, false, _shadowMVPBuf);
@@ -843,6 +850,11 @@ class Terrain {
     // Restore attribute and buffer state so p5 is unaffected by the raw GL calls.
     gl.disableVertexAttribArray(this._shadowGLPosLoc);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    // Restore the program p5 had active before we switched to the shadow shader.
+    // This must be the last GL call here — it ensures p5's own uniform uploads
+    // (uModelViewMatrix, uProjectionMatrix, etc.) are directed at the correct program.
+    gl.useProgram(savedProg);
   }
 
 

@@ -19,8 +19,7 @@ const HUD_STATS = [
   { label: 'VIRON', color: [255, 60, 60], size: 14, py: 54, getVal: () => (typeof infection !== 'undefined' ? infection.count : 0) },
   { label: 'ENEMIES', color: [255, 100, 100], size: 14, py: 72, getVal: () => (typeof enemyManager !== 'undefined' ? enemyManager.enemies.length : 0) },
   { label: 'MISSILES', color: [0, 200, 255], size: 14, py: 90, getVal: p => p.missilesRemaining },
-  { label: 'SHOT', color: [220, 220, 220], size: 14, py: 108, getVal: p => (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE') },
-  { label: 'MS', color: [0, 255, 0], size: 14, py: 126, getVal: () => (window.__profilingSummary ? window.__profilingSummary.frameMs : '...') }
+  { label: 'SHOT', color: [220, 220, 220], size: 14, py: 108, getVal: p => (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE') }
 ];
 // Pre-grouped by size so drawPlayerHUD() calls textSize() once per group (3×) not per stat (6×).
 const HUD_STATS_BY_SIZE = (() => {
@@ -338,13 +337,17 @@ function drawMenu() {
     text('PRESS 2 — MULTIPLAYER', 0, optY + 50);
   }
 
-  // --- Debug Profiler (Top Left) ---
-  if (window.VIRON_PROFILE && window.VIRON_PROFILE.enabled) {
-    textAlign(LEFT, TOP);
-    textSize(14);
-    fill(0, 255, 0);
-    text('MS  ' + (window.__profilingSummary ? window.__profilingSummary.frameMs : '...'), -width / 2 + 14, -height / 2 + 126);
+  /*
+  textSize(13);
+  fill(100, 140, 100, 150);
+  if (isMobile) {
+    text('Use virtual joystick and buttons to play', 0, height / 2 - 40);
+  } else {
+    text('P1: w/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  F/R tilt', 0, height / 2 - 55);
+    text('P2: ARROWS turn  UP thrust  ;/\' tilt  . shoot  / cycle weapon  DOWN brake', 0, height / 2 - 35);
   }
+  */
+  drawVironProfilerOverlay();
 
   pop();
 }
@@ -442,14 +445,11 @@ function drawInstructions() {
   // Blinking continue prompt
   let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
   fill(150, 255, 150, 255 * blink);
+  textAlign(CENTER, CENTER);
+  textSize(24);
   text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
 
-  if (window.VIRON_PROFILE && window.VIRON_PROFILE.enabled) {
-    textAlign(LEFT, TOP);
-    textSize(14);
-    fill(0, 255, 0);
-    text('MS  ' + (window.__profilingSummary ? window.__profilingSummary.frameMs : '...'), -width / 2 + 14, -height / 2 + 126);
-  }
+  drawVironProfilerOverlay();
 
   pop();
 }
@@ -892,3 +892,33 @@ function drawControlHints(p, pi, hw, h) {
   pop();
 }
 
+/**
+ * Renders a tiny performance readout in the top-right corner if the Viron
+ * profiler is enabled. Shows the latest sampled frame milliseconds.
+ */
+function drawVironProfilerOverlay(viewW, viewH) {
+  if (typeof window === 'undefined' || !window.VIRON_PROFILE || !window.VIRON_PROFILE.enabled) return;
+  
+  const summary = window.__profilingSummary;
+  const isSampling = !summary;
+  const displayValue = isSampling ? "SAMPLING..." : summary.frameMs + "ms";
+
+  push();
+  // Using global width/height if called from global pass
+  const w = viewW || width;
+  const h = viewH || height;
+  
+  textAlign(CENTER, TOP);
+  textSize(11);
+  noStroke();
+
+  // Background "pill" - brighter for mobile visibility
+  fill(0, 0, 0, 180);
+  rectMode(CENTER);
+  rect(0, -h / 2 + 56, 100, 22, 5);
+
+  // Text - bright neon green
+  fill(0, 255, 0); 
+  text(displayValue, 0, -h / 2 + 50);
+  pop();
+}

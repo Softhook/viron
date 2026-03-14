@@ -333,6 +333,7 @@ class GameRenderer {
     if (gameState.mode === 'gameover') {
       _drawGameOverContent();
     }
+    drawVironProfilerOverlay();
     pop();
   }
 

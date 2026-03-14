@@ -726,6 +726,18 @@ class Terrain {
     }
   }
 
+  /**
+   * Resets the terrain system by clearing all memoised altitude and geometry caches.
+   * Required when mountain peaks or other global terrain parameters are modified.
+   */
+  reset() {
+    this.altCache.clear();
+    this.chunkCache.clear();
+    this._procTreeChunkCache.clear();
+    // Reset smoothing state so fog doesn't jump instantly
+    this._fogFrameStamp = -1;
+  }
+
   // ---------------------------------------------------------------------------
   // Camera helpers
   // ---------------------------------------------------------------------------

@@ -241,7 +241,7 @@ const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached
   { x:  3000, z: -2600, strength: 420, sigma: 1100 },
   { x: -2800, z:  2000, strength: 390, sigma: 1100 }
 ]; */
-const MOUNTAIN_PEAKS = [
+let MOUNTAIN_PEAKS = [
   { x: -2200, z: -1600, strength: 450, sigma: 1100 },
 ];
 
@@ -250,13 +250,18 @@ const SENTINEL_PEAK_SIGMA = 400;  // Default Gaussian spread radius — used whe
 const SENTINEL_PULSE_INTERVAL = 5000;  // Milliseconds between each sentinel pulse (~5 s)
 // Pre-compute the Gaussian denominator (2σ²) and the early-exit distance threshold
 // for each peak — these are constant across the lifetime of the page.
-for (let peak of MOUNTAIN_PEAKS) {
-  const sig = peak.sigma !== undefined ? peak.sigma : SENTINEL_PEAK_SIGMA;
-  peak._s2 = 2 * sig * sig;
-  // Guard: if strength <= 0.5 the peak is negligible everywhere, so encode "always skip"
-  // by setting a negative sentinel that makes the render-side dSq > _skipDistSq test always true.
-  peak._skipDistSq = peak.strength > 0.5 ? peak._s2 * Math.log(peak.strength / 0.5) : -1;
+function initializeMountainPeaks() {
+  for (let peak of MOUNTAIN_PEAKS) {
+    const sig = peak.sigma !== undefined ? peak.sigma : SENTINEL_PEAK_SIGMA;
+    peak._s2 = 2 * sig * sig;
+    // Guard: if strength <= 0.5 the peak is negligible everywhere, so encode "always skip"
+    // by setting a negative sentinel that makes the render-side dSq > _skipDistSq test always true.
+    peak._skipDistSq = peak.strength > 0.5 ? peak._s2 * Math.log(peak.strength / 0.5) : -1;
+  }
 }
+
+// Initial pre-calculation for default peak(s)
+initializeMountainPeaks();
 // Infection parameters for an infected sentinel (much faster than normal INF_RATE)
 const SENTINEL_INFECTION_RADIUS = 5;     // Tile radius of accelerated spread around an infected sentinel
 const SENTINEL_INFECTION_PROBABILITY = 0.35;  // Per-tile per-update spread chance near an infected sentinel

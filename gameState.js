@@ -145,6 +145,10 @@ class GameState {
     // Reset quality scaling penalty from previous session
     if (window._perf) window._perf.cooldown = 0;
 
+    // Ensure we start with a clean world for the new game session
+    this.resetWorld();
+    if (typeof initWorld === 'function') initWorld();
+
     this.startLevel(1);
     this.mode = 'instructions';
 
@@ -279,6 +283,19 @@ class GameState {
 
     if (ic > 0) this.infectionStarted = true;
     return (this.infectionStarted && ic === 0) || (enemyCount === 0);
+  }
+
+  /**
+   * Resets all ephemeral world objects (buildings, trees, etc.)
+   * to prepare for a fresh world generation pass.
+   */
+  resetWorld() {
+    this.buildings = [];
+    this.sentinelBuildings = [];
+    this.trees = []; // Though trees are currently procedural, clearing this keeps it clean
+    if (typeof terrain !== 'undefined' && terrain.reset) {
+      terrain.reset();
+    }
   }
 }
 

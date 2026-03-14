@@ -142,36 +142,9 @@ function setup() {
     aimAssist.enabled = gameState.isMobile;
   }
 
-  // Populate static world objects
-  randomSeed(123);
-  let numBldgs = gameState.isMobile ? 15 : 40;
-  for (let i = 0; i < numBldgs; i++) {
-    let bx = random(-4500, 4500), bz = random(-4500, 4500);
-    gameState.buildings.push({
-      x: bx, z: bz,
-      y: terrain.getAltitude(bx, bz),
-      w: random(40, 100), h: random(50, 180), d: random(40, 100),
-      type: floor(random(4)),
-      col: [random(80, 200), random(80, 200), random(80, 200)]
-    });
-  }
+  // Initial world generation for the menu view
+  initWorld();
 
-  // Sentinels at mountain peaks
-  for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
-    let peak = MOUNTAIN_PEAKS[i];
-    gameState.buildings.push({
-      x: peak.x, z: peak.z,
-      y: terrain.getAltitude(peak.x, peak.z),
-      w: 60, h: 280, d: 60,
-      type: 4,
-      col: [0, 220, 200],
-      // pulseTimer: ms stagger offset so sentinels don't all pulse simultaneously.
-      // Read once by gameRenderer.updateSentinelGlows() to initialize _lastPulseMs.
-      pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / MOUNTAIN_PEAKS.length)
-    });
-  }
-
-  gameState.sentinelBuildings = gameState.buildings.filter(b => b.type === 4);
   gameState.mode = 'menu';
   if (window.BENCHMARK && window.BENCHMARK.setup) {
     startGame(1);
@@ -503,4 +476,83 @@ function spawnYellowCrab(wx = undefined, wz = undefined) {
 
   enemyManager.enemies.push(entry);
   console.log(`[spawnYellowCrab] Spawned at (${spawnX.toFixed(0)}, ${spawnY.toFixed(0)}, ${spawnZ.toFixed(0)})`);
+}
+
+/**
+ * Randomizes the number, position, and strength of mountain peaks.
+ * Updates the global MOUNTAIN_PEAKS array and re-initializes terrain state.
+ */
+function randomizeMountainPeaks() {
+  const count = floor(random(0, 11)); // 0 to 10 peaks
+  const newPeaks = [];
+
+  for (let i = 0; i < count; i++) {
+    newPeaks.push({
+      x: random(-4500, 4500),
+      z: random(-4500, 4500),
+      strength: random(300, 550),
+      sigma: random(600, 1400)
+    });
+  }
+
+  MOUNTAIN_PEAKS = newPeaks;
+  
+  if (typeof initializeMountainPeaks === 'function') {
+    initializeMountainPeaks();
+  }
+
+  // Clear terrain cache so altitude changes take effect
+  if (typeof terrain !== 'undefined' && terrain.reset) {
+    terrain.reset();
+  }
+
+  console.log(`[Viron] Generated ${count} mountain peaks.`);
+}
+
+/**
+ * Initializes the entire world state including terrain peaks and building placement.
+ * Uses the provided seed or a time-based one for variety.
+ */
+function initWorld(seed) {
+  const finalSeed = seed !== undefined ? seed : floor(millis() + second() * 1000 + minute() * 60000);
+  randomSeed(finalSeed);
+  
+  console.log(`[Viron] Initializing world with seed: ${finalSeed}`);
+
+  // 1. Randomize Mountain Peaks
+  randomizeMountainPeaks();
+
+  // 2. Populate standard buildings
+  let numBldgs = gameState.isMobile ? 15 : 40;
+  for (let i = 0; i < numBldgs; i++) {
+    let bx = random(-4500, 4500), bz = random(-4500, 4500);
+    // Avoid placing buildings directly on the launchpad
+    if (isLaunchpad(bx, bz)) {
+      i--; // Try again
+      continue;
+    }
+    
+    gameState.buildings.push({
+      x: bx, z: bz,
+      y: terrain.getAltitude(bx, bz),
+      w: random(40, 100), h: random(50, 180), d: random(40, 100),
+      type: floor(random(4)),
+      col: [random(80, 200), random(80, 200), random(80, 200)]
+    });
+  }
+
+  // 3. Place Sentinels at the new mountain peak centers
+  for (let i = 0; i < MOUNTAIN_PEAKS.length; i++) {
+    let peak = MOUNTAIN_PEAKS[i];
+    gameState.buildings.push({
+      x: peak.x, z: peak.z,
+      y: terrain.getAltitude(peak.x, peak.z),
+      w: 60, h: 280, d: 60,
+      type: 4,
+      col: [0, 220, 200],
+      pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / Math.max(1, MOUNTAIN_PEAKS.length))
+    });
+  }
+
+  gameState.sentinelBuildings = gameState.buildings.filter(b => b.type === 4);
 }

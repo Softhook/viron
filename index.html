@@ -7,10 +7,37 @@
 
   <link rel="stylesheet" type="text/css" href="style.css">
   <meta charset="utf-8" />
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Viewport – full bleed, honour iOS safe areas (notch / Dynamic Island) -->
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+  <!-- iOS PWA full-screen ("Add to Home Screen") -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Viron" />
+
+  <!-- Android / Chrome PWA -->
   <meta name="mobile-web-app-capable" content="yes" />
+
+  <!-- Theme colour shown in browser chrome and OS task switcher -->
+  <meta name="theme-color" content="#00ff88" />
+
+  <!-- App description (used by some install prompts) -->
+  <meta name="description" content="Viron – an action-packed space shooter. Fight the viral outbreak across an infinite alien landscape." />
+
+  <!-- Apple touch icons (iOS home screen) -->
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+
+  <!-- Fallback favicon -->
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+
+  <title>Viron</title>
 </head>
 
 <body>
@@ -20,6 +47,15 @@
         e.preventDefault();
       }
     }, { passive: false });
+
+    // Register service worker for PWA offline support
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function (err) {
+          console.warn('Service worker registration failed:', err);
+        });
+      });
+    }
   </script>
   <script src="sfx.js"></script>
   <script src="constants.js"></script>

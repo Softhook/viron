@@ -266,6 +266,7 @@ class GameRenderer {
     this.sceneFBO.begin();
     this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
+    gl.clearStencil(0); // p5.js can change clearStencil internally; reset so shadows always start with a clean stencil
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     push();
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
@@ -303,6 +304,7 @@ class GameRenderer {
   _renderSinglePass(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
     this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
+    gl.clearStencil(0); // p5.js can change clearStencil internally; reset so shadows always start with a clean stencil
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     push();
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
@@ -353,6 +355,7 @@ class GameRenderer {
       // saves the full-screen post-processing resolve pass.  ACES tonemapping and
       // the contrast boost are cosmetic extras; correctness is not affected.
       gl.clearColor(0, 0, 0, 1);
+      gl.clearStencil(0); // p5.js can change clearStencil internally; reset so shadows always start with a clean stencil
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
       if (gameState.numPlayers === 1) {
@@ -380,6 +383,7 @@ class GameRenderer {
 
     this.masterFBO.begin();
     gl.clearColor(0, 0, 0, 1);
+    gl.clearStencil(0); // p5.js can change clearStencil internally; reset so shadows always start with a clean stencil
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
     if (gameState.numPlayers === 1) {

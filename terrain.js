@@ -2083,6 +2083,7 @@ class Terrain {
     for (const t of shadowQueue) this._ensureTreeShadowBaked(t, sun);
 
     noLights(); noStroke();
+    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, TREE_SHADOW_BASE_ALPHA);
     _beginShadowStencil();
     for (const t of shadowQueue) {
       if (t._shadowGeom) { push(); model(t._shadowGeom); pop(); }

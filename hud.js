@@ -354,6 +354,55 @@ function drawMenu() {
 }
 
 /**
+ * Renders the Mission Briefing screen.
+ * Explains the game objective and story context.
+ */
+function drawMission() {
+  drawBackgroundLandscape();
+
+  setup2DViewport();
+
+  // Dim the 3D background
+  fill(0, 0, 0, 180);
+  noStroke();
+  rect(-width / 2, -height / 2, width, height);
+
+  textAlign(CENTER, CENTER);
+
+  fill(255, 255, 255, 220);
+  textSize(48);
+  text('MISSION BRIEFING', 0, -height * 0.35);
+
+  fill(200, 255, 200, 200);
+  textSize(22);
+  text('OBJECTIVE: VIRAL CONTAINMENT', 0, -height * 0.22);
+
+  fill(220, 220, 220);
+  textSize(24);
+  rectMode(CENTER);
+  let briefing =
+    "A silicon-based virus is being spread by aliens. " +
+    "Left unchecked, it will take over the planet.\n\n" +
+    "Your mission:\n\n" +
+    "1. ELIMINATE aliens spreading the virus.\n" +
+    "2. CONTAIN the virus spread\n" +
+    "3. PROTECT the temples.";
+
+
+  text(briefing, 0, 0, min(width * 0.8, 600));
+  rectMode(CORNER);
+
+  // Blinking continue prompt
+  let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
+  fill(150, 255, 150, 255 * blink);
+  textAlign(CENTER, CENTER);
+  textSize(24);
+  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
+
+  pop();
+}
+
+/**
  * Renders the Instructions screen before ship selection.
  * Maintains the 3D background but adds a dark overlay for readability.
  */
@@ -527,7 +576,7 @@ function drawBackgroundLandscape() {
   // Position camera low to the ground, panning in a circle
   let cx = gameState.menuCam.x + sin(gameState.menuCam.yaw) * 550;
   let cz = gameState.menuCam.z + cos(gameState.menuCam.yaw) * 550;
-  
+
   // Constrain altitude to be above terrain and sea level
   let terrainY = terrain.getAltitude(cx, cz);
   let cy = min(-90, terrainY - 60); // Maintain at least 60 units above surface, but stay low

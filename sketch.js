@@ -192,6 +192,7 @@ function startLevel(lvl) {
  */
 function draw() {
   if (gameState.mode === 'menu') { drawMenu(); return; }
+  if (gameState.mode === 'mission') { drawMission(); return; }
   if (gameState.mode === 'instructions') { drawInstructions(); return; }
   if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
 
@@ -257,6 +258,11 @@ function keyPressed() {
   if (gameState.mode === 'menu') {
     if (key === '1') startGame(1);
     else if (key === '2') startGame(2);
+    return;
+  }
+
+  if (gameState.mode === 'mission') {
+    gameState.mode = 'instructions';
     return;
   }
 
@@ -349,6 +355,10 @@ function touchStarted(event) {
   }
 
   if (gameState.mode === 'menu') { startGame(1); return false; }
+  if (gameState.mode === 'mission') {
+    gameState.mode = 'instructions';
+    return false;
+  }
   if (gameState.mode === 'instructions') {
     if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
       return false;
@@ -402,6 +412,8 @@ function mousePressed() {
 
     if (gameState.mode === 'menu') {
       startGame(1);
+    } else if (gameState.mode === 'mission') {
+      gameState.mode = 'instructions';
     } else if (gameState.mode === 'instructions') {
       if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
         return;

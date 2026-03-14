@@ -152,7 +152,7 @@ class GameState {
     if (typeof initWorld === 'function') initWorld(this.worldSeed);
 
     this.startLevel(1);
-    this.mode = 'instructions';
+    this.mode = 'mission';
 
     if (typeof gameSFX !== 'undefined') {
       gameSFX.spatialEnabled = (np === 1);

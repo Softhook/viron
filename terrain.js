@@ -239,7 +239,7 @@ vec3 computeSeaColor(inout vec3 n, inout float specInt, inout float specShin) {
   vec3  waterBase  = vec3(15.0/255.0, 45.0/255.0, 150.0/255.0);
   vec3  crestColor = vec3(25.0/255.0, 65.0/255.0, 165.0/255.0);
   float tDist      = gl_FragCoord.z / gl_FragCoord.w;
-  float noiseFade  = 1.0 - smoothstep(1500.0, 3500.0, tDist);
+  float noiseFade  = 1.0 - smoothstep(uFogDist.y * 0.8, uFogDist.y * 0.95, tDist);
   vec3  col        = waterBase;
   if (noiseFade > 0.0) {
     vec2  wPos = vWorldPos.xz * 0.06;
@@ -289,7 +289,7 @@ vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout flo
   float cliffBlend = smoothstep(0.05, 0.18, steepness);
   baseColor = mix(baseColor, vec3(0.12, 0.11, 0.10), cliffBlend);
   float tDist    = gl_FragCoord.z / gl_FragCoord.w;
-  float noiseFade = 1.0 - smoothstep(1500.0, 4500.0, tDist);
+  float noiseFade = 1.0 - smoothstep(uFogDist.y * 0.8, uFogDist.y * 0.95, tDist);
   if (noiseFade > 0.0) {
     float f1 = noise2D(vWorldPos.xz * 0.03);
     float f2 = noise2D(vWorldPos.xz * 0.13 + vec2(42.1, 13.7));

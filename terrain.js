@@ -608,9 +608,6 @@ class Terrain {
     // Projection and occlusion buffers
     this._mvp = new Float32Array(16);
     this._horizon = null;
-    this._horizonDiv = 24;
-    this._vw = 0;
-    this._vh = 0;
     this._visibleChunks = [];
 
     // Pre-allocated overlay buffers for batching viron/barrier quads.
@@ -1539,17 +1536,21 @@ class Terrain {
       }
     }
 
+    if (chunks.length === 0) return;
+
+    // 2. Sort front-to-back
+    chunks.sort((a, b) => a.dist - b.dist);
+
     // 3. Occlusion Check setup
     const gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
     if (!gl) {
+      // Fallback for non-GL environments (should not happen in main loop)
       for (const c of chunks) model(c.geom);
       return;
     }
     const vp = gl.getParameter(gl.VIEWPORT); // [x, y, w, h]
-    this._vw = vp[2];
-    this._vh = vp[3];
-    const vw = this._vw, vh = this._vh;
-    const div = this._horizonDiv;
+    const vw = vp[2], vh = vp[3];
+    const div = 24; // Horizon resolution (coarse for speed)
     const hSize = Math.ceil(vw / div);
     
     if (!this._horizon || this._horizon.length !== hSize) {
@@ -1577,23 +1578,18 @@ class Terrain {
         }
     }
 
-    // 2. Sort front-to-back
-    chunks.sort((a, b) => a.dist - b.dist);
-
-    if (chunks.length === 0) return;
-
-    // Projection helpers
-    const projectX = (wx, wy, wz) => {
-      const w = mvp[3] * wx + mvp[7] * wy + mvp[11] * wz + mvp[15];
-      if (w <= 0) return -1000;
-      const x = mvp[0] * wx + mvp[4] * wy + mvp[8] * wz + mvp[12];
-      return vw * (x / w * 0.5 + 0.5);
-    };
     const projectY = (wx, wy, wz) => {
       const w = mvp[3] * wx + mvp[7] * wy + mvp[11] * wz + mvp[15];
-      if (w <= 0) return -1000;
+      if (w <= 0) return -1;
       const y = mvp[1] * wx + mvp[5] * wy + mvp[9] * wz + mvp[13];
       return vh * (1.0 - (y / w * 0.5 + 0.5));
+    };
+
+    const projectX = (wx, wy, wz) => {
+      const w = mvp[3] * wx + mvp[7] * wy + mvp[11] * wz + mvp[15];
+      if (w <= 0) return -1;
+      const x = mvp[0] * wx + mvp[4] * wy + mvp[8] * wz + mvp[12];
+      return vw * (x / w * 0.5 + 0.5);
     };
 
     // 4. Draw and Cull
@@ -1608,7 +1604,7 @@ class Terrain {
         let occluded = false;
         // Skip occlusion for near chunks or if in cockpit steep pitch
         if (!cam.skipFrustum && c.dist > TILE * 15) {
-            // Project 4 top corners of the chunk's bounding box
+            // Project top boundaries (minY is peak)
             const py1 = projectY(x0, g.minY, z0);
             const py2 = projectY(x1, g.minY, z0);
             const py3 = projectY(x0, g.minY, z1);
@@ -1629,7 +1625,7 @@ class Terrain {
                 
                 let visible = false;
                 for (let k = hStart; k <= hEnd; k++) {
-                    if (minSY < this._horizon[k] + 6) { // Conservative epsilon
+                    if (minSY < this._horizon[k] + 4) { // Epsilon for safety
                         visible = true;
                         break;
                     }
@@ -1641,56 +1637,17 @@ class Terrain {
         if (!occluded) {
             model(g);
             
-            // Update horizon buffer across the entire horizontal span of the chunk.
-            // We project all 4 top corners and 4 bottom corners, then take the 
-            // highest Y (smallest screen Y) seen at each horizontal column.
-            // For performance, we'll just use the chunk's maxY (lowest altitude) 
-            // as the base of the occluder to be safe.
-            const hx1 = projectX(x0, g.maxY, z0), hx2 = projectX(x1, g.maxY, z0);
-            const hx3 = projectX(x0, g.maxY, z1), hx4 = projectX(x1, g.maxY, z1);
-            const hy1 = projectY(x0, g.maxY, z0), hy2 = projectY(x1, g.maxY, z0);
-            const hy3 = projectY(x0, g.maxY, z1), hy4 = projectY(x1, g.maxY, z1);
-            
-            const hMinSX = Math.min(hx1, hx2, hx3, hx4);
-            const hMaxSX = Math.max(hx1, hx2, hx3, hx4);
-            const hMaxSY = Math.max(hy1, hy2, hy3, hy4); // Lowest point of peaks
-
-            if (hMaxSY > -0.5) {
-              const hStart = Math.max(0, Math.floor(hMinSX / div));
-              const hEnd = Math.min(hSize - 1, Math.floor(hMaxSX / div));
-              for (let k = hStart; k <= hEnd; k++) {
-                this._horizon[k] = Math.min(this._horizon[k], hMaxSY);
-              }
+            // Update horizon: use a point representing the "bulk" of the chunk
+            // Update with ground center point to be conservative
+            const midY = (g.minY + g.maxY) * 0.5;
+            const hx = projectX((x0+x1)*0.5, midY, (z0+z1)*0.5);
+            const hy = projectY((x0+x1)*0.5, midY, (z0+z1)*0.5);
+            const hIdx = Math.floor(hx / div);
+            if (hIdx >= 0 && hIdx < hSize) {
+                this._horizon[hIdx] = Math.min(this._horizon[hIdx], hy);
             }
         }
     }
-  }
-
-  /**
-   * General occlusion check for any world point.
-   * Assumes the horizon buffer has been populated by the terrain pass.
-   */
-  _isOccluded(wx, wy, wz, height = 0) {
-    if (!this._horizon || !this._cam || this._cam.skipFrustum) return false;
-    
-    // Test the top of the object
-    const peakY = wy - height;
-    
-    const mvp = this._mvp;
-    const vw = this._vw, vh = this._vh;
-    
-    const w = mvp[3] * wx + mvp[7] * peakY + mvp[11] * wz + mvp[15];
-    if (w <= 0) return false; // Behind camera
-    
-    const xNdc = (mvp[0] * wx + mvp[4] * peakY + mvp[8] * wz + mvp[12]) / w;
-    const yNdc = (mvp[1] * wx + mvp[5] * peakY + mvp[9] * wz + mvp[13]) / w;
-    const sy = vh * (1.0 - (yNdc * 0.5 + 0.5));
-    const sx = vw * (xNdc * 0.5 + 0.5);
-    
-    const hIdx = Math.floor(sx / this._horizonDiv);
-    if (hIdx < 0 || hIdx >= this._horizon.length) return false;
-    
-    return sy > this._horizon[hIdx] + 8; // Conservative epsilon for entities
   }
 
   /**
@@ -2242,8 +2199,6 @@ class Terrain {
 
           let y = t.y;
           if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
-          
-          if (this._isOccluded(t.x, y, t.z, t.trunkH)) continue;
 
           let inf = infection.has(t.k);
           let geom = this._getTreeGeom(t, inf);
@@ -2392,8 +2347,6 @@ class Terrain {
       if (dSq >= cullSq || !this.inFrustum(cam, b.x, b.z)) continue;
       let y = b.y;
       if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
-
-      if (this._isOccluded(b.x, y, b.z, b.h)) continue;
 
       // Cache the numeric tile-key on the building so toTile() + arithmetic
       // is only computed once per building lifetime rather than every frame.

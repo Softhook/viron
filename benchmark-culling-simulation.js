@@ -124,22 +124,12 @@ function runExperiment(useCulling) {
                     drawCount++;
                     gpuTotalUs += GPU_COST_PER_CHUNK_US;
                     
-                    // Update horizon across the entire horizontal span of the chunk
-                    const hx1 = projectX(x0, g.minY, z0), hx2 = projectX(x1, g.minY, z0);
-                    const hx3 = projectX(x0, g.minY, z1), hx4 = projectX(x1, g.minY, z1);
-                    const hy1 = projectY(x0, g.minY, z0), hy2 = projectY(x1, g.minY, z0);
-                    const hy3 = projectY(x0, g.minY, z1), hy4 = projectY(x1, g.minY, z1);
-                    
-                    const hMinSX = Math.min(hx1, hx2, hx3, hx4);
-                    const hMaxSX = Math.max(hx1, hx2, hx3, hx4);
-                    const hMaxSY = Math.max(hy1, hy2, hy3, hy4);
-
-                    if (hMaxSY > -0.5) {
-                      const hStart = Math.max(0, Math.floor(hMinSX / div));
-                      const hEnd = Math.min(hSize - 1, Math.floor(hMaxSX / div));
-                      for (let k = hStart; k <= hEnd; k++) {
-                        horizon[k] = Math.min(horizon[k], hMaxSY);
-                      }
+                    // Update horizon with chunk height
+                    const hx = projectX((x0+x1)*0.5, g.minY, (z0+z1)*0.5);
+                    const hy = projectY((x0+x1)*0.5, g.minY, (z0+z1)*0.5);
+                    const hIdx = Math.floor(hx / div);
+                    if (hIdx >= 0 && hIdx < hSize) {
+                        horizon[hIdx] = Math.min(horizon[hIdx], hy);
                     }
                 }
             }

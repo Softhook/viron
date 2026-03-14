@@ -53,6 +53,7 @@ class GameState {
     // --- Rendering ---
     this.sceneFBO = null;
     this.gameFont = null;
+    this.worldSeed = 0;
   }
 
   _createPlayers(np) {
@@ -146,8 +147,9 @@ class GameState {
     if (window._perf) window._perf.cooldown = 0;
 
     // Ensure we start with a clean world for the new game session
+    this.worldSeed = floor(millis() + second() * 1000 + minute() * 60000);
     this.resetWorld();
-    if (typeof initWorld === 'function') initWorld();
+    if (typeof initWorld === 'function') initWorld(this.worldSeed);
 
     this.startLevel(1);
     this.mode = 'instructions';

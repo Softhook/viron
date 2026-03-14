@@ -131,7 +131,7 @@ uniform float uTime;
 uniform vec4 uPulses[5];
 uniform vec2 uFogDist;
 // Steady sentinel glows: xy = world position, z = glow radius, w = 1.0 if active
-uniform vec4 uSentinelGlows[2];
+uniform vec4 uSentinelGlows[16];
 // uPalette: array of vec3 colors for dynamic re-coloring
 uniform vec3 uPalette[17];
 uniform float uTileSize;
@@ -387,7 +387,7 @@ void main() {
   ${_GLSL_PULSE_LOOP}
 
   // ── Sentinel steady glows ─────────────────────────────────────────────────
-  for (int j = 0; j < 2; j++) {
+  for (int j = 0; j < 16; j++) {
     if (uSentinelGlows[j].w < 0.5) continue;
     vec2  diff2    = (vWorldPos.xz - uSentinelGlows[j].xy) * 0.01;
     float dist2    = length(diff2) * 100.0;
@@ -590,9 +590,9 @@ class Terrain {
 
     // Pre-allocated uniform upload buffers — reused every frame to avoid GC churn.
     // pulseArr  : 5 pulses × 4 floats  (x, z, startTime, type)
-    // glowArr   : 2 sentinels × 4 floats (x, z, radius, active)
+    // glowArr   : 16 sentinels × 4 floats (x, z, radius, active)
     this._pulseArr = new Float32Array(20);
-    this._glowArr = new Float32Array(8);
+    this._glowArr = new Float32Array(64);
 
     // Pre-allocated scalar-uniform buffers — each would otherwise allocate a new JS
     // array literal every frame inside applyShader().
@@ -712,7 +712,7 @@ class Terrain {
    * need rebuilding on the next frame.
    */
   clearCaches() {
-    if (this.altCache.size > 25000) this.altCache.clear();
+    if (this.altCache.size > 100000) this.altCache.clear();
     if (this.chunkCache.size > 500) {
       // Evict the oldest half (Maps iterate in insertion order).
       const keys = this.chunkCache.keys();
@@ -1217,7 +1217,7 @@ class Terrain {
 
     // Write sentinel glow data into the pre-allocated buffer.
     const glowArr = this._glowArr;
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 16; i++) {
       const base = i * 4;
       if (i < this.sentinelGlows.length) {
         const g = this.sentinelGlows[i];

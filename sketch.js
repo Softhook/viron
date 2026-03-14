@@ -143,7 +143,8 @@ function setup() {
   }
 
   // Initial world generation for the menu view
-  initWorld();
+  gameState.worldSeed = 12345; // Default menu seed
+  initWorld(gameState.worldSeed);
 
   gameState.mode = 'menu';
   if (window.BENCHMARK && window.BENCHMARK.setup) {
@@ -511,13 +512,14 @@ function randomizeMountainPeaks() {
 
 /**
  * Initializes the entire world state including terrain peaks and building placement.
- * Uses the provided seed or a time-based one for variety.
+ * Uses the provided seed for deterministic variety.
  */
 function initWorld(seed) {
   const finalSeed = seed !== undefined ? seed : floor(millis() + second() * 1000 + minute() * 60000);
   randomSeed(finalSeed);
+  gameState.worldSeed = finalSeed;
   
-  console.log(`[Viron] Initializing world with seed: ${finalSeed}`);
+  console.log(`%c[Viron] WORLD SEED: ${finalSeed}`, 'color: #00ffcc; font-weight: bold; font-size: 1.2em;');
 
   // 1. Randomize Mountain Peaks
   randomizeMountainPeaks();

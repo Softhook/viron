@@ -29,11 +29,16 @@
   <!-- App description (used by some install prompts) -->
   <meta name="description" content="Viron – an action-packed space shooter. Fight the viral outbreak across an infinite alien landscape." />
 
-  <!-- Apple touch icons (iOS home screen) -->
+  <!-- Apple touch icons (iOS / iPadOS home screen) -->
+  <!-- iPhone (all modern models) -->
   <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+  <!-- iPad / iPad mini -->
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/apple-touch-icon-152.png">
+  <!-- iPad Pro – all sizes including Apple Silicon (M1/M2/M3/M4) -->
+  <link rel="apple-touch-icon" sizes="167x167" href="icons/apple-touch-icon-167.png">
 
-  <!-- Fallback favicon -->
+  <!-- Favicons -->
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 
@@ -41,6 +46,17 @@
 </head>
 
 <body>
+  <!-- PWA install banner – hidden by default; shown by JS when appropriate -->
+  <div id="pwa-banner" aria-live="polite" aria-label="Install Viron" style="display:none">
+    <img src="icons/icon-192.png" width="40" height="40" alt="Viron icon">
+    <div class="pwa-banner-text">
+      <strong>Install Viron</strong>
+      <span id="pwa-banner-sub">Play offline, full screen, anytime.</span>
+    </div>
+    <button id="pwa-install-btn" type="button">Install</button>
+    <button id="pwa-dismiss-btn" type="button" aria-label="Dismiss">✕</button>
+  </div>
+
   <script>
     document.addEventListener('touchmove', function (e) {
       if (e.target.tagName === 'CANVAS') {
@@ -48,7 +64,82 @@
       }
     }, { passive: false });
 
+    // -------------------------------------------------------------------------
+    // PWA install prompt
+    // -------------------------------------------------------------------------
+    (function () {
+      var STORAGE_KEY = 'viron-pwa-dismissed';
+      var banner = document.getElementById('pwa-banner');
+      var installBtn = document.getElementById('pwa-install-btn');
+      var dismissBtn = document.getElementById('pwa-dismiss-btn');
+      var sub = document.getElementById('pwa-banner-sub');
+
+      // Don't show banner if already running as installed PWA.
+      var isInstalled =
+        window.navigator.standalone === true ||
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.matchMedia('(display-mode: fullscreen)').matches;
+
+      // Don't show banner if user dismissed it previously.
+      var dismissed = false;
+      try { dismissed = !!localStorage.getItem(STORAGE_KEY); } catch (_) {}
+
+      if (isInstalled || dismissed) return;
+
+      var deferredPrompt = null; // Chrome / Android / desktop
+
+      // Detect iOS / iPadOS (iPadOS 13+ mimics macOS UA, check maxTouchPoints).
+      var isIOS =
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      function showBanner() {
+        banner.style.display = 'flex';
+      }
+
+      function hideBanner() {
+        banner.style.display = 'none';
+        try { localStorage.setItem(STORAGE_KEY, '1'); } catch (_) {}
+      }
+
+      dismissBtn.addEventListener('click', hideBanner);
+
+      // --- Chrome / Android / desktop: use beforeinstallprompt ---
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        sub.textContent = 'Play offline, full screen, anytime.';
+        showBanner();
+      });
+
+      installBtn.addEventListener('click', function () {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then(function (result) {
+            if (result.outcome === 'accepted') hideBanner();
+            deferredPrompt = null;
+          });
+        }
+      });
+
+      // After install, hide the banner.
+      window.addEventListener('appinstalled', hideBanner);
+
+      // --- iOS / iPadOS Safari: beforeinstallprompt is not supported ---
+      // Show instructions to use the Share → "Add to Home Screen" flow.
+      if (isIOS) {
+        var isSafari = /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|OPiOS|Chrome|Edg/.test(navigator.userAgent);
+        if (isSafari) {
+          sub.textContent = 'Tap \u2b06 Share, then \u201cAdd to Home Screen\u201d.';
+          installBtn.style.display = 'none'; // No programmatic install on iOS
+          showBanner();
+        }
+      }
+    }());
+
+    // -------------------------------------------------------------------------
     // Register service worker for PWA offline support
+    // -------------------------------------------------------------------------
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
         navigator.serviceWorker.register('./sw.js').catch(function (err) {

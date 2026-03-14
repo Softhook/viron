@@ -5,11 +5,13 @@
  * On install, pre-cache every asset needed to run the game offline.
  * On activate, delete old caches from previous versions.
  * On fetch, serve from cache; fall back to network and update cache.
+ *
+ * Bump CACHE_VERSION whenever game files change to force a cache refresh.
  */
 
 'use strict';
 
-const CACHE_VERSION = 'viron-v1';
+const CACHE_VERSION = 'viron-v2';
 
 /** Every static asset the game needs to run offline. */
 const PRECACHE_ASSETS = [
@@ -39,38 +41,41 @@ const PRECACHE_ASSETS = [
   './icons/icon-maskable-192.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  './icons/apple-touch-icon-152.png',
+  './icons/apple-touch-icon-167.png',
 ];
 
 // ---------------------------------------------------------------------------
-// Install – pre-cache all assets
+// Install – pre-cache all assets, then skip waiting so the new SW activates
+// immediately without requiring a tab reload.
 // ---------------------------------------------------------------------------
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_VERSION).then(cache => cache.addAll(PRECACHE_ASSETS))
+    caches.open(CACHE_VERSION)
+      .then(cache => cache.addAll(PRECACHE_ASSETS))
+      .then(() => self.skipWaiting())
   );
-  // Activate the new SW immediately without waiting for old clients to close.
-  self.skipWaiting();
 });
 
 // ---------------------------------------------------------------------------
-// Activate – remove stale caches from previous versions
+// Activate – remove stale caches from previous versions, then claim clients.
 // ---------------------------------------------------------------------------
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(key => key !== CACHE_VERSION)
-          .map(key => caches.delete(key))
+    caches.keys()
+      .then(keys =>
+        Promise.all(
+          keys
+            .filter(key => key !== CACHE_VERSION)
+            .map(key => caches.delete(key))
+        )
       )
-    )
+      .then(() => self.clients.claim())
   );
-  // Take control of all open clients right away.
-  self.clients.claim();
 });
 
 // ---------------------------------------------------------------------------
-// Fetch – cache-first, falling back to network
+// Fetch – cache-first, falling back to network.
 // ---------------------------------------------------------------------------
 self.addEventListener('fetch', event => {
   // Only handle same-origin GET requests.
@@ -84,16 +89,24 @@ self.addEventListener('fetch', event => {
       if (cached) return cached;
 
       // Not in cache – fetch from network and store for next time.
-      return fetch(event.request).then(response => {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
+      return fetch(event.request)
+        .then(response => {
+          if (!response || response.status !== 200 || response.type !== 'basic') {
+            return response;
+          }
+          const responseToCache = response.clone();
+          caches.open(CACHE_VERSION).then(cache =>
+            cache.put(event.request, responseToCache)
+          );
           return response;
-        }
-        const responseToCache = response.clone();
-        caches.open(CACHE_VERSION).then(cache =>
-          cache.put(event.request, responseToCache)
-        );
-        return response;
-      });
+        })
+        .catch(() => {
+          // Network failed and no cache entry – return a minimal offline response.
+          return new Response('Viron is offline. Please reconnect and reload.', {
+            status: 503,
+            headers: { 'Content-Type': 'text/plain' },
+          });
+        });
     })
   );
 });

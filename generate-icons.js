@@ -19,8 +19,12 @@ const SIZES = [
   { src: 'icon.svg',          out: 'icon-512.png',          size: 512 },
   { src: 'icon-maskable.svg', out: 'icon-maskable-192.png', size: 192 },
   { src: 'icon-maskable.svg', out: 'icon-maskable-512.png', size: 512 },
-  // Apple touch icon – 180×180 recommended for modern iPhones
-  { src: 'icon.svg',          out: 'apple-touch-icon.png',  size: 180 },
+  // Apple touch icons
+  { src: 'icon.svg',          out: 'apple-touch-icon.png',      size: 180 }, // iPhone
+  { src: 'icon.svg',          out: 'apple-touch-icon-152.png',  size: 152 }, // iPad / iPad mini
+  { src: 'icon.svg',          out: 'apple-touch-icon-167.png',  size: 167 }, // iPad Pro (all sizes, incl. Apple Silicon M-series)
+  // App Store Connect requires a 1024×1024 icon (no alpha channel; keep as PNG with solid bg)
+  { src: 'icon-maskable.svg', out: 'icon-1024.png',             size: 1024 },
 ];
 
 async function renderIcon(page, svgPath, outPath, size) {

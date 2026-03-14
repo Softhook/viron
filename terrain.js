@@ -604,11 +604,6 @@ class Terrain {
     this._uAmbHighArr = new Float32Array(3);
     // Fill-colour uniform for the box/cylinder enemy shader path.
     this._uFillColorArr = new Float32Array(3);
-    
-    // Projection and occlusion buffers
-    this._mvp = new Float32Array(16);
-    this._horizon = null;
-    this._visibleChunks = [];
 
     // Pre-allocated overlay buffers for batching viron/barrier quads.
     // Fixed size based on MAX_INF (2000) with a 2x safety margin.
@@ -990,22 +985,15 @@ class Terrain {
     // larger Y values are deeper underwater). We look for at least one tile whose highest
     // corner (!aboveSea) is above sea level — that means the chunk has renderable terrain.
     let hasRenderableTile = false;
-    let chunkMinY = Infinity;
-    let chunkMaxY = -Infinity;
     scanRows: for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
       for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
-        let y00 = this.getGridAltitude(tx, tz);
-        let y10 = this.getGridAltitude(tx + 1, tz);
-        let y01 = this.getGridAltitude(tx, tz + 1);
-        let y11 = this.getGridAltitude(tx + 1, tz + 1);
-        let minY = Math.min(y00, y10, y01, y11);
-        let maxY = Math.max(y00, y10, y01, y11);
-        
-        if (!aboveSea(minY)) { 
-          hasRenderableTile = true;
-          if (minY < chunkMinY) chunkMinY = minY;
-          if (maxY > chunkMaxY) chunkMaxY = maxY;
-        }
+        let minY = Math.min(
+          this.getGridAltitude(tx, tz),
+          this.getGridAltitude(tx + 1, tz),
+          this.getGridAltitude(tx, tz + 1),
+          this.getGridAltitude(tx + 1, tz + 1)
+        );
+        if (!aboveSea(minY)) { hasRenderableTile = true; break scanRows; }
       }
     }
 
@@ -1073,10 +1061,6 @@ class Terrain {
     }
 
     // Always cache (including null) so chunks are not rebuilt every frame.
-    if (geom) {
-      geom.minY = chunkMinY;
-      geom.maxY = chunkMaxY;
-    }
     this.chunkCache.set(key, geom);
     return geom;
   }
@@ -1498,7 +1482,10 @@ class Terrain {
   /**
    * Renders all visible terrain chunk meshes under the currently bound terrain
    * shader, applying chunk-level frustum culling to skip non-visible chunks.
-   * Also implements software occlusion culling using a 1D horizon buffer.
+   *
+   * Chunk-level culling uses the chunk centre with a one-chunk lateral margin so
+   * no partially-visible edge chunk is accidentally dropped.  Culling is skipped
+   * when cam.skipFrustum is set (cockpit view at steep pitch).
    *
    * @param {object} cam      Camera descriptor (x, z, fwdX, fwdZ, fovSlope, skipFrustum).
    * @param {number} minCx    Min chunk-grid X to iterate.
@@ -1508,145 +1495,23 @@ class Terrain {
    * @private
    */
   _drawTerrainChunks(cam, minCx, maxCx, minCz, maxCz) {
-    const chunkHalf = CHUNK_SIZE * TILE;
+    const chunkHalf = CHUNK_SIZE * TILE;   // One chunk width — lateral frustum margin
     const fovSlope  = cam.fovSlope;
-    if (!this._visibleChunks) this._visibleChunks = [];
-    const chunks = this._visibleChunks;
-    chunks.length = 0;
-
-    // 1. Gather frustum-visible chunks
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
-        const chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
-        const chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
-        const dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
-        const fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
-        
         if (!cam.skipFrustum) {
-          if (fwdDist < -chunkHalf) continue;
+          const chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
+          const chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
+          const dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
+          const fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
+          if (fwdDist < -chunkHalf) continue;   // More than one chunk behind
           const rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
           const halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
-          if (Math.abs(rightDist) > halfWidth) continue;
+          if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
         }
-
         const geom = this.getChunkGeometry(cx, cz);
-        if (geom) {
-          chunks.push({ cx, cz, geom, dist: fwdDist });
-        }
+        if (geom) model(geom);
       }
-    }
-
-    if (chunks.length === 0) return;
-
-    // 2. Sort front-to-back
-    chunks.sort((a, b) => a.dist - b.dist);
-
-    // 3. Occlusion Check setup
-    const gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
-    if (!gl) {
-      // Fallback for non-GL environments (should not happen in main loop)
-      for (const c of chunks) model(c.geom);
-      return;
-    }
-    const vp = gl.getParameter(gl.VIEWPORT); // [x, y, w, h]
-    const vw = vp[2], vh = vp[3];
-    const div = 24; // Horizon resolution (coarse for speed)
-    const hSize = Math.ceil(vw / div);
-    
-    if (!this._horizon || this._horizon.length !== hSize) {
-      this._horizon = new Float32Array(hSize);
-    }
-    this._horizon.fill(vh); // Initialize to bottom of viewport
-
-    // Capture current MVP matrix for projection
-    const r = (typeof _renderer !== 'undefined') ? _renderer : null;
-    if (!r || !r.uPMatrix || !r.uViewMatrix) {
-        for (const c of chunks) model(c.geom);
-        return;
-    }
-    const pMat = r.uPMatrix.mat4;
-    const vMat = r.uViewMatrix.mat4;
-    const mvp = this._mvp;
-    
-    // Manual mat4 multiply: mvp = pMat * vMat
-    for (let i = 0; i < 4; i++) {
-        for (let j = 0; j < 4; j++) {
-            const j4 = j << 2;
-            let sum = 0;
-            for (let k = 0; k < 4; k++) sum += pMat[i + (k << 2)] * vMat[k + j4];
-            mvp[i + j4] = sum;
-        }
-    }
-
-    const projectY = (wx, wy, wz) => {
-      const w = mvp[3] * wx + mvp[7] * wy + mvp[11] * wz + mvp[15];
-      if (w <= 0) return -1;
-      const y = mvp[1] * wx + mvp[5] * wy + mvp[9] * wz + mvp[13];
-      return vh * (1.0 - (y / w * 0.5 + 0.5));
-    };
-
-    const projectX = (wx, wy, wz) => {
-      const w = mvp[3] * wx + mvp[7] * wy + mvp[11] * wz + mvp[15];
-      if (w <= 0) return -1;
-      const x = mvp[0] * wx + mvp[4] * wy + mvp[8] * wz + mvp[12];
-      return vw * (x / w * 0.5 + 0.5);
-    };
-
-    // 4. Draw and Cull
-    for (let i = 0; i < chunks.length; i++) {
-        const c = chunks[i];
-        const g = c.geom;
-        const x0 = c.cx * CHUNK_SIZE * TILE;
-        const x1 = x0 + CHUNK_SIZE * TILE;
-        const z0 = c.cz * CHUNK_SIZE * TILE;
-        const z1 = z0 + CHUNK_SIZE * TILE;
-
-        let occluded = false;
-        // Skip occlusion for near chunks or if in cockpit steep pitch
-        if (!cam.skipFrustum && c.dist > TILE * 15) {
-            // Project top boundaries (minY is peak)
-            const py1 = projectY(x0, g.minY, z0);
-            const py2 = projectY(x1, g.minY, z0);
-            const py3 = projectY(x0, g.minY, z1);
-            const py4 = projectY(x1, g.minY, z1);
-            
-            const px1 = projectX(x0, g.minY, z0);
-            const px2 = projectX(x1, g.minY, z0);
-            const px3 = projectX(x0, g.minY, z1);
-            const px4 = projectX(x1, g.minY, z1);
-
-            const minSY = Math.min(py1, py2, py3, py4);
-            const minSX = Math.min(px1, px2, px3, px4);
-            const maxSX = Math.max(px1, px2, px3, px4);
-
-            if (minSY > -0.5) {
-                const hStart = Math.max(0, Math.floor(minSX / div));
-                const hEnd = Math.min(hSize - 1, Math.floor(maxSX / div));
-                
-                let visible = false;
-                for (let k = hStart; k <= hEnd; k++) {
-                    if (minSY < this._horizon[k] + 4) { // Epsilon for safety
-                        visible = true;
-                        break;
-                    }
-                }
-                if (!visible) occluded = true;
-            }
-        }
-
-        if (!occluded) {
-            model(g);
-            
-            // Update horizon: use a point representing the "bulk" of the chunk
-            // Update with ground center point to be conservative
-            const midY = (g.minY + g.maxY) * 0.5;
-            const hx = projectX((x0+x1)*0.5, midY, (z0+z1)*0.5);
-            const hy = projectY((x0+x1)*0.5, midY, (z0+z1)*0.5);
-            const hIdx = Math.floor(hx / div);
-            if (hIdx >= 0 && hIdx < hSize) {
-                this._horizon[hIdx] = Math.min(this._horizon[hIdx], hy);
-            }
-        }
     }
   }
 

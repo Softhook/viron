@@ -816,13 +816,6 @@ class Terrain {
     const baseG = AMBIENT_G * SHADOW_AMBIENT_RG_SCALE / 255;
     const baseB = AMBIENT_B * SHADOW_AMBIENT_B_SCALE / 255;
 
-    // Save the program p5 currently has active so we can restore it afterwards.
-    // Without this restore, p5's subsequent setUniform() calls would use uniform
-    // locations from its own terrain/fill shaders against the wrong active program,
-    // producing: "INVALID_OPERATION: uniformMatrix4fv: location is not from the
-    // associated program".
-    const savedProg = gl.getParameter(gl.CURRENT_PROGRAM);
-
     // Bind shadow program and upload shared uniforms.
     gl.useProgram(this._shadowGLProg);
     gl.uniformMatrix4fv(this._shadowGLMVPLoc, false, _shadowMVPBuf);
@@ -851,10 +844,13 @@ class Terrain {
     gl.disableVertexAttribArray(this._shadowGLPosLoc);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
-    // Restore the program p5 had active before we switched to the shadow shader.
-    // This must be the last GL call here — it ensures p5's own uniform uploads
-    // (uModelViewMatrix, uProjectionMatrix, etc.) are directed at the correct program.
-    gl.useProgram(savedProg);
+    // Tell p5 its cached "current shader" is stale.  We called gl.useProgram()
+    // directly (bypassing p5), so p5's _curShader no longer matches the active
+    // GL program.  Nulling _curShader forces p5's next useProgram() call to
+    // unconditionally call gl.useProgram() and restore the correct program,
+    // preventing "INVALID_OPERATION: location is not from the associated program"
+    // when p5 uploads uniforms immediately after this shadow pass.
+    _renderer._curShader = null;
   }
 
 

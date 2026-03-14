@@ -606,6 +606,12 @@ class GameRenderer {
           this._handleInfectedSentinelPulse(building);
         }
       } else {
+        // Advance _lastPulseMs through whole intervals even while clean so that
+        // a newly-infected sentinel fires on the next scheduled boundary instead
+        // of immediately (which would happen if _lastPulseMs had stalled).
+        while (now - building._lastPulseMs >= SENTINEL_PULSE_INTERVAL) {
+          building._lastPulseMs += SENTINEL_PULSE_INTERVAL;
+        }
         this._handleCleanSentinel(building);
       }
     }

@@ -919,7 +919,7 @@ function _handleWeaponFire(p, isShooting) {
     if (isShooting && !p.shootHeld) fireMissile(p);
     p.shootHeld = isShooting;
   } else if (p.weaponMode === 2) {
-    // BARRIER: auto-repeat at the same 8-frame cadence as normal bullets
+    // BARRIER: auto-repeat at the same 8-tick cadence as normal bullets
     if (isShooting && _simTick % 8 === 0) fireBarrier(p);
     // Track shootHeld so switching modes resets missile edge-detection
     p.shootHeld = isShooting;

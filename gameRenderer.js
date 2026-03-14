@@ -77,8 +77,17 @@ class GameRenderer {
   initialize(isMobile) {
     if (!isMobile) {
       ParticleSystem.init();
+      // sceneFBO holds the opaque 3D scene before it is blitted into masterFBO.
+      // p5's retained-mode model() silently produces zero output when drawing
+      // directly into masterFBO, so the 3D scene must first be rendered into
+      // this intermediate FBO via _renderWithFBO, then image()-blitted into
+      // masterFBO for post-processing.  Without sceneFBO, _renderSinglePass
+      // is used and the terrain/trees/buildings disappear (only raw-GL VBO
+      // shadows remain visible).
+      this.sceneFBO = createFramebuffer();
+    } else {
+      this.sceneFBO = null;
     }
-    this.sceneFBO = null;
     // Patch limits into the static perf profiles now that constants are defined.
     GameRenderer._PERF_PROFILE_MOBILE.limits  = MOBILE_VIEW_LIMITS;
     GameRenderer._PERF_PROFILE_DESKTOP.limits = DESKTOP_VIEW_LIMITS;
@@ -285,7 +294,7 @@ class GameRenderer {
     resetMatrix();
     imageMode(CORNER);
     gl.disable(gl.DEPTH_TEST);
-    image(this.sceneFBO, -viewW / 2, -viewH / 2, viewW, viewH, viewX, 0, viewW, viewH);
+    image(this.sceneFBO, -viewW / 2, -viewH / 2, viewW, viewH, vx / pixelDensity(), 0, viewW, viewH);
     gl.enable(gl.DEPTH_TEST);
     pop();
 
@@ -379,6 +388,9 @@ class GameRenderer {
     }
     if (this.masterFBO.width !== width || this.masterFBO.height !== h) {
       this.masterFBO.resize(width, h);
+    }
+    if (this.sceneFBO && (this.sceneFBO.width !== width || this.sceneFBO.height !== h)) {
+      this.sceneFBO.resize(width, h);
     }
 
     this.masterFBO.begin();

@@ -251,7 +251,6 @@ class GameRenderer {
     // HUD overlay (2D)
     gl.clear(gl.DEPTH_BUFFER_BIT);
     drawPlayerHUD(player, playerIdx, viewW, viewH);
-    drawVironProfilerOverlay(viewW, viewH);
     if ((gameState.isMobile || (typeof mobileController !== 'undefined' && mobileController.debug)) && gameState.numPlayers === 1 && typeof mobileController !== 'undefined') {
       mobileController.draw(width, height);
     }

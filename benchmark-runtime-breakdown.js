@@ -438,9 +438,7 @@ async function main() {
 
   const results = [];
   try {
-    const targetId = process.env.SCENARIO_ID;
     for (const scenario of SCENARIOS) {
-      if (targetId && scenario.id !== targetId) continue;
       const result = await runScenario(url, launchOpts, scenario);
       results.push(result);
       printScenarioResult(result);

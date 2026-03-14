@@ -578,6 +578,9 @@ const _shadowMVPBuf = new Float32Array(16);
 /**
  * Multiplies two column-major 4×4 matrices and writes the result into r.
  * r = a × b  (all three arguments are Float32Array(16) in column-major order).
+ * @param {Float32Array} r  Output matrix (16 elements, column-major).
+ * @param {Float32Array} a  Left operand (16 elements, column-major).
+ * @param {Float32Array} b  Right operand (16 elements, column-major).
  * @private
  */
 function _mat4Mul16(r, a, b) {
@@ -731,7 +734,7 @@ class Terrain {
 
     const fs = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fs, [
-      'precision lowp float;',
+      'precision mediump float;',
       'uniform vec4 uCol;',
       'void main(){gl_FragColor=uCol;}'
     ].join('\n'));

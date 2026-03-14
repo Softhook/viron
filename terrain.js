@@ -1925,7 +1925,7 @@ class Terrain {
   _drawBuildingShadow(b, groundY, sun) {
     // Caller guarantees b.type === 3.
     const bw = b.w, bh = b.h;
-    const floatY = groundY - bh - 100 - sin(frameCount * 0.02 + b.x) * 50;
+    const floatY = groundY - bh - 100 - sin(millis() * 0.0012 + b.x) * 50;
     const casterH = max(35, groundY - floatY);
     this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 34, sun, true);
   }
@@ -2213,10 +2213,14 @@ class Terrain {
       if (b.type === 3) {
         // Floating UFO handles its own animation, drawn immediately rather than cached
         push();
-        let floatY = y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
+        // Floating UFO: animation uses millis() so it stays in sync with
+        // the _simTick-based collision floatY in gameLoop.js.
+        // Equivalences at 60 ticks/s:  frameCount*0.02 → millis()*0.0012
+        //   frameCount*0.01 → millis()*0.0006,  frameCount*0.015 → millis()*0.0009
+        let floatY = y - b.h - 100 - sin(millis() * 0.0012 + b.x) * 50;
         translate(0, floatY - y, 0);
-        rotateY(frameCount * 0.01 + b.x);
-        rotateZ(frameCount * 0.015 + b.z);
+        rotateY(millis() * 0.0006 + b.x);
+        rotateZ(millis() * 0.0009 + b.z);
         let geom = this._getPowerupGeom(b, inf);
         if (geom) model(geom);
         pop();
@@ -2229,7 +2233,7 @@ class Terrain {
           fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
           push();
           translate(0, -b.h * 0.87, 0);
-          rotateY(frameCount * 0.032 + b.x * 0.001);
+          rotateY(millis() * 0.00192 + b.x * 0.001);
           torus(b.w * 0.32, b.w * 0.07, 14, 6);
           pop();
         }

@@ -88,7 +88,7 @@ class GameLoop {
     const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
     const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
     const isGameOver = typeof gameState !== 'undefined' && gameState.mode === 'gameover';
-    const shouldRun = isGameOver || (frameCount % 5 === 0);
+    const shouldRun = isGameOver || (_simTick % 5 === 0);
 
     if (!shouldRun || (gameState.levelComplete && !isGameOver)) return;
     const spreadStart = profiler ? performance.now() : 0;
@@ -409,7 +409,7 @@ class GameLoop {
       let b = gameState.buildings[i];
       if (b.type === 3) {
         // Floating powerup vs player
-        let floatY = b.y - b.h - 100 - sin(frameCount * 0.02 + b.x) * 50;
+        let floatY = b.y - b.h - 100 - sin(_simTick * 0.02 + b.x) * 50;
         let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
         let radiusSq = (b.w + 15) ** 2;
 

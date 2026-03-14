@@ -555,7 +555,7 @@ class GameRenderer {
    * @private
    */
   _handleInfectedSentinelPulse(building) {
-    building.pulseTimer = 0;
+    building._lastPulseMs = millis();
     terrain.addPulse(building.x, building.z, 1.0);
 
     if (typeof gameSFX === 'undefined') return;
@@ -577,24 +577,41 @@ class GameRenderer {
       building._cachedGlow = { x: building.x, z: building.z, radius: building.w * 1.5 };
     }
     terrain.sentinelGlows.push(building._cachedGlow);
-    if (building.pulseTimer >= SENTINEL_PULSE_INTERVAL) building.pulseTimer = 0;
   }
 
   /**
    * Updates sentinel glow/pulse data for terrain shaders.
    * Regenerated every frame to reflect infection state.
+   * Pulse interval is millisecond-based so it fires at the same wall-clock
+   * rate regardless of display refresh rate.
    */
   updateSentinelGlows() {
     terrain.sentinelGlows.length = 0;  // reuse array — avoid per-frame GC allocation
+    const now = millis();
     for (let building of gameState.buildings) {
       if (building.type !== 4) continue;
-      building.pulseTimer = (building.pulseTimer || 0) + 1;
+
+      // Initialize _lastPulseMs on first visit.  building.pulseTimer was set
+      // in setup() as a ms-based stagger offset (floor(i*SENTINEL_PULSE_INTERVAL/n)):
+      // the sentinel has already "run" that many ms of its first cycle, so the
+      // first pulse fires after (SENTINEL_PULSE_INTERVAL - pulseTimer) ms from
+      // game start.  The pulseTimer field is a one-time read; _lastPulseMs owns
+      // the timing from this point on.
+      if (building._lastPulseMs === undefined) {
+        building._lastPulseMs = now - (building.pulseTimer || 0);
+      }
 
       if (this._isSentinelInfected(building)) {
-        if (building.pulseTimer >= SENTINEL_PULSE_INTERVAL) {
+        if (now - building._lastPulseMs >= SENTINEL_PULSE_INTERVAL) {
           this._handleInfectedSentinelPulse(building);
         }
       } else {
+        // Advance _lastPulseMs through whole intervals even while clean so that
+        // a newly-infected sentinel fires on the next scheduled boundary instead
+        // of immediately (which would happen if _lastPulseMs had stalled).
+        while (now - building._lastPulseMs >= SENTINEL_PULSE_INTERVAL) {
+          building._lastPulseMs += SENTINEL_PULSE_INTERVAL;
+        }
         this._handleCleanSentinel(building);
       }
     }

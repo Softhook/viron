@@ -247,7 +247,7 @@ const MOUNTAIN_PEAKS = [
 
 
 const SENTINEL_PEAK_SIGMA = 400;  // Default Gaussian spread radius — used when a peak has no sigma field
-const SENTINEL_PULSE_INTERVAL = 300;  // Frames between each sentinel pulse (~5 s at 60 fps)
+const SENTINEL_PULSE_INTERVAL = 5000;  // Milliseconds between each sentinel pulse (~5 s)
 // Pre-compute the Gaussian denominator (2σ²) and the early-exit distance threshold
 // for each peak — these are constant across the lifetime of the page.
 for (let peak of MOUNTAIN_PEAKS) {

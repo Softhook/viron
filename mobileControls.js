@@ -440,16 +440,25 @@ const mobileController = new MobileController();
 function shouldRequestFullscreen() {
     if (typeof fullscreen !== 'function' || fullscreen()) return false;
 
-    // Skip if already in standalone mode (PWA / "Add to Home Screen" app)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-    if (isStandalone) return false;
-
-    // Check device type
+    // Detect if we are on a mobile device (including iPad Pro)
     const ua = navigator.userAgent;
-    const isIPad = (ua.includes('Mac') && navigator.maxTouchPoints > 1) || ua.includes('iPad');
+    const isIOS = /iPad|iPhone|iPod/.test(ua);
+    const isIPadPro = (ua.includes('Mac') && navigator.maxTouchPoints > 1);
+    const isAndroid = /Android/i.test(ua);
+    const isMobile = isIOS || isIPadPro || isAndroid;
 
-    // We want fullscreen on Desktop and Android, but NOT iPad
-    if (isIPad) return false;
+    // Check if we are in standalone (PWA) mode
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+    // If we are on mobile (phone/tablet) and already in standalone mode, 
+    // we usually DON'T want to request "real" fullscreen as it's redundant 
+    // or can cause browser UI glitches.
+    if (isStandalone && isMobile) return false;
+
+    // On Desktop (macOS/Windows/Linux), even in standalone mode, we often 
+    // want to trigger "real" fullscreen to hide the OS title bar/toolbar.
+    // Also, don't request fullscreen on iPad/iPhone anyway as it can be flaky.
+    if (isIOS || isIPadPro) return false;
 
     return true;
 }

@@ -291,9 +291,9 @@ function drawPauseScreen() {
  */
 function _drawMenuButton(label, x, y, w, h, col) {
   rectMode(CENTER);
-  fill(0, 100);
+  fill(0, 200);
   rect(x + 4, y + 4, w, h, 12);
-  fill(col[0] * 0.2, col[1] * 0.2, col[2] * 0.2, 220);
+  fill(col[0] * 0.2, col[1] * 0.2, col[2] * 0.2, 255);
   stroke(col[0], col[1], col[2], 255);
   strokeWeight(2);
   rect(x, y, w, h, 12);

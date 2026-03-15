@@ -290,6 +290,8 @@ class MobileController {
 
         if (typeof setup2DViewport === 'function') setup2DViewport();
         push();
+        let gl = drawingContext;
+        gl.disable(gl.DEPTH_TEST);
         translate(-w / 2, -h / 2, 0);
 
         let showThrust = forceInstructions;
@@ -367,11 +369,11 @@ class MobileController {
                 let baseCol = k === 'switchSides' ? [0, 220, 255] : [0, 255, 136];
                 
                 // 3D Shadow/Depth effect
-                fill(0, 0, 0, 150);
+                fill(0, 0, 0, 220);
                 rect(btn.x + 4 * this._scale, btn.y + 4 * this._scale, btn.w, btn.h, 8);
                 
                 // Main button body
-                fill(baseCol[0] * 0.3, baseCol[1] * 0.3, baseCol[2] * 0.3, 180);
+                fill(baseCol[0] * 0.3, baseCol[1] * 0.3, baseCol[2] * 0.3, 240);
                 stroke(baseCol[0], baseCol[1], baseCol[2], 200);
                 strokeWeight(2 * this._scale);
                 rect(btn.x, btn.y, btn.w, btn.h, 8);
@@ -469,6 +471,7 @@ class MobileController {
             }
         }
 
+        gl.enable(gl.DEPTH_TEST);
         pop();
         pop();
     }

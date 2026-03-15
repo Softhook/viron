@@ -20,7 +20,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'viron-v4';
+const CACHE_VERSION = 'viron-v5';
 
 /** Every static asset the game needs to run offline. */
 const PRECACHE_ASSETS = [
@@ -37,12 +37,15 @@ const PRECACHE_ASSETS = [
   './particles.js',
   './enemies.js',
   './player.js',
-  './hud.js',
+  './hudCore.js',
+  './hudComponents.js',
+  './hudScreens.js',
   './aimAssist.js',
   './mobileControls.js',
   './gameState.js',
   './gameRenderer.js',
   './gameLoop.js',
+
   './sketch.js',
   './Impact.ttf',
   './icons/icon-192.png',

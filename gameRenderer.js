@@ -327,7 +327,12 @@ class GameRenderer {
    */
   _drawShared2DOverlay() {
     this.setup2DViewport();
+    
+    // Smooth transitions for gameplay dimming (e.g. resuming from pause)
+    if (typeof HUD_Manager !== 'undefined') HUD_Manager.drawDimOverlay();
+
     if (gameState.numPlayers === 2) {
+
       stroke(0, 255, 0, 180); strokeWeight(2);
       line(0, -height / 2, 0, height / 2);
     }

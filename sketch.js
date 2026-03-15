@@ -199,10 +199,13 @@ function startLevel(lvl) {
  * Rendering always executes once per display frame.
  */
 function draw() {
+  if (typeof HUD_Manager !== 'undefined') HUD_Manager.update();
+
   if (gameState.mode === 'menu') { drawMenu(); return; }
   if (gameState.mode === 'mission') { drawMission(); return; }
   if (gameState.mode === 'instructions') { drawInstructions(); return; }
   if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
+
   
   if (gameState.mode === 'paused' && !gameState.shouldCapture) {
     drawPauseScreen();

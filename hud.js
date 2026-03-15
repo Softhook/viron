@@ -330,7 +330,7 @@ function drawMenu() {
     fill(255, 255, 255, 255 * blink1);
     text('PRESS 1 — SINGLE PLAYER', 0, optY);
     fill(255, 255, 255, 255 * blink2);
-    text('PRESS 2 — MULTIPLAYER', 0, optY + 50);
+    text('PRESS 2 — SPLIT SCREEN 2 PLAYER', 0, optY + 50);
   }
 
   // --- Control hint (bottom of screen) ---

@@ -604,34 +604,41 @@ class EnemyManager {
     // Squirt animation timer: short body squeeze during ink release.
     if (e.inkSqueeze && e.inkSqueeze > 0) e.inkSqueeze--;
 
-    // Ink squirt decision: single large cloud with cooldown.
-    if (e.inkCooldown === undefined) e.inkCooldown = floor(random(140, 240));
+    // Ink squirt decision: bursts of large clouds with cooldown.
+    if (e.inkCooldown === undefined) e.inkCooldown = floor(random(120, 200));
     e.inkCooldown--;
     if (e.inkCooldown <= 0) {
-      let shouldSquirt = (d < 1500 && random() < 0.32) || random() < 0.02;
+      let shouldSquirt = (d < 1500 && random() < 0.4) || random() < 0.05;
       if (shouldSquirt) {
         let vm = Math.max(mag3(e.vx || 0, e.vy || 0, e.vz || 0), 0.001);
         let bx = -(e.vx || 0) / vm, by = -(e.vy || 0) / vm, bz = -(e.vz || 0) / vm;
-        particleSystem.addFogParticle({
-          x: e.x + bx * 34,
-          y: e.y + by * 20,
-          z: e.z + bz * 34,
-          vx: bx * 1.2 + random(-0.25, 0.25),
-          vy: by * 0.8 + random(-0.2, 0.2),
-          vz: bz * 1.2 + random(-0.25, 0.25),
-          life: 320,
-          decay: 0.95,
-          size: random(780, 980),
-          color: [1, 1, 2],
-          isInkBurst: true
-        });
-        e.inkSqueeze = 12;
+        
+        // Vastly increase the area by spawning a burst of multiple large particles
+        const count = 3 + floor(random(3));
+        for (let i = 0; i < count; i++) {
+          particleSystem.addFogParticle({
+            x: e.x + bx * 34 + random(-20, 20),
+            y: e.y + by * 20 + random(-20, 20),
+            z: e.z + bz * 34 + random(-20, 20),
+            vx: bx * (1.2 + random(0.5)) + random(-0.4, 0.4),
+            vy: by * (0.8 + random(0.4)) + random(-0.3, 0.3),
+            vz: bz * (1.2 + random(0.5)) + random(-0.4, 0.4),
+            life: random(300, 400),
+            decay: 0.9 + random(0.1),
+            size: random(850, 1100),
+            color: [1, 1, 2],
+            isInkBurst: true
+          });
+        }
+        
+        e.inkSqueeze = 14;
         // Recoil forward after squirting for a darting squid-like motion.
-        e.vx += (e.vx || 0) * 0.22;
-        e.vy += (e.vy || 0) * 0.22;
-        e.vz += (e.vz || 0) * 0.22;
+        const recoil = 0.35;
+        e.vx += (e.vx || 0) * recoil;
+        e.vy += (e.vy || 0) * recoil;
+        e.vz += (e.vz || 0) * recoil;
       }
-      e.inkCooldown = floor(random(220, 360));
+      e.inkCooldown = floor(random(180, 280));
     }
 
     e.x += e.vx; e.y += e.vy; e.z += e.vz;

@@ -395,7 +395,9 @@ class GameLoop {
           // Normal enemy check + resolution
           let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2); // Radius in world units
           if ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < (bodyRad + shipRad) ** 2) {
-            if (speedSq > 49.0) { killPlayer(player); return; }
+            // Hunters and Squids are lethal on contact regardless of speed
+            const isLethalType = e.type === 'hunter' || e.type === 'squid';
+            if (isLethalType || speedSq > 49.0) { killPlayer(player); return; }
             this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
           }
         }

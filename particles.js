@@ -520,7 +520,8 @@ class ParticleSystem {
           let yaw = atan2(dx, dz), pitch = -atan2(dy, Math.max(horiz, 0.0001));
           let sz = p.size || 8;
           if (p.isThrust) sz *= (1.0 + t * 1.1);
-          if (p.isFog) sz *= (p.isInkBurst ? (1.3 + t * 4.2) : (1.35 + t * 2.3));
+          // Ink bursts bloom significantly over their life to obscure the screen
+          if (p.isFog) sz *= (p.isInkBurst ? (1.5 + t * 6.5) : (1.35 + t * 2.3));
           push(); translate(p.x, p.y, p.z); rotateY(yaw); rotateX(pitch);
           if (useDepthSoftShader) {
             // Direct gl.uniform4f — zero allocations vs setUniform's slice(0) copy.
@@ -538,7 +539,10 @@ class ParticleSystem {
           }
           pop();
         } else {
-          push(); translate(p.x, p.y, p.z); fill(r, g, b, alpha * 255); sphere((p.size || 8) / 2, 5, 4); pop();
+          // Fallback path (mobile/non-shader): apply growth to sphere size so ink still blooms
+          let sz = (p.size || 8);
+          if (p.isFog) sz *= (p.isInkBurst ? (1.5 + t * 6.5) : (1.35 + t * 2.3));
+          push(); translate(p.x, p.y, p.z); fill(r, g, b, alpha * 255); sphere(sz / 2, 5, 4); pop();
         }
       }
       if (useBillowSprites) noTint();

@@ -19,7 +19,8 @@ class GameState {
     this.ignitionStartTime = 0;
 
     // --- Game State Machine ---
-    this.mode = 'menu'; // 'menu' | 'instructions' | 'shipselect' | 'playing' | 'gameover'
+    this.mode = 'menu'; // 'menu' | 'instructions' | 'shipselect' | 'playing' | 'gameover' | 'paused'
+    this.previousMode = 'menu'; // For resuming from pause
     this.gameOverReason = '';
     this.gameStartTime = 0;
 
@@ -54,6 +55,10 @@ class GameState {
     this.sceneFBO = null;
     this.gameFont = null;
     this.worldSeed = 0;
+
+    // --- Pause Screen Background ---
+    this.pauseSnapshot = null;
+    this.shouldCapture = false;
   }
 
   _createPlayers(np) {
@@ -291,6 +296,62 @@ class GameState {
    * Resets all ephemeral world objects (buildings, trees, etc.)
    * to prepare for a fresh world generation pass.
    */
+  /**
+   * Transitions game to paused state.
+   */
+  pauseGame() {
+    if (this.mode === 'playing') {
+      this.previousMode = this.mode;
+      this.mode = 'paused';
+      this.shouldCapture = true; // Signal for sketch.js to capture the frame
+      this.clearInputs();
+      if (typeof gameSFX !== 'undefined') gameSFX.stopAll();
+    }
+  }
+
+  /**
+   * Resumes game from paused state.
+   */
+  resumeGame() {
+    if (this.mode === 'paused') {
+      this.mode = this.previousMode;
+      this.pauseSnapshot = null; // Free memory
+      // Reset physics accumulator to prevent jumps
+      if (typeof _physAccum !== 'undefined') {
+        _physAccum = 0;
+      }
+    }
+  }
+
+  /**
+   * Resets all input states to prevent "stuck" keys on focus loss.
+   */
+  clearInputs() {
+    this.leftMouseDown = false;
+    this.rightMouseDown = false;
+    for (let p of this.players) {
+      if (p.input) {
+        p.input.thrust = false;
+        p.input.shoot = false;
+        p.input.missile = false;
+        p.input.barrier = false;
+        p.input.up = false;
+        p.input.down = false;
+        p.input.left = false;
+        p.input.right = false;
+        p.input.pitchUp = false;
+        p.input.pitchDown = false;
+      }
+    }
+    if (typeof mobileController !== 'undefined') {
+      mobileController.thrustActive = false;
+      mobileController.shootActive = false;
+      mobileController.barrierActive = false;
+      mobileController.aimTouchId = null;
+      mobileController.missileTouchId = null;
+    }
+  }
+
   resetWorld() {
     this.buildings = [];
     this.sentinelBuildings = [];

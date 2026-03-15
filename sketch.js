@@ -135,6 +135,14 @@ function setup() {
     if (e.button === 2) gameState.rightMouseDown = false;
   });
 
+  // Handle backgrounding/pause
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) gameState.pauseGame();
+  });
+  window.addEventListener('blur', () => {
+    gameState.pauseGame();
+  });
+
   terrain.init();
   textFont(gameState.gameFont);
 
@@ -195,6 +203,11 @@ function draw() {
   if (gameState.mode === 'mission') { drawMission(); return; }
   if (gameState.mode === 'instructions') { drawInstructions(); return; }
   if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
+  
+  if (gameState.mode === 'paused' && !gameState.shouldCapture) {
+    drawPauseScreen();
+    return;
+  }
 
   if (window.BENCHMARK && window.BENCHMARK.active) {
     if (!window.BENCHMARK.frames) window.BENCHMARK.frames = 0;
@@ -242,6 +255,16 @@ function draw() {
   gameRenderer.updateSentinelGlows();
   GameLoop.updateAmbianceAudio();
   gameRenderer.renderAllPlayers(drawingContext);
+  
+  if (gameState.shouldCapture) {
+    gameState.pauseSnapshot = get(); // Captures the fully rendered frame (incl. HUD)
+    gameState.shouldCapture = false;
+  }
+
+  if (gameState.mode === 'paused') {
+    drawPauseScreen();
+  }
+
   if (profiler) profiler.frameEnd(performance.now() - frameStart);
 }
 
@@ -260,6 +283,19 @@ function keyPressed() {
     else if (key === '2') startGame(2);
     return;
   }
+
+  // Toggle pause with Esc
+  if (keyCode === 27) {
+    if (gameState.mode === 'playing') {
+      gameState.pauseGame();
+    } else if (gameState.mode === 'paused') {
+      gameState.resumeGame();
+      if (!isMobile) requestPointerLock();
+    }
+    return;
+  }
+
+  if (gameState.mode === 'paused') return; // Ignore other keys while paused
 
   if (gameState.mode === 'mission') {
     gameState.mode = 'instructions';
@@ -390,6 +426,23 @@ function touchStarted(event) {
     }
     return false;
   }
+  if (gameState.mode === 'paused') {
+    // Buttons are at center X (0 in 2D viewport, which is width/2 here)
+    // Resume at y=20 (center Y is height/2)
+    // btnW=280, btnH=60
+    let mx = mouseX - width / 2;
+    let my = mouseY - height / 2;
+    // Resume Button (y=20 relative to center)
+    if (mx > -140 && mx < 140 && my > -10 && my < 50) {
+      gameState.resumeGame();
+    }
+    // Restart Button (y=120 relative to center: resumeY=20 + btnH=60 + spacing=40)
+    else if (mx > -140 && mx < 140 && my > 90 && my < 150) {
+      gameState.mode = 'menu';
+      gameState.pauseSnapshot = null;
+    }
+    return false;
+  }
   if (typeof handleTouchStarted === 'function') return handleTouchStarted();
   return false;
 }
@@ -446,6 +499,19 @@ function mousePressed() {
           }
         }
       }
+    } else if (gameState.mode === 'paused') {
+      let mx = mouseX - width / 2;
+      let my = mouseY - height / 2;
+      // Resume Button (y=20 relative to center)
+      if (mx > -140 && mx < 140 && my > -10 && my < 50) {
+        gameState.resumeGame();
+        requestPointerLock();
+      }
+      // Restart Button (y=120 relative to center)
+      else if (mx > -140 && mx < 140 && my > 90 && my < 150) {
+        gameState.mode = 'menu';
+        gameState.pauseSnapshot = null;
+      }
     } else if (gameState.mode === 'playing') {
       if (mouseButton === CENTER) {
         if (gameState.players.length > 0 && !gameState.players[0].dead) {
@@ -458,7 +524,13 @@ function mousePressed() {
 }
 
 /** Resizes the p5 canvas to match the new browser window dimensions. */
-function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  // Clear pause snapshot on resize to avoid stretched background
+  if (gameState.pauseSnapshot) {
+    gameState.pauseSnapshot = null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Debug Console Commands

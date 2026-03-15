@@ -381,7 +381,7 @@ function drawMission() {
 
   fill(220, 220, 220);
   textSize(bodySize);
-  
+
   // Use TOP alignment for body text on mobile to prevent it growing upwards into header
   textAlign(CENTER, TOP);
   rectMode(CENTER);
@@ -552,6 +552,81 @@ function drawGameOver() {
   setup2DViewport();
   _drawGameOverContent();
   pop();
+}
+
+/**
+ * Renders the Pause screen overlay.
+ * Slightly dims the background and offers Resume/Restart options.
+ */
+function drawPauseScreen() {
+  setup2DViewport();
+
+  // 0. Draw the screenshot if available
+  if (gameState.pauseSnapshot) {
+    push();
+    imageMode(CENTER);
+    image(gameState.pauseSnapshot, 0, 0, width, height);
+    pop();
+  }
+
+  // 1. Slightly dim the background
+  fill(0, 0, 0, 160); // Increased dimness slightly for better contrast
+  noStroke();
+  rect(-width / 2, -height / 2, width, height);
+
+  textAlign(CENTER, CENTER);
+  if (gameState.gameFont) textFont(gameState.gameFont);
+
+  // 2. Title
+  fill(0, 255, 136); // Neon Green
+  textSize(80);
+  text('PAUSED', 0, -100);
+
+  // 3. Buttons
+  const btnW = 280;
+  const btnH = 60;
+  const spacing = 40;
+
+  // Resume Button
+  const resumeY = 20;
+  _drawMenuButton('RESUME', 0, resumeY, btnW, btnH, [0, 255, 136]);
+
+  // Restart Button
+  const restartY = resumeY + btnH + spacing;
+  _drawMenuButton('RESTART', 0, restartY, btnW, btnH, [255, 60, 60]);
+
+  // Instructions/Help
+  textSize(18);
+  fill(255, 200);
+  text(gameState.isMobile ? 'TAP A BUTTON' : 'PRESS ESC TO RESUME', 0, restartY + 80);
+
+  pop();
+}
+
+/**
+ * Helper to draw a styled menu button.
+ * @private
+ */
+function _drawMenuButton(label, x, y, w, h, col) {
+  rectMode(CENTER);
+
+  // Shadow
+  fill(0, 100);
+  rect(x + 4, y + 4, w, h, 12);
+
+  // Body
+  fill(col[0] * 0.2, col[1] * 0.2, col[2] * 0.2, 220);
+  stroke(col[0], col[1], col[2], 255);
+  strokeWeight(2);
+  rect(x, y, w, h, 12);
+
+  // Text
+  noStroke();
+  fill(255);
+  textSize(28);
+  text(label, x, y);
+
+  rectMode(CORNER);
 }
 
 /**

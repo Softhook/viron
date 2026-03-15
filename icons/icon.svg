@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1a0000"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <radialGradient id="green-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00ff88" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#00ff88" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="red-glow-bg" cx="50%" cy="48%" r="38%">
+      <stop offset="0%" stop-color="#ff1111" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ff0000" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="text-glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5"  result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#bg)"/>
+
+  <!-- Subtle outer green glow (virus theme) -->
+  <circle cx="256" cy="256" r="210" fill="url(#green-glow)" filter="url(#blur)"/>
+
+  <!-- Red glow behind VIRON text -->
+  <circle cx="256" cy="248" r="200" fill="url(#red-glow-bg)" filter="url(#blur)"/>
+
+  <!-- Virus body (hexagon) -->
+  <polygon points="256,80 381,165 381,347 256,432 131,347 131,165"
+           fill="none" stroke="#00ff88" stroke-width="8" opacity="0.9"/>
+
+  <!-- Inner hexagon -->
+  <polygon points="256,130 336,178 336,274 256,322 176,274 176,178"
+           fill="none" stroke="#00cc66" stroke-width="4" opacity="0.6"/>
+
+  <!-- Spike protrusions – top -->
+  <line x1="256" y1="80" x2="256" y2="42" stroke="#00ff88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="256" cy="36" r="7" fill="#00ff88"/>
+
+  <!-- Spike – top-right -->
+  <line x1="381" y1="165" x2="410" y2="148" stroke="#00ff88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="416" cy="144" r="7" fill="#00ff88"/>
+
+  <!-- Spike – bottom-right -->
+  <line x1="381" y1="347" x2="410" y2="364" stroke="#00ff88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="416" cy="370" r="7" fill="#00ff88"/>
+
+  <!-- Spike – bottom -->
+  <line x1="256" y1="432" x2="256" y2="470" stroke="#00ff88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="256" cy="476" r="7" fill="#00ff88"/>
+
+  <!-- Spike – bottom-left -->
+  <line x1="131" y1="347" x2="102" y2="364" stroke="#00ff88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="96" cy="370" r="7" fill="#00ff88"/>
+
+  <!-- Spike – top-left -->
+  <line x1="131" y1="165" x2="102" y2="148" stroke="#00ff88" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="96" cy="144" r="7" fill="#00ff88"/>
+
+  <!-- VIRON – large red text centred where the V was, with red glow -->
+  <text x="256" y="292" font-family="Arial Black, sans-serif" font-size="96" font-weight="900"
+        text-anchor="middle" fill="#ff2020" filter="url(#text-glow)">VIRON</text>
+</svg>

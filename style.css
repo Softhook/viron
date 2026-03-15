@@ -17,3 +17,86 @@ canvas {
   display: block;
   touch-action: none;
 }
+
+/* -------------------------------------------------------------------------
+   PWA install banner
+   Appears at the bottom of the screen over the game canvas.
+   Uses the game's neon-green-on-black aesthetic.
+   ------------------------------------------------------------------------- */
+#pwa-banner {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #0a0a0a;
+  border: 1px solid #00ff88;
+  border-radius: 12px;
+  box-shadow: 0 0 18px rgba(0, 255, 136, 0.35);
+  color: #e0ffe8;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  /* Respect iOS safe-area so the banner sits above the home indicator */
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+#pwa-banner img {
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.pwa-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pwa-banner-text strong {
+  font-size: 14px;
+  color: #00ff88;
+  white-space: nowrap;
+}
+
+.pwa-banner-text span {
+  color: #aaffcc;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#pwa-install-btn {
+  flex-shrink: 0;
+  background: #00ff88;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#pwa-install-btn:active {
+  background: #00cc66;
+}
+
+#pwa-dismiss-btn {
+  flex-shrink: 0;
+  background: transparent;
+  color: #aaffcc;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+  touch-action: manipulation;
+}

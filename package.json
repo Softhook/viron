@@ -5,6 +5,7 @@
   "main": "p5.js",
   "scripts": {
     "test": "node test.js",
+    "generate-icons": "node generate-icons.js",
     "benchmark": "node benchmark-terrain.js",
     "benchmark-throttle": "node benchmark-throttling.js",
     "benchmark-runtime": "node benchmark-runtime-breakdown.js",

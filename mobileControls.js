@@ -339,8 +339,18 @@ class MobileController {
             rectMode(CENTER);
             for (let k in this.settingsBtns) {
                 let btn = this.settingsBtns[k];
-                fill(255, 255, 255, 40);
-                stroke(255, 255, 255, 100);
+                
+                // Colors based on button type
+                let baseCol = k === 'switchSides' ? [0, 220, 255] : [0, 255, 136];
+                
+                // 3D Shadow/Depth effect
+                fill(0, 0, 0, 150);
+                rect(btn.x + 4 * this._scale, btn.y + 4 * this._scale, btn.w, btn.h, 8);
+                
+                // Main button body
+                fill(baseCol[0] * 0.3, baseCol[1] * 0.3, baseCol[2] * 0.3, 180);
+                stroke(baseCol[0], baseCol[1], baseCol[2], 200);
+                strokeWeight(2 * this._scale);
                 rect(btn.x, btn.y, btn.w, btn.h, 8);
 
                 noStroke();
@@ -463,7 +473,9 @@ function shouldRequestFullscreen() {
     return true;
 }
 
-function handleTouchStarted() {
+function handleTouchStarted(event) {
+    if (event && event.target && event.target.tagName !== 'CANVAS') return true;
+
     // Request fullscreen immediately on first interaction from Title screen
     if (gameState.mode === 'menu' || gameState.mode === 'instructions') {
         if (shouldRequestFullscreen()) {

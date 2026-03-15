@@ -31,6 +31,7 @@ const UI_TYPE_PROMPT = 26;
 
 const UI_LAYOUT_TITLE_Y = -0.32;
 const UI_LAYOUT_HEADER_Y = -0.18;
+const UI_LAYOUT_BODY_Y = 0.05; // Base Y for body text
 const UI_LAYOUT_PROMPT_Y = 0.40;
 // Pre-grouped by size so drawPlayerHUD() calls textSize() once per group (3×) not per stat (6×).
 const HUD_STATS_BY_SIZE = (() => {
@@ -364,16 +365,25 @@ function drawMission() {
 
   textAlign(CENTER, CENTER);
 
+  // Scale font sizes for mobile to prevent overlap
+  const titleSize = gameState.isMobile ? UI_TYPE_TITLE * 0.6 : UI_TYPE_TITLE * 0.8;
+  const headerSize = gameState.isMobile ? UI_TYPE_HEADER * 0.7 : UI_TYPE_HEADER;
+  const bodySize = gameState.isMobile ? UI_TYPE_BODY * 0.85 : UI_TYPE_BODY;
+
+  textAlign(CENTER, CENTER);
   fill(255, 255, 255, 220);
-  textSize(UI_TYPE_TITLE * 0.8);
+  textSize(titleSize);
   text('MISSION BRIEFING', 0, height * UI_LAYOUT_TITLE_Y);
 
   fill(200, 255, 200, 200);
-  textSize(UI_TYPE_HEADER);
+  textSize(headerSize);
   text('OBJECTIVE: VIRAL CONTAINMENT', 0, height * UI_LAYOUT_HEADER_Y);
 
   fill(220, 220, 220);
-  textSize(UI_TYPE_BODY);
+  textSize(bodySize);
+  
+  // Use TOP alignment for body text on mobile to prevent it growing upwards into header
+  textAlign(CENTER, TOP);
   rectMode(CENTER);
   let briefing =
     "A silicon-based virus is being spread by aliens. " +
@@ -383,14 +393,15 @@ function drawMission() {
     "2. CONTAIN the virus spread\n" +
     "3. PROTECT the temples.";
 
-  text(briefing, 0, height * 0.08, min(width * 0.85, 800));
+  // Position body text below header
+  text(briefing, 0, height * UI_LAYOUT_BODY_Y, min(width * 0.85, 800));
   rectMode(CORNER);
 
   // Blinking continue prompt
   let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
   fill(150, 255, 150, 255 * blink);
   textAlign(CENTER, CENTER);
-  textSize(UI_TYPE_PROMPT);
+  textSize(gameState.isMobile ? UI_TYPE_PROMPT * 0.8 : UI_TYPE_PROMPT);
   text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
 
   pop();
@@ -418,10 +429,6 @@ function drawInstructions() {
       // Draw the full-scale mobile zones forced to be visible
       mobileController.draw(width, height, true);
     }
-
-    fill(255, 255, 255, 220);
-    textSize(UI_TYPE_TITLE * 0.7);
-    text('TOUCH CONTROLS', 0, height * UI_LAYOUT_TITLE_Y);
 
   } else {
     // --- Desktop Text Instructions ---

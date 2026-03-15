@@ -103,6 +103,7 @@
       }
 
       dismissBtn.addEventListener('click', hideBanner);
+      dismissBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
 
       // --- Chrome / Android / desktop: use beforeinstallprompt ---
       window.addEventListener('beforeinstallprompt', function (e) {
@@ -121,6 +122,7 @@
           });
         }
       });
+      installBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
 
       // After install, hide the banner.
       window.addEventListener('appinstalled', hideBanner);

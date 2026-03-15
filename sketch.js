@@ -348,6 +348,8 @@ function keyPressed() {
  * Returning false prevents the default browser scroll / zoom behaviour.
  */
 function touchStarted(event) {
+  if (event.target.tagName !== 'CANVAS') return true;
+
   if (gameState.mode === 'menu' || gameState.mode === 'instructions') {
     if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
       fullscreen(true);
@@ -393,10 +395,16 @@ function touchStarted(event) {
 }
 
 /** Prevents default on touch end so scrolling doesn't resume. */
-function touchEnded(event) { return false; }
+function touchEnded(event) {
+  if (event.target.tagName !== 'CANVAS') return true;
+  return false;
+}
 
 /** Prevents default on touch move (stops page scrolling during gameplay). */
-function touchMoved(event) { return false; }
+function touchMoved(event) {
+  if (event.target.tagName !== 'CANVAS') return true;
+  return false;
+}
 
 /**
  * p5 mousePressed — desktop only.

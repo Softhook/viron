@@ -616,7 +616,7 @@ function initWorld(seed) {
   // 1. Randomize Mountain Peaks
   randomizeMountainPeaks();
 
-  // 2. Populate standard buildings
+  // 2. Populate standard buildings (including villages)
   let numBldgs = gameState.isMobile ? 15 : 40;
   for (let i = 0; i < numBldgs; i++) {
     let bx = random(-4500, 4500), bz = random(-4500, 4500);
@@ -626,13 +626,20 @@ function initWorld(seed) {
       continue;
     }
     
-    gameState.buildings.push({
-      x: bx, z: bz,
-      y: terrain.getAltitude(bx, bz),
-      w: random(40, 100), h: random(50, 180), d: random(40, 100),
-      type: floor(random(4)),
-      col: [random(80, 200), random(80, 200), random(80, 200)]
-    });
+    // 30% chance to spawn a village instead of a single building
+    if (random() < 0.3) {
+      spawnVillage(bx, bz);
+      // Villages count as 3-5 buildings for density purposes
+    } else {
+      let bType = [0, 1, 2, 5][floor(random(4))]; // Exclude 3 (Powerup) and 4 (Sentinel)
+      gameState.buildings.push({
+        x: bx, z: bz,
+        y: terrain.getAltitude(bx, bz),
+        w: 80, h: random(120, 160), d: 80,
+        type: bType,
+        col: [random(100, 160), random(100, 160), random(100, 160)]
+      });
+    }
   }
 
   // 3. Place Sentinels at the new mountain peak centers
@@ -649,4 +656,37 @@ function initWorld(seed) {
   }
 
   gameState.sentinelBuildings = gameState.buildings.filter(b => b.type === 4);
+}
+
+/**
+ * Spawns a cluster of Chinese buildings (one Pagoda and multiple Huts) to form a village.
+ */
+function spawnVillage(cx, cz) {
+  // Center Pagoda
+  gameState.buildings.push({
+    x: cx, z: cz,
+    y: terrain.getAltitude(cx, cz),
+    w: 80, h: 200, d: 80,
+    type: 2, // Pagoda
+    col: [200, 50, 50] // Traditional Red
+  });
+
+  // Surround with huts
+  let numHuts = floor(random(3, 6));
+  for (let i = 0; i < numHuts; i++) {
+    let angle = random(TWO_PI);
+    let dist = random(120, 300);
+    let hx = cx + cos(angle) * dist;
+    let hz = cz + sin(angle) * dist;
+    
+    if (!isLaunchpad(hx, hz)) {
+      gameState.buildings.push({
+        x: hx, z: hz,
+        y: terrain.getAltitude(hx, hz),
+        w: 50, h: random(60, 75), d: 50,
+        type: 5, // Small Hut
+        col: [120, 100, 80]
+      });
+    }
+  }
 }

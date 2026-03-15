@@ -2129,18 +2129,70 @@ class Terrain {
           fill(inf ? 41 : 40, inf ? 50 : 220, inf ? 50 : 220);
           push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
           fill(safeR(inf ? 150 : 220), inf ? 30 : 50, inf ? 30 : 50);
-          push(); translate(0, -b.h - b.w / 3, 0); rotateY(PI / 4); cone(b.w * 0.8, b.w / 1.5, 4, 1); pop();
+          let rh = b.w / 1.5;
+          push(); translate(0, -b.h - rh / 2, 0); rotateX(PI); rotateY(PI / 4); cone(b.w * 0.8, rh, 4, 1); pop();
         } else if (b.type === 1) {
           fill(inf ? 43 : 42, inf ? 50 : 160, inf ? 50 : 170);
           push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
           fill(safeR(inf ? 150 : 80), inf ? 30 : 180, inf ? 30 : 220);
           push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
         } else if (b.type === 2) {
-          fill(inf ? 45 : 44, inf ? 50 : b.col[1], inf ? 50 : b.col[2]);
-          push(); translate(0, -b.h / 4, 0); box(b.w * 1.5, b.h / 2, b.d * 1.5); pop();
-          push(); translate(b.w * 0.3, -b.h / 2 - b.h / 8, -b.d * 0.2); box(b.w / 2, b.h / 4, b.d / 2); pop();
-          fill(safeR(inf ? 120 : 80), inf ? 20 : 80, inf ? 20 : 80);
-          push(); translate(-b.w * 0.4, -b.h, b.d * 0.4); cylinder(b.w * 0.15, b.h, 8, 1); pop();
+          // --- PAGODA (Chinese Village Aesthetic) ---
+          let roofR = safeR(inf ? 180 : 160), roofG = inf ? 30 : 40, roofB = inf ? 20 : 35; // Red
+          let wallR = safeR(inf ? 130 : 200), wallG = inf ? 110 : 180, wallB = inf ? 80 : 140; // Cream
+          let beamR = safeR(inf ? 60 : 80), beamG = inf ? 40 : 50, beamB = inf ? 30 : 40; // Wood
+          
+          let bw = b.w, bh = b.h, bd = b.d;
+          fill(beamR, beamG, beamB);
+          push(); translate(0, -bh * 0.05, 0); box(bw * 1.2, bh * 0.1, bd * 1.2); pop();
+          
+          for (let i = 0; i < 3; i++) {
+            let ty = -bh * (0.1 + i * 0.3);
+            let tw = bw * (1.0 - i * 0.2);
+            let td = bd * (1.0 - i * 0.2);
+            let th = bh * 0.25;
+            let rh = th * 0.6;
+            
+            fill(wallR, wallG, wallB);
+            push(); translate(0, ty - th/2, 0); box(tw * 0.8, th, td * 0.8); pop();
+            
+            // Roof: rotateX(PI) flips it so point is UP in Y-up system
+            fill(roofR, roofG, roofB);
+            push(); 
+            translate(0, ty - th - rh/2, 0); 
+            rotateX(PI); 
+            rotateY(PI/4);
+            cone(tw * 1.4, rh, 4, 1); 
+            pop();
+          }
+          fill(beamR, beamG, beamB);
+          push(); translate(0, -bh * 1.0, 0); cylinder(bw * 0.05, bh * 0.2, 6, 1); pop();
+          fill(roofR, roofG, roofB);
+          push(); translate(0, -bh * 1.15, 0); sphere(bw * 0.1, 6, 4); pop();
+
+        } else if (b.type === 5) {
+          // --- CHINESE HUT (Variety Pack) ---
+          let roofR = safeR(inf ? 100 : 130), roofG = inf ? 80 : 110, roofB = inf ? 40 : 70; // Thatch
+          let wallR = safeR(inf ? 140 : 180), wallG = inf ? 120 : 160, wallB = inf ? 90 : 120; // Mud
+          
+          let bw = b.w, bh = b.h, bd = b.d;
+          let seed = Math.abs(Math.sin(b.x * 0.0123 + b.z * 0.0456));
+          
+          if (seed < 0.5) {
+            // Variant A: Square Hut
+            let rh = bh * 0.7;
+            fill(wallR, wallG, wallB);
+            push(); translate(0, -bh * 0.4, 0); box(bw, bh * 0.8, bd); pop();
+            fill(roofR, roofG, roofB);
+            push(); translate(0, -bh * 0.8 - rh/2, 0); rotateX(PI); rotateY(PI/4); cone(bw * 1.5, rh, 4, 1); pop();
+          } else {
+            // Variant B: Long Hut
+            let rh = bh * 0.6;
+            fill(wallR * 0.9, wallG * 0.9, wallB * 0.9);
+            push(); translate(0, -bh * 0.3, 0); box(bw * 1.6, bh * 0.6, bd * 1.1); pop();
+            fill(roofR, roofG, roofB);
+            push(); translate(0, -bh * 0.6 - rh/2, 0); rotateX(PI); rotateY(PI/2); cone(bw * 2.1, rh, 4, 1); pop();
+          }
         } else if (b.type === 4) {
           const matID = inf ? 47 : 46;
           let steelR = matID, steelG = inf ? 38 : 68, steelB = inf ? 38 : 90;
@@ -2149,6 +2201,7 @@ class Terrain {
           let reactorR = safeR(inf ? 255 : 80), reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;
           let spireR = safeR(inf ? 240 : 160), spireG = inf ? 80 : 240, spireB = inf ? 40 : 255;
           let bw = b.w, bh = b.h;
+          let rh = bh * 0.24;
 
           fill(plinthR, plinthG, plinthB);
           push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
@@ -2174,9 +2227,10 @@ class Terrain {
           push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
 
           fill(spireR, spireG, spireB);
-          push(); translate(0, -bh * 0.99, 0); cone(bw * 0.18, bh * 0.24, 6, 1); pop();
+          // Top of last cylinder is -bh * 0.85 - bh * 0.1 = -bh * 0.95
+          push(); translate(0, -bh * 0.95 - rh / 2, 0); rotateX(PI); cone(bw * 0.18, rh, 6, 1); pop();
           fill(reactorR, reactorG, reactorB);
-          push(); translate(0, -bh * 1.11, 0); sphere(bw * 0.08, 6, 4); pop();
+          push(); translate(0, -bh * 0.95 - rh - bw * 0.08, 0); sphere(bw * 0.08, 6, 4); pop();
         }
       });
     } catch (err) {

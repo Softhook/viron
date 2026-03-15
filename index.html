@@ -167,6 +167,10 @@
           var updateBtn    = document.getElementById('pwa-update-btn');
           var dismissBtn   = document.getElementById('pwa-update-dismiss-btn');
           var waitingSW    = null;
+          // Only set to true when the user explicitly triggers SKIP_WAITING.
+          // Guards controllerchange so a first-install activation never
+          // causes an unwanted reload (controller: null → active SW).
+          var updateTriggered = false;
 
           function showUpdateBanner(sw) {
             waitingSW = sw;
@@ -181,6 +185,7 @@
           // When the user taps "Update", tell the waiting SW to activate now.
           updateBtn.addEventListener('click', function () {
             if (waitingSW) {
+              updateTriggered = true;
               waitingSW.postMessage({ type: 'SKIP_WAITING' });
             }
             hideUpdateBanner();
@@ -191,8 +196,12 @@
 
           // When the SW controller changes (new SW activated), reload the page
           // so all assets come from the new cache.
+          // Guard: only reload when an update was explicitly triggered by the user,
+          // not on the initial installation (controller: null → first SW).
           navigator.serviceWorker.addEventListener('controllerchange', function () {
-            window.location.reload();
+            if (updateTriggered) {
+              window.location.reload();
+            }
           });
 
           navigator.serviceWorker.register('./sw.js').then(function (reg) {

@@ -53,6 +53,7 @@ const PRECACHE_ASSETS = [
   './icons/apple-touch-icon-152.png',
   './icons/apple-touch-icon-167.png',
   './icons/icon.svg',
+  './icons/icon-1024.png',
 ];
 
 // ---------------------------------------------------------------------------
@@ -65,7 +66,10 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
       .then(cache => cache.addAll(PRECACHE_ASSETS))
-      .catch(err => console.error('[SW] Pre-cache failed:', err))
+      .catch(err => {
+        console.error('[SW] Pre-cache failed:', err);
+        throw err; // Rethrow so the install fails and the browser retries.
+      })
   );
 });
 
@@ -74,7 +78,7 @@ self.addEventListener('install', event => {
 // ---------------------------------------------------------------------------
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+    event.waitUntil(self.skipWaiting());
   }
 });
 

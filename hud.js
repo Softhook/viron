@@ -21,6 +21,17 @@ const HUD_STATS = [
   { label: 'MISSILES', color: [0, 200, 255], size: 14, py: 90, getVal: p => p.missilesRemaining },
   { label: 'SHOT', color: [220, 220, 220], size: 14, py: 108, getVal: p => (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE') }
 ];
+
+// Standardized UI Typography and Layout
+const UI_TYPE_TITLE = 84;
+const UI_TYPE_HEADER = 36;
+const UI_TYPE_BODY = 20;
+const UI_TYPE_HINT = 14;
+const UI_TYPE_PROMPT = 26;
+
+const UI_LAYOUT_TITLE_Y = -0.32;
+const UI_LAYOUT_HEADER_Y = -0.18;
+const UI_LAYOUT_PROMPT_Y = 0.40;
 // Pre-grouped by size so drawPlayerHUD() calls textSize() once per group (3×) not per stat (6×).
 const HUD_STATS_BY_SIZE = (() => {
   const groups = new Map();
@@ -107,34 +118,18 @@ function _renderShipDetails(p, design, relX, vw, vh) {
   // Global title
   textAlign(CENTER, TOP);
   fill(255, 255, 255, 200);
-  textSize(28);
-  text("SELECT YOUR CRAFT", relX, -vh / 2 + 50);
+  textSize(UI_TYPE_HEADER);
+  text("SELECT YOUR CRAFT", relX, height * UI_LAYOUT_TITLE_Y);
 
   // Ship Name (Largest)
   fill(...p.labelColor);
-  textSize(54);
+  textSize(UI_TYPE_TITLE);
   text(design.name.toUpperCase(), relX, vh / 2 - 320);
 
-  // Role (Gold)
-  fill(255, 200, 0);
-  textSize(20);
-  text(design.role || "UNKNOWN ROLE", relX, vh / 2 - 270);
-
-  // Thrust type label (Subtle)
-  textSize(14);
-  fill(180, 180, 180, 200);
-  let thrustType = "VTOL / HOVER";
-  if (design.isGroundVehicle) {
-    thrustType = design.canTravelOnWater ? "AMPHIBIOUS HOVERCRAFT" : "GROUND VEHICLE";
-  } else if (design.thrustAngle !== undefined) {
-    if (design.thrustAngle > 0.1 && design.thrustAngle < 1.0) thrustType = "DIAGONAL THRUST";
-    else if (design.thrustAngle >= 1.0) thrustType = "JET / FORWARD THRUST";
-  }
-  text(thrustType, relX, vh / 2 - 245);
 
   // Description (Body text, wrapped)
   fill(220);
-  textSize(14);
+  textSize(UI_TYPE_BODY);
   rectMode(CENTER);
   text(design.desc || "", relX, vh / 2 - 215, vw * 0.85);
   rectMode(CORNER);
@@ -162,7 +157,7 @@ function _drawShipStats(p, design, relX, vw, vh) {
     const y = statY + i * 18;
     textAlign(RIGHT, TOP);
     fill(180);
-    textSize(11);
+    textSize(UI_TYPE_HINT);
     text(s.label, statX - 10, y + 2);
 
     // Bar background
@@ -370,15 +365,15 @@ function drawMission() {
   textAlign(CENTER, CENTER);
 
   fill(255, 255, 255, 220);
-  textSize(48);
-  text('MISSION BRIEFING', 0, -height * 0.35);
+  textSize(UI_TYPE_TITLE * 0.8);
+  text('MISSION BRIEFING', 0, height * UI_LAYOUT_TITLE_Y);
 
   fill(200, 255, 200, 200);
-  textSize(22);
-  text('OBJECTIVE: VIRAL CONTAINMENT', 0, -height * 0.22);
+  textSize(UI_TYPE_HEADER);
+  text('OBJECTIVE: VIRAL CONTAINMENT', 0, height * UI_LAYOUT_HEADER_Y);
 
   fill(220, 220, 220);
-  textSize(24);
+  textSize(UI_TYPE_BODY);
   rectMode(CENTER);
   let briefing =
     "A silicon-based virus is being spread by aliens. " +
@@ -388,16 +383,15 @@ function drawMission() {
     "2. CONTAIN the virus spread\n" +
     "3. PROTECT the temples.";
 
-
-  text(briefing, 0, 0, min(width * 0.8, 600));
+  text(briefing, 0, height * 0.08, min(width * 0.85, 800));
   rectMode(CORNER);
 
   // Blinking continue prompt
   let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
   fill(150, 255, 150, 255 * blink);
   textAlign(CENTER, CENTER);
-  textSize(24);
-  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
+  textSize(UI_TYPE_PROMPT);
+  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
 
   pop();
 }
@@ -426,28 +420,28 @@ function drawInstructions() {
     }
 
     fill(255, 255, 255, 220);
-    textSize(36);
-    text('TOUCH CONTROLS', 0, -height * 0.42);
+    textSize(UI_TYPE_TITLE * 0.7);
+    text('TOUCH CONTROLS', 0, height * UI_LAYOUT_TITLE_Y);
 
   } else {
     // --- Desktop Text Instructions ---
     fill(255, 255, 255, 220);
-    textSize(48);
-    text('HOW TO PLAY', 0, -height * 0.42);
+    textSize(UI_TYPE_TITLE * 0.8);
+    text('HOW TO PLAY', 0, height * UI_LAYOUT_TITLE_Y);
 
     const drawConfig = (title, color, items, side) => {
       const tx = width * 0.25 * side;
-      const ty = -height * 0.1;
-      const my = -height * 0.02;
-      const lh = 35;
+      const ty = height * UI_LAYOUT_HEADER_Y;
+      const my = ty + 40;
+      const lh = 36;
 
-      textSize(22);
+      textAlign(CENTER, TOP);
+      textSize(UI_TYPE_HEADER * 0.7);
       fill(...color, 200);
       text(title, tx, ty);
 
-      textSize(18);
+      textSize(UI_TYPE_BODY * 0.9);
       fill(255, 255, 255, 180);
-      textAlign(CENTER, TOP);
       items.forEach((item, i) => {
         text(item, tx, my + lh * i);
       });
@@ -496,8 +490,8 @@ function drawInstructions() {
   let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
   fill(150, 255, 150, 255 * blink);
   textAlign(CENTER, CENTER);
-  textSize(24);
-  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.42);
+  textSize(UI_TYPE_PROMPT);
+  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
 
   pop();
 }

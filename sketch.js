@@ -414,7 +414,7 @@ function touchStarted(event) {
     if (p.ready) return false;
 
     let localX = mouseX % vw;
-    // Regions match hud.js button rendering
+    // Regions match hudScreens.js button rendering
     if (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130) {
       p.ready = true;
     } else if (mouseY > height / 2 - 60 && mouseY < height / 2 + 60) {

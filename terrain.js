@@ -2110,7 +2110,10 @@ class Terrain {
     if (!b._geomKeyPair) {
       const base = `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_`;
       const colSuffix = (b.type === 2) ? `_${b.col[0]}_${b.col[1]}_${b.col[2]}` : '';
-      b._geomKeyPair = [base + 'false' + colSuffix, base + 'true' + colSuffix];
+      // Type 5 (Chinese hut) selects variant A or B from position, so include position
+      // in the key so different huts with identical dimensions don't share cached geometry.
+      const posSuffix = (b.type === 5) ? `_${b.x | 0}_${b.z | 0}` : '';
+      b._geomKeyPair = [base + 'false' + colSuffix + posSuffix, base + 'true' + colSuffix + posSuffix];
     }
     const key = b._geomKeyPair[inf ? 1 : 0];
 

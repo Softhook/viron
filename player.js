@@ -215,7 +215,7 @@ function fireTankShell(p) {
 function fireMissile(p) {
   if (p.missilesRemaining > 0 && !p.dead) {
     p.missilesRemaining--;
-    p.homingMissiles.push(spawnProjectile(p.ship, 8, 300));
+    p.homingMissiles.push(spawnProjectile(p.ship, 8, 500));
     if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
   }
 }

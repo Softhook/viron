@@ -6,12 +6,21 @@
  * On activate, delete old caches from previous versions.
  * On fetch, serve from cache; fall back to network and update cache.
  *
- * Bump CACHE_VERSION whenever game files change to force a cache refresh.
+ * Update flow:
+ *   1. Bump CACHE_VERSION whenever game files change.
+ *   2. The browser detects the changed sw.js and installs the new SW.
+ *   3. The new SW pre-caches all assets but does NOT call skipWaiting()
+ *      automatically – it waits so the currently-running page is never
+ *      served by a mismatched SW/asset combination.
+ *   4. The page receives an 'updatefound' event, shows an update banner,
+ *      and sends a SKIP_WAITING message here when the user taps "Update".
+ *   5. This SW calls skipWaiting(), takes control, and the page reloads
+ *      via the 'controllerchange' listener in index.html.
  */
 
 'use strict';
 
-const CACHE_VERSION = 'viron-v3';
+const CACHE_VERSION = 'viron-v4';
 
 /** Every static asset the game needs to run offline. */
 const PRECACHE_ASSETS = [
@@ -47,15 +56,26 @@ const PRECACHE_ASSETS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Install – pre-cache all assets, then skip waiting so the new SW activates
-// immediately without requiring a tab reload.
+// Install – pre-cache all assets.
+// Do NOT call skipWaiting() here; the page will request activation via a
+// postMessage({type:'SKIP_WAITING'}) once the user confirms the update.
+// This prevents the running page from being served by a mismatched SW.
 // ---------------------------------------------------------------------------
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
       .then(cache => cache.addAll(PRECACHE_ASSETS))
-      .then(() => self.skipWaiting())
+      .catch(err => console.error('[SW] Pre-cache failed:', err))
   );
+});
+
+// ---------------------------------------------------------------------------
+// Message – allow the client page to trigger activation when ready.
+// ---------------------------------------------------------------------------
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -178,14 +178,17 @@ class MobileController {
         const turnY = constrain(offsetY / maxStretch, -1.0, 1.0);
 
         // Inverted: drag right turns right; drag up pitches up.
-        // Sensitivity increased for better mobile handling: 1.5 -> 2.2 for yaw, 1.5 -> 3.2 for pitch.
-        // Pitch is inverted in Cockpit view (dragging up tilts down) to match flight sim feel.
+        // Original sensitivity (1.5) preserved for cockpit view as requested.
+        // Third-person view uses increased sensitivity (2.2 yaw, 3.2 pitch) for easier handling.
+        let yawMult = 2.2;
         let pitchMult = 3.2;
+
         if (typeof gameState !== 'undefined' && gameState.firstPersonView) {
-            pitchMult *= -1;
+            yawMult = 1.5;
+            pitchMult = -1.5; // Inverted for flight-sim feel
         }
 
-        inputs.yawDelta = -turnX * yawRate * 2.2;
+        inputs.yawDelta = -turnX * yawRate * yawMult;
         inputs.pitchDelta = -turnY * pitchRate * pitchMult;
     }
 

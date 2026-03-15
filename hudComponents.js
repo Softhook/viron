@@ -119,7 +119,9 @@ function drawPlayerHUD(p, pi, viewW, viewH) {
   }
 
   drawRadarForPlayer(p, hw, h);
-  _drawWeaponSelector(p, h);
+  if (!gameState.isMobile) {
+    _drawWeaponSelector(p, h);
+  }
 
   pop();
 }

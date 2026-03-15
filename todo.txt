@@ -1,6 +1,4 @@
 
-game start screen can happen underneath the so 
-
 Change the weapon toggle. Make proper keyboard commands 
 
 update. the package.json

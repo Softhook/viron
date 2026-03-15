@@ -437,15 +437,18 @@ class GameLoop {
           }
         }
       } else {
+        /* 
         // Blocking building/sentinel collision
         if (Math.abs(s.x - b.x) > (b.w + 200) || Math.abs(s.z - b.z) > (b.d + 200)) continue;
         let hw = b.w / 2, hh = b.h / 2, hd = b.d / 2;
         let by = b.y - hh; // Center Y
         let collided = this._resolveAABBCollision(s, b.x, by, b.z, hw, hh, hd, shipRadEnv);
         if (collided && speedSqEnv > 49.0) { killPlayer(player); return; }
+        */
       }
     }
 
+    /*
     // 6. Environment Collisions: Trees (Optimized search)
     let tx0 = toTile(s.x), tz0 = toTile(s.z);
     for (let tz = tz0 - 1; tz <= tz0 + 1; tz++) {
@@ -469,6 +472,7 @@ class GameLoop {
         }
       }
     }
+    */
 
     // 8. Projectiles vs infected procedural trees
     this._checkProjectilesVsTrees(player);

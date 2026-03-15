@@ -11,7 +11,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'viron-v2';
+const CACHE_VERSION = 'viron-v3';
 
 /** Every static asset the game needs to run offline. */
 const PRECACHE_ASSETS = [
@@ -43,6 +43,7 @@ const PRECACHE_ASSETS = [
   './icons/apple-touch-icon.png',
   './icons/apple-touch-icon-152.png',
   './icons/apple-touch-icon-167.png',
+  './icons/icon.svg',
 ];
 
 // ---------------------------------------------------------------------------
@@ -85,7 +86,7 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
+    caches.match(event.request, { ignoreSearch: true }).then(cached => {
       if (cached) return cached;
 
       // Not in cache – fetch from network and store for next time.

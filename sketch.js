@@ -398,10 +398,12 @@ function touchStarted(event) {
     return false;
   }
   if (gameState.mode === 'instructions') {
-    if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
-      return false;
+    if (typeof mobileController !== 'undefined') {
+      let hit = mobileController.checkSettingsHit(mouseX, mouseY);
+      if (hit === 'continue') {
+        gameState.mode = 'shipselect';
+      }
     }
-    gameState.mode = 'shipselect';
     return false;
   }
   if (gameState.mode === 'shipselect') {

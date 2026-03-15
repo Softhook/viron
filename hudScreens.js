@@ -212,7 +212,9 @@ function drawInstructions() {
   fill(150, 255, 150, 255 * blink);
   textAlign(CENTER, CENTER);
   textSize(UI_TYPE_PROMPT);
-  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
+  if (!gameState.isMobile) {
+    text('PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
+  }
   pop();
 }
 

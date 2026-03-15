@@ -47,7 +47,8 @@ class MobileController {
         this.isSwapped = false; // Aim on Left, Actions on Right
         this.settingsBtns = {
             switchSides: { x: 0, y: 0, w: 160, h: 50, label: 'SWITCH SIDES' },
-            cockpit: { x: 0, y: 0, w: 160, h: 50, label: 'COCKPIT VIEW' }
+            cockpit: { x: 0, y: 0, w: 160, h: 50, label: 'COCKPIT VIEW' },
+            continue: { x: 0, y: 0, w: 200, h: 60, label: 'CONTINUE' }
         };
 
         this.debug = false;
@@ -177,8 +178,15 @@ class MobileController {
         const turnY = constrain(offsetY / maxStretch, -1.0, 1.0);
 
         // Inverted: drag right turns right; drag up pitches up.
-        inputs.yawDelta = -turnX * yawRate * 1.5;
-        inputs.pitchDelta = -turnY * pitchRate * 1.5;
+        // Sensitivity increased for better mobile handling: 1.5 -> 2.2 for yaw, 1.5 -> 3.2 for pitch.
+        // Pitch is inverted in Cockpit view (dragging up tilts down) to match flight sim feel.
+        let pitchMult = 3.2;
+        if (typeof gameState !== 'undefined' && gameState.firstPersonView) {
+            pitchMult *= -1;
+        }
+
+        inputs.yawDelta = -turnX * yawRate * 2.2;
+        inputs.pitchDelta = -turnY * pitchRate * pitchMult;
     }
 
     _applyAimAssist(inputs, ship, enemies) {
@@ -227,6 +235,12 @@ class MobileController {
         this.settingsBtns.cockpit.y = h * 0.15; // Raised from 0.2
         this.settingsBtns.cockpit.w = 160 * s;
         this.settingsBtns.cockpit.h = 44 * s;
+
+        // Position Continue button in center screen
+        this.settingsBtns.continue.x = w / 2;
+        this.settingsBtns.continue.y = h / 2;
+        this.settingsBtns.continue.w = 200 * s;
+        this.settingsBtns.continue.h = 60 * s;
     }
 
     update(touches, w, h) {
@@ -359,13 +373,41 @@ class MobileController {
                 strokeWeight(2 * this._scale);
                 rect(btn.x, btn.y, btn.w, btn.h, 8);
 
-                noStroke();
-                fill(255);
                 textSize(12 * this._scale);
                 let label = btn.label;
                 if (k === 'cockpit') label += (typeof gameState !== 'undefined' && gameState.firstPersonView ? ": ON" : ": OFF");
                 text(label, btn.x, btn.y);
             }
+
+            // --- Draw joystick preview on Instruction screen ---
+            let aimZoneX = aimX + w / 4;
+            let aimZoneY = h / 2;
+            let maxStretch = 100 * this._scale;
+
+            // Anchor dot
+            noStroke();
+            fill(255, 255, 255, 100);
+            circle(aimZoneX, aimZoneY, 20 * this._scale);
+
+            // Outer limits ring
+            strokeWeight(3 * this._scale);
+            stroke(255, 255, 255, 40);
+            noFill();
+            circle(aimZoneX, aimZoneY, maxStretch * 2);
+
+            // Represent typical thumb position
+            let previewOffX = 40 * this._scale;
+            let previewOffY = -30 * this._scale;
+            
+            // Connecting line
+            stroke(255, 255, 255, 50);
+            strokeWeight(2 * this._scale);
+            line(aimZoneX, aimZoneY, aimZoneX + previewOffX, aimZoneY + previewOffY);
+
+            fill(255, 255, 255, 150);
+            noStroke();
+            circle(aimZoneX + previewOffX, aimZoneY + previewOffY, 60 * this._scale);
+
             rectMode(CORNER);
         }
 
@@ -443,6 +485,8 @@ class MobileController {
                     if (typeof gameState !== 'undefined') {
                         gameState.firstPersonView = !gameState.firstPersonView;
                     }
+                } else if (k === 'continue') {
+                    return 'continue';
                 }
                 return true;
             }

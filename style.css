@@ -100,3 +100,66 @@ canvas {
   line-height: 1;
   touch-action: manipulation;
 }
+
+/* -------------------------------------------------------------------------
+   PWA update banner
+   Appears at the top of the screen when a new SW version is waiting.
+   Uses amber accent to visually distinguish it from the green install banner.
+   ------------------------------------------------------------------------- */
+#pwa-update-banner {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #0a0a0a;
+  border: 1px solid #ffaa00;
+  border-radius: 12px;
+  box-shadow: 0 0 18px rgba(255, 170, 0, 0.35);
+  color: #fff8e8;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+}
+
+#pwa-update-banner .pwa-banner-text strong {
+  color: #ffaa00;
+}
+
+#pwa-update-banner .pwa-banner-text span {
+  color: #ffd980;
+}
+
+#pwa-update-btn {
+  flex-shrink: 0;
+  background: #ffaa00;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#pwa-update-btn:active {
+  background: #cc8800;
+}
+
+#pwa-update-dismiss-btn {
+  flex-shrink: 0;
+  background: transparent;
+  color: #ffd980;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+  touch-action: manipulation;
+}

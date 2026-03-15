@@ -57,6 +57,16 @@
     <button id="pwa-dismiss-btn" type="button" aria-label="Dismiss">✕</button>
   </div>
 
+  <!-- PWA update banner – hidden by default; shown when a new version is ready -->
+  <div id="pwa-update-banner" aria-live="polite" aria-label="Update available" style="display:none">
+    <div class="pwa-banner-text">
+      <strong>Update Available</strong>
+      <span>A new version of Viron is ready.</span>
+    </div>
+    <button id="pwa-update-btn" type="button">Update</button>
+    <button id="pwa-update-dismiss-btn" type="button" aria-label="Dismiss">✕</button>
+  </div>
+
   <script>
     document.addEventListener('touchmove', function (e) {
       if (e.target.tagName === 'CANVAS') {
@@ -65,88 +75,164 @@
     }, { passive: false });
 
     // -------------------------------------------------------------------------
-    // PWA install prompt
-    // -------------------------------------------------------------------------
-    (function () {
-      var STORAGE_KEY = 'viron-pwa-dismissed';
-      var banner = document.getElementById('pwa-banner');
-      var installBtn = document.getElementById('pwa-install-btn');
-      var dismissBtn = document.getElementById('pwa-dismiss-btn');
-      var sub = document.getElementById('pwa-banner-sub');
-
-      // Don't show banner if already running as installed PWA.
-      var isInstalled =
-        window.navigator.standalone === true ||
-        window.matchMedia('(display-mode: standalone)').matches ||
-        window.matchMedia('(display-mode: fullscreen)').matches;
-
-      // Don't show banner if user dismissed it previously.
-      var dismissed = false;
-      try { dismissed = !!localStorage.getItem(STORAGE_KEY); } catch (_) {}
-
-      if (isInstalled || dismissed) return;
-
-      var deferredPrompt = null; // Chrome / Android / desktop
-
-      // Detect iOS / iPadOS (iPadOS 13+ mimics macOS UA, check maxTouchPoints).
-      var isIOS =
-        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-      function showBanner() {
-        banner.style.display = 'flex';
-      }
-
-      function hideBanner() {
-        banner.style.display = 'none';
-        try { localStorage.setItem(STORAGE_KEY, '1'); } catch (_) {}
-      }
-
-      dismissBtn.addEventListener('click', hideBanner);
-      dismissBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
-
-      // --- Chrome / Android / desktop: use beforeinstallprompt ---
-      window.addEventListener('beforeinstallprompt', function (e) {
-        e.preventDefault();
-        deferredPrompt = e;
-        sub.textContent = 'Play offline, full screen, anytime.';
-        showBanner();
-      });
-
-      installBtn.addEventListener('click', function () {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          deferredPrompt.userChoice.then(function (result) {
-            if (result.outcome === 'accepted') hideBanner();
-            deferredPrompt = null;
-          });
-        }
-      });
-      installBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
-
-      // After install, hide the banner.
-      window.addEventListener('appinstalled', hideBanner);
-
-      // --- iOS / iPadOS Safari: beforeinstallprompt is not supported ---
-      // Show instructions to use the Share → "Add to Home Screen" flow.
-      if (isIOS) {
-        var isSafari = /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|OPiOS|Chrome|Edg/.test(navigator.userAgent);
-        if (isSafari) {
-          sub.textContent = 'Tap \u2b06 Share, then \u201cAdd to Home Screen\u201d.';
-          installBtn.style.display = 'none'; // No programmatic install on iOS
-          showBanner();
-        }
-      }
-    }());
-
-    // -------------------------------------------------------------------------
-    // Register service worker for PWA offline support
+    // Register service worker and handle install + update flows
     // -------------------------------------------------------------------------
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('./sw.js').catch(function (err) {
-          console.warn('Service worker registration failed:', err);
-        });
+
+        // ------------------------------------------------------------------
+        // PWA install prompt (Chrome / Android / desktop)
+        // ------------------------------------------------------------------
+        (function () {
+          var STORAGE_KEY = 'viron-pwa-dismissed';
+          var banner = document.getElementById('pwa-banner');
+          var installBtn = document.getElementById('pwa-install-btn');
+          var dismissBtn = document.getElementById('pwa-dismiss-btn');
+          var sub = document.getElementById('pwa-banner-sub');
+
+          // Don't show banner if already running as installed PWA.
+          var isInstalled =
+            window.navigator.standalone === true ||
+            window.matchMedia('(display-mode: standalone)').matches ||
+            window.matchMedia('(display-mode: fullscreen)').matches;
+
+          // Don't show banner if user dismissed it previously.
+          var dismissed = false;
+          try { dismissed = !!localStorage.getItem(STORAGE_KEY); } catch (_) {}
+
+          if (isInstalled || dismissed) return;
+
+          var deferredPrompt = null; // Chrome / Android / desktop
+
+          // Detect iOS / iPadOS (iPadOS 13+ mimics macOS UA, check maxTouchPoints).
+          var isIOS =
+            /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+          function showBanner() {
+            banner.style.display = 'flex';
+          }
+
+          function hideBanner() {
+            banner.style.display = 'none';
+            try { localStorage.setItem(STORAGE_KEY, '1'); } catch (_) {}
+          }
+
+          dismissBtn.addEventListener('click', hideBanner);
+          dismissBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+
+          // --- Chrome / Android / desktop: use beforeinstallprompt ---
+          window.addEventListener('beforeinstallprompt', function (e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            sub.textContent = 'Play offline, full screen, anytime.';
+            showBanner();
+          });
+
+          installBtn.addEventListener('click', function () {
+            if (deferredPrompt) {
+              deferredPrompt.prompt();
+              deferredPrompt.userChoice.then(function (result) {
+                if (result.outcome === 'accepted') hideBanner();
+                deferredPrompt = null;
+              });
+            }
+          });
+          installBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+
+          // After install, hide the banner.
+          window.addEventListener('appinstalled', hideBanner);
+
+          // --- iOS / iPadOS Safari: beforeinstallprompt is not supported ---
+          // Show instructions to use the Share → "Add to Home Screen" flow.
+          if (isIOS) {
+            var isSafari = /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS|OPiOS|Chrome|Edg/.test(navigator.userAgent);
+            if (isSafari) {
+              sub.textContent = 'Tap \u2b06 Share, then \u201cAdd to Home Screen\u201d.';
+              installBtn.style.display = 'none'; // No programmatic install on iOS
+              showBanner();
+            }
+          }
+        }());
+
+        // ------------------------------------------------------------------
+        // PWA update banner
+        // Shown whenever a new service worker has finished installing and is
+        // waiting to take over.  The user can tap "Update" to apply it
+        // immediately (the page will reload) or dismiss it and update on
+        // the next natural restart.
+        // ------------------------------------------------------------------
+        (function () {
+          var updateBanner = document.getElementById('pwa-update-banner');
+          var updateBtn    = document.getElementById('pwa-update-btn');
+          var dismissBtn   = document.getElementById('pwa-update-dismiss-btn');
+          var waitingSW    = null;
+          // Only set to true when the user explicitly triggers SKIP_WAITING.
+          // Guards controllerchange so a first-install activation never
+          // causes an unwanted reload (controller: null → active SW).
+          var updateTriggered = false;
+
+          function showUpdateBanner(sw) {
+            waitingSW = sw;
+            updateBanner.style.display = 'flex';
+          }
+
+          function hideUpdateBanner() {
+            updateBanner.style.display = 'none';
+            waitingSW = null;
+          }
+
+          // When the user taps "Update", tell the waiting SW to activate now.
+          updateBtn.addEventListener('click', function () {
+            if (waitingSW) {
+              updateTriggered = true;
+              waitingSW.postMessage({ type: 'SKIP_WAITING' });
+            }
+            hideUpdateBanner();
+          });
+          updateBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+          dismissBtn.addEventListener('click', hideUpdateBanner);
+          dismissBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+
+          // When the SW controller changes (new SW activated), reload the page
+          // so all assets come from the new cache.
+          // Guard: only reload when an update was explicitly triggered by the user,
+          // not on the initial installation (controller: null → first SW).
+          navigator.serviceWorker.addEventListener('controllerchange', function () {
+            if (updateTriggered) {
+              window.location.reload();
+            }
+          });
+
+          navigator.serviceWorker.register('./sw.js').then(function (reg) {
+
+            // Case 1: a new SW is already waiting when this page loads
+            // (e.g. the user had the app open in another tab while the update
+            // installed, then switched back here).
+            if (reg.waiting && navigator.serviceWorker.controller) {
+              showUpdateBanner(reg.waiting);
+            }
+
+            // Case 2: a new SW starts installing while the page is open.
+            reg.addEventListener('updatefound', function () {
+              var newSW = reg.installing;
+              if (!newSW) return;
+              newSW.addEventListener('statechange', function () {
+                // 'installed' means pre-caching is complete and the SW is
+                // waiting to activate. Only show the banner when there is an
+                // existing controller (i.e. this is an update, not a first
+                // install).
+                if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                  showUpdateBanner(newSW);
+                }
+              });
+            });
+
+          }).catch(function (err) {
+            console.warn('Service worker registration failed:', err);
+          });
+        }());
+
       });
     }
   </script>

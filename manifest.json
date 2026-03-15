@@ -2,16 +2,23 @@
   "id": "/",
   "name": "Viron",
   "short_name": "Viron",
-  "description": "Viron – an action-packed space shooter. Fight the viral outbreak across an infinite alien landscape.",
+  "description": "Viron – an action-packed space shooter. Fight the viral outbreak across an infinite landscape.",
   "start_url": "./index.html?source=pwa",
   "scope": "./",
   "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "display_override": [
+    "fullscreen",
+    "standalone",
+    "minimal-ui"
+  ],
   "background_color": "#000000",
   "theme_color": "#00ff88",
   "orientation": "landscape",
   "lang": "en",
-  "categories": ["games", "entertainment"],
+  "categories": [
+    "games",
+    "entertainment"
+  ],
   "iarc_rating_id": "",
   "icons": [
     {

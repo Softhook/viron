@@ -279,7 +279,7 @@ function drawPauseScreen() {
 
   textSize(18);
   fill(255, 200);
-  text(gameState.isMobile ? 'TAP A BUTTON' : 'PRESS ESC TO RESUME', 0, 20 + btnH + spacing + 80);
+  text(gameState.isMobile ? '' : 'PRESS ESC TO RESUME', 0, 20 + btnH + spacing + 80);
   pop();
 }
 
@@ -376,7 +376,7 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
   pop();
 
   setup2DViewport();
-  
+
   // Handle smooth transitions
   HUD_Manager.drawDimOverlay();
 

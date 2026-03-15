@@ -157,8 +157,7 @@ function setup() {
   gameState.mode = 'menu';
   if (window.BENCHMARK && window.BENCHMARK.setup) {
     startGame(1);
-    gameState.mode = 'playing'; // To skip shipselect usually handled by shipselect screen
-    startLevel(1);
+    gameState.activatePlayingMode();
   }
 }
 
@@ -332,9 +331,7 @@ function keyPressed() {
 
     // Check if all players are ready
     if (gameState.players.every(p => p.ready)) {
-      gameState.mode = 'playing';
-      // startLevel(1) already called in startGame, but we want to ensure clean state
-      startLevel(1);
+      gameState.activatePlayingMode();
     }
     return;
   }
@@ -424,8 +421,7 @@ function touchStarted(event) {
     }
 
     if (gameState.players.every(p => p.ready)) {
-      gameState.mode = 'playing';
-      startLevel(1);
+      gameState.activatePlayingMode();
     }
     return false;
   }
@@ -497,8 +493,7 @@ function mousePressed() {
             else if (localX > vw - 120) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
           }
           if (gameState.players.every(p => p.ready)) {
-            gameState.mode = 'playing';
-            startLevel(1);
+            gameState.activatePlayingMode();
           }
         }
       }

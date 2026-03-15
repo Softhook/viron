@@ -23,6 +23,7 @@ class GameState {
     this.previousMode = 'menu'; // For resuming from pause
     this.gameOverReason = '';
     this.gameStartTime = 0;
+    this.playingStartTime = 0;
 
     // --- World Objects ---
     this.trees = [];
@@ -162,6 +163,16 @@ class GameState {
     if (typeof gameSFX !== 'undefined') {
       gameSFX.spatialEnabled = (np === 1);
     }
+  }
+
+  /**
+   * Transitions the game mode to 'playing' and records the start time.
+   * This is used to implement a safety cooldown for weapons.
+   */
+  activatePlayingMode() {
+    this.mode = 'playing';
+    this.playingStartTime = millis();
+    this.startLevel(this.level);
   }
 
   /**

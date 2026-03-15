@@ -904,6 +904,12 @@ function _updateAircraft(p, d, isThrusting, isBraking) {
  */
 function _handleWeaponFire(p, isShooting) {
   let s = p.ship;
+  // Safety cooldown: ignore shooting inputs for 500ms after entering PLAYING mode
+  // to avoid "bleeding" touch events from the confirm button.
+  if (typeof gameState !== 'undefined' && gameState.mode === 'playing') {
+    if (millis() - gameState.playingStartTime < 500) return;
+  }
+
   if (p.weaponMode === 0) {
     // NORMAL: rate-limited burst fire; tank shells slower than standard bullets
     if (isShooting) {

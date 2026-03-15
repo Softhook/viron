@@ -203,7 +203,13 @@ class MobileController {
             this._h = h;
             this._scale = Math.max(0.5, Math.min(w, h) / 400);
             const s = this._scale;
-            this.btns.missile.r = this.btns.missile.baseR * s;
+            
+            // Large screen mobile (tablets): scale down the missile button to avoid it becoming massive
+            let buttonScale = s;
+            if (Math.min(w, h) > 500) {
+                buttonScale *= 0.7;
+            }
+            this.btns.missile.r = this.btns.missile.baseR * buttonScale;
         }
 
         const s = this._scale;

@@ -1,10 +1,13 @@
 
-Change the weapon toggle. Make proper keyboard commands 
+change missile behaviour make fly more with forward velocity targetting enemies within the players view.
+make it have very long range like bullet shots
 
-update. the package.json
+Change the weapon toggle. Make proper keyboard commands for Desktop
+
 
 change building to create chinsee village aethetic
 remove factory building
+make soemthing like a pagoda building
 
 tower defence structure
 

@@ -1,11 +1,11 @@
 {
-  "name": "virus",
+  "name": "viron",
   "version": "1.0.0",
-  "description": "",
+  "description": "Viron – an action-packed 3D space shooter PWA. Fight the viral outbreak across an infinite alien landscape.",
   "main": "p5.js",
   "scripts": {
     "test": "node tests/test.js",
-    "generate-icons": "node generate-icons.js",
+    "generate-icons": "node scripts/generate-icons.js",
     "benchmark": "node benchmarks/benchmark-terrain.js",
     "benchmark-throttle": "node benchmarks/benchmark-throttling.js",
     "benchmark-runtime": "node benchmarks/benchmark-runtime-breakdown.js",
@@ -16,16 +16,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Softhook/virus.git"
+    "url": "git+https://github.com/Softhook/viron.git"
   },
-  "keywords": [],
+  "keywords": ["game", "pwa", "shooter", "webgl"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/Softhook/virus/issues"
+    "url": "https://github.com/Softhook/viron/issues"
   },
-  "homepage": "https://github.com/Softhook/virus#readme",
+  "homepage": "https://github.com/Softhook/viron#readme",
   "devDependencies": {
     "express": "^5.2.1",
     "puppeteer": "^24.37.5"

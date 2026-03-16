@@ -33,6 +33,8 @@ const PRECACHE_ASSETS = [
   './sfx.js',
   './constants.js',
   './shipDesigns.js',
+  './terrainShaders.js',
+  './buildingGeometry.js',
   './terrain.js',
   './particles.js',
   './enemies.js',

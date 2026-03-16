@@ -9,15 +9,35 @@ The game works best in Chrome / Edge. A **keyboard + mouse** or **touch screen**
 
 ### Controls (Desktop)
 
-| Action | Key / Mouse |
+Two players can play simultaneously on the same keyboard.
+
+**Player 1 (WASD)**
+
+| Action | Key |
 |---|---|
-| Thrust | `W` / `↑` |
-| Brake | `S` / `↓` |
+| Thrust | `W` |
+| Brake | `S` |
 | Roll left / right | `A` / `D` |
-| Pitch up / down | `↑` / `↓` |
-| Fire | `Space` / Left click |
-| Cycle weapon | `Tab` |
-| First-person view | `V` |
+| Pitch up / down | `R` / `F` |
+| Fire | `Q` |
+| Cycle weapon | `E` |
+
+**Player 2 (Arrow keys)**
+
+| Action | Key |
+|---|---|
+| Thrust | `↑` |
+| Brake | `↓` |
+| Roll left / right | `←` / `→` |
+| Pitch up / down | `;` / `'` |
+| Fire | `.` |
+| Cycle weapon | `/` |
+
+**Shared**
+
+| Action | Key |
+|---|---|
+| Toggle cockpit view | `O` |
 
 ### Controls (Mobile / Touch)
 
@@ -51,7 +71,7 @@ viron/
 ├── sfx.js                # Sound effects (Web Audio)
 ├── sw.js                 # Service worker (offline PWA)
 ├── manifest.json         # PWA manifest
-├── p5.js                 # p5.js library (v1.11.3)
+├── p5.js                 # p5.js library (v1.11.11)
 ├── p5.sound.min.js       # p5.sound library
 ├── icons/                # PWA icons (SVG source + generated PNGs)
 ├── scripts/              # Developer utility scripts

@@ -3,7 +3,7 @@
  * Generates PNG icons for the Viron PWA from the SVG source files.
  * Uses Puppeteer (already a devDependency).
  *
- * Usage: node generate-icons.js
+ * Usage: node scripts/generate-icons.js
  */
 
 'use strict';
@@ -12,7 +12,7 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 
-const ICONS_DIR = path.join(__dirname, 'icons');
+const ICONS_DIR = path.join(__dirname, '..', 'icons');
 
 const SIZES = [
   { src: 'icon.svg',          out: 'icon-192.png',          size: 192 },

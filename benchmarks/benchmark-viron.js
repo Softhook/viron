@@ -12,6 +12,7 @@
 'use strict';
 
 const express = require('express');
+const path = require('path');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
@@ -39,7 +40,7 @@ function findChrome() {
 
 async function run() {
   const app = express();
-  const staticMiddleware = express.static(__dirname);
+  const staticMiddleware = express.static(path.join(__dirname, '..'));
   app.use((req, res, next) => {
     if (!/\.(html|js|css|ttf|wav|mp3|ogg|png)$/i.test(req.path)) {
       return res.status(404).end();

@@ -4,11 +4,11 @@
  * Smoke test – verifies the game loads and runs for several frames without
  * any WebGL errors or unhandled JavaScript exceptions.
  *
- * Usage:  node test.js
+ * Usage:  node tests/test.js
  * Exit 0 = PASS, Exit 1 = FAIL (errors found or game failed to load).
  *
- * Uses the same puppeteer + express pattern as benchmark.js so no new
- * dependencies are required.
+ * Uses the same puppeteer + express pattern as benchmarks/benchmark.js so no
+ * new dependencies are required.
  *
  * Chrome path resolution order:
  *   1. CHROME_PATH environment variable
@@ -19,6 +19,7 @@
 const puppeteer = require('puppeteer');
 const express   = require('express');
 const fs        = require('fs');
+const path      = require('path');
 
 // How long (ms) to let the game run before checking for errors.
 // ~6 s gives >300 frames at 60 fps – enough to exercise the full
@@ -42,7 +43,7 @@ function findChrome() {
 
 async function runTest() {
     const app = express();
-    app.use(express.static(__dirname));
+    app.use(express.static(path.join(__dirname, '..')));
 
     return new Promise((resolve) => {
         const server = app.listen(3000, async () => {

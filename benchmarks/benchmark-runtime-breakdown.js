@@ -12,6 +12,7 @@
 // =============================================================================
 
 const express = require('express');
+const path = require('path');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
@@ -53,7 +54,7 @@ function findChrome() {
 
 async function createServer() {
   const app = express();
-  app.use(express.static(__dirname));
+  app.use(express.static(path.join(__dirname, '..')));
   return new Promise(resolve => {
     const server = app.listen(PORT, () => resolve(server));
   });

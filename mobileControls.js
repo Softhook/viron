@@ -369,15 +369,18 @@ class MobileController {
                 let baseCol = k === 'switchSides' ? [0, 220, 255] : [0, 255, 136];
                 
                 // 3D Shadow/Depth effect
-                fill(0, 0, 0, 220);
+                fill(0, 0, 0, 150);
                 rect(btn.x + 4 * this._scale, btn.y + 4 * this._scale, btn.w, btn.h, 8);
                 
                 // Main button body
-                fill(baseCol[0] * 0.3, baseCol[1] * 0.3, baseCol[2] * 0.3, 240);
-                stroke(baseCol[0], baseCol[1], baseCol[2], 200);
+                fill(baseCol[0] * 0.4, baseCol[1] * 0.4, baseCol[2] * 0.4, 250);
+                stroke(baseCol[0], baseCol[1], baseCol[2], 255);
                 strokeWeight(2 * this._scale);
                 rect(btn.x, btn.y, btn.w, btn.h, 8);
 
+                // Text Label - Use bright white for visibility
+                noStroke();
+                fill(255);
                 textSize(12 * this._scale);
                 let label = btn.label;
                 if (k === 'cockpit') label += (typeof gameState !== 'undefined' && gameState.firstPersonView ? ": ON" : ": OFF");

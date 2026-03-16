@@ -4,13 +4,14 @@
  * Micro-benchmark for the per-frame math helpers used in enemy AI.
  * Measures mag2 / mag3 (shared DRY helpers) versus raw Math.hypot.
  *
- * Usage: node benchmark-enemy-math.js
+ * Usage: node benchmarks/benchmark-enemy-math.js
  * Output: timing in milliseconds for a fixed iteration count.
  */
 
 const express = require('express');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
+const path = require('path');
 
 const ITERATIONS = 400000;
 const PORT = process.env.VIRON_PORT ? Number(process.env.VIRON_PORT) : 0;
@@ -52,7 +53,7 @@ function findChrome() {
     '/p5.sound.min.js',
     '/Impact.ttf'
   ]);
-  const staticMiddleware = express.static(__dirname, { fallthrough: false });
+  const staticMiddleware = express.static(path.join(__dirname, '..'), { fallthrough: false });
   app.use((req, res, next) => {
     if (!ALLOWED_FILES.has(req.path)) {
       return res.status(404).end();

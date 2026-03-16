@@ -4,14 +4,15 @@
   "description": "",
   "main": "p5.js",
   "scripts": {
-    "test": "node test.js",
+    "test": "node tests/test.js",
     "generate-icons": "node generate-icons.js",
-    "benchmark": "node benchmark-terrain.js",
-    "benchmark-throttle": "node benchmark-throttling.js",
-    "benchmark-runtime": "node benchmark-runtime-breakdown.js",
-    "benchmark-particles": "node benchmark-particles.js",
-    "benchmark-viron": "node benchmark-viron.js",
-    "benchmark-enemy-math": "node benchmark-enemy-math.js"
+    "benchmark": "node benchmarks/benchmark-terrain.js",
+    "benchmark-throttle": "node benchmarks/benchmark-throttling.js",
+    "benchmark-runtime": "node benchmarks/benchmark-runtime-breakdown.js",
+    "benchmark-particles": "node benchmarks/benchmark-particles.js",
+    "benchmark-viron": "node benchmarks/benchmark-viron.js",
+    "benchmark-enemy-math": "node benchmarks/benchmark-enemy-math.js",
+    "benchmark-enemies": "node benchmarks/benchmark-enemies.js"
   },
   "repository": {
     "type": "git",

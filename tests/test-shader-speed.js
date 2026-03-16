@@ -1,5 +1,7 @@
 const fs = require('fs');
-let code = fs.readFileSync('gameRenderer.js', 'utf8');
+const path = require('path');
+const gameRendererPath = path.join(__dirname, '..', 'gameRenderer.js');
+let code = fs.readFileSync(gameRendererPath, 'utf8');
 
 const minimalFrag = `
 precision highp float;
@@ -11,4 +13,4 @@ void main() {
 `;
 
 code = code.replace(/const POST_FRAG = \`[\s\S]*?\`;/, `const POST_FRAG = \`${minimalFrag}\`;`);
-fs.writeFileSync('gameRenderer.js', code);
+fs.writeFileSync(gameRendererPath, code);

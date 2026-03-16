@@ -52,6 +52,15 @@ class MobileController {
         };
 
         this.debug = false;
+        
+        // Preview state for Instructions screen
+        this.previewYaw = 0;
+        this.previewPitch = 0;
+        this.previewTouchId = null;
+        this.lastPreviewX = 0;
+        this.lastPreviewY = 0;
+        this.previewBullets = [];
+        this.previewFired = 0;
     }
 
     _resetFrameState() {
@@ -252,6 +261,7 @@ class MobileController {
 
         let aimFound = false;
         let missileFound = false;
+        let previewFound = false;
 
         for (let i = 0; i < touches.length; i++) {
             const t = touches[i];
@@ -266,14 +276,74 @@ class MobileController {
                 continue;
             }
 
+            // Aim Zone check
             if (this._isAimZoneTouch(t, w)) {
                 if (this._updateAimTouch(t)) aimFound = true;
-            } else {
-                this._handleActionZoneTouch(t, w, h);
+                continue;
+            } 
+
+            // Preview Zone Check (Center screen for instructions)
+            if (gameState.mode === 'instructions') {
+                const isContBtn = t.x > this.settingsBtns.continue.x - this.settingsBtns.continue.w/2 &&
+                                  t.x < this.settingsBtns.continue.x + this.settingsBtns.continue.w/2 &&
+                                  t.y > this.settingsBtns.continue.y - this.settingsBtns.continue.h/2 &&
+                                  t.y < this.settingsBtns.continue.y + this.settingsBtns.continue.h/2;
+                
+                if (!isContBtn && Math.abs(t.x - w/2) < w/4 && t.y > h/3 && t.y < h*0.8) {
+                    if (this.previewTouchId === t.id) {
+                        let dx = t.x - this.lastPreviewX;
+                        let dy = t.y - this.lastPreviewY;
+                        this.previewYaw -= dx * 0.01;
+                        this.previewPitch += dy * 0.01;
+                        this.lastPreviewX = t.x;
+                        this.lastPreviewY = t.y;
+                        previewFound = true;
+                        continue;
+                    } else if (this.previewTouchId === null) {
+                        this.previewTouchId = t.id;
+                        this.lastPreviewX = t.x;
+                        this.lastPreviewY = t.y;
+                        previewFound = true;
+                        continue;
+                    }
+                }
             }
+
+            // Action Zones
+            this._handleActionZoneTouch(t, w, h);
         }
 
         this._finalizeTrackedTouches(aimFound, missileFound);
+        if (!previewFound) this.previewTouchId = null;
+
+        // Update preview bullets
+        for (let i = this.previewBullets.length - 1; i >= 0; i--) {
+            let b = this.previewBullets[i];
+            b.x += b.vx; b.y += b.vy; b.z += b.vz;
+            b.life--;
+            if (b.life <= 0) this.previewBullets.splice(i, 1);
+        }
+
+        if (gameState.mode === 'instructions') {
+            if ((this.shootActive || this.barrierActive) && frameCount > this.previewFired + 8) {
+                this.previewFired = frameCount;
+                this._spawnPreviewBullet(this.barrierActive);
+            }
+        }
+    }
+
+    _spawnPreviewBullet(isBarrier) {
+        let cp = cos(this.previewPitch), sp = sin(this.previewPitch);
+        let cy = cos(this.previewYaw), sy = sin(this.previewYaw);
+        let speed = 5;
+        this.previewBullets.push({
+            x: 0, y: 0, z: 0,
+            vx: -cp * sy * speed,
+            vy: sp * speed,
+            vz: -cp * cy * speed,
+            life: 60,
+            isBarrier: isBarrier
+        });
     }
 
     getInputs(ship, enemies, yawRate, pitchRate) {
@@ -307,7 +377,8 @@ class MobileController {
 
         // Thrust Zone
         if (showThrust) {
-            let alpha = forceInstructions ? (this.thrustActive ? 60 : 40) : 15;
+            let active = this.thrustActive;
+            let alpha = forceInstructions ? (active ? 60 : 40) : 15;
             fill(0, 255, 60, alpha);
             rect(leftX, h / 2, w / 2, h / 2);
         }
@@ -403,19 +474,99 @@ class MobileController {
             noFill();
             circle(aimZoneX, aimZoneY, maxStretch * 2);
 
-            // Represent typical thumb position
-            let previewOffX = 40 * this._scale;
-            let previewOffY = -30 * this._scale;
+            // If user is actively touching the joystick area in instructions, show live joystick
+            if (this.aimTouchId !== null && this._isAimZoneTouch({x: this.lastAimX, y: this.lastAimY}, w)) {
+                // Tracking line
+                stroke(255, 255, 255, 80);
+                strokeWeight(2 * this._scale);
+                line(aimZoneX, aimZoneY, aimZoneX + (this.lastAimX - this.aimAnchorX), aimZoneY + (this.lastAimY - this.aimAnchorY));
+                
+                fill(255, 255, 255, 200);
+                noStroke();
+                circle(aimZoneX + (this.lastAimX - this.aimAnchorX), aimZoneY + (this.lastAimY - this.aimAnchorY), 60 * this._scale);
+            } else {
+                // Represent typical thumb position preview
+                let previewOffX = 40 * this._scale * sin(frameCount * 0.03);
+                let previewOffY = -30 * this._scale * cos(frameCount * 0.04);
+                stroke(255, 255, 255, 50);
+                strokeWeight(2 * this._scale);
+                line(aimZoneX, aimZoneY, aimZoneX + previewOffX, aimZoneY + previewOffY);
+                fill(255, 255, 255, 150);
+                noStroke();
+                circle(aimZoneX + previewOffX, aimZoneY + previewOffY, 60 * this._scale);
+            }
 
-            // Connecting line
-            stroke(255, 255, 255, 50);
-            strokeWeight(2 * this._scale);
-            line(aimZoneX, aimZoneY, aimZoneX + previewOffX, aimZoneY + previewOffY);
+            // --- Render Live Ship Preview ---
+            push();
+            resetMatrix();
+            gl.enable(gl.DEPTH_TEST);
+            gl.clear(gl.DEPTH_BUFFER_BIT);
+            
+            // Re-setup 3D for the preview
+            perspective(PI/3, w/h, 1, 1000);
+            camera(0, -10, 80, 0, 0, 0, 0, 1, 0);
+            
+            // Lighting
+            ambientLight(100);
+            directionalLight(255, 255, 255, 0.5, 1, -0.5);
+            
+            translate(0, 40, 0); // Shift ship down (underneath the continue button)
+            
+            push();
+            rotateY(this.previewYaw + frameCount * 0.005);
+            rotateX(this.previewPitch + sin(frameCount * 0.02) * 0.1);
+            
+            let design = SHIP_DESIGNS[0]; // Always show Classic in preview
+            let tintColor = [80, 180, 255];
+            let dark = [80*0.4, 180*0.4, 255*0.4];
+            let light = [200, 220, 255];
+            let engineGray = [80, 80, 85];
+            
+            const drawFace = (pts, col) => {
+                fill(col[0], col[1], col[2], col[3] || 255);
+                beginShape();
+                for(let p of pts) vertex(p[0], p[1], p[2]);
+                endShape(CLOSE);
+            };
+            
+            const sFake = { pitch: 0, yaw: 0 };
+            const tf = (pt) => pt;
+            let flamePoints = design.draw(drawFace, tintColor, engineGray, light, dark, this.thrustActive, sFake, tf, tf);
+            
+            // Draw thrust flames if active
+            if (this.thrustActive && Array.isArray(flamePoints)) {
+                flamePoints.forEach(fp => {
+                    push();
+                    translate(fp.x, fp.y, fp.z);
+                    let flicker = 1.0 + sin(frameCount * 0.8) * 0.15;
+                    fill(100, 230, 255, 200);
+                    cone(4 * flicker, 15 * flicker, 8);
+                    pop();
+                });
+            }
+            // Draw preview bullets (inside rotation so they are relative to ship)
+            for (let b of this.previewBullets) {
+                push();
+                translate(b.x, b.y, b.z);
+                if (b.isBarrier) {
+                    fill(100, 200, 255);
+                    box(4);
+                } else {
+                    fill(255, 255, 100);
+                    sphere(2);
+                }
+                pop();
+            }
 
-            fill(255, 255, 255, 150);
-            noStroke();
-            circle(aimZoneX + previewOffX, aimZoneY + previewOffY, 60 * this._scale);
+            pop(); // End ship rotation
+            pop(); // End 3D pass (resetMatrix, push at 502)
 
+            // --- Restore 2D Projections for remaining labels/buttons ---
+            ortho(-w/2, w/2, -h/2, h/2, 0, 1000);
+            resetMatrix();
+            translate(-w/2, -h/2, 0); // Re-apply UI offset
+            gl.disable(gl.DEPTH_TEST);
+            
             rectMode(CORNER);
         }
 
@@ -450,13 +601,13 @@ class MobileController {
             let btn = this.btns[b];
 
             if (forceInstructions) {
-                // Dimmer, non-interactive rendering for instructions screen
-                stroke(btn.col[0], btn.col[1], btn.col[2], 80);
+                // Feedback for instruction screen
+                stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
                 strokeWeight(2 * this._scale);
-                fill(btn.col[0], btn.col[1], btn.col[2], 20);
+                fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
                 circle(btn.x, btn.y, btn.r * 2);
                 noStroke();
-                fill(255, 150);
+                fill(255, btn.active ? 255 : 150);
                 textAlign(CENTER, CENTER);
                 textSize(Math.max(10, btn.r * 0.4));
                 text(btn.label, btn.x, btn.y);

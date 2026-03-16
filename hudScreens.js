@@ -176,6 +176,7 @@ function drawInstructions() {
 
   if (gameState.isMobile) {
     if (typeof mobileController !== 'undefined') {
+      mobileController.update(touches, width, height);
       mobileController.draw(width, height, true);
     }
   } else {

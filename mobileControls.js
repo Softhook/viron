@@ -214,7 +214,7 @@ class MobileController {
             this._h = h;
             this._scale = Math.max(0.5, Math.min(w, h) / 400);
             const s = this._scale;
-            
+
             // Large screen mobile (tablets): scale down the missile button to avoid it becoming massive
             let buttonScale = s;
             if (Math.min(w, h) > 500) {
@@ -358,20 +358,20 @@ class MobileController {
             text("SHOOT", shootLabelX, h * 0.28);
             text("BARRIER", barrierLabelX, h * 0.28);
             text("THRUST", leftX + w / 4, h * 0.68);
-            text("AIM (SWIPE)", aimX + w / 4, h * 0.22);
+            text("AIM (JOYSTICK)", aimX + w / 4, h / 2 + 130 * this._scale);
 
             // --- Settings Buttons (Only on Instructions) ---
             rectMode(CENTER);
             for (let k in this.settingsBtns) {
                 let btn = this.settingsBtns[k];
-                
+
                 // Colors based on button type
                 let baseCol = k === 'switchSides' ? [0, 220, 255] : [0, 255, 136];
-                
+
                 // 3D Shadow/Depth effect
                 fill(0, 0, 0, 150);
                 rect(btn.x + 4 * this._scale, btn.y + 4 * this._scale, btn.w, btn.h, 8);
-                
+
                 // Main button body
                 fill(baseCol[0] * 0.4, baseCol[1] * 0.4, baseCol[2] * 0.4, 250);
                 stroke(baseCol[0], baseCol[1], baseCol[2], 255);
@@ -406,7 +406,7 @@ class MobileController {
             // Represent typical thumb position
             let previewOffX = 40 * this._scale;
             let previewOffY = -30 * this._scale;
-            
+
             // Connecting line
             stroke(255, 255, 255, 50);
             strokeWeight(2 * this._scale);

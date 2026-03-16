@@ -23,15 +23,30 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Returns r unchanged unless it coincides with a reserved terrain-shader
- * palette index (1, 2, 10, 11, 20, 21, 30), in which case it returns r+1.
- * Ensures fill() R values for buildings never accidentally trigger the wrong
+ * Reserved R channel values that trigger specific GLSL material branches in
+ * the terrain fragment shader (mat = int(vColor.r * 255 + 0.5)):
+ *   1-2   → computeLandscapeColor
+ *   10-11 → computeVironColor
+ *   14-15 → computeYellowVironColor
+ *   20-21 → computeBarrierColor
+ *   30    → computeSeaColor
+ *   250   → launchpad blue
+ * Building fill() calls must never use these values as the red channel.
+ */
+const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 250]);
+
+/**
+ * Returns r incremented past any reserved terrain-shader palette index so
+ * that fill() R values for buildings never accidentally trigger the wrong
  * GLSL material branch inside the terrain fragment shader.
+ * Loops until it finds a value not in _BLDG_RESERVED_R to handle consecutive
+ * reserved pairs (e.g. 1→2→3, 10→11→12, 14→15→16, 20→21→22).
  * @param {number} r  Red channel value (0–255 integer).
  * @returns {number}
  */
 function _bldgSafeR(r) {
-  return (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
+  while (_BLDG_RESERVED_R.has(r)) r++;
+  return r;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,14 +219,18 @@ function buildPowerupGeometry(b, inf) {
 
 /**
  * Returns the shadow footprint (XZ polygon) and the effective caster height
- * for a static building (types 0, 1, 2, 4).  Type 3 (animated UFO) uses an
- * ellipse shadow computed in real-time and does not use this function.
+ * for a static building (types 0, 1, 2, 4, 5).  Type 3 (animated UFO) uses
+ * an ellipse shadow computed in real-time and does not use this function.
  *
  * The returned footprint is an array of {x, z} objects in building-local
  * coordinates (centred at origin).  It is stored on the building descriptor
  * after the first call so this function is only invoked once per building.
  *
- * @param {{type:number, w:number, h:number, d:number}} b  Building descriptor.
+ * Type 5 huts have two variants (A: square hut, B: long hut) selected by
+ * world-position seed — the same seed used in buildType5Geometry so the
+ * footprint always matches the rendered geometry.
+ *
+ * @param {{type:number, w:number, h:number, d:number, x:number, z:number}} b
  * @returns {{footprint: Array<{x:number, z:number}>, casterH: number}}
  */
 function getBuildingFootprint(b) {
@@ -239,8 +258,28 @@ function getBuildingFootprint(b) {
       { x:  hw, z:  hd }, { x: -hw, z:  hd }
     ];
     casterH = bh;
+  } else if (b.type === 5) {
+    // Variant selected by world-position seed, matching buildType5Geometry.
+    const seed = Math.abs(Math.sin(b.x * 0.0123 + b.z * 0.0456));
+    if (seed < 0.5) {
+      // Variant A: Square Hut — base wall bw × bd, total height bh * 1.5.
+      const hw = bw * 0.5, hd = bd * 0.5;
+      footprint = [
+        { x: -hw, z: -hd }, { x: hw, z: -hd },
+        { x:  hw, z:  hd }, { x: -hw, z:  hd }
+      ];
+      casterH = bh * 1.5;
+    } else {
+      // Variant B: Long Hut — base wall bw*1.6 × bd*1.1, total height bh * 1.2.
+      const hw = bw * 0.8, hd = bd * 0.55;
+      footprint = [
+        { x: -hw, z: -hd }, { x: hw, z: -hd },
+        { x:  hw, z:  hd }, { x: -hw, z:  hd }
+      ];
+      casterH = bh * 1.2;
+    }
   } else {
-    // Type 4 — Sentinel Tower
+    // Type 4 — Sentinel Tower (also default for any future unhandled types).
     footprint = [];
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * TWO_PI;

@@ -41,7 +41,9 @@ const TERRAIN_PALETTE = {
 
 // Flattened palette — normalised 0-1, built once at module load rather than
 // every frame so applyShader() never allocates a temporary array per draw call.
-// Index layout: 0-5 Inland, 6-8 Shore, 9-11 Viron (Red/Dark/Scan), 12-13 Barrier.
+// Index layout: 0-5 Inland, 6-8 Shore, 9-11 Viron (Red/Dark/Scan),
+//               12-13 Barrier, 14-16 YellowViron (Yellow/Dark/Luminous).
+// Total: 17 vec3 swatches → uPalette[17] uniform array.
 const TERRAIN_PALETTE_FLAT = (() => {
   let p = TERRAIN_PALETTE;
   let arr = [];

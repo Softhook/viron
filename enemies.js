@@ -165,6 +165,35 @@ class EnemyManager {
     return { dx, dy, dz, d };
   }
 
+  /**
+   * Terrain avoidance for flying enemies.
+   * Pushes the enemy upward if it is within 'margin' units of the ground.
+   * @param {object} e         Enemy state.
+   * @param {number} margin    Distance from ground to start pushing.
+   * @param {number} strength  Upward acceleration strength.
+   */
+  _applyTerrainAvoidance(e, margin = 150, strength = 0.5) {
+    const gy = terrain.getAltitude(e.x, e.z);
+    if (e.y > gy - margin) {
+      // Linear repulsion that gets stronger as the enemy gets closer to the ground
+      const penetration = (e.y - (gy - margin)) / margin;
+      e.vy = (e.vy || 0) - strength * (1.0 + penetration);
+    }
+  }
+
+  /**
+   * Consolidates integration and damping for flying enemies.
+   * @param {object} e         Enemy state.
+   * @param {number} dampingY  Vertical velocity damping (1.0 = none).
+   * @param {number} speedMult Horizontal speed multiplier.
+   */
+  _updateFlyingMovement(e, dampingY = 1.0, speedMult = 1.0) {
+    e.x += (e.vx || 0) * speedMult;
+    e.z += (e.vz || 0) * speedMult;
+    e.y += e.vy || 0;
+    if (e.vy) e.vy *= dampingY;
+  }
+
   /** Drops a bomb over land; optionally requires a clean (uninfected) tile. */
   _tryDropBomb(e, type = 'normal', requireCleanTile = true) {
     const gy = terrain.getAltitude(e.x, e.z);
@@ -292,8 +321,13 @@ class EnemyManager {
    * @param {object} refShip  Reference ship position used for boundary checks.
    */
   updateBomber(e, refShip) {
-    e.x += e.vx * 1.5; e.z += e.vz * 1.5;
     e.y += sin(_simTick * 0.02 + e.id);  // Gentle vertical oscillation
+
+    // Terrain avoidance: push up to maintain clearance over mountains
+    this._applyTerrainAvoidance(e, 200, 0.4);
+
+    // Integrate vertical physics with 0.92 damping and 1.5x horizontal speed
+    this._updateFlyingMovement(e, 0.92, 1.5);
 
     // Reflect velocity when too far from the reference ship
     this._reflectWithinRefBounds(e, refShip, 4000);
@@ -368,11 +402,10 @@ class EnemyManager {
     let tShip = this._getTargetShip(e, alivePlayers, refShip);
     this._steer3D(e, tShip.x, tShip.y, tShip.z, 5.0, 0.1);
 
-    // Terrain avoidance: push up if within 50 units of the ground
-    let gy = terrain.getAltitude(e.x, e.z);
-    if (e.y > gy - 50) e.vy -= 1.0;
+    // Terrain avoidance: push up if within 100 units of the ground
+    this._applyTerrainAvoidance(e, 100, 1.0);
 
-    e.x += e.vx; e.y += e.vy; e.z += e.vz;
+    this._updateFlyingMovement(e);
   }
 
   /**
@@ -404,10 +437,9 @@ class EnemyManager {
     let { dx, dy, dz, d } = this._steer3D(e, tx, ty, tz, 2.5, 0.05);
 
     // Terrain avoidance: push up if within 150 units of the ground
-    let gy = terrain.getAltitude(e.x, e.z);
-    if (e.y > gy - 150) e.vy -= 0.5;
+    this._applyTerrainAvoidance(e, 150, 0.5);
 
-    e.x += e.vx; e.y += e.vy; e.z += e.vz;
+    this._updateFlyingMovement(e);
 
     // Fire a bullet toward the player with small random spread, every 90 frames when in range
     e.fireTimer++;
@@ -444,8 +476,13 @@ class EnemyManager {
    * @param {object} refShip  Boundary reference ship.
    */
   updateSeeder(e, refShip) {
-    e.x += e.vx; e.z += e.vz;
     e.y += sin(_simTick * 0.05 + e.id) * 2;  // Gentle vertical oscillation
+
+    // Terrain avoidance: maintain flight level over mountains
+    this._applyTerrainAvoidance(e, 250, 0.3);
+
+    // Integrate vertical physics with 0.92 damping
+    this._updateFlyingMovement(e, 0.92);
 
     this._reflectWithinRefBounds(e, refShip, 5000);
 
@@ -598,8 +635,7 @@ class EnemyManager {
 
     let { d } = this._steer3D(e, tShip.x, tShip.y, tShip.z, 3.5, 0.05);
 
-    let gy = terrain.getAltitude(e.x, e.z);
-    if (e.y > gy - 150) e.vy -= 1.0;
+    this._applyTerrainAvoidance(e, 150, 1.0);
 
     // Squirt animation timer: short body squeeze during ink release.
     if (e.inkSqueeze && e.inkSqueeze > 0) e.inkSqueeze--;
@@ -641,7 +677,7 @@ class EnemyManager {
       e.inkCooldown = floor(random(180, 280));
     }
 
-    e.x += e.vx; e.y += e.vy; e.z += e.vz;
+    this._updateFlyingMovement(e);
   }
 
   // ---------------------------------------------------------------------------

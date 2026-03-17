@@ -311,18 +311,9 @@ function keyPressed() {
   }
 
   if (gameState.mode === 'instructions') {
-    // Any relevant key on desktop moves past instructions
-    if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
-      gameState.mode = 'cockpitSelection';
-    }
-    return;
-  }
-
-  if (gameState.mode === 'cockpitSelection') {
+    // Any relevant key on desktop moves past instructions to ship selection
     if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
       gameState.mode = 'shipselect';
-    } else if (key === 'o' || key === 'O') {
-      gameState.firstPersonView = !gameState.firstPersonView;
     }
     return;
   }
@@ -344,9 +335,18 @@ function keyPressed() {
       }
     }
 
-    // Check if all players are ready
+    // Check if all players are ready -> move to view selection
     if (gameState.players.every(p => p.ready)) {
+      gameState.mode = 'cockpitSelection';
+    }
+    return;
+  }
+
+  if (gameState.mode === 'cockpitSelection') {
+    if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
       gameState.activatePlayingMode();
+    } else if (key === 'o' || key === 'O') {
+      gameState.firstPersonView = !gameState.firstPersonView;
     }
     return;
   }
@@ -416,15 +416,6 @@ function touchStarted(event) {
     if (typeof mobileController !== 'undefined') {
       let hit = mobileController.checkSettingsHit(mouseX, mouseY);
       if (hit === 'continue') {
-        gameState.mode = 'cockpitSelection';
-      }
-    }
-    return false;
-  }
-  if (gameState.mode === 'cockpitSelection') {
-    if (typeof mobileController !== 'undefined') {
-      let hit = mobileController.checkSettingsHit(mouseX, mouseY);
-      if (hit === 'continue') {
         gameState.mode = 'shipselect';
       }
     }
@@ -447,7 +438,16 @@ function touchStarted(event) {
     }
 
     if (gameState.players.every(p => p.ready)) {
-      gameState.activatePlayingMode();
+      gameState.mode = 'cockpitSelection';
+    }
+    return false;
+  }
+  if (gameState.mode === 'cockpitSelection') {
+    if (typeof mobileController !== 'undefined') {
+      let hit = mobileController.checkSettingsHit(mouseX, mouseY);
+      if (hit === 'continue') {
+        gameState.activatePlayingMode();
+      }
     }
     return false;
   }
@@ -504,27 +504,13 @@ function mousePressed() {
       if (typeof mobileController !== 'undefined') {
         let hit = mobileController.checkSettingsHit(mouseX, mouseY);
         if (hit === 'continue') {
-          gameState.mode = 'cockpitSelection';
-          return;
-        }
-        if (hit) return;
-      }
-      // On desktop, clicking anywhere else advances to view selection
-      gameState.mode = 'cockpitSelection';
-    } else if (gameState.mode === 'cockpitSelection') {
-      if (typeof mobileController !== 'undefined') {
-        let hit = mobileController.checkSettingsHit(mouseX, mouseY);
-        if (hit === 'continue') {
           gameState.mode = 'shipselect';
           return;
         }
         if (hit) return;
       }
       // On desktop, clicking anywhere else advances to ship selection
-      if (!gameState.isMobile) {
-        gameState.mode = 'shipselect';
-      }
-      return;
+      gameState.mode = 'shipselect';
     } else if (gameState.mode === 'shipselect') {
       let vw = width / gameState.numPlayers;
       let pIdx = floor(mouseX / vw);
@@ -532,21 +518,50 @@ function mousePressed() {
         let p = gameState.players[pIdx];
         if (!p.ready) {
           let localX = mouseX % vw;
-          // Side arrows (Cycle designs)
+          let arrowHit = false;
+
+          // Side arrows (Cycle designs) - matching hudScreens.js rendering (centered around ship)
           if (mouseY > height / 2 - 60 && mouseY < height / 2 + 60) {
-            if (localX < 120) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
-            else if (localX > vw - 120) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+            const centerX = vw / 2;
+            const arrowOffset = 220;
+            const arrowHitWidth = 80; // slightly generous hit area
+
+            if (localX > centerX - arrowOffset - arrowHitWidth/2 && localX < centerX - arrowOffset + arrowHitWidth/2) {
+              p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+              arrowHit = true;
+            } else if (localX > centerX + arrowOffset - arrowHitWidth/2 && localX < centerX + arrowOffset + arrowHitWidth/2) {
+              p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+              arrowHit = true;
+            }
           } 
-          // Broad click for desktop, or specific button for mobile
-          else if (!gameState.isMobile || (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130)) {
-            p.ready = true;
+          
+          // If not an arrow, check for the "CONFIRM" button or broad click on desktop
+          if (!arrowHit) {
+            let isConfirmHit = (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130);
+            if (isConfirmHit || !gameState.isMobile) {
+              p.ready = true;
+            }
           }
           
           if (gameState.players.every(p => p.ready)) {
-            gameState.activatePlayingMode();
+            gameState.mode = 'cockpitSelection';
           }
         }
       }
+    } else if (gameState.mode === 'cockpitSelection') {
+      if (typeof mobileController !== 'undefined') {
+        let hit = mobileController.checkSettingsHit(mouseX, mouseY);
+        if (hit === 'continue') {
+          gameState.activatePlayingMode();
+          return;
+        }
+        if (hit) return;
+      }
+      // On desktop, clicking anywhere else advances to playing
+      if (!gameState.isMobile) {
+        gameState.activatePlayingMode();
+      }
+      return;
     } else if (gameState.mode === 'paused') {
       let mx = mouseX - width / 2;
       let my = mouseY - height / 2;

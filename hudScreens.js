@@ -42,16 +42,25 @@ function _drawMobileController() {
 }
 
 /**
+ * Standardized screen title rendering.
+ * @private
+ */
+function _drawScreenTitle(label, xOffset = 0) {
+  const titleSize = gameState.isMobile ? UI_TYPE_TITLE * 0.6 : UI_TYPE_TITLE * 0.8;
+  textAlign(CENTER, TOP);
+  fill(255, 255, 255, 220);
+  textSize(titleSize);
+  text(label.toUpperCase(), xOffset, height * UI_LAYOUT_TITLE_Y);
+}
+
+/**
  * Renders the primary ship details text for the selection screen.
  * @private
  */
 function _renderShipDetails(p, design, relX, vw, vh) {
   if (!design) return;
 
-  textAlign(CENTER, TOP);
-  fill(255, 255, 255, 200);
-  textSize(UI_TYPE_HEADER);
-  text("SELECT YOUR CRAFT", relX, height * UI_LAYOUT_TITLE_Y);
+  _drawScreenTitle("SELECT YOUR CRAFT", relX);
 
   fill(...p.labelColor);
   textSize(UI_TYPE_TITLE);
@@ -161,18 +170,14 @@ function drawMission() {
 
   textAlign(CENTER, CENTER);
 
-  const titleSize = gameState.isMobile ? UI_TYPE_TITLE * 0.6 : UI_TYPE_TITLE * 0.8;
-  const headerSize = gameState.isMobile ? UI_TYPE_HEADER * 0.7 : UI_TYPE_HEADER;
-  const bodySize = gameState.isMobile ? UI_TYPE_BODY * 0.85 : UI_TYPE_BODY;
-
-  fill(255, 255, 255, 220);
-  textSize(titleSize);
-  text('MISSION BRIEFING', 0, height * UI_LAYOUT_TITLE_Y);
+  _drawScreenTitle('MISSION BRIEFING');
 
   fill(200, 255, 200, 200);
+  const headerSize = gameState.isMobile ? UI_TYPE_HEADER * 0.7 : UI_TYPE_HEADER;
   textSize(headerSize);
   text('OBJECTIVE: VIRAL CONTAINMENT', 0, height * UI_LAYOUT_HEADER_Y);
 
+  const bodySize = gameState.isMobile ? UI_TYPE_BODY * 0.85 : UI_TYPE_BODY;
   fill(220, 220, 220);
   textSize(bodySize);
   textAlign(CENTER, TOP);
@@ -204,9 +209,7 @@ function drawInstructions() {
   if (gameState.isMobile) {
     _drawMobileController();
   } else {
-    fill(255, 255, 255, 220);
-    textSize(UI_TYPE_TITLE * 0.8);
-    text('HOW TO PLAY', 0, height * UI_LAYOUT_TITLE_Y);
+    _drawScreenTitle('HOW TO PLAY');
 
 
     const drawConfig = (title, color, items, side) => {
@@ -244,14 +247,46 @@ function drawInstructions() {
 function drawCockpitSelection() {
   _beginFullScreenUI();
 
+  // Draw 3D ship preview in the center
+  push();
+  const vw = width / gameState.numPlayers;
+  const pxD = pixelDensity();
+
+  for (let pi = 0; pi < gameState.players.length; pi++) {
+    const p = gameState.players[pi];
+    const vx = pi * vw;
+
+    // Set up viewport for this player's ship preview
+    drawingContext.viewport(vx * pxD, 0, vw * pxD, height * pxD);
+    drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);
+
+    push();
+    perspective(PI / 3, vw / height, 1, 1000);
+    camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
+    directionalLight(255, 255, 220, 0.5, 1, -0.5);
+    directionalLight(120, 180, 255, -0.5, -1, 0.5);
+    ambientLight(45, 45, 55);
+
+    push();
+    rotateY(frameCount * 0.012);
+    rotateX(sin(frameCount * 0.008) * 0.1);
+    noStroke();
+    if (!gameState.firstPersonView) {
+      drawShipPreview(p.designIndex, p.labelColor);
+    }
+    pop();
+    pop();
+  }
+  pop();
+
+  setup2DViewport();
+
   textAlign(CENTER, CENTER);
 
   if (gameState.isMobile) {
     _drawMobileController();
   } else {
-    fill(255, 255, 255, 220);
-    textSize(UI_TYPE_TITLE * 0.8);
-    text('SELECT VIEW MODE', 0, height * UI_LAYOUT_TITLE_Y);
+    _drawScreenTitle('SELECT VIEW MODE');
 
     fill(200, 255, 200, 200);
     textSize(UI_TYPE_HEADER);
@@ -261,6 +296,16 @@ function drawCockpitSelection() {
     textSize(UI_TYPE_BODY);
     fill(255, 255, 255, 180);
     text("PRESS 'O' KEY TO TOGGLE VIEW", 0, 40);
+
+    if (gameState.firstPersonView) {
+      // Draw crosshair overlay preview
+      stroke(0, 255, 0, 150);
+      strokeWeight(2);
+      noFill();
+      ellipse(0, 0, 60, 60);
+      line(-40, 0, 40, 0);
+      line(0, -40, 0, 40);
+    }
   }
 
   _drawContinuePrompt();
@@ -438,17 +483,30 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
   _renderShipDetails(p, design, relX, vw, vh);
   _drawShipStats(p, design, relX, vw, vh);
 
-  if (gameState.isMobile && !p.ready) {
-    fill(255, 40);
-    rect(relX - vw / 2 + 20, -40, 60, 80, 10);
-    rect(relX + vw / 2 - 80, -40, 60, 80, 10);
-    fill(255); textAlign(CENTER, CENTER); textSize(40);
-    text("<", relX - vw / 2 + 50, 0);
-    text(">", relX + vw / 2 - 50, 0);
+  if (!p.ready) {
+    const arrowX = 220; // Distance from center
+    const arrowW = 60, arrowH = 80;
+    
+    textAlign(CENTER, CENTER);
+    fill(255, 60);
+    stroke(255, 100);
+    strokeWeight(2);
+    
+    // Left Arrow
+    rect(relX - arrowX - arrowW/2, -arrowH/2, arrowW, arrowH, 10);
+    // Right Arrow
+    rect(relX + arrowX - arrowW/2, -arrowH/2, arrowW, arrowH, 10);
+    
+    noStroke();
+    fill(255);
+    textSize(44);
+    text("<", relX - arrowX, 0);
+    text(">", relX + arrowX, 0);
 
     fill(p.labelColor[0], p.labelColor[1], p.labelColor[2], 120);
     rect(relX - 120, vh / 2 - 100, 240, 60, 30);
-    fill(255); textSize(22);
+    fill(255); 
+    textSize(22);
     text("CONFIRM", relX, vh / 2 - 70);
     textAlign(CENTER, TOP);
   }

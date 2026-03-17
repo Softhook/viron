@@ -631,7 +631,7 @@ function initWorld(seed) {
       spawnVillage(bx, bz);
       // Villages count as 3-5 buildings for density purposes
     } else {
-      let bType = [0, 1, 2, 5][floor(random(4))]; // Exclude 3 (Powerup) and 4 (Sentinel)
+      let bType = [0, 1, 2, 3, 5][floor(random(5))]; // Includes 3 (Powerup), excludes 4 (Sentinel)
       gameState.buildings.push({
         x: bx, z: bz,
         y: terrain.getAltitude(bx, bz),

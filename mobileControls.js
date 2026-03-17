@@ -568,7 +568,7 @@ class MobileController {
                 rotateY(this.previewYaw + frameCount * 0.005);
                 rotateX(this.previewPitch + sin(frameCount * 0.02) * 0.1);
                 
-                let design = SHIP_DESIGNS[0]; 
+                let design = SHIP_DESIGNS[gameState.players[0].designIndex]; 
                 let tintColor = [80, 180, 255];
                 let dark = [80*0.4, 180*0.4, 255*0.4];
                 let light = [200, 220, 255];

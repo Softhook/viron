@@ -260,22 +260,26 @@ function drawCockpitSelection() {
     drawingContext.viewport(vx * pxD, 0, vw * pxD, height * pxD);
     drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);
 
-    push();
-    perspective(PI / 3, vw / height, 1, 1000);
-    camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
-    directionalLight(255, 255, 220, 0.5, 1, -0.5);
-    directionalLight(120, 180, 255, -0.5, -1, 0.5);
-    ambientLight(45, 45, 55);
+    // On mobile, the mobileController handles the 3D ship preview to support touch rotation.
+    // We only render it here for non-mobile devices.
+    if (!gameState.isMobile) {
+      push();
+      perspective(PI / 3, vw / height, 1, 1000);
+      camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
+      directionalLight(255, 255, 220, 0.5, 1, -0.5);
+      directionalLight(120, 180, 255, -0.5, -1, 0.5);
+      ambientLight(45, 45, 55);
 
-    push();
-    rotateY(frameCount * 0.012);
-    rotateX(sin(frameCount * 0.008) * 0.1);
-    noStroke();
-    if (!gameState.firstPersonView) {
-      drawShipPreview(p.designIndex, p.labelColor);
+      push();
+      rotateY(frameCount * 0.012);
+      rotateX(sin(frameCount * 0.008) * 0.1);
+      noStroke();
+      if (!gameState.firstPersonView) {
+        drawShipPreview(p.designIndex, p.labelColor);
+      }
+      pop();
+      pop();
     }
-    pop();
-    pop();
   }
   pop();
 

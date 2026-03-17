@@ -210,6 +210,23 @@ class MobileController {
         inputs.assistPitch = assist.pitchDelta;
     }
 
+    /**
+     * Draws the static joystick base: the anchor dot and the outer limits ring.
+     * Call this before drawing the live thumb indicator on top.
+     * @param {number} cx - Centre X of the joystick in screen space.
+     * @param {number} cy - Centre Y of the joystick in screen space.
+     */
+    _drawJoystickBase(cx, cy) {
+        const maxStretch = 100 * this._scale;
+        noStroke();
+        fill(255, 255, 255, 100);
+        circle(cx, cy, 20 * this._scale);
+        strokeWeight(3 * this._scale);
+        stroke(255, 255, 255, 40);
+        noFill();
+        circle(cx, cy, maxStretch * 2);
+    }
+
     // -------------------------------------------------------------------------
     // Dimensions & UI Scaling
     // -------------------------------------------------------------------------
@@ -493,18 +510,8 @@ class MobileController {
         if (isInstructions) {
             let aimZoneX = aimX + w / 4;
             let aimZoneY = h / 2;
-            let maxStretch = 100 * this._scale;
 
-            // Anchor dot
-            noStroke();
-            fill(255, 255, 255, 100);
-            circle(aimZoneX, aimZoneY, 20 * this._scale);
-
-            // Outer limits ring
-            strokeWeight(3 * this._scale);
-            stroke(255, 255, 255, 40);
-            noFill();
-            circle(aimZoneX, aimZoneY, maxStretch * 2);
+            this._drawJoystickBase(aimZoneX, aimZoneY);
 
             // If user is actively touching the joystick area in instructions, show live joystick
             if (this.aimTouchId !== null && this._isAimZoneTouch({x: this.lastAimX, y: this.lastAimY}, w)) {
@@ -614,23 +621,12 @@ class MobileController {
 
         // Floating Trackpad Indicator if aiming (only during actual gameplay)
         if (!isInstructions && !isCockpitSelection && this.aimTouchId !== null) {
-            let maxStretch = 100 * this._scale;
-
-            // Anchor dot
-            noStroke();
-            fill(255, 255, 255, 100);
-            circle(this.aimAnchorX, this.aimAnchorY, 20 * this._scale);
+            this._drawJoystickBase(this.aimAnchorX, this.aimAnchorY);
 
             // Connecting line
             stroke(255, 255, 255, 50);
             strokeWeight(2 * this._scale);
             line(this.aimAnchorX, this.aimAnchorY, this.lastAimX, this.lastAimY);
-
-            // Outer limits ring
-            strokeWeight(3 * this._scale);
-            stroke(255, 255, 255, 40);
-            noFill();
-            circle(this.aimAnchorX, this.aimAnchorY, maxStretch * 2);
 
             // Current finger position
             fill(255, 255, 255, 150);
@@ -642,25 +638,18 @@ class MobileController {
         if (!isCockpitSelection) {
             for (let b in this.btns) {
                 let btn = this.btns[b];
-    
-                if (forceInstructions || isInstructions) {
-                    // Feedback for instruction screen
-                    stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-                    strokeWeight(2 * this._scale);
-                    fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-                    circle(btn.x, btn.y, btn.r * 2);
-                } else {
-                    // Actual gameplay rendering
-                    stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-                    strokeWeight(2 * this._scale);
-                    fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-                    circle(btn.x, btn.y, btn.r * 2);
-    
-                    if (btn.active) {
-                        fill(btn.col[0], btn.col[1], btn.col[2], 40);
-                        circle(btn.x, btn.y, btn.r * 2.4);
-                    }
+
+                stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
+                strokeWeight(2 * this._scale);
+                fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
+                circle(btn.x, btn.y, btn.r * 2);
+
+                // Active glow only during gameplay (not on the instructions preview)
+                if (btn.active && !forceInstructions && !isInstructions) {
+                    fill(btn.col[0], btn.col[1], btn.col[2], 40);
+                    circle(btn.x, btn.y, btn.r * 2.4);
                 }
+
                 noStroke();
                 fill(255, btn.active ? 255 : 150);
                 textAlign(CENTER, CENTER);

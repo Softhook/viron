@@ -145,14 +145,14 @@ function drawMission() {
   textAlign(CENTER, TOP);
   rectMode(CENTER);
   let briefing =
-    "A silicon-based virus is being spread by aliens. " +
+    "A virus is being spread by aliens. " +
     "Left unchecked, it will take over the planet.\n\n" +
     "Your mission:\n\n" +
     "1. ELIMINATE aliens spreading the virus.\n" +
     "2. CONTAIN the virus spread\n" +
     "3. PROTECT the temples.";
 
-  text(briefing, 0, height * UI_LAYOUT_BODY_Y, min(width * 0.85, 800));
+  text(briefing, 0, height * UI_LAYOUT_BODY_Y, min(width * 0.85, 700));
   rectMode(CORNER);
 
   let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
@@ -176,13 +176,17 @@ function drawInstructions() {
 
   if (gameState.isMobile) {
     if (typeof mobileController !== 'undefined') {
+      fill(255, 255, 255, 220);
+      textSize(UI_TYPE_TITLE * 0.7);
+      text('CONTROLS', 0, height * UI_LAYOUT_TITLE_Y);
+
       mobileController.update(touches, width, height);
-      mobileController.draw(width, height, true);
+      mobileController.draw(width, height);
     }
   } else {
     fill(255, 255, 255, 220);
     textSize(UI_TYPE_TITLE * 0.8);
-    text('HOW TO PLAY', 0, height * UI_LAYOUT_TITLE_Y);
+    text('CONTROLS', 0, height * UI_LAYOUT_TITLE_Y);
 
     const drawConfig = (title, color, items, side) => {
       const tx = width * 0.25 * side;
@@ -207,6 +211,51 @@ function drawInstructions() {
       drawConfig('P1 CONTROLS', [200, 255, 200], ['Pitch / Yaw: Mouse', 'Forward Tilt: F', 'Backward Tilt: R', 'Thrust: W or Right-Click', 'Brake: S', 'Shoot: Q or Left-Click', 'Cycle Weapon: E or Middle-Click'], -1);
       drawConfig('P2 CONTROLS', [255, 200, 200], ['Turn: Arrow Keys', 'Forward Tilt: \' (Quote)', 'Backward Tilt: ; (Semicolon)', 'Thrust: Up Arrow', 'Brake: Down Arrow', 'Shoot: . (Period)', 'Cycle Weapon: / (Slash)'], 1);
     }
+  }
+
+  let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
+  fill(150, 255, 150, 255 * blink);
+  textAlign(CENTER, CENTER);
+  textSize(UI_TYPE_PROMPT);
+  if (!gameState.isMobile) {
+    text('PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
+  }
+  pop();
+}
+
+/**
+ * Renders the Cockpit View Selection screen.
+ */
+function drawCockpitSelection() {
+  drawBackgroundLandscape();
+  setup2DViewport();
+  HUD_Manager.drawDimOverlay();
+
+  textAlign(CENTER, CENTER);
+
+  if (gameState.isMobile) {
+    if (typeof mobileController !== 'undefined') {
+      fill(255, 255, 255, 220);
+      textSize(UI_TYPE_TITLE * 0.7);
+      text('VIEW MODE', 0, height * UI_LAYOUT_TITLE_Y);
+
+      mobileController.update(touches, width, height);
+      mobileController.draw(width, height);
+    }
+  } else {
+    // Desktop: Minimal prompt since they use 'O' to toggle in-game
+    fill(255, 255, 255, 220);
+    textSize(UI_TYPE_TITLE * 0.8);
+    text('SELECT VIEW MODE', 0, height * UI_LAYOUT_TITLE_Y);
+
+    fill(200, 255, 200, 200);
+    textSize(UI_TYPE_HEADER);
+    let viewMode = gameState.firstPersonView ? "COCKPIT" : "BEHIND CRAFT";
+    text('CURRENT VIEW: ' + viewMode, 0, 0);
+
+    textSize(UI_TYPE_BODY);
+    fill(255, 255, 255, 180);
+    text('Press O to toggle', 0, 40);
   }
 
   let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
@@ -444,6 +493,7 @@ const HUD_Screens = {
   drawMenu,
   drawMission,
   drawInstructions,
+  drawCockpitSelection,
   drawShipSelect,
   drawGameOver,
   drawPauseScreen,

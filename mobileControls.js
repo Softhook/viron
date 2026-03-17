@@ -46,8 +46,8 @@ class MobileController {
 
         this.isSwapped = false; // Aim on Left, Actions on Right
         this.settingsBtns = {
-            switchSides: { x: 0, y: 0, w: 160, h: 50, label: 'SWITCH SIDES' },
-            cockpit: { x: 0, y: 0, w: 160, h: 50, label: 'COCKPIT VIEW' },
+            switchSides: { x: 0, y: 0, w: 180, h: 50, label: 'SWITCH CONTROLS' },
+            cockpit: { x: 0, y: 0, w: 200, h: 50, label: 'COCKPIT VIEW' },
             continue: { x: 0, y: 0, w: 200, h: 60, label: 'CONTINUE' }
         };
 
@@ -237,22 +237,31 @@ class MobileController {
         this.btns.missile.x = w / 2;
         this.btns.missile.y = h - 60 * s;
 
-        // Position settings buttons for Instruction screen (Slightly higher to clear title)
-        this.settingsBtns.switchSides.x = w / 2 - 90 * s;
-        this.settingsBtns.switchSides.y = h * 0.15; // Raised from 0.2
-        this.settingsBtns.switchSides.w = 160 * s;
-        this.settingsBtns.switchSides.h = 44 * s;
+        // Position settings buttons
+        if (gameState.mode === 'instructions') {
+            // Instructions Screen: Center Switch Sides button
+            this.settingsBtns.switchSides.x = w / 2;
+            this.settingsBtns.switchSides.y = h * 0.15;
+            this.settingsBtns.switchSides.w = 180 * s;
+            this.settingsBtns.switchSides.h = 44 * s;
 
-        this.settingsBtns.cockpit.x = w / 2 + 90 * s;
-        this.settingsBtns.cockpit.y = h * 0.15; // Raised from 0.2
-        this.settingsBtns.cockpit.w = 160 * s;
-        this.settingsBtns.cockpit.h = 44 * s;
+            this.settingsBtns.continue.x = w / 2;
+            this.settingsBtns.continue.y = h / 2;
+            this.settingsBtns.continue.w = 200 * s;
+            this.settingsBtns.continue.h = 60 * s;
+        } else if (gameState.mode === 'cockpitSelection') {
+            // Cockpit Selection Screen: Toggle button slightly above center preview
+            this.settingsBtns.cockpit.x = w / 2;
+            this.settingsBtns.cockpit.y = h * 0.15;
+            this.settingsBtns.cockpit.w = 200 * s;
+            this.settingsBtns.cockpit.h = 44 * s;
 
-        // Position Continue button in center screen
-        this.settingsBtns.continue.x = w / 2;
-        this.settingsBtns.continue.y = h / 2;
-        this.settingsBtns.continue.w = 200 * s;
-        this.settingsBtns.continue.h = 60 * s;
+            // Continue button at the bottom
+            this.settingsBtns.continue.x = w / 2;
+            this.settingsBtns.continue.y = h * 0.85;
+            this.settingsBtns.continue.w = 200 * s;
+            this.settingsBtns.continue.h = 60 * s;
+        }
     }
 
     update(touches, w, h) {
@@ -266,14 +275,16 @@ class MobileController {
         for (let i = 0; i < touches.length; i++) {
             const t = touches[i];
 
-            if (this._trackExistingMissileTouch(t)) {
-                missileFound = true;
-                continue;
-            }
+            if (gameState.mode !== 'cockpitSelection') {
+                if (this._trackExistingMissileTouch(t)) {
+                    missileFound = true;
+                    continue;
+                }
 
-            if (this._captureNewMissileTouch(t)) {
-                missileFound = true;
-                continue;
+                if (this._captureNewMissileTouch(t)) {
+                    missileFound = true;
+                    continue;
+                }
             }
 
             // Aim Zone check
@@ -282,14 +293,17 @@ class MobileController {
                 continue;
             } 
 
-            // Preview Zone Check (Center screen for instructions)
-            if (gameState.mode === 'instructions') {
-                const isContBtn = t.x > this.settingsBtns.continue.x - this.settingsBtns.continue.w/2 &&
-                                  t.x < this.settingsBtns.continue.x + this.settingsBtns.continue.w/2 &&
-                                  t.y > this.settingsBtns.continue.y - this.settingsBtns.continue.h/2 &&
-                                  t.y < this.settingsBtns.continue.y + this.settingsBtns.continue.h/2;
+            // Preview Zone Check (Center screen for instructions/cockpit)
+            if (gameState.mode === 'instructions' || gameState.mode === 'cockpitSelection') {
+                const btn = this.settingsBtns.continue;
+                const isContBtn = t.x > btn.x - btn.w/2 && t.x < btn.x + btn.w/2 &&
+                                  t.y > btn.y - btn.h/2 && t.y < btn.y + btn.h/2;
                 
-                if (!isContBtn && Math.abs(t.x - w/2) < w/4 && t.y > h/3 && t.y < h*0.8) {
+                // Allow interaction with ship preview if in cockpitSelection and FIRST PERSON is OFF
+                const isCockpitPreview = gameState.mode === 'cockpitSelection' && !gameState.firstPersonView;
+                const isInstructionPreview = gameState.mode === 'instructions' && false; // Disabled ship in instructions per requirement
+
+                if (!isContBtn && (isCockpitPreview || isInstructionPreview)) {
                     if (this.previewTouchId === t.id) {
                         let dx = t.x - this.lastPreviewX;
                         let dy = t.y - this.lastPreviewY;
@@ -309,8 +323,10 @@ class MobileController {
                 }
             }
 
-            // Action Zones
-            this._handleActionZoneTouch(t, w, h);
+            // Action Zones (Only during gameplay or instructions)
+            if (gameState.mode !== 'cockpitSelection') {
+                this._handleActionZoneTouch(t, w, h);
+            }
         }
 
         this._finalizeTrackedTouches(aimFound, missileFound);
@@ -364,10 +380,13 @@ class MobileController {
         gl.disable(gl.DEPTH_TEST);
         translate(-w / 2, -h / 2, 0);
 
-        let showThrust = forceInstructions;
-        let showShoot = forceInstructions;
-        let showBarrier = forceInstructions;
-        let showAim = forceInstructions;
+        const isInstructions = gameState.mode === 'instructions';
+        const isCockpitSelection = gameState.mode === 'cockpitSelection';
+
+        let showThrust = forceInstructions || isInstructions;
+        let showShoot = forceInstructions || isInstructions;
+        let showBarrier = forceInstructions || isInstructions;
+        let showAim = forceInstructions || isInstructions;
 
         let leftX = this.isSwapped ? w / 2 : 0;
         let aimX = this.isSwapped ? 0 : w / 2;
@@ -375,50 +394,50 @@ class MobileController {
         // --- Visual hints for Action Zones ---
         noStroke();
 
-        // Thrust Zone
-        if (showThrust) {
-            let active = this.thrustActive;
-            let alpha = forceInstructions ? (active ? 60 : 40) : 15;
-            fill(0, 255, 60, alpha);
-            rect(leftX, h / 2, w / 2, h / 2);
-        }
+        if (isInstructions) {
+            // Thrust Zone
+            if (showThrust) {
+                let active = this.thrustActive;
+                let alpha = (active ? 60 : 40);
+                fill(0, 255, 60, alpha);
+                rect(leftX, h / 2, w / 2, h / 2);
+            }
 
-        // Shoot Zone
-        if (showShoot) {
-            let active = this.shootActive;
-            let alpha = forceInstructions ? (active ? 60 : 40) : 15;
-            fill(255, 60, 60, alpha);
-            let sx = (!this.isSwapped) ? leftX : leftX + w / 4;
-            rect(sx, 0, w / 4, h / 2);
-        }
+            // Shoot Zone
+            if (showShoot) {
+                let active = this.shootActive;
+                let alpha = (active ? 60 : 40);
+                fill(255, 60, 60, alpha);
+                let sx = (!this.isSwapped) ? leftX : leftX + w / 4;
+                rect(sx, 0, w / 4, h / 2);
+            }
 
-        // Barrier Zone
-        if (showBarrier) {
-            let active = this.barrierActive;
-            let alpha = forceInstructions ? (active ? 60 : 40) : 15;
-            fill(100, 200, 255, alpha);
-            let bx = (!this.isSwapped) ? leftX + w / 4 : leftX;
-            rect(bx, 0, w / 4, h / 2);
-        }
+            // Barrier Zone
+            if (showBarrier) {
+                let active = this.barrierActive;
+                let alpha = (active ? 60 : 40);
+                fill(100, 200, 255, alpha);
+                let bx = (!this.isSwapped) ? leftX + w / 4 : leftX;
+                rect(bx, 0, w / 4, h / 2);
+            }
 
-        // Aim Zone background hint
-        if (showAim) {
-            fill(255, 255, 255, forceInstructions ? 20 : 8);
-            rect(aimX, 0, w / 2, h);
-        }
+            // Aim Zone background hint
+            if (showAim) {
+                fill(255, 255, 255, 20);
+                rect(aimX, 0, w / 2, h);
+            }
 
-        // Dividers
-        stroke(255, 255, 255, forceInstructions ? 60 : 25);
-        strokeWeight(2 * this._scale);
-        // Vertical center (Left vs Right)
-        if (showThrust || showAim) line(w / 2, 0, w / 2, h);
-        // Horizontal action line (Top vs Bottom)
-        if (showThrust || showShoot || showBarrier) line(leftX, h / 2, leftX + w / 2, h / 2);
-        // Vertical action split (Shoot vs Barrier)
-        if (showShoot || showBarrier) line(leftX + w / 4, 0, leftX + w / 4, h / 2);
+            // Dividers
+            stroke(255, 255, 255, 60);
+            strokeWeight(2 * this._scale);
+            // Vertical center (Left vs Right)
+            line(w / 2, 0, w / 2, h);
+            // Horizontal action line (Top vs Bottom)
+            line(leftX, h / 2, leftX + w / 2, h / 2);
+            // Vertical action split (Shoot vs Barrier)
+            line(leftX + w / 4, 0, leftX + w / 4, h / 2);
 
-        // Labels - Only drawn during Instruction screen
-        if (forceInstructions) {
+            // Labels
             noStroke();
             textAlign(CENTER, CENTER);
             textSize(16 * Math.max(1, this._scale));
@@ -430,10 +449,16 @@ class MobileController {
             text("BARRIER", barrierLabelX, h * 0.28);
             text("THRUST", leftX + w / 4, h * 0.68);
             text("AIM (JOYSTICK)", aimX + w / 4, h / 2 + 130 * this._scale);
+        }
 
-            // --- Settings Buttons (Only on Instructions) ---
+        // --- Settings Buttons ---
+        if (isInstructions || isCockpitSelection) {
             rectMode(CENTER);
             for (let k in this.settingsBtns) {
+                // Filter buttons based on screen
+                if (isInstructions && k === 'cockpit') continue;
+                if (isCockpitSelection && k === 'switchSides') continue;
+
                 let btn = this.settingsBtns[k];
 
                 // Colors based on button type
@@ -449,16 +474,20 @@ class MobileController {
                 strokeWeight(2 * this._scale);
                 rect(btn.x, btn.y, btn.w, btn.h, 8);
 
-                // Text Label - Use bright white for visibility
+                // Text Label
                 noStroke();
                 fill(255);
                 textSize(12 * this._scale);
                 let label = btn.label;
-                if (k === 'cockpit') label += (typeof gameState !== 'undefined' && gameState.firstPersonView ? ": ON" : ": OFF");
+                if (k === 'cockpit') {
+                    label = "VIEW: " + (gameState.firstPersonView ? "COCKPIT" : "BEHIND CRAFT");
+                }
                 text(label, btn.x, btn.y);
             }
+        }
 
-            // --- Draw joystick preview on Instruction screen ---
+        // Joystick preview (Only on Instructions)
+        if (isInstructions) {
             let aimZoneX = aimX + w / 4;
             let aimZoneY = h / 2;
             let maxStretch = 100 * this._scale;
@@ -495,83 +524,95 @@ class MobileController {
                 noStroke();
                 circle(aimZoneX + previewOffX, aimZoneY + previewOffY, 60 * this._scale);
             }
+        }
 
-            // --- Render Live Ship Preview ---
+        // --- Render Live Preview (Only on Cockpit Selection) ---
+        if (isCockpitSelection) {
             push();
             resetMatrix();
-            gl.enable(gl.DEPTH_TEST);
-            gl.clear(gl.DEPTH_BUFFER_BIT);
-            
-            // Re-setup 3D for the preview
-            perspective(PI/3, w/h, 1, 1000);
-            camera(0, -10, 80, 0, 0, 0, 0, 1, 0);
-            
-            // Lighting
-            ambientLight(100);
-            directionalLight(255, 255, 255, 0.5, 1, -0.5);
-            
-            translate(0, 40, 0); // Shift ship down (underneath the continue button)
-            
-            push();
-            rotateY(this.previewYaw + frameCount * 0.005);
-            rotateX(this.previewPitch + sin(frameCount * 0.02) * 0.1);
-            
-            let design = SHIP_DESIGNS[0]; // Always show Classic in preview
-            let tintColor = [80, 180, 255];
-            let dark = [80*0.4, 180*0.4, 255*0.4];
-            let light = [200, 220, 255];
-            let engineGray = [80, 80, 85];
-            
-            const drawFace = (pts, col) => {
-                fill(col[0], col[1], col[2], col[3] || 255);
-                beginShape();
-                for(let p of pts) vertex(p[0], p[1], p[2]);
-                endShape(CLOSE);
-            };
-            
-            const sFake = { pitch: 0, yaw: 0 };
-            const tf = (pt) => pt;
-            let flamePoints = design.draw(drawFace, tintColor, engineGray, light, dark, this.thrustActive, sFake, tf, tf);
-            
-            // Draw thrust flames if active
-            if (this.thrustActive && Array.isArray(flamePoints)) {
-                flamePoints.forEach(fp => {
-                    push();
-                    translate(fp.x, fp.y, fp.z);
-                    let flicker = 1.0 + sin(frameCount * 0.8) * 0.15;
-                    fill(100, 230, 255, 200);
-                    cone(4 * flicker, 15 * flicker, 8);
-                    pop();
-                });
-            }
-            // Draw preview bullets (inside rotation so they are relative to ship)
-            for (let b of this.previewBullets) {
+            if (gameState.firstPersonView) {
+                // DRAW CROSSHAIRS (Center of screen 2D)
+                gl.disable(gl.DEPTH_TEST);
+                translate(w / 2, h / 2, 0);
+                stroke(0, 255, 136, 180);
+                strokeWeight(2);
+                line(0, -20 * this._scale, 0, 20 * this._scale);
+                line(-20 * this._scale, 0, 20 * this._scale, 0);
+                noFill();
+                circle(0, 0, 40 * this._scale);
+            } else {
+                // DRAW SHIP
+                gl.enable(gl.DEPTH_TEST);
+                gl.clear(gl.DEPTH_BUFFER_BIT);
+                
+                // Re-setup 3D for the preview
+                perspective(PI/3, w/h, 1, 1000);
+                camera(0, -10, 80, 0, 0, 0, 0, 1, 0);
+                
+                // Lighting
+                ambientLight(100);
+                directionalLight(255, 255, 255, 0.5, 1, -0.5);
+                
+                translate(0, 0, 0); 
+                
                 push();
-                translate(b.x, b.y, b.z);
-                if (b.isBarrier) {
-                    fill(100, 200, 255);
-                    box(4);
-                } else {
-                    fill(255, 255, 100);
-                    sphere(2);
+                rotateY(this.previewYaw + frameCount * 0.005);
+                rotateX(this.previewPitch + sin(frameCount * 0.02) * 0.1);
+                
+                let design = SHIP_DESIGNS[0]; 
+                let tintColor = [80, 180, 255];
+                let dark = [80*0.4, 180*0.4, 255*0.4];
+                let light = [200, 220, 255];
+                let engineGray = [80, 80, 85];
+                
+                const drawFace = (pts, col) => {
+                    fill(col[0], col[1], col[2], col[3] || 255);
+                    beginShape();
+                    for(let p of pts) vertex(p[0], p[1], p[2]);
+                    endShape(CLOSE);
+                };
+                
+                const sFake = { pitch: 0, yaw: 0 };
+                const tf = (pt) => pt;
+                let flamePoints = design.draw(drawFace, tintColor, engineGray, light, dark, false, sFake, tf, tf);
+                
+                // Draw thrust flames (Only on Instructions)
+                if (isInstructions && this.thrustActive && Array.isArray(flamePoints)) {
+                    flamePoints.forEach(fp => {
+                        push();
+                        translate(fp.x, fp.y, fp.z);
+                        let flicker = 1.0 + sin(frameCount * 0.8) * 0.15;
+                        fill(100, 230, 255, 200);
+                        cone(4 * flicker, 15 * flicker, 8);
+                        pop();
+                    });
                 }
-                pop();
+                
+                if (isInstructions) {
+                    for (let b of this.previewBullets) {
+                        push();
+                        translate(b.x, b.y, b.z);
+                        if (b.isBarrier) {
+                            fill(100, 200, 255);
+                            box(4);
+                        } else {
+                            fill(255, 255, 100);
+                            sphere(2);
+                        }
+                        pop();
+                    }
+                }
+                pop(); // End ship rotation
             }
+            pop(); // End preview pass
 
-            pop(); // End ship rotation
-            pop(); // End 3D pass (resetMatrix, push at 502)
-
-            // --- Restore 2D Projections for remaining labels/buttons ---
-            ortho(-w/2, w/2, -h/2, h/2, 0, 1000);
-            resetMatrix();
-            translate(-w/2, -h/2, 0); // Re-apply UI offset
+            if (typeof setup2DViewport === 'function') setup2DViewport();
             gl.disable(gl.DEPTH_TEST);
-            
             rectMode(CORNER);
         }
 
         // Floating Trackpad Indicator if aiming (only during actual gameplay)
-        if (!forceInstructions && this.aimTouchId !== null) {
+        if (!isInstructions && !isCockpitSelection && this.aimTouchId !== null) {
             let maxStretch = 100 * this._scale;
 
             // Anchor dot
@@ -627,7 +668,6 @@ class MobileController {
 
         gl.enable(gl.DEPTH_TEST);
         pop();
-        pop();
     }
     /**
      * Checks if a point (mouse/touch) hits any settings buttons on the Instructions screen.
@@ -635,6 +675,10 @@ class MobileController {
      */
     checkSettingsHit(mx, my) {
         for (let k in this.settingsBtns) {
+            // Only check buttons relevant to current mode
+            if (gameState.mode === 'instructions' && k === 'cockpit') continue;
+            if (gameState.mode === 'cockpitSelection' && k === 'switchSides') continue;
+
             let btn = this.settingsBtns[k];
             if (mx > btn.x - btn.w / 2 && mx < btn.x + btn.w / 2 &&
                 my > btn.y - btn.h / 2 && my < btn.y + btn.h / 2) {

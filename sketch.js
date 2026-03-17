@@ -203,6 +203,7 @@ function draw() {
   if (gameState.mode === 'menu') { drawMenu(); return; }
   if (gameState.mode === 'mission') { drawMission(); return; }
   if (gameState.mode === 'instructions') { drawInstructions(); return; }
+  if (gameState.mode === 'cockpitSelection') { drawCockpitSelection(); return; }
   if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
 
   
@@ -307,6 +308,13 @@ function keyPressed() {
   if (gameState.mode === 'instructions') {
     // Any relevant key on desktop moves past instructions
     if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
+      gameState.mode = 'cockpitSelection';
+    }
+    return;
+  }
+
+  if (gameState.mode === 'cockpitSelection') {
+    if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
       gameState.mode = 'shipselect';
     }
     return;
@@ -401,6 +409,15 @@ function touchStarted(event) {
     if (typeof mobileController !== 'undefined') {
       let hit = mobileController.checkSettingsHit(mouseX, mouseY);
       if (hit === 'continue') {
+        gameState.mode = 'cockpitSelection';
+      }
+    }
+    return false;
+  }
+  if (gameState.mode === 'cockpitSelection') {
+    if (typeof mobileController !== 'undefined') {
+      let hit = mobileController.checkSettingsHit(mouseX, mouseY);
+      if (hit === 'continue') {
         gameState.mode = 'shipselect';
       }
     }
@@ -477,10 +494,22 @@ function mousePressed() {
     } else if (gameState.mode === 'mission') {
       gameState.mode = 'instructions';
     } else if (gameState.mode === 'instructions') {
-      if (typeof mobileController !== 'undefined' && mobileController.checkSettingsHit(mouseX, mouseY)) {
-        return;
+      if (typeof mobileController !== 'undefined') {
+        let hit = mobileController.checkSettingsHit(mouseX, mouseY);
+        if (hit === 'continue') {
+          gameState.mode = 'cockpitSelection';
+        }
+        if (hit) return;
       }
-      gameState.mode = 'shipselect';
+      gameState.mode = 'cockpitSelection';
+    } else if (gameState.mode === 'cockpitSelection') {
+      if (typeof mobileController !== 'undefined') {
+        let hit = mobileController.checkSettingsHit(mouseX, mouseY);
+        if (hit === 'continue') {
+          gameState.mode = 'shipselect';
+        }
+      }
+      return;
     } else if (gameState.mode === 'shipselect') {
       let vw = width / gameState.numPlayers;
       let pIdx = floor(mouseX / vw);

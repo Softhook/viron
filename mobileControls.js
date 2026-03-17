@@ -374,8 +374,11 @@ class MobileController {
         // Update layout parameters (scaling, button positions) without touching input state
         this._updateLayout(w, h);
 
-        if (typeof setup2DViewport === 'function') setup2DViewport();
-        push();
+        if (typeof setup2DViewport === 'function') {
+            setup2DViewport();
+        } else {
+            push();
+        }
         let gl = drawingContext;
         gl.disable(gl.DEPTH_TEST);
         translate(-w / 2, -h / 2, 0);
@@ -452,7 +455,7 @@ class MobileController {
         }
 
         // --- Settings Buttons ---
-        if (isInstructions || isCockpitSelection) {
+        if (isInstructions || (isCockpitSelection && gameState.isMobile)) {
             rectMode(CENTER);
             for (let k in this.settingsBtns) {
                 // Filter buttons based on screen
@@ -533,7 +536,6 @@ class MobileController {
             if (gameState.firstPersonView) {
                 // DRAW CROSSHAIRS (Center of screen 2D)
                 gl.disable(gl.DEPTH_TEST);
-                translate(w / 2, h / 2, 0);
                 stroke(0, 255, 136, 180);
                 strokeWeight(2);
                 line(0, -20 * this._scale, 0, 20 * this._scale);
@@ -606,7 +608,6 @@ class MobileController {
             }
             pop(); // End preview pass
 
-            if (typeof setup2DViewport === 'function') setup2DViewport();
             gl.disable(gl.DEPTH_TEST);
             rectMode(CORNER);
         }
@@ -637,27 +638,29 @@ class MobileController {
             circle(this.lastAimX, this.lastAimY, 60 * this._scale);
         }
 
-        // Action buttons
-        for (let b in this.btns) {
-            let btn = this.btns[b];
-
-            if (forceInstructions) {
-                // Feedback for instruction screen
-                stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-                strokeWeight(2 * this._scale);
-                fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-                circle(btn.x, btn.y, btn.r * 2);
-                noStroke();
-                fill(255, btn.active ? 255 : 150);
-                textAlign(CENTER, CENTER);
-                textSize(Math.max(10, btn.r * 0.4));
-                text(btn.label, btn.x, btn.y);
-            } else {
-                // Actual gameplay rendering
-                stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-                strokeWeight(2 * this._scale);
-                fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-                circle(btn.x, btn.y, btn.r * 2);
+        // Action buttons (Only during gameplay or instructions)
+        if (!isCockpitSelection) {
+            for (let b in this.btns) {
+                let btn = this.btns[b];
+    
+                if (forceInstructions || isInstructions) {
+                    // Feedback for instruction screen
+                    stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
+                    strokeWeight(2 * this._scale);
+                    fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
+                    circle(btn.x, btn.y, btn.r * 2);
+                } else {
+                    // Actual gameplay rendering
+                    stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
+                    strokeWeight(2 * this._scale);
+                    fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
+                    circle(btn.x, btn.y, btn.r * 2);
+    
+                    if (btn.active) {
+                        fill(btn.col[0], btn.col[1], btn.col[2], 40);
+                        circle(btn.x, btn.y, btn.r * 2.4);
+                    }
+                }
                 noStroke();
                 fill(255, btn.active ? 255 : 150);
                 textAlign(CENTER, CENTER);
@@ -677,7 +680,10 @@ class MobileController {
         for (let k in this.settingsBtns) {
             // Only check buttons relevant to current mode
             if (gameState.mode === 'instructions' && k === 'cockpit') continue;
-            if (gameState.mode === 'cockpitSelection' && k === 'switchSides') continue;
+            if (gameState.mode === 'cockpitSelection') {
+                if (k === 'switchSides') continue;
+                if (!gameState.isMobile) continue; // Skip physical hits on desktop
+            }
 
             let btn = this.settingsBtns[k];
             if (mx > btn.x - btn.w / 2 && mx < btn.x + btn.w / 2 &&

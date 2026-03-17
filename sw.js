@@ -20,7 +20,7 @@
 
 'use strict';
 
-const CACHE_VERSION = 'viron-v7.5';
+const CACHE_VERSION = 'viron-v7.9';
 
 /** Every static asset the game needs to run offline. */
 const PRECACHE_ASSETS = [

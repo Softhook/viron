@@ -176,9 +176,6 @@ function drawInstructions() {
 
   if (gameState.isMobile) {
     if (typeof mobileController !== 'undefined') {
-      fill(255, 255, 255, 220);
-      textSize(UI_TYPE_TITLE * 0.7);
-      text('CONTROLS', 0, height * UI_LAYOUT_TITLE_Y);
 
       mobileController.update(touches, width, height);
       mobileController.draw(width, height);
@@ -186,7 +183,8 @@ function drawInstructions() {
   } else {
     fill(255, 255, 255, 220);
     textSize(UI_TYPE_TITLE * 0.8);
-    text('CONTROLS', 0, height * UI_LAYOUT_TITLE_Y);
+    text('HOW TO PLAY', 0, height * UI_LAYOUT_TITLE_Y);
+
 
     const drawConfig = (title, color, items, side) => {
       const tx = width * 0.25 * side;
@@ -235,15 +233,15 @@ function drawCockpitSelection() {
 
   if (gameState.isMobile) {
     if (typeof mobileController !== 'undefined') {
-      fill(255, 255, 255, 220);
-      textSize(UI_TYPE_TITLE * 0.7);
-      text('VIEW MODE', 0, height * UI_LAYOUT_TITLE_Y);
-
       mobileController.update(touches, width, height);
       mobileController.draw(width, height);
     }
   } else {
     // Desktop: Minimal prompt since they use 'O' to toggle in-game
+    if (typeof mobileController !== 'undefined') {
+      mobileController.draw(width, height);
+    }
+
     fill(255, 255, 255, 220);
     textSize(UI_TYPE_TITLE * 0.8);
     text('SELECT VIEW MODE', 0, height * UI_LAYOUT_TITLE_Y);
@@ -255,7 +253,8 @@ function drawCockpitSelection() {
 
     textSize(UI_TYPE_BODY);
     fill(255, 255, 255, 180);
-    text('Press O to toggle', 0, 40);
+    let toggleHint = gameState.isMobile ? "" : "PRESS 'O' KEY TO TOGGLE VIEW";
+    text(toggleHint, 0, 40);
   }
 
   let blink = sin(frameCount * 0.1) * 0.5 + 0.5;

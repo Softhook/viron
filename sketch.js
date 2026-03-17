@@ -433,8 +433,15 @@ function touchStarted(event) {
     if (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130) {
       p.ready = true;
     } else if (mouseY > height / 2 - 60 && mouseY < height / 2 + 60) {
-      if (localX < 120) p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
-      else if (localX > vw - 120) p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+      const centerX = vw / 2;
+      const arrowOffset = 220;
+      const arrowHitWidth = 120; // More generous hit area for touch
+
+      if (localX > centerX - arrowOffset - arrowHitWidth/2 && localX < centerX - arrowOffset + arrowHitWidth/2) {
+        p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+      } else if (localX > centerX + arrowOffset - arrowHitWidth/2 && localX < centerX + arrowOffset + arrowHitWidth/2) {
+        p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+      }
     }
 
     if (gameState.players.every(p => p.ready)) {

@@ -3,6 +3,45 @@
 // =============================================================================
 
 /**
+ * Sets up the background landscape, 2D viewport, and dim overlay — the shared
+ * preamble for every full-screen menu.  The caller MUST call pop() when done.
+ * @private
+ */
+function _beginFullScreenUI() {
+  drawBackgroundLandscape();
+  setup2DViewport();
+  HUD_Manager.drawDimOverlay();
+}
+
+/**
+ * Draws the blinking "continue" prompt.
+ * On desktop it always shows "PRESS ENTER TO CONTINUE".
+ * On mobile it shows "TAP TO CONTINUE" only when hideOnMobile is false
+ * (screens where the mobile controller provides its own CONTINUE button
+ * pass true so no duplicate prompt is rendered).
+ * @private
+ */
+function _drawContinuePrompt(hideOnMobile = true) {
+  if (gameState.isMobile && hideOnMobile) return;
+  const blink = sin(frameCount * 0.1) * 0.5 + 0.5;
+  fill(150, 255, 150, 255 * blink);
+  textAlign(CENTER, CENTER);
+  textSize(UI_TYPE_PROMPT);
+  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
+}
+
+/**
+ * Updates and draws the mobile controller overlay when on a mobile device.
+ * No-ops on desktop or when mobileController is not available.
+ * @private
+ */
+function _drawMobileController() {
+  if (!gameState.isMobile || typeof mobileController === 'undefined') return;
+  mobileController.update(touches, width, height);
+  mobileController.draw(width, height);
+}
+
+/**
  * Renders the primary ship details text for the selection screen.
  * @private
  */
@@ -63,11 +102,7 @@ function _drawShipStats(p, design, relX, vw, vh) {
  * Renders the animated title / start screen.
  */
 function drawMenu() {
-  drawBackgroundLandscape();
-  setup2DViewport();
-
-  // Handle smooth transitions (e.g. fading back from shadowed screens)
-  HUD_Manager.drawDimOverlay();
+  _beginFullScreenUI();
 
   let glowPulse = sin(frameCount * 0.04) * 0.3 + 0.7;
 
@@ -122,9 +157,7 @@ function drawMenu() {
  * Renders the Mission Briefing screen.
  */
 function drawMission() {
-  drawBackgroundLandscape();
-  setup2DViewport();
-  HUD_Manager.drawDimOverlay();
+  _beginFullScreenUI();
 
   textAlign(CENTER, CENTER);
 
@@ -155,11 +188,7 @@ function drawMission() {
   text(briefing, 0, height * UI_LAYOUT_BODY_Y, min(width * 0.85, 700));
   rectMode(CORNER);
 
-  let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
-  fill(150, 255, 150, 255 * blink);
-  textAlign(CENTER, CENTER);
-  textSize(gameState.isMobile ? UI_TYPE_PROMPT * 0.8 : UI_TYPE_PROMPT);
-  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
+  _drawContinuePrompt(false); // show on mobile too (no controller CONTINUE button on this screen)
 
   pop();
 }
@@ -168,18 +197,12 @@ function drawMission() {
  * Renders the Instructions screen.
  */
 function drawInstructions() {
-  drawBackgroundLandscape();
-  setup2DViewport();
-  HUD_Manager.drawDimOverlay();
+  _beginFullScreenUI();
 
   textAlign(CENTER, CENTER);
 
   if (gameState.isMobile) {
-    if (typeof mobileController !== 'undefined') {
-
-      mobileController.update(touches, width, height);
-      mobileController.draw(width, height);
-    }
+    _drawMobileController();
   } else {
     fill(255, 255, 255, 220);
     textSize(UI_TYPE_TITLE * 0.8);
@@ -211,13 +234,7 @@ function drawInstructions() {
     }
   }
 
-  let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
-  fill(150, 255, 150, 255 * blink);
-  textAlign(CENTER, CENTER);
-  textSize(UI_TYPE_PROMPT);
-  if (!gameState.isMobile) {
-    text('PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
-  }
+  _drawContinuePrompt();
   pop();
 }
 
@@ -225,45 +242,28 @@ function drawInstructions() {
  * Renders the Cockpit View Selection screen.
  */
 function drawCockpitSelection() {
-  drawBackgroundLandscape();
-  setup2DViewport();
-  HUD_Manager.drawDimOverlay();
+  _beginFullScreenUI();
 
   textAlign(CENTER, CENTER);
 
   if (gameState.isMobile) {
-    if (typeof mobileController !== 'undefined') {
-      mobileController.update(touches, width, height);
-      mobileController.draw(width, height);
-    }
+    _drawMobileController();
   } else {
-    // Desktop: Minimal prompt since they use 'O' to toggle in-game
-    if (typeof mobileController !== 'undefined') {
-      mobileController.draw(width, height);
-    }
-
     fill(255, 255, 255, 220);
     textSize(UI_TYPE_TITLE * 0.8);
     text('SELECT VIEW MODE', 0, height * UI_LAYOUT_TITLE_Y);
 
     fill(200, 255, 200, 200);
     textSize(UI_TYPE_HEADER);
-    let viewMode = gameState.firstPersonView ? "COCKPIT" : "BEHIND CRAFT";
+    const viewMode = gameState.firstPersonView ? "COCKPIT" : "BEHIND CRAFT";
     text('CURRENT VIEW: ' + viewMode, 0, 0);
 
     textSize(UI_TYPE_BODY);
     fill(255, 255, 255, 180);
-    let toggleHint = gameState.isMobile ? "" : "PRESS 'O' KEY TO TOGGLE VIEW";
-    text(toggleHint, 0, 40);
+    text("PRESS 'O' KEY TO TOGGLE VIEW", 0, 40);
   }
 
-  let blink = sin(frameCount * 0.1) * 0.5 + 0.5;
-  fill(150, 255, 150, 255 * blink);
-  textAlign(CENTER, CENTER);
-  textSize(UI_TYPE_PROMPT);
-  if (!gameState.isMobile) {
-    text('PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
-  }
+  _drawContinuePrompt();
   pop();
 }
 

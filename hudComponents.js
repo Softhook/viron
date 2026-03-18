@@ -169,15 +169,13 @@ function drawRadarForPlayer(p, hw, h) {
 
     if (enemyManager.enemies.length > 0) {
       gb.stroke(170, 255, 50);
-      gb.strokeWeight(4);
-      gb.beginShape(POINTS);
       for (let e of enemyManager.enemies) {
         const [rrx, rrz] = _projectToRadar(e.x, e.z, s, yawSin, yawCos);
         const crx = constrain(rrx, -RADAR_HALF, RADAR_HALF);
         const crz = constrain(rrz, -RADAR_HALF, RADAR_HALF);
-        gb.vertex(crx, crz);
+        gb.strokeWeight(e.type === 'colossus' ? 8 : 4);
+        gb.point(crx, crz);
       }
-      gb.endShape();
     }
 
     const [rlx, rlz] = _projectToRadar(420, 420, s, yawSin, yawCos);

@@ -227,7 +227,6 @@ async function setupPlayableState(page, scenarioId) {
     wrapFunction(window, 'renderInFlightBarriers', 'renderInFlightBarriers');
     wrapFunction(window, 'drawPlayerHUD', 'drawPlayerHUD');
     wrapFunction(window, 'drawRadarForPlayer', 'drawRadarForPlayer');
-    wrapFunction(window, 'drawControlHints', 'drawControlHints');
     wrapFunction(window, 'shipDisplay', 'shipDisplay');
 
     // SFX wrappers.
@@ -327,7 +326,7 @@ function formatTop(summary) {
     'renderProjectiles',
     'renderInFlightBarriers',
     'shipDisplay',
-    // drawRadarForPlayer and drawControlHints are nested under drawPlayerHUD,
+    // drawRadarForPlayer is nested under drawPlayerHUD,
     // so only include drawPlayerHUD here to avoid double counting.
     'drawPlayerHUD'
   ];

@@ -4,7 +4,6 @@
 
 const HUD_WEAPON_LABELS = ['NORMAL', 'MISSILE', 'BARRIER'];
 const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
-const HUD_HINT_CACHE = Object.create(null);
 const HUD_LABEL_CACHE = Object.create(null); // Static labels graphic per viewport size
 const HUD_RADAR_BUFFERS = Object.create(null); // Graphics buffers for radar (one per player)
 const HUD_WEAPON_BUFFERS = Object.create(null); // Cached weapon-selector graphic per player id
@@ -115,20 +114,3 @@ function _getRadarBuffer(pId, size) {
   return g;
 }
 
-function _getControlHintGraphic(hint, hw, h) {
-  const key = `${hint}|${hw}|${h}`;
-  let entry = HUD_HINT_CACHE[key];
-  if (entry) return entry;
-
-  const w = Math.max(8, hw);
-  const g = createGraphics(w, 24);
-  g.pixelDensity(1);
-  g.clear();
-  g.noStroke();
-  g.textAlign(CENTER, BOTTOM);
-  g.textSize(11);
-  g.fill(255, 255, 255, 120);
-  g.text(hint, w * 0.5, 20);
-  HUD_HINT_CACHE[key] = g;
-  return g;
-}

@@ -173,27 +173,27 @@ function drawRadarForPlayer(p, hw, h) {
       gb.beginShape(POINTS);
       for (let e of enemyManager.enemies) {
         const [rrx, rrz] = _projectToRadar(e.x, e.z, s, yawSin, yawCos);
-        if (Math.abs(rrx) < RADAR_HALF && Math.abs(rrz) < RADAR_HALF) {
-          gb.vertex(rrx, rrz);
-        }
+        const crx = constrain(rrx, -RADAR_HALF, RADAR_HALF);
+        const crz = constrain(rrz, -RADAR_HALF, RADAR_HALF);
+        gb.vertex(crx, crz);
       }
       gb.endShape();
     }
 
     const [rlx, rlz] = _projectToRadar(420, 420, s, yawSin, yawCos);
-    if (Math.abs(rlx) < RADAR_HALF && Math.abs(rlz) < RADAR_HALF) {
-      gb.stroke(0, 150, 255, 220); gb.strokeWeight(5);
-      gb.point(rlx, rlz);
-    }
+    const clx = constrain(rlx, -RADAR_HALF, RADAR_HALF);
+    const clz = constrain(rlz, -RADAR_HALF, RADAR_HALF);
+    gb.stroke(0, 150, 255, 220); gb.strokeWeight(5);
+    gb.point(clx, clz);
 
     let other = gameState.players[1 - p.id];
     if (other && !other.dead) {
       const [rox, roz] = _projectToRadar(other.ship.x, other.ship.z, s, yawSin, yawCos);
-      if (Math.abs(rox) < RADAR_HALF && Math.abs(roz) < RADAR_HALF) {
-        gb.stroke(other.labelColor[0], other.labelColor[1], other.labelColor[2], 200);
-        gb.strokeWeight(5);
-        gb.point(rox, roz);
-      }
+      const crox = constrain(rox, -RADAR_HALF, RADAR_HALF);
+      const croz = constrain(roz, -RADAR_HALF, RADAR_HALF);
+      gb.stroke(other.labelColor[0], other.labelColor[1], other.labelColor[2], 200);
+      gb.strokeWeight(5);
+      gb.point(crox, croz);
     }
 
     gb.stroke(255); gb.strokeWeight(5);
@@ -211,25 +211,6 @@ function drawRadarForPlayer(p, hw, h) {
   pop();
 }
 
-/**
- * Renders keyboard/touch control hints.
- */
-function drawControlHints(p, pi, hw, h) {
-  if (gameState.isMobile) return;
-  push();
-  imageMode(CENTER);
-  let hints = '';
-  if (gameState.numPlayers === 1) {
-    hints = 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  F/R tilt';
-  } else {
-    hints = pi === 0
-      ? 'W/RMB thrust  Mouse pitch/yaw  Q/LMB shoot  E cycle weapon  S brake  F/R tilt'
-      : '\u2191 thrust  \u2190/\u2192 turn  ;/\' tilt  . shoot  / cycle weapon  \u2193 brake';
-  }
-  const g = _getControlHintGraphic(hints, hw, h);
-  image(g, 0, h / 2 - 12);
-  pop();
-}
 
 /**
  * HUD_Components: Reusable HUD elements.
@@ -237,6 +218,5 @@ function drawControlHints(p, pi, hw, h) {
 const HUD_Components = {
   drawPlayerHUD,
   drawRadarForPlayer,
-  drawControlHints,
   drawWeaponSelector: _drawWeaponSelector
 };

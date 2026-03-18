@@ -499,8 +499,12 @@ function touchMoved(event) {
  */
 function mousePressed() {
   if (!isMobile) {
-    if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
-      fullscreen(true);
+    if (gameState.mode === 'menu' && !gameState.hasClickedOnce) {
+      if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
+        fullscreen(true);
+      }
+      gameState.hasClickedOnce = true;
+      return; // Do not advance game on first click
     }
 
     if (gameState.mode === 'menu') {

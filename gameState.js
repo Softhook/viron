@@ -45,6 +45,7 @@ class GameState {
     this.mouseReleasedSinceStart = true;
     this.leftMouseDown = false;
     this.rightMouseDown = false;
+    this.hasClickedOnce = false;
     this.smoothedMX = 0;
     this.smoothedMY = 0;
 

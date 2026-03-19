@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-  <script src="p5.js"></script>
+  <script src="p5.min.js"></script>
   <script src="p5.sound.min.js"></script>
 
   <link rel="stylesheet" type="text/css" href="style.css">
@@ -27,7 +27,8 @@
   <meta name="theme-color" content="#00ff88" />
 
   <!-- App description (used by some install prompts) -->
-  <meta name="description" content="Viron – an action-packed space shooter. Fight the viral outbreak across an infinite alien landscape." />
+  <meta name="description"
+    content="Viron – an action-packed space shooter. Fight the viral outbreak across an infinite alien landscape." />
 
   <!-- Apple touch icons (iOS / iPadOS home screen) -->
   <!-- iPhone (all modern models) -->
@@ -98,7 +99,7 @@
 
           // Don't show banner if user dismissed it previously.
           var dismissed = false;
-          try { dismissed = !!localStorage.getItem(STORAGE_KEY); } catch (_) {}
+          try { dismissed = !!localStorage.getItem(STORAGE_KEY); } catch (_) { }
 
           if (isInstalled || dismissed) return;
 
@@ -115,11 +116,11 @@
 
           function hideBanner() {
             banner.style.display = 'none';
-            try { localStorage.setItem(STORAGE_KEY, '1'); } catch (_) {}
+            try { localStorage.setItem(STORAGE_KEY, '1'); } catch (_) { }
           }
 
           dismissBtn.addEventListener('click', hideBanner);
-          dismissBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+          dismissBtn.addEventListener('touchstart', function (e) { e.stopPropagation(); });
 
           // --- Chrome / Android / desktop: use beforeinstallprompt ---
           window.addEventListener('beforeinstallprompt', function (e) {
@@ -138,7 +139,7 @@
               });
             }
           });
-          installBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+          installBtn.addEventListener('touchstart', function (e) { e.stopPropagation(); });
 
           // After install, hide the banner.
           window.addEventListener('appinstalled', hideBanner);
@@ -164,9 +165,9 @@
         // ------------------------------------------------------------------
         (function () {
           var updateBanner = document.getElementById('pwa-update-banner');
-          var updateBtn    = document.getElementById('pwa-update-btn');
-          var dismissBtn   = document.getElementById('pwa-update-dismiss-btn');
-          var waitingSW    = null;
+          var updateBtn = document.getElementById('pwa-update-btn');
+          var dismissBtn = document.getElementById('pwa-update-dismiss-btn');
+          var waitingSW = null;
           // Only set to true when the user explicitly triggers SKIP_WAITING.
           // Guards controllerchange so a first-install activation never
           // causes an unwanted reload (controller: null → active SW).
@@ -190,9 +191,9 @@
             }
             hideUpdateBanner();
           });
-          updateBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+          updateBtn.addEventListener('touchstart', function (e) { e.stopPropagation(); });
           dismissBtn.addEventListener('click', hideUpdateBanner);
-          dismissBtn.addEventListener('touchstart', function(e) { e.stopPropagation(); });
+          dismissBtn.addEventListener('touchstart', function (e) { e.stopPropagation(); });
 
           // When the SW controller changes (new SW activated), reload the page
           // so all assets come from the new cache.

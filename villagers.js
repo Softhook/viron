@@ -44,17 +44,25 @@ class VillagerManager {
 
   /** Resets all villager state. Called at level start. */
   clear() {
-    this.villagers.length = 0;
-    // Cache pagodas (type 2) once to avoid looping through thousands of unrelated buildings every frame
+    // Only completely clear the active list on Level 1.
+    // On subsequent levels, the villagers persist as requested.
+    if (gameState.level === 1) {
+      this.villagers.length = 0;
+    }
+
+    // Always refresh the village cache based on the current world buildings
     this.villages = gameState.buildings.filter(b => b.type === 2);
     this.activeVillages = [];
 
-    // Reset spawn budgets on all pagodas
-    for (const b of this.villages) {
-      b._villagerBudget = VILLAGER_MAX_PER_VILLAGE;
-      b._villagerTimer = 0;
-      b._villagerRegenTimer = 0;
-      b._villagerSpawned = 0;
+    // Only reset budgets on Level 1. On higher levels, the budget from the 
+    // previous level carries over (and will continue to regenerate over time).
+    if (gameState.level === 1) {
+      for (const b of this.villages) {
+        b._villagerBudget = VILLAGER_MAX_PER_VILLAGE;
+        b._villagerTimer = 0;
+        b._villagerRegenTimer = 0;
+        b._villagerSpawned = 0;
+      }
     }
 
     this._updateActiveVillages();

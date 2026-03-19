@@ -89,9 +89,9 @@ function buildType1Geometry(b, inf) {
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType2Geometry(b, inf) {
-  let roofR = _bldgSafeR(inf ? 180 : 160), roofG = inf ? 30 : 40,  roofB = inf ? 20 : 35;  // Red
-  let wallR = _bldgSafeR(inf ? 130 : 200), wallG = inf ? 110 : 180, wallB = inf ? 80 : 140; // Cream
-  let beamR = _bldgSafeR(inf ? 60  : 80),  beamG = inf ? 40 : 50,  beamB = inf ? 30 : 40;  // Wood
+  let roofR = _bldgSafeR(inf ? 220 : 160), roofG = inf ? 20 : 40,  roofB = inf ? 20 : 35;  // Red
+  let wallR = _bldgSafeR(inf ? 200 : 200), wallG = inf ? 30 : 180, wallB = inf ? 30 : 140; // Cream / infected red
+  let beamR = _bldgSafeR(inf ? 180 : 80),  beamG = inf ? 20 : 50,  beamB = inf ? 20 : 40;  // Wood / infected red
 
   let bw = b.w, bh = b.h, bd = b.d;
   fill(beamR, beamG, beamB);
@@ -177,9 +177,9 @@ function buildType4Geometry(b, inf) {
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType5Geometry(b, inf) {
-  let roofR = _bldgSafeR(inf ? 58 : 75), roofG = inf ? 45  : 58, roofB = inf ? 22 : 32;  // Dark thatch
-  // Walls use the procedural wood-grain material (mat ID 60 for normal, 61 for infected).
-  let wallR = inf ? 61 : 60, wallG = 0, wallB = 0;
+  let roofR = _bldgSafeR(inf ? 210 : 75), roofG = inf ? 20 : 58, roofB = inf ? 20 : 32;  // Dark thatch / infected red
+  // Walls: wood-grain shader when healthy; direct red fill when infected (to show fully red).
+  let wallR = inf ? _bldgSafeR(200) : 60, wallG = inf ? 25 : 0, wallB = inf ? 25 : 0;
 
   let bw = b.w, bh = b.h, bd = b.d;
   let seed = Math.abs(Math.sin(b.x * 0.0123 + b.z * 0.0456));

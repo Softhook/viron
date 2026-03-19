@@ -583,10 +583,10 @@ function _shipSelectHit(mx, my, isTouch) {
   }
 
   if (!arrowHit) {
-    // Touch: only the explicit CONFIRM button confirms.
-    // Desktop: any non-arrow click also confirms (broad hit area, matches original mousePressed behavior).
+    // Touch input requires an explicit CONFIRM button hit.
+    // Non-touch (mouse) input confirms on any non-arrow click (broad desktop hit area).
     const isConfirmHit = my > height - 110 && localX > centerX - 130 && localX < centerX + 130;
-    if (isConfirmHit || !gameState.isMobile) {
+    if (isConfirmHit || !isTouch) {
       p.ready = true;
     }
   }

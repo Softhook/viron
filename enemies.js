@@ -169,17 +169,6 @@ class EnemyManager {
     if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot(shotType, e.x, e.y - 10, e.z);
   }
 
-  /**
-   * Returns true for enemy types whose meshes use beginShape(TRIANGLES) with
-   * explicit vertex() calls (terrain-shader pass), false for box/cylinder enemies
-   * (fill-colour-shader pass).  Checked in draw() to route each enemy to the
-   * correct render pass.
-   * @private
-   */
-  _isVertexEnemy(type) {
-    return type === 'fighter' || type === 'bomber' || type === 'hunter' || type === 'seeder';
-  }
-
   /** Shared 2D pursuit steering with velocity smoothing. */
   _steer2D(e, tx, tz, speed, smooth) {
     const dx = tx - e.x, dz = tz - e.z;

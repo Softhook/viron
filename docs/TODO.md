@@ -1,8 +1,9 @@
 # TODO / Development Backlog
 
-- [ ] Fix the mobile interface buttons that are currently invisible. 
 - [ ] Change missile behaviour: fly with more forward velocity targeting enemies within the player's view; give it very long range like bullet shots
 - [ ] Change the weapon toggle; add proper keyboard commands for desktop
+- [ ] Add more health for enemies that scales as we go up the levels 
+- [ ] Make the enemies move faster or more intelligently at the higher levels 
 - [ ] more building types. 
 - [ ] Tower defence structure
 - [ ] More sound effects

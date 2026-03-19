@@ -435,20 +435,9 @@ function touchStarted(event) {
     return false;
   }
   if (gameState.mode === 'paused') {
-    // Buttons are at center X (0 in 2D viewport, which is width/2 here)
-    // Resume at y=20 (center Y is height/2)
-    // btnW=280, btnH=60
-    let mx = mouseX - width / 2;
-    let my = mouseY - height / 2;
-    // Resume Button (y=20 relative to center)
-    if (mx > -140 && mx < 140 && my > -10 && my < 50) {
-      gameState.resumeGame();
-    }
-    // Restart Button (y=120 relative to center: resumeY=20 + btnH=60 + spacing=40)
-    else if (mx > -140 && mx < 140 && my > 90 && my < 150) {
-      gameState.mode = 'menu';
-      gameState.pauseSnapshot = null;
-    }
+    const action = _handlePauseScreenHit(mouseX, mouseY);
+    if (action === 'resume') gameState.resumeGame();
+    else if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; }
     return false;
   }
   if (typeof handleTouchStarted === 'function') return handleTouchStarted();
@@ -515,18 +504,9 @@ function mousePressed() {
       }
       return;
     } else if (gameState.mode === 'paused') {
-      let mx = mouseX - width / 2;
-      let my = mouseY - height / 2;
-      // Resume Button (y=20 relative to center)
-      if (mx > -140 && mx < 140 && my > -10 && my < 50) {
-        gameState.resumeGame();
-        requestPointerLock();
-      }
-      // Restart Button (y=120 relative to center)
-      else if (mx > -140 && mx < 140 && my > 90 && my < 150) {
-        gameState.mode = 'menu';
-        gameState.pauseSnapshot = null;
-      }
+      const action = _handlePauseScreenHit(mouseX, mouseY);
+      if (action === 'resume') { gameState.resumeGame(); requestPointerLock(); }
+      else if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; }
     } else if (gameState.mode === 'playing') {
       if (mouseButton === CENTER) {
         if (gameState.players.length > 0 && !gameState.players[0].dead) {
@@ -550,6 +530,23 @@ function windowResized() {
 // ---------------------------------------------------------------------------
 // Input helpers (shared by event handlers)
 // ---------------------------------------------------------------------------
+
+/**
+ * Tests whether (mx, my) hits a pause-screen button.
+ * Returns 'resume', 'restart', or null.
+ * Coordinates are in raw canvas space (not viewport-centred).
+ * @param {number} mx  Raw mouse/touch X.
+ * @param {number} my  Raw mouse/touch Y.
+ * @returns {'resume'|'restart'|null}
+ */
+function _handlePauseScreenHit(mx, my) {
+  const cx = mx - width / 2;
+  const cy = my - height / 2;
+  // Resume button at y=20, Restart button at y=120 relative to screen centre
+  if (cx > -140 && cx < 140 && cy > -10 && cy < 50)  return 'resume';
+  if (cx > -140 && cx < 140 && cy > 90  && cy < 150) return 'restart';
+  return null;
+}
 
 /**
  * Handles a ship-select screen tap/click for a single input point.

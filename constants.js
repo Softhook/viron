@@ -368,6 +368,19 @@ const mag2 = (dx, dz) => Math.sqrt(dx * dx + dz * dz);
 const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
 
 /**
+ * Squared 3-D Euclidean distance between two world-space points.
+ * Avoids the sqrt of mag3() — suitable for any comparison against a squared
+ * threshold (e.g. `dist3dSq(a.x,a.y,a.z, b.x,b.y,b.z) < r*r`).
+ * @param {number} x1 @param {number} y1 @param {number} z1
+ * @param {number} x2 @param {number} y2 @param {number} z2
+ * @returns {number}
+ */
+const dist3dSq = (x1, y1, z1, x2, y2, z2) => {
+  const dx = x1 - x2, dy = y1 - y2, dz = z1 - z2;
+  return dx * dx + dy * dy + dz * dz;
+};
+
+/**
  * Removes arr[i] in O(1) by swapping it with the last element and calling pop().
  * Safe for backward-iterating loops (for example, `for (let i = arr.length - 1; i >= 0; i--)`):
  * the element moved into position i came from a higher index that has already been visited,

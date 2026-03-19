@@ -1109,13 +1109,13 @@ class Terrain {
     push();
     const mX = LAUNCH_MAX - 100;
     for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
-      // Both colours share the same depth, so compute fog factor once per missile.
-      const fogF = this.getFogFactor((mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ);
+      // Both colours share the same depth — pass it once to fillFogColor().
+      const depth = (mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ;
       push();
       translate(mX, LAUNCH_ALT, mZ);
-      fill(lerp(60, SKY_R, fogF), lerp(60, SKY_G, fogF), lerp(60, SKY_B, fogF));
+      this.fillFogColor(60, 60, 60, depth);
       push(); translate(0, -10, 0); box(30, 20, 30); pop();                        // Stand
-      fill(lerp(255, SKY_R, fogF), lerp(140, SKY_G, fogF), lerp(20, SKY_B, fogF));
+      this.fillFogColor(255, 140, 20, depth);
       push(); translate(0, -70, 0); rotateX(Math.PI); cone(18, 100, 4, 1); pop(); // Rocket body
       pop();
     }

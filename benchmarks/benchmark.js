@@ -19,7 +19,10 @@ const BENCHMARK_CONFIGS = [
             disableEnemies: true, simpleColors: true, disableShadows: true, simpleNoise: true,
             viewNear: 10, viewFar: 15
         }
-    }
+    },
+    { name: 'Villages: All Updates ON (No Culling)', config: { disableVillagerCulling: true } },
+    { name: 'Villages: Culling ON (Distance check)', config: {} },
+    { name: 'Villages: Completely OFF', config: { disableVillagers: true } }
 ];
 
 async function runBenchmark(url, configName, config) {

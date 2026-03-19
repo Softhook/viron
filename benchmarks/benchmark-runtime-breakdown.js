@@ -35,6 +35,7 @@ const SCENARIOS = [
   { id: 'no-shadows', title: 'Shadow polygons disabled (stencil stubs)' },
   { id: 'cockpit-mode', title: 'Cockpit Mode (First Person)' },
   { id: 'no-sound', title: 'Sound disabled (GameSFX/gameSFX stubs)' },
+  { id: 'no-villagers', title: 'Villagers disabled' },
 ];
 
 function findChrome() {
@@ -178,6 +179,12 @@ async function setupPlayableState(page, scenarioId) {
         gameSFX.playInfectionPulse = function () { };
         gameSFX.setThrust = function () { };
       }
+    } else if (id === 'no-villagers') {
+      if (typeof villagerManager !== 'undefined') {
+        villagerManager.villagers = [];
+        villagerManager.update = function () { };
+        villagerManager.draw = function () { };
+      }
     }
 
     // Function-level instrumentation.
@@ -213,6 +220,9 @@ async function setupPlayableState(page, scenarioId) {
     wrapFunction(particleSystem, 'updatePhysics', 'particleSystem.updatePhysics');
     wrapFunction(window, 'updateProjectilePhysics', 'updateProjectilePhysics');
     wrapFunction(window, 'updateBarrierPhysics', 'updateBarrierPhysics');
+    if (typeof villagerManager !== 'undefined') {
+      wrapFunction(villagerManager, 'update', 'villagerManager.update');
+    }
 
     // Render-phase wrappers.
     wrapFunction(gameRenderer, 'renderPlayerView', 'renderPlayerView');
@@ -220,6 +230,9 @@ async function setupPlayableState(page, scenarioId) {
     wrapFunction(terrain, 'drawTrees', 'terrain.drawTrees');
     wrapFunction(terrain, 'drawBuildings', 'terrain.drawBuildings');
     wrapFunction(enemyManager, 'draw', 'enemyManager.draw');
+    if (typeof villagerManager !== 'undefined') {
+      wrapFunction(villagerManager, 'draw', 'villagerManager.draw');
+    }
     wrapFunction(particleSystem, 'render', 'particleSystem.render');
     wrapFunction(particleSystem, 'renderHardParticles', 'particleSystem.renderHardParticles');
     wrapFunction(gameRenderer, 'setSceneLighting', 'setSceneLighting');
@@ -322,6 +335,7 @@ function formatTop(summary) {
     'enemyManager.draw',
     'particleSystem.render',
     'particleSystem.renderHardParticles',
+    'villagerManager.draw',
     'setSceneLighting',
     'renderProjectiles',
     'renderInFlightBarriers',

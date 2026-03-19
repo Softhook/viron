@@ -12,7 +12,8 @@
     "benchmark-particles": "node benchmarks/benchmark-particles.js",
     "benchmark-viron": "node benchmarks/benchmark-viron.js",
     "benchmark-enemy-math": "node benchmarks/benchmark-enemy-math.js",
-    "benchmark-enemies": "node benchmarks/benchmark-enemies.js"
+    "benchmark-enemies": "node benchmarks/benchmark-enemies.js",
+    "benchmark-villagers": "node benchmarks/benchmark-villagers.js"
   },
   "repository": {
     "type": "git",

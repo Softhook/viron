@@ -27,6 +27,11 @@ class VillagerManager {
 
     // Reusable array for the draw pass — avoids per-frame allocation.
     this._visible = [];
+
+    /** @type {Array<object>} Cached reference to all village buildings (pagodas). */
+    this.villages = [];
+    /** @type {Array<object>} Villages currently within simulation range. */
+    this.activeVillages = [];
   }
 
   // ---------------------------------------------------------------------------
@@ -36,15 +41,20 @@ class VillagerManager {
   /** Resets all villager state. Called at level start. */
   clear() {
     this.villagers.length = 0;
+    // Cache pagodas (type 2) once to avoid looping through thousands of unrelated buildings every frame
+    this.villages = gameState.buildings.filter(b => b.type === 2);
+    this.activeVillages = [];
+    
     // Reset spawn budgets on all pagodas
-    for (const b of gameState.buildings) {
-      if (b.type === 2) {
-        b._villagerBudget = VILLAGER_MAX_PER_VILLAGE;
-        b._villagerTimer = 0;
-        b._villagerRegenTimer = 0;
-        b._villagerSpawned = 0;
-      }
+    for (const b of this.villages) {
+      b._villagerBudget = VILLAGER_MAX_PER_VILLAGE;
+      b._villagerTimer = 0;
+      b._villagerRegenTimer = 0;
+      b._villagerSpawned = 0;
     }
+
+    this._updateActiveVillages();
+    this._frameCounter = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -52,11 +62,25 @@ class VillagerManager {
   // ---------------------------------------------------------------------------
 
   update() {
-    // 1. Regenerate villager budgets over time
-    this._regenerateBudgets();
+    if (typeof window !== 'undefined' && window.BENCHMARK && window.BENCHMARK.disableVillagers) return;
 
-    // 2. Try to spawn new villagers from uninfected pagodas
-    this._trySpawn();
+    let targetVillages = this.villages;
+
+    if (!(typeof window !== 'undefined' && window.BENCHMARK && window.BENCHMARK.disableVillagerCulling)) {
+      // 0. Determine which villages are close enough to simulate (update every 30 frames)
+      this._frameCounter = (this._frameCounter || 0) + 1;
+      if (this._frameCounter >= 30) {
+        this._frameCounter = 0;
+        this._updateActiveVillages();
+      }
+      targetVillages = this.activeVillages;
+    }
+
+    // 1. Regenerate villager budgets over time
+    this._regenerateBudgets(targetVillages);
+
+    // 2. Try to spawn new villagers from uninfected active pagodas
+    this._trySpawn(targetVillages);
 
     // 2. Update each active villager
     for (let i = this.villagers.length - 1; i >= 0; i--) {
@@ -126,11 +150,35 @@ class VillagerManager {
   // Spawning
   // ---------------------------------------------------------------------------
 
+  /** @private Filters villages based on distance to active players to reduce CPU load. */
+  _updateActiveVillages() {
+    this.activeVillages.length = 0;
+    const SIMULATION_DIST = CULL_DIST + 1000;
+    const SIMULATION_DIST_SQ = SIMULATION_DIST * SIMULATION_DIST;
+
+    if (!gameState.players || gameState.players.length === 0) return;
+
+    for (const b of this.villages) {
+      let isActive = false;
+      for (const p of gameState.players) {
+        if (!p.dead && p.ship) {
+          const dx = b.x - p.ship.x;
+          const dz = b.z - p.ship.z;
+          if (dx * dx + dz * dz <= SIMULATION_DIST_SQ) {
+            isActive = true;
+            break;
+          }
+        }
+      }
+      if (isActive) {
+        this.activeVillages.push(b);
+      }
+    }
+  }
+
   /** @private */
-  _regenerateBudgets() {
-    for (const b of gameState.buildings) {
-      if (b.type !== 2) continue;
-      
+  _regenerateBudgets(villagesArray) {
+    for (const b of villagesArray) {
       // Initialize on first encounter if not set
       if (b._villagerBudget === undefined) {
         b._villagerBudget = VILLAGER_MAX_PER_VILLAGE;
@@ -150,10 +198,8 @@ class VillagerManager {
   }
 
   /** @private */
-  _trySpawn() {
-    for (const b of gameState.buildings) {
-      if (b.type !== 2) continue;  // Only pagodas spawn villagers
-
+  _trySpawn(villagesArray) {
+    for (const b of villagesArray) {
       // Setup handled by _regenerateBudgets
 
       // Don't spawn if village is infected

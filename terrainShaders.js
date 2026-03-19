@@ -153,12 +153,15 @@ uniform vec3 uAmbientLow;
 uniform vec3 uAmbientHigh;
 uniform mat4 uInvViewMatrix;
 
-// Hash function for procedural noise
+// Hash function for procedural noise — "Hash Without Sine" (Dave Hoskins),
+// using only multiply/dot/fract so there are no sin()-induced stripe artefacts
+// and no expensive trig ops.
 float hash(vec2 p) {
-  // Wrap p to prevent precision breakdown at large world coordinates,
-  // then use standard robust sine hash to prevent structural patterns.
   p = mod(p, 5000.0);
-  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
+  // p.x is used twice (canonical form) to improve mixing in the 3rd channel.
+  vec3 p3 = fract(vec3(p.x, p.y, p.x) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 // 2D Value Noise
@@ -255,7 +258,7 @@ vec3 computeSeaColor(inout vec3 n, inout float specInt, inout float specShin) {
     vec2  wPos = vWorldPos.xz * 0.06;
     float t    = uTime * 0.4;
     float n1   = noise2D(wPos + vec2(t, t * 0.5));
-    float n2   = noise2D(wPos - vec2(t * 0.8, -t * 0.3) + vec2(n1 * 2.0));
+    float n2   = noise2D(wPos - vec2(t * 0.8, -t * 0.3) + vec2(n1 * 2.0, n1 * 0.7));
     n.x += (n1 - 0.5) * 0.4 * noiseFade;
     n.z += (n2 - 0.5) * 0.4 * noiseFade;
     n = normalize(n);

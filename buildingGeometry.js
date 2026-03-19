@@ -33,7 +33,9 @@
  *   60    → computeWoodColor (normal)
  *   61    → computeWoodColor (infected)
  *   250   → launchpad blue
- * Building fill() calls must never use these values as the red channel.
+ * Building fill() calls must never use these values as a literal red colour
+ * channel. The only exception is when intentionally selecting a terrain-shader
+ * material ID (e.g. fill(60,0,0) to select computeWoodColor in the GLSL).
  */
 const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 60, 61, 250]);
 

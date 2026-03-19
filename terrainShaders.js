@@ -339,8 +339,10 @@ vec3 computeWoodColor(int mat, inout float specInt, inout float specShin) {
   float woodPattern = g1 * 0.65 + g2 * 0.35;
 
   // Thin dark seam where planks meet.
+  // Multiply two monotonic smoothsteps so seam stays in [0,1] with
+  // well-defined GLSL ES behaviour (reversed-edge smoothstep is UB).
   float seamT = fract(plankCoord);
-  float seam  = 1.0 - smoothstep(0.86, 1.0, seamT) - smoothstep(0.14, 0.0, seamT);
+  float seam  = smoothstep(0.0, 0.14, seamT) * (1.0 - smoothstep(0.86, 1.0, seamT));
 
   // Warm pine tones, darkened when infected.
   vec3 lightWood = infected ? vec3(0.36, 0.24, 0.09) : vec3(0.74, 0.52, 0.26);

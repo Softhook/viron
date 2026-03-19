@@ -422,31 +422,7 @@ function touchStarted(event) {
     return false;
   }
   if (gameState.mode === 'shipselect') {
-    let vw = width / gameState.numPlayers;
-    let pIdx = floor(mouseX / vw);
-    if (pIdx >= gameState.players.length) return false;
-    let p = gameState.players[pIdx];
-    if (p.ready) return false;
-
-    let localX = mouseX % vw;
-    // Regions match hudScreens.js button rendering
-    if (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130) {
-      p.ready = true;
-    } else if (mouseY > height / 2 - 60 && mouseY < height / 2 + 60) {
-      const centerX = vw / 2;
-      const arrowOffset = 220;
-      const arrowHitWidth = 120; // More generous hit area for touch
-
-      if (localX > centerX - arrowOffset - arrowHitWidth/2 && localX < centerX - arrowOffset + arrowHitWidth/2) {
-        p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
-      } else if (localX > centerX + arrowOffset - arrowHitWidth/2 && localX < centerX + arrowOffset + arrowHitWidth/2) {
-        p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
-      }
-    }
-
-    if (gameState.players.every(p => p.ready)) {
-      gameState.mode = 'cockpitSelection';
-    }
+    _shipSelectHit(mouseX, mouseY, true);
     return false;
   }
   if (gameState.mode === 'cockpitSelection') {
@@ -523,42 +499,7 @@ function mousePressed() {
       // On desktop, clicking anywhere else advances to ship selection
       gameState.mode = 'shipselect';
     } else if (gameState.mode === 'shipselect') {
-      let vw = width / gameState.numPlayers;
-      let pIdx = floor(mouseX / vw);
-      if (pIdx < gameState.players.length) {
-        let p = gameState.players[pIdx];
-        if (!p.ready) {
-          let localX = mouseX % vw;
-          let arrowHit = false;
-
-          // Side arrows (Cycle designs) - matching hudScreens.js rendering (centered around ship)
-          if (mouseY > height / 2 - 60 && mouseY < height / 2 + 60) {
-            const centerX = vw / 2;
-            const arrowOffset = 220;
-            const arrowHitWidth = 80; // slightly generous hit area
-
-            if (localX > centerX - arrowOffset - arrowHitWidth/2 && localX < centerX - arrowOffset + arrowHitWidth/2) {
-              p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
-              arrowHit = true;
-            } else if (localX > centerX + arrowOffset - arrowHitWidth/2 && localX < centerX + arrowOffset + arrowHitWidth/2) {
-              p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
-              arrowHit = true;
-            }
-          } 
-          
-          // If not an arrow, check for the "CONFIRM" button or broad click on desktop
-          if (!arrowHit) {
-            let isConfirmHit = (mouseY > height - 110 && localX > vw / 2 - 130 && localX < vw / 2 + 130);
-            if (isConfirmHit || !gameState.isMobile) {
-              p.ready = true;
-            }
-          }
-          
-          if (gameState.players.every(p => p.ready)) {
-            gameState.mode = 'cockpitSelection';
-          }
-        }
-      }
+      _shipSelectHit(mouseX, mouseY, false);
     } else if (gameState.mode === 'cockpitSelection') {
       if (typeof mobileController !== 'undefined') {
         let hit = mobileController.checkSettingsHit(mouseX, mouseY);
@@ -603,6 +544,55 @@ function windowResized() {
   // Clear pause snapshot on resize to avoid stretched background
   if (gameState.pauseSnapshot) {
     gameState.pauseSnapshot = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Input helpers (shared by event handlers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Handles a ship-select screen tap/click for a single input point.
+ * Updates the player's designIndex on arrow hits, or marks them ready on CONFIRM.
+ * Called by both touchStarted() (isTouch=true) and mousePressed() (isTouch=false).
+ * @param {number}  mx       Input X coordinate.
+ * @param {number}  my       Input Y coordinate.
+ * @param {boolean} isTouch  True for touch input (wider arrow hit area; explicit CONFIRM only).
+ */
+function _shipSelectHit(mx, my, isTouch) {
+  const vw = width / gameState.numPlayers;
+  const pIdx = floor(mx / vw);
+  if (pIdx >= gameState.players.length) return;
+  const p = gameState.players[pIdx];
+  if (p.ready) return;
+
+  const localX = mx % vw;
+  const centerX = vw / 2;
+  const arrowOffset = 220;
+  const arrowHitWidth = isTouch ? 120 : 80;
+
+  let arrowHit = false;
+  if (my > height / 2 - 60 && my < height / 2 + 60) {
+    if (localX > centerX - arrowOffset - arrowHitWidth / 2 && localX < centerX - arrowOffset + arrowHitWidth / 2) {
+      p.designIndex = (p.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+      arrowHit = true;
+    } else if (localX > centerX + arrowOffset - arrowHitWidth / 2 && localX < centerX + arrowOffset + arrowHitWidth / 2) {
+      p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
+      arrowHit = true;
+    }
+  }
+
+  if (!arrowHit) {
+    // Touch: only the explicit CONFIRM button confirms.
+    // Desktop: any non-arrow click also confirms (broad hit area, matches original mousePressed behavior).
+    const isConfirmHit = my > height - 110 && localX > centerX - 130 && localX < centerX + 130;
+    if (isConfirmHit || !gameState.isMobile) {
+      p.ready = true;
+    }
+  }
+
+  if (gameState.players.every(p => p.ready)) {
+    gameState.mode = 'cockpitSelection';
   }
 }
 

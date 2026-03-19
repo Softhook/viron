@@ -40,6 +40,17 @@ const ENEMY_COLORS = {
   yellowCrab: [255, 255, 0]
 };
 
+// Shadow dimensions [width, height] for each airborne enemy type.
+// Ground-huggers (crab, scorpion, yellowCrab) are excluded — they cast no shadow.
+// Colossus is handled separately because its size scales with tier.
+const ENEMY_SHADOW_DIMS = {
+  bomber: [150, 85],
+  fighter: [64, 60],
+  hunter: [80, 48],
+  squid: [110, 72],
+  seeder: [68, 50]
+};
+
 // Pre-allocated edge vectors for _drawTri() — eliminates 2 array literal allocations
 // per call (one per call site × 12 calls for fighter = 24 allocations/fighter/frame).
 // Safe: _drawTri() is non-re-entrant (single-threaded JS; never called from a callback).
@@ -64,6 +75,22 @@ class EnemyManager {
     // Reusable alive-player list — reset with .length=0 each frame to avoid
     // allocating a fresh array every update() call (which is called at 60 fps).
     this._alivePlayers = [];
+
+    // Dispatch tables for the two rendering passes in draw().
+    // Keyed by enemy type string — avoids repeated if-else chains every frame.
+    this._fillColorDrawHandlers = {
+      crab:       (e) => this._drawCrab(e),
+      yellowCrab: (e) => this._drawCrab(e),
+      squid:      (e) => this._drawSquid(e),
+      scorpion:   (e) => this._drawScorpion(e),
+      colossus:   (e) => this._drawColossus(e)
+    };
+    this._vertexDrawHandlers = {
+      fighter: (e) => this._drawFighter(e),
+      bomber:  (e) => this._drawBomber(e),
+      hunter:  (e) => this._drawHunter(e),
+      seeder:  (e) => this._drawSeeder(e)
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -92,6 +119,17 @@ class EnemyManager {
   /** Returns nearest alive ship or fallback reference ship. */
   _getTargetShip(e, alivePlayers, refShip) {
     return findNearest(alivePlayers, e.x, e.y, e.z) || refShip;
+  }
+
+  /**
+   * Sets both the p5 fill colour and the terrain shader uniform in one call.
+   * All box/cylinder draw methods must call this instead of the two-call pair
+   * `fill(r,g,b); terrain.setFillColor(r,g,b)` to keep them in sync.
+   * @private
+   */
+  _setColor(r, g, b) {
+    fill(r, g, b);
+    terrain.setFillColor(r, g, b);
   }
 
   /** Reflects enemy velocity if it moves too far from the reference ship. */
@@ -712,21 +750,22 @@ class EnemyManager {
     const isYellow = e.type === 'yellowCrab';
     const ccR = isYellow ? 255 : 200, ccG = isYellow ? 255 : 80, ccB = isYellow ? 0 : 20;
     const ccDR = isYellow ? 100 : 150, ccDG = isYellow ? 100 : 40, ccDB = isYellow ? 0 : 10;
-    fill(ccR, ccG, ccB); terrain.setFillColor(ccR, ccG, ccB);
     if (isYellow) {
       // Luminous glow for yellow crab
       let glow = sin(frameCount * 0.1) * 30 + 30;
       let yR = Math.min(255, ccR + glow), yG = Math.min(255, ccG + glow);
-      fill(yR, yG, ccB); terrain.setFillColor(yR, yG, ccB);
+      this._setColor(yR, yG, ccB);
+    } else {
+      this._setColor(ccR, ccG, ccB);
     }
     push(); box(36, 16, 30); pop();
     push(); translate(0, -8, 0); box(24, 8, 20); pop();
     push();
-    fill(12, 12, 12); terrain.setFillColor(12, 12, 12);
+    this._setColor(12, 12, 12);
     translate(-8, -10, 15); box(4, 8, 4);
     translate(16, 0, 0); box(4, 8, 4);
     pop();
-    fill(ccDR, ccDG, ccDB); terrain.setFillColor(ccDR, ccDG, ccDB);
+    this._setColor(ccDR, ccDG, ccDB);
     let walkPhase = frameCount * 0.3 + e.id;
     for (let side = -1; side <= 1; side += 2) {
       for (let i = -1; i <= 1; i++) {
@@ -744,11 +783,12 @@ class EnemyManager {
         pop();
       }
     }
-    fill(ccR, ccG, ccB); terrain.setFillColor(ccR, ccG, ccB);
     if (isYellow) {
       let glow = sin(frameCount * 0.1) * 30 + 30;
       let yR = Math.min(255, ccR + glow), yG = Math.min(255, ccG + glow);
-      fill(yR, yG, ccB); terrain.setFillColor(yR, yG, ccB);
+      this._setColor(yR, yG, ccB);
+    } else {
+      this._setColor(ccR, ccG, ccB);
     }
     for (let side = -1; side <= 1; side += 2) {
       let pincerLift = sin(frameCount * 0.1 + e.id) * 0.1;
@@ -774,7 +814,7 @@ class EnemyManager {
     let d = mag3(fvX, fvY, fvZ);
     if (d > 0) { rotateY(atan2(fvX, fvZ)); rotateX(-asin(fvY / d)); }
     noStroke();
-    fill(30, 30, 35); terrain.setFillColor(30, 30, 35);
+    this._setColor(30, 30, 35);
     push();
     let squeeze = (e.inkSqueeze || 0) / 12;
     scale(1.0 + squeeze * 0.20, 1.0 - squeeze * 0.25, 1.0 + squeeze * 0.20);
@@ -804,21 +844,21 @@ class EnemyManager {
     const scGR = 80, scGG = 255, scGB = 160;
 
     // Main body + armour plates
-    fill(scR, scG, scB); terrain.setFillColor(scR, scG, scB);
+    this._setColor(scR, scG, scB);
     push(); box(30, 10, 26); pop();
-    fill(scDR, scDG, scDB); terrain.setFillColor(scDR, scDG, scDB);
+    this._setColor(scDR, scDG, scDB);
     push(); translate(0, -5, 2); box(24, 2, 20); pop();
     push(); translate(0, -4, -8); box(20, 2, 10); pop();
 
     // Head/Front
-    fill(scR, scG, scB); terrain.setFillColor(scR, scG, scB);
+    this._setColor(scR, scG, scB);
     push(); translate(0, -1, 14); box(18, 6, 12); pop();
-    fill(80, 255, 80); terrain.setFillColor(80, 255, 80); // Eyes
+    this._setColor(80, 255, 80); // Eyes
     push(); translate(-6, -5, 18); box(3, 3, 3); pop();
     push(); translate(6, -5, 18); box(3, 3, 3); pop();
 
     // Articulated pincers
-    fill(scR, scG, scB); terrain.setFillColor(scR, scG, scB);
+    this._setColor(scR, scG, scB);
     for (let side = -1; side <= 1; side += 2) {
       let pPhase = frameCount * 0.1 + e.id * side;
       push();
@@ -835,7 +875,7 @@ class EnemyManager {
     }
 
     // Articulated legs (4 pairs, metachronal wave gait)
-    fill(scDR, scDG, scDB); terrain.setFillColor(scDR, scDG, scDB);
+    this._setColor(scDR, scDG, scDB);
     let walkSpeed = mag2(e.vx || 0, e.vz || 0);
     let animationSpeed = walkSpeed > 0.1 ? 0.15 : 0;
     let walkPhase = frameCount * animationSpeed + e.id;
@@ -857,7 +897,7 @@ class EnemyManager {
     }
 
     // Segmented tail + stinger
-    fill(scR, scG, scB); terrain.setFillColor(scR, scG, scB);
+    this._setColor(scR, scG, scB);
     push(); translate(0, -5, -15);
     for (let i = 0; i < 6; i++) {
       let wave = sin(frameCount * 0.1 + e.id + i * 0.5) * 0.1;
@@ -865,7 +905,7 @@ class EnemyManager {
       translate(0, -7, -4);
       box(14 - i * 2, 8 - i, 8 - i);
     }
-    fill(scGR, scGG, scGB); terrain.setFillColor(scGR, scGG, scGB);
+    this._setColor(scGR, scGG, scGB);
     translate(0, -6, -3);
     rotateX(-0.6);
     box(5, 12, 5);
@@ -892,22 +932,22 @@ class EnemyManager {
       let shinBend = max(0, -cos(legPhase)) * 0.5;
       push();
       translate(side * 50, -40, 0);
-      fill(fcR, fcG, fcB); terrain.setFillColor(fcR, fcG, fcB);
+      this._setColor(fcR, fcG, fcB);
       rotateX(thighSwing);
       push(); translate(0, 60, 0); box(50, 120, 50); pop();
       translate(0, 120, 0);
       rotateX(-shinBend);
       push(); translate(0, 60, 0); box(40, 120, 40); pop();
-      fill(dkR, dkG, dkB); terrain.setFillColor(dkR, dkG, dkB);
+      this._setColor(dkR, dkG, dkB);
       translate(0, 120, 0);
       push(); translate(0, 12, side * -6); box(60, 24, 75); pop();
       pop();
     }
-    fill(dkR, dkG, dkB); terrain.setFillColor(dkR, dkG, dkB);
+    this._setColor(dkR, dkG, dkB);
     push(); translate(0, -45, 0); box(130, 36, 90); pop();
-    fill(fcR, fcG, fcB); terrain.setFillColor(fcR, fcG, fcB);
+    this._setColor(fcR, fcG, fcB);
     push(); translate(0, -160, 0); box(160, 200, 110); pop();
-    fill(dkR, dkG, dkB); terrain.setFillColor(dkR, dkG, dkB);
+    this._setColor(dkR, dkG, dkB);
     push(); translate(-105, -210, 0); box(50, 50, 65); pop();
     push(); translate(105, -210, 0); box(50, 50, 65); pop();
     for (let side = -1; side <= 1; side += 2) {
@@ -915,24 +955,24 @@ class EnemyManager {
       push();
       translate(side * 105, -210, 0);
       rotateX(armSwing);
-      fill(fcR, fcG, fcB); terrain.setFillColor(fcR, fcG, fcB);
+      this._setColor(fcR, fcG, fcB);
       push(); translate(0, 65, 0); box(45, 120, 45); pop();
-      fill(dkR, dkG, dkB); terrain.setFillColor(dkR, dkG, dkB);
+      this._setColor(dkR, dkG, dkB);
       push(); translate(0, 125, 0); box(40, 30, 40); pop();
-      fill(fcR, fcG, fcB); terrain.setFillColor(fcR, fcG, fcB);
+      this._setColor(fcR, fcG, fcB);
       push(); translate(0, 185, 0); box(36, 100, 36); pop();
-      fill(acR, acG, acB); terrain.setFillColor(acR, acG, acB);
+      this._setColor(acR, acG, acB);
       push(); translate(0, 245, 0); box(55, 55, 55); pop();
       pop();
     }
-    fill(dkR, dkG, dkB); terrain.setFillColor(dkR, dkG, dkB);
+    this._setColor(dkR, dkG, dkB);
     push(); translate(0, -270, 0); box(65, 40, 60); pop();
-    fill(fcR, fcG, fcB); terrain.setFillColor(fcR, fcG, fcB);
+    this._setColor(fcR, fcG, fcB);
     push(); translate(0, -320, 0); box(100, 90, 100); pop();
-    fill(glR, glG, glB); terrain.setFillColor(glR, glG, glB);
+    this._setColor(glR, glG, glB);
     push(); translate(-25, -330, 51); box(25, 18, 8); pop();
     push(); translate(25, -330, 51); box(25, 18, 8); pop();
-    fill(dkR, dkG, dkB); terrain.setFillColor(dkR, dkG, dkB);
+    this._setColor(dkR, dkG, dkB);
     push(); translate(0, -348, 51); box(104, 15, 8); pop();
   }
 
@@ -1125,19 +1165,15 @@ class EnemyManager {
 
     for (let i = 0; i < vis.length; i++) {
       const e = vis[i];
-      if (this._isVertexEnemy(e.type)) continue; // vertex enemies go in PASS 2
+      const handler = this._fillColorDrawHandlers[e.type];
+      if (!handler) continue; // vertex enemies go in PASS 2
 
       push();
       translate(e.x, e.y, e.z);
       if (e.type === 'crab' || e.type === 'yellowCrab') translate(0, -10, 0);
       if (e.type === 'colossus') scale(ENEMY_DRAW_SCALE * (e.colossusScale || 1));
       else scale(ENEMY_DRAW_SCALE);
-
-      if (e.type === 'crab' || e.type === 'yellowCrab') this._drawCrab(e);
-      else if (e.type === 'squid') this._drawSquid(e);
-      else if (e.type === 'scorpion') this._drawScorpion(e);
-      else if (e.type === 'colossus') this._drawColossus(e);
-
+      handler(e);
       pop();
     }
 
@@ -1150,13 +1186,11 @@ class EnemyManager {
 
     for (let i = 0; i < vis.length; i++) {
       const e = vis[i];
-      if (!this._isVertexEnemy(e.type)) continue; // box/cylinder enemies already drawn in PASS 1
+      const handler = this._vertexDrawHandlers[e.type];
+      if (!handler) continue; // box/cylinder enemies already drawn in PASS 1
 
       push(); translate(e.x, e.y, e.z); scale(ENEMY_DRAW_SCALE);
-      if (e.type === 'fighter') this._drawFighter(e);
-      else if (e.type === 'bomber') this._drawBomber(e);
-      else if (e.type === 'hunter') this._drawHunter(e);
-      else this._drawSeeder(e);
+      handler(e);
       pop();
     }
 
@@ -1169,17 +1203,16 @@ class EnemyManager {
       if (e.type === 'crab' || e.type === 'scorpion' || e.type === 'yellowCrab') continue;
       const gy = terrain.getAltitude(e.x, e.z);
       const casterH = max(24, gy - e.y);
-      let sw = 80, sh = 50;
+      let sw, sh;
       if (e.type === 'colossus') {
         const colScale = e.colossusScale || 1;
         sw = 320 * colScale;
         sh = 230 * colScale;
+      } else {
+        const dims = ENEMY_SHADOW_DIMS[e.type];
+        sw = dims ? dims[0] : 80;
+        sh = dims ? dims[1] : 50;
       }
-      else if (e.type === 'bomber') { sw = 150; sh = 85; }
-      else if (e.type === 'fighter') { sw = 64; sh = 60; }
-      else if (e.type === 'hunter') { sw = 80; sh = 48; }
-      else if (e.type === 'squid') { sw = 110; sh = 72; }
-      else if (e.type === 'seeder') { sw = 68; sh = 50; }
       drawShadow(e.x, gy, e.z, sw, sh, casterH);
     }
   }

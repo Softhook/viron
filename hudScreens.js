@@ -3,6 +3,24 @@
 // =============================================================================
 
 /**
+ * Sets up the perspective camera and scene lights for a 3D ship preview.
+ * Both the ship-select and cockpit-selection screens share identical camera
+ * positioning and lighting; this helper eliminates the duplication.
+ * @param {number} vw          Viewport width in canvas pixels.
+ * @param {number} vh          Viewport height in canvas pixels.
+ * @param {number} keyLightB   Blue channel of the key directional light (default 255 = neutral
+ *                             white; use 220 for the slightly warmer cockpit-selection tone).
+ * @private
+ */
+function _setupShipPreviewCamera(vw, vh, keyLightB = 255) {
+  perspective(PI / 3, vw / vh, 1, 1000);
+  camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
+  directionalLight(255, 255, keyLightB, 0.5, 1, -0.5);
+  directionalLight(120, 180, 255, -0.5, -1, 0.5);
+  ambientLight(45, 45, 55);
+}
+
+/**
  * Sets up the background landscape, 2D viewport, and dim overlay — the shared
  * preamble for every full-screen menu.  The caller MUST call pop() when done.
  * @private
@@ -264,11 +282,7 @@ function drawCockpitSelection() {
     // We only render it here for non-mobile devices.
     if (!gameState.isMobile) {
       push();
-      perspective(PI / 3, vw / height, 1, 1000);
-      camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
-      directionalLight(255, 255, 220, 0.5, 1, -0.5);
-      directionalLight(120, 180, 255, -0.5, -1, 0.5);
-      ambientLight(45, 45, 55);
+      _setupShipPreviewCamera(vw, height, 220);
 
       push();
       rotateY(frameCount * 0.012);
@@ -461,11 +475,7 @@ function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
   gl.clear(gl.DEPTH_BUFFER_BIT);
 
   push();
-  perspective(PI / 3, vw / vh, 1, 1000);
-  camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
-  directionalLight(255, 255, 255, 0.5, 1, -0.5);
-  directionalLight(120, 180, 255, -0.5, -1, 0.5);
-  ambientLight(45, 45, 55);
+  _setupShipPreviewCamera(vw, vh);
 
   push();
   rotateY(frameCount * 0.018);

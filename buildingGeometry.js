@@ -30,10 +30,14 @@
  *   14-15 → computeYellowVironColor
  *   20-21 → computeBarrierColor
  *   30    → computeSeaColor
+ *   60    → computeWoodColor (normal)
+ *   61    → computeWoodColor (infected)
  *   250   → launchpad blue
- * Building fill() calls must never use these values as the red channel.
+ * Building fill() calls must never use these values as a literal red colour
+ * channel. The only exception is when intentionally selecting a terrain-shader
+ * material ID (e.g. fill(60,0,0) to select computeWoodColor in the GLSL).
  */
-const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 250]);
+const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 60, 61, 250]);
 
 /**
  * Returns r incremented past any reserved terrain-shader palette index so
@@ -173,8 +177,9 @@ function buildType4Geometry(b, inf) {
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType5Geometry(b, inf) {
-  let roofR = _bldgSafeR(inf ? 100 : 130), roofG = inf ? 80  : 110, roofB = inf ? 40 : 70;  // Thatch
-  let wallR = _bldgSafeR(inf ? 140 : 180), wallG = inf ? 120 : 160, wallB = inf ? 90 : 120; // Mud
+  let roofR = _bldgSafeR(inf ? 58 : 75), roofG = inf ? 45  : 58, roofB = inf ? 22 : 32;  // Dark thatch
+  // Walls use the procedural wood-grain material (mat ID 60 for normal, 61 for infected).
+  let wallR = inf ? 61 : 60, wallG = 0, wallB = 0;
 
   let bw = b.w, bh = b.h, bd = b.d;
   let seed = Math.abs(Math.sin(b.x * 0.0123 + b.z * 0.0456));
@@ -189,7 +194,7 @@ function buildType5Geometry(b, inf) {
   } else {
     // Variant B: Long Hut
     let rh = bh * 0.6;
-    fill(wallR * 0.9, wallG * 0.9, wallB * 0.9);
+    fill(wallR, wallG, wallB);
     push(); translate(0, -bh * 0.3, 0); box(bw * 1.6, bh * 0.6, bd * 1.1); pop();
     fill(roofR, roofG, roofB);
     push(); translate(0, -bh * 0.6 - rh / 2, 0); rotateX(PI); rotateY(PI / 2); cone(bw * 2.1, rh, 4, 1); pop();

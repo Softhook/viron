@@ -320,6 +320,40 @@ vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout flo
   return baseColor * parity;
 }
 
+// Procedural wood-grain surface (mat 60 = normal, mat 61 = infected).
+// Simulates horizontal timber planks stacked up the wall.
+vec3 computeWoodColor(int mat, inout float specInt, inout float specShin) {
+  bool infected = (mat == 61);
+
+  // Plank row index: planks are horizontal bands stacked along the Y axis.
+  float plankCoord = vWorldPos.y * 0.09;
+  float plankIdx   = floor(plankCoord);
+
+  // Per-plank random phase offset — each plank shows distinct grain.
+  float plankPhase = hash(vec2(plankIdx, 3.7)) * 12.0;
+
+  // Grain lines run horizontally (45° XZ diagonal) offset by the plank phase.
+  float grainXZ = (vWorldPos.x + vWorldPos.z) * 0.18 + plankPhase;
+  float g1 = noise2D(vec2(grainXZ,           plankIdx * 1.73));
+  float g2 = noise2D(vec2(grainXZ * 0.4 + 7.1, plankIdx * 0.91 + 8.3));
+  float woodPattern = g1 * 0.65 + g2 * 0.35;
+
+  // Thin dark seam where planks meet.
+  // Multiply two monotonic smoothsteps so seam stays in [0,1] with
+  // well-defined GLSL ES behaviour (reversed-edge smoothstep is UB).
+  float seamT = fract(plankCoord);
+  float seam  = smoothstep(0.0, 0.14, seamT) * (1.0 - smoothstep(0.86, 1.0, seamT));
+
+  // Warm pine tones, darkened when infected.
+  vec3 lightWood = infected ? vec3(0.36, 0.24, 0.09) : vec3(0.74, 0.52, 0.26);
+  vec3 darkWood  = infected ? vec3(0.18, 0.11, 0.04) : vec3(0.46, 0.27, 0.09);
+  vec3 woodColor = mix(darkWood, lightWood, woodPattern) * seam;
+
+  specInt  = 0.12;
+  specShin = 6.0;
+  return woodColor;
+}
+
 // Blinn-Phong hemisphere lighting.  Returns the lit base colour and outputs
 // ndl (Lambert term) for downstream rim-light masking.
 vec3 computeBlinnPhong(vec3 n, vec3 baseColor, int mat,
@@ -395,6 +429,7 @@ void main() {
     specularShininess = 16.0;
   }
   else if (mat >= 1 && mat <= 2)    { baseColor = computeLandscapeColor(mat, n, specularIntensity, specularShininess); }
+  else if (mat >= 60 && mat <= 61)  { baseColor = computeWoodColor(mat, specularIntensity, specularShininess); }
 
   // ── Shockwave pulse rings ─────────────────────────────────────────────────
   ${_GLSL_PULSE_LOOP}

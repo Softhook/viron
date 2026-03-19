@@ -190,6 +190,55 @@ class GameLoop {
   }
 
   /**
+   * Checks whether any projectile in `projectiles` hits enemy `e` (at enemies[j]).
+   * Removes the matched projectile (and enemy, if not a Colossus) on hit.
+   * Returns true when the enemy was destroyed; returns false when the Colossus was
+   * hit but survived (so other weapon types are still tested this frame).
+   * @private
+   * @param {object[]} projectiles   Player's projectile array (mutated on hit).
+   * @param {object}   player        Player state.
+   * @param {object}   e             Enemy to test.
+   * @param {number}   j             Index of `e` in enemyManager.enemies.
+   * @param {number}   enemyScaleSq  Precomputed (ENEMY_DRAW_SCALE/2)^2.
+   * @param {number}   normalRadSq   Hit-radius² for standard enemies.
+   * @param {number}   colossusRadSq Hit-radius² for Colossus (multiplied by its scale²).
+   * @param {number}   shakeAmt      Camera shake strength on a normal-enemy kill.
+   * @param {number}   normalScore   Score awarded for a normal-enemy kill.
+   * @param {number}   colossusDmg   HP damage applied to Colossus on hit.
+   * @param {number}   colossusFlash Flash duration (frames) for Colossus hit feedback.
+   * @param {number}   colossusHitScore Score awarded per Colossus hit.
+   * @returns {boolean}
+   */
+  static _checkProjectileArrayVsEnemy(
+    projectiles, player, e, j, enemyScaleSq,
+    normalRadSq, colossusRadSq,
+    shakeAmt, normalScore,
+    colossusDmg, colossusFlash, colossusHitScore
+  ) {
+    const isColossus = e.type === 'colossus';
+    const hitRadSq = (isColossus
+      ? colossusRadSq * this._colossusScaleSq(e)
+      : normalRadSq) * enemyScaleSq;
+
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+      const proj = projectiles[i];
+      const dx = proj.x - e.x, dy = proj.y - e.y, dz = proj.z - e.z;
+      if (dx * dx + dy * dy + dz * dz < hitRadSq) {
+        if (isColossus) {
+          swapRemove(projectiles, i);
+          return this._damageColossus(player, j, colossusDmg, colossusFlash, colossusHitScore, 2000);
+        } else {
+          particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+          if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(shakeAmt);
+          swapRemove(enemyManager.enemies, j); swapRemove(projectiles, i);
+          player.score += normalScore; return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * Applies damage to a Colossus enemy from a weapon hit.
    * Removes enemy and awards kill bonus if HP drops to zero.
    * @private
@@ -299,59 +348,22 @@ class GameLoop {
       let e = enemyManager.enemies[j];
       let killed = false;
 
-      // Player bullets/missiles vs enemy (unchanged hit detection)
-      for (let i = player.bullets.length - 1; i >= 0; i--) {
-        let b = player.bullets[i];
-        let hitRadSq = (e.type === 'colossus' ? (90000 * this._colossusScaleSq(e)) : 6400) * enemyScaleSq;
-        if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 + (b.z - e.z) ** 2 < hitRadSq) {
-          if (e.type === 'colossus') {
-            swapRemove(player.bullets, i);
-            killed = this._damageColossus(player, j, 1, 12, 10, 2000);
-          } else {
-            particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-            if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(5);
-            swapRemove(enemyManager.enemies, j); swapRemove(player.bullets, i);
-            player.score += 100; killed = true;
-          }
-          break;
-        }
-      }
-      if (!killed) {
-        for (let i = player.homingMissiles.length - 1; i >= 0; i--) {
-          let m = player.homingMissiles[i];
-          let hitRadSq = (e.type === 'colossus' ? (160000 * this._colossusScaleSq(e)) : 10000) * enemyScaleSq;
-          if ((m.x - e.x) ** 2 + (m.y - e.y) ** 2 + (m.z - e.z) ** 2 < hitRadSq) {
-            if (e.type === 'colossus') {
-              swapRemove(player.homingMissiles, i);
-              killed = this._damageColossus(player, j, 5, 20, 50, 2000);
-            } else {
-              particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-              if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(8);
-              swapRemove(enemyManager.enemies, j); swapRemove(player.homingMissiles, i);
-              player.score += 250; killed = true;
-            }
-            break;
-          }
-        }
-      }
-      if (!killed) {
-        for (let i = player.tankShells.length - 1; i >= 0; i--) {
-          let s2 = player.tankShells[i];
-          let hitRadSq = (e.type === 'colossus' ? (250000 * this._colossusScaleSq(e)) : 22500) * enemyScaleSq;
-          if ((s2.x - e.x) ** 2 + (s2.y - e.y) ** 2 + (s2.z - e.z) ** 2 < hitRadSq) {
-            if (e.type === 'colossus') {
-              swapRemove(player.tankShells, i);
-              killed = this._damageColossus(player, j, 15, 30, 100, 2000);
-            } else {
-              particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-              if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(10);
-              swapRemove(enemyManager.enemies, j); swapRemove(player.tankShells, i);
-              player.score += 300; killed = true;
-            }
-            break;
-          }
-        }
-      }
+      // Player bullets, missiles, and tank shells vs enemy — each weapon type is
+      // tested in priority order; stop as soon as the enemy is destroyed.
+      // Args: projectiles, player, e, j, enemyScaleSq,
+      //       normalRadSq, colossusRadSq, shakeAmt, normalScore,
+      //       colossusDmg, colossusFlash, colossusHitScore
+      killed = this._checkProjectileArrayVsEnemy(
+        player.bullets, player, e, j, enemyScaleSq,
+        6400, 90000, 5, 100, 1, 12, 10);
+      if (!killed)
+        killed = this._checkProjectileArrayVsEnemy(
+          player.homingMissiles, player, e, j, enemyScaleSq,
+          10000, 160000, 8, 250, 5, 20, 50);
+      if (!killed)
+        killed = this._checkProjectileArrayVsEnemy(
+          player.tankShells, player, e, j, enemyScaleSq,
+          22500, 250000, 10, 300, 15, 30, 100);
 
       // --- Body-to-Body Collision & Resolution ---
       if (!killed) {
@@ -361,7 +373,7 @@ class GameLoop {
           // Broad-phase: skip if too far (center-to-center)
           const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
           const broadRad = 500 * cScale;
-          if ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 > (broadRad + shipRad) ** 2) continue;
+          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) > (broadRad + shipRad) ** 2) continue;
 
           // Multi-part collision for Colossus
           // Apply enemy yaw rotation to bone offsets
@@ -385,7 +397,7 @@ class GameLoop {
             let by = e.y + (b.y || 0) * cScale;
             let bz = e.z + lz * cosY - lx * sinY;
             let br = b.r * cScale;
-            if ((s.x - bx) ** 2 + (s.y - by) ** 2 + (s.z - bz) ** 2 < (br + shipRad) ** 2) {
+            if (dist3dSq(s.x, s.y, s.z, bx, by, bz) < (br + shipRad) ** 2) {
               if (speedSq > 49.0) { killPlayer(player); return; } // Threshold raised from 4.2 (17.6) to 7.0 (49.0)
               this._resolveSphereCollision(s, bx, by, bz, br, shipRad);
               break; // One part is enough
@@ -394,7 +406,7 @@ class GameLoop {
         } else {
           // Normal enemy check + resolution
           let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2); // Radius in world units
-          if ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 + (s.z - e.z) ** 2 < (bodyRad + shipRad) ** 2) {
+          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < (bodyRad + shipRad) ** 2) {
             // Hunters and Squids are lethal on contact regardless of speed
             const isLethalType = e.type === 'hunter' || e.type === 'squid';
             if (isLethalType || speedSq > 49.0) { killPlayer(player); return; }
@@ -404,9 +416,7 @@ class GameLoop {
       }
     }
 
-    // 5 & 7. Merged Environment (Buildings/Sentinels) and Powerup Pass
-    let shipRadEnv = 15;
-    let speedSqEnv = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
+    // 5. Floating powerups vs player
     for (let i = gameState.buildings.length - 1; i >= 0; i--) {
       let b = gameState.buildings[i];
       if (b.type === 3) {
@@ -438,45 +448,10 @@ class GameLoop {
             });
           }
         }
-      } else {
-        /* 
-        // Blocking building/sentinel collision
-        if (Math.abs(s.x - b.x) > (b.w + 200) || Math.abs(s.z - b.z) > (b.d + 200)) continue;
-        let hw = b.w / 2, hh = b.h / 2, hd = b.d / 2;
-        let by = b.y - hh; // Center Y
-        let collided = this._resolveAABBCollision(s, b.x, by, b.z, hw, hh, hd, shipRadEnv);
-        if (collided && speedSqEnv > 49.0) { killPlayer(player); return; }
-        */
       }
     }
 
-    /*
-    // 6. Environment Collisions: Trees (Optimized search)
-    let tx0 = toTile(s.x), tz0 = toTile(s.z);
-    for (let tz = tz0 - 1; tz <= tz0 + 1; tz++) {
-      for (let tx = tx0 - 1; tx <= tx0 + 1; tx++) {
-        let t = terrain.tryGetProceduralTree(tx, tz);
-        if (!t) continue;
-        let ty = terrain.getAltitude(t.x, t.z);
-        // Altitude shortcut: ship must be within tree vertical range
-        if (s.y < ty - t.trunkH - 30 * t.canopyScale - 20 || s.y > ty + 20) continue;
-
-        // Trunk collision (tall thin cylinder)
-        let trunkHW = 5, trunkHH = t.trunkH / 2;
-        if (this._resolveAABBCollision(s, t.x, ty - trunkHH, t.z, trunkHW, trunkHH, trunkHW, shipRadEnv)) {
-          if (speedSqEnv > 49.0) { killPlayer(player); return; }
-        }
-        // Canopy collision (sphere)
-        let canopyY = ty - t.trunkH; // Center of canopy
-        let canopyR = 30 * t.canopyScale;
-        if (this._resolveSphereCollision(s, t.x, canopyY, t.z, canopyR, shipRadEnv)) {
-          if (speedSqEnv > 49.0) { killPlayer(player); return; }
-        }
-      }
-    }
-    */
-
-    // 8. Projectiles vs infected procedural trees
+    // Projectiles vs infected procedural trees
     this._checkProjectilesVsTrees(player);
   }
 

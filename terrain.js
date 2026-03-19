@@ -1109,7 +1109,7 @@ class Terrain {
     push();
     const mX = LAUNCH_MAX - 100;
     for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
-      // Both colours share the same depth, so compute fog factor once per missile.
+      // Both colours share the same depth — compute fog factor once and reuse.
       const fogF = this.getFogFactor((mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ);
       push();
       translate(mX, LAUNCH_ALT, mZ);

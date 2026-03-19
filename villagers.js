@@ -11,14 +11,18 @@
 
 // --- Villager tuning constants ---
 const VILLAGER_MAX_PER_VILLAGE = 5;       // Maximum villagers a single village can spawn
-const VILLAGER_SPAWN_INTERVAL  = 300;     // Frames between spawn attempts (~5 seconds at 60 Hz)
-const VILLAGER_RESPAWN_INTERVAL= 1200;    // Frames to regenerate one villager budget (~20 seconds)
+const VILLAGER_SPAWN_INTERVAL = 300;     // Frames between spawn attempts (~5 seconds at 60 Hz)
+const VILLAGER_RESPAWN_INTERVAL = 1200;    // Frames to regenerate one villager budget (~20 seconds)
 const VILLAGER_MAX_WANDER_DIST_SQ = 1440 * 1440; // Max distance squared (12 tiles) from home pagoda
-const VILLAGER_SPEED           = 0.8;     // World units per physics tick
-const VILLAGER_CURE_PROB       = 0.004;   // Per-tick probability of curing a nearby virus tile
-const VILLAGER_SEARCH_RADIUS   = 12;      // Tile radius to search for infected tiles
-const VILLAGER_CURE_RADIUS     = 1;       // Must be within 1 tile to attempt a cure
-const VILLAGER_CULL_DIST_SQ    = CULL_DIST * CULL_DIST;
+const VILLAGER_SPEED = 0.8;     // World units per physics tick
+const VILLAGER_CURE_PROB = 0.004;   // Per-tick probability of curing a nearby virus tile
+const VILLAGER_SEARCH_RADIUS = 4;      // Tile radius to search for infected tiles
+const VILLAGER_CURE_RADIUS = 1;       // Must be within 1 tile to attempt a cure
+const VILLAGER_CULL_DIST_SQ = CULL_DIST * CULL_DIST;
+const VILLAGER_MAX_HEALTH      = 100;
+const VILLAGER_INFECTION_DAM   = 1.2;    // Health loss per tick on infected tile
+const VILLAGER_HEAL_RATE       = 0.5;    // Health recovery per tick when safe
+const VILLAGER_STOP_DIST       = 85;     // Target distance to start curing (units)
 
 class VillagerManager {
   constructor() {
@@ -44,7 +48,7 @@ class VillagerManager {
     // Cache pagodas (type 2) once to avoid looping through thousands of unrelated buildings every frame
     this.villages = gameState.buildings.filter(b => b.type === 2);
     this.activeVillages = [];
-    
+
     // Reset spawn budgets on all pagodas
     for (const b of this.villages) {
       b._villagerBudget = VILLAGER_MAX_PER_VILLAGE;
@@ -86,11 +90,16 @@ class VillagerManager {
     for (let i = this.villagers.length - 1; i >= 0; i--) {
       const v = this.villagers[i];
 
-      // --- Check death: tile became infected ---
+      // --- Health management: damage from infection ---
       const tk = tileKey(toTile(v.x), toTile(v.z));
       if (infection.has(tk)) {
-        this._killVillager(v, i);
-        continue;
+        v.health -= VILLAGER_INFECTION_DAM;
+        if (v.health <= 0) {
+          this._killVillager(v, i);
+          continue;
+        }
+      } else if (v.health < VILLAGER_MAX_HEALTH) {
+        v.health = Math.min(VILLAGER_MAX_HEALTH, v.health + VILLAGER_HEAL_RATE);
       }
 
       // --- AI: find nearest infected tile and walk toward it ---
@@ -186,7 +195,7 @@ class VillagerManager {
         b._villagerRegenTimer = 0;
         b._villagerSpawned = 0;
       }
-      
+
       if (b._villagerBudget < VILLAGER_MAX_PER_VILLAGE) {
         b._villagerRegenTimer = (b._villagerRegenTimer || 0) + 1;
         if (b._villagerRegenTimer > VILLAGER_RESPAWN_INTERVAL) {
@@ -236,7 +245,9 @@ class VillagerManager {
         walkPhase: random(TWO_PI),
         id: random(),              // Unique seed for animation offsets
         villageX: b.x,             // Home pagoda position (for reference)
-        villageZ: b.z
+        villageZ: b.z,
+        health: VILLAGER_MAX_HEALTH,
+        isCuring: false
       });
     }
   }
@@ -278,12 +289,17 @@ class VillagerManager {
       const dx = targetWx - v.x;
       const dz = targetWz - v.z;
       const d = Math.hypot(dx, dz);
-      if (d > 10) {
+      if (d > VILLAGER_STOP_DIST) {
         v.vx = (dx / d) * VILLAGER_SPEED;
         v.vz = (dz / d) * VILLAGER_SPEED;
+        v.isCuring = false;
       } else {
+        // Within range — stop and face target
         v.vx = 0;
         v.vz = 0;
+        v.isCuring = true;
+        // Turn to face the exact tile center
+        v.facingAngle = atan2(dx, dz);
       }
     } else {
       // No target — wander slowly
@@ -389,9 +405,11 @@ class VillagerManager {
       push();
       translate(v.x, v.y, v.z);
 
-      // Face movement direction
+      // Face movement direction or target
       if (isWalking) {
         rotateY(atan2(v.vx || 0, v.vz || 0));
+      } else if (v.isCuring && v.facingAngle !== undefined) {
+        rotateY(v.facingAngle);
       }
 
       // Scale down — villagers are small
@@ -431,7 +449,10 @@ class VillagerManager {
 
       // --- Arms (animated) ---
       this._setColor(220, 185, 150);
-      const armSwing = isWalking ? sin(phase + PI) * 0.5 : 0;
+      
+      // Swing arms while walking or wave them while curing
+      const armSwing = isWalking ? sin(phase + PI) * 0.5 : (v.isCuring ? sin(phase * 3) * 0.8 : 0);
+      
       // Left arm
       push();
       translate(-4.5, -17, 0);

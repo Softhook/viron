@@ -19,10 +19,10 @@ const VILLAGER_CURE_PROB = 0.004;   // Per-tick probability of curing a nearby v
 const VILLAGER_SEARCH_RADIUS = 4;      // Tile radius to search for infected tiles
 const VILLAGER_CURE_RADIUS = 1;       // Must be within 1 tile to attempt a cure
 const VILLAGER_CULL_DIST_SQ = CULL_DIST * CULL_DIST;
-const VILLAGER_MAX_HEALTH      = 100;
-const VILLAGER_INFECTION_DAM   = 1.2;    // Health loss per tick on infected tile
-const VILLAGER_HEAL_RATE       = 0.5;    // Health recovery per tick when safe
-const VILLAGER_STOP_DIST       = 85;     // Target distance to start curing (units)
+const VILLAGER_MAX_HEALTH = 100;
+const VILLAGER_INFECTION_DAM = 1.2;    // Health loss per tick on infected tile
+const VILLAGER_HEAL_RATE = 0.5;    // Health recovery per tick when safe
+const VILLAGER_STOP_DIST = 100;     // Target distance to start curing (units)
 
 class VillagerManager {
   constructor() {
@@ -414,7 +414,7 @@ class VillagerManager {
       }
 
       // Scale down — villagers are small
-      scale(1.6);
+      scale(2);
 
       // --- Head (sphere-like box) ---
       this._setColor(220, 185, 150);  // Skin tone
@@ -450,10 +450,10 @@ class VillagerManager {
 
       // --- Arms (animated) ---
       this._setColor(220, 185, 150);
-      
+
       // Swing arms while walking or wave them while curing
       const armSwing = isWalking ? sin(phase + PI) * 0.5 : (v.isCuring ? sin(phase * 3) * 0.8 : 0);
-      
+
       // Left arm
       push();
       translate(-4.5, -17, 0);

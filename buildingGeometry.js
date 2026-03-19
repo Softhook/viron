@@ -175,7 +175,7 @@ function buildType4Geometry(b, inf) {
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType5Geometry(b, inf) {
-  let roofR = _bldgSafeR(inf ? 100 : 130), roofG = inf ? 80  : 110, roofB = inf ? 40 : 70;  // Thatch
+  let roofR = _bldgSafeR(inf ? 58 : 75), roofG = inf ? 45  : 58, roofB = inf ? 22 : 32;  // Dark thatch
   // Walls use the procedural wood-grain material (mat ID 60 for normal, 61 for infected).
   let wallR = inf ? 61 : 60, wallG = 0, wallB = 0;
 

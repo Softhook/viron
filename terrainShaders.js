@@ -321,22 +321,21 @@ vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout flo
 }
 
 // Procedural wood-grain surface (mat 60 = normal, mat 61 = infected).
-// Simulates vertical timber planks with per-plank grain variation.
+// Simulates horizontal timber planks stacked up the wall.
 vec3 computeWoodColor(int mat, inout float specInt, inout float specShin) {
   bool infected = (mat == 61);
 
-  // Plank column index: use a 45-degree diagonal of XZ so the pattern
-  // wraps naturally around all four faces of an axis-aligned box.
-  float plankCoord = (vWorldPos.x + vWorldPos.z) * 0.09;
+  // Plank row index: planks are horizontal bands stacked along the Y axis.
+  float plankCoord = vWorldPos.y * 0.09;
   float plankIdx   = floor(plankCoord);
 
   // Per-plank random phase offset — each plank shows distinct grain.
   float plankPhase = hash(vec2(plankIdx, 3.7)) * 12.0;
 
-  // Grain lines run vertically (Y axis) offset by the plank phase.
-  float grainY = vWorldPos.y * 0.18 + plankPhase;
-  float g1 = noise2D(vec2(grainY,           plankIdx * 1.73));
-  float g2 = noise2D(vec2(grainY * 0.4 + 7.1, plankIdx * 0.91 + 8.3));
+  // Grain lines run horizontally (45° XZ diagonal) offset by the plank phase.
+  float grainXZ = (vWorldPos.x + vWorldPos.z) * 0.18 + plankPhase;
+  float g1 = noise2D(vec2(grainXZ,           plankIdx * 1.73));
+  float g2 = noise2D(vec2(grainXZ * 0.4 + 7.1, plankIdx * 0.91 + 8.3));
   float woodPattern = g1 * 0.65 + g2 * 0.35;
 
   // Thin dark seam where planks meet.

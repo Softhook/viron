@@ -390,6 +390,7 @@ class VillagerManager {
     // Use fill-color shader for box/cylinder primitives
     if (terrain.fillShader) {
       terrain.applyFillColorShader();
+      terrain.setScanlineWeight(0.0); // Remove stripey texture for small villagers
     } else {
       setSceneLighting();
     }
@@ -413,7 +414,7 @@ class VillagerManager {
       }
 
       // Scale down — villagers are small
-      scale(2.5);
+      scale(1.6);
 
       // --- Head (sphere-like box) ---
       this._setColor(220, 185, 150);  // Skin tone

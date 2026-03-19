@@ -781,11 +781,18 @@ class Terrain {
     shader(this.fillShader);
     this._uploadSharedUniforms(this.fillShader);
 
-    // Seed with white so the first box() draw before any setFillColor() call
-    // renders as a bright, obviously-wrong colour rather than black (which
-    // would be invisible and silently mask a missing setFillColor() call).
     this._uFillColorArr[0] = 1.0; this._uFillColorArr[1] = 1.0; this._uFillColorArr[2] = 1.0;
     this.fillShader.setUniform('uFillColor', this._uFillColorArr);
+    this.fillShader.setUniform('uScanlineWeight', 1.0);
+  }
+
+  /**
+   * Sets the intensity of holographic scanlines in the fill-colour shader.
+   * @param {number} w  0 = disabled, 1 = normal.
+   */
+  setScanlineWeight(w) {
+    if (!this.fillShader) return;
+    this.fillShader.setUniform('uScanlineWeight', w);
   }
 
   /**

@@ -492,6 +492,7 @@ uniform vec3  uSunDir;
 uniform vec3  uSunColor;
 uniform vec3  uAmbientLow;
 uniform vec3  uAmbientHigh;
+uniform float uScanlineWeight;
 
 void main() {
   vec3 baseColor = uFillColor;
@@ -511,7 +512,7 @@ void main() {
   vec3 outColor = litBase + cyberColor;
 
   // 8. Subtle holographic scanlines (World-aligned topographical lines)
-  float worldScan = sin(vWorldPos.y * 1.5) * 0.04;
+  float worldScan = sin(vWorldPos.y * 1.5) * 0.04 * uScanlineWeight;
   outColor -= vec3(worldScan);
 
   // Fresnel rim — ship/enemy variant (same as the else branch in TERRAIN_FRAG).

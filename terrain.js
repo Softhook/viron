@@ -105,6 +105,9 @@ class Terrain {
     /** @type {p5.Shader|null} Compiled GLSL shader; null until init() is called. */
     this.shader = null;
 
+    /** @type {p5.Shader|null} Shadow fog shader; null until init() is called. */
+    this.shadowShader = null;
+
     /** @type {Array<{x,z,start,type}>} Up to 5 active shockwave pulses. */
     this.activePulses = [];
 
@@ -202,6 +205,9 @@ class Terrain {
     // Used for box/cylinder enemies (crab, squid, scorpion, colossus) so they receive
     // the same fog, lighting and shockwave effects as vertex-based enemies and terrain.
     this.fillShader = createShader(TERRAIN_VERT, FILL_COLOR_FRAG);
+    // Shadow shader: reads baked vertex colour (RGBA) and fades the alpha to zero
+    // across the fog distance range, so shadows blend into the fog correctly.
+    this.shadowShader = createShader(TERRAIN_VERT, SHADOW_FRAG);
   }
 
   // ---------------------------------------------------------------------------
@@ -799,6 +805,23 @@ class Terrain {
   }
 
   /**
+   * Binds the shadow GLSL shader and uploads the fog-distance uniform.
+   * Must be called before any shadow model()/beginShape() draw calls so that
+   * shadow alpha fades out correctly in the fog zone.
+   *
+   * The fog-distance values in _uFogDistArr are written by _uploadSharedUniforms()
+   * during the terrain/tree/building shader passes (drawLandscape → drawTrees →
+   * drawBuildings) which always execute before shadow rendering in the same frame.
+   * Reusing those cached values here avoids redundant fog calculations and keeps
+   * the shadow fog boundary in exact lock-step with the terrain fog boundary.
+   */
+  applyShadowShader() {
+    if (!this.shadowShader) return;
+    shader(this.shadowShader);
+    this.shadowShader.setUniform('uFogDist', this._uFogDistArr);
+  }
+
+  /**
    * Renders sets of tile overlay quads using the currently bound terrain shader.
    *
    * @param {object}   manager     TileManager instance (infection or barrierTiles).
@@ -1230,6 +1253,7 @@ class Terrain {
 
     if (!isBaking) {
       if (lightsWereOn) noLights();
+      this.applyShadowShader();
       _beginShadowStencil();
     }
 
@@ -1277,6 +1301,7 @@ class Terrain {
     endShape();
     if (!isBaking) {
       _endShadowStencil();
+      resetShader();
       if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
     }
   }
@@ -1588,11 +1613,13 @@ class Terrain {
     for (const t of shadowQueue) this._ensureTreeShadowBaked(t, sun);
 
     noLights(); noStroke();
+    this.applyShadowShader();
     _beginShadowStencil();
     for (const t of shadowQueue) {
       if (t._shadowGeom) { push(); model(t._shadowGeom); pop(); }
     }
     _endShadowStencil();
+    resetShader();
     setSceneLighting();
   }
 
@@ -1725,6 +1752,7 @@ class Terrain {
       }
     }
 
+    this.applyShadowShader();
     _beginShadowStencil();
     // Ensure lighting is disabled for the batched static-shadow pass.
     // Type-3 UFO shadows may have re-enabled lighting via _drawBuildingShadow().
@@ -1737,6 +1765,7 @@ class Terrain {
       }
     }
     _endShadowStencil();
+    resetShader();
     setSceneLighting();
   }
 }

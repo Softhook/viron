@@ -489,3 +489,27 @@ void main() {
   gl_FragColor = vec4(outColor, 1.0);
 }
 `;
+
+// --- GLSL fragment shader for shadow rendering ---
+//
+// Shadows have their colour and alpha baked into vertex colours by
+// _drawProjectedFootprintShadow (isBaking=true).  The default p5 shader has no
+// fog, so baked shadows remain visible even when the caster and terrain have
+// already blended into the fog.  This minimal shader reads the baked vertex
+// colour and fades its alpha to zero across the same fog range used by the
+// terrain/fill-colour shaders, making shadows correctly disappear in the fog.
+const SHADOW_FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec4 vColor;
+uniform vec2 uFogDist;
+
+void main() {
+  float dist = gl_FragCoord.z / gl_FragCoord.w;
+  float fogFactor = smoothstep(uFogDist.x, uFogDist.y, dist);
+  gl_FragColor = vec4(vColor.rgb, vColor.a * (1.0 - fogFactor));
+}
+`;

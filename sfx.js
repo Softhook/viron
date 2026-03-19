@@ -1449,6 +1449,67 @@ class GameSFX {
     }
 
     /**
+     * Plays a bright ascending chime when a villager cures an infected tile.
+     * Three harmonically-spaced sine tones rise rapidly for a positive feel.
+     */
+    playVillagerCure(x, y, z) {
+        const s = this._setup(x, y, z);
+        if (!s) return;
+        const { ctx, t, targetNode, routingNodes } = s;
+        const dur = 0.6;
+        const nodes = [];
+
+        // Ascending major triad — C5, E5, G5
+        const freqs = [523.25, 659.25, 783.99];
+        freqs.forEach((freq, i) => {
+            const noteT = t + i * 0.08;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, noteT);
+            osc.frequency.linearRampToValueAtTime(freq * 1.02, noteT + 0.3);
+            gain.gain.setValueAtTime(0, noteT);
+            gain.gain.linearRampToValueAtTime(0.18, noteT + 0.03);
+            gain.gain.exponentialRampToValueAtTime(0.0001, noteT + dur - i * 0.08);
+            osc.connect(gain);
+            gain.connect(targetNode);
+            osc.start(noteT);
+            osc.stop(noteT + dur);
+            nodes.push(osc, gain);
+        });
+
+        this._cleanupNodes([...nodes, ...routingNodes], dur + 0.16);
+    }
+
+    /**
+     * Plays a short, muffled descending tone when a villager is killed.
+     * A low sine sweep with noise burst for a sad, brief effect.
+     */
+    playVillagerDeath(x, y, z) {
+        const s = this._setup(x, y, z);
+        if (!s) return;
+        const { ctx, t, targetNode, routingNodes } = s;
+        const dur = 0.35;
+
+        const gainNode = this._makeGainEnv(ctx, t, 0.22, 0.005, dur);
+        const filter = this._makeFilter(ctx, t, 'lowpass', 1200, 200, dur);
+        const osc = this._makeOsc(ctx, t, 'sine', 440, 120, dur, filter);
+
+        // Small noise burst for texture
+        const noise = this._createNoise(0.3);
+        const noiseGain = this._makeGainEnv(ctx, t, 0.12, 0.004, 0.15);
+        if (noise) {
+            noise.connect(noiseGain);
+            noise.stop(t + 0.15);
+        }
+        noiseGain.connect(gainNode);
+
+        filter.connect(gainNode);
+        gainNode.connect(targetNode);
+        this._cleanupNodes([gainNode, filter, osc, noise, noiseGain, ...routingNodes], dur);
+    }
+
+    /**
      * Updates or starts/stops a sustained thrust sound for a specific player.
      * @param {number} id      Player ID.
      * @param {boolean} active Whether thrust is currently firing.

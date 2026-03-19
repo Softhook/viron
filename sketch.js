@@ -251,6 +251,7 @@ function draw() {
     // Physics update pipeline (runs at a steady 60 Hz equivalent)
     for (let p of gameState.players) updateShipInput(p);
     enemyManager.update();
+    if (typeof villagerManager !== 'undefined') villagerManager.update();
     for (let p of gameState.players) GameLoop.checkCollisions(p);
     GameLoop.spreadInfection();
     particleSystem.updatePhysics();

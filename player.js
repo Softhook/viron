@@ -83,6 +83,36 @@ function createPlayer(id, keys, offsetX, labelColor) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Returns the forward unit vector and trig components for pitch/yaw angles.
+ * Used to compute both projectile velocities and barrel-offset world positions.
+ * @param {number} pitch  Pitch angle (radians).
+ * @param {number} yaw    Yaw angle (radians).
+ * @returns {{fx,fy,fz,cp,sp,cy,sy}}
+ */
+function _calcForwardDir(pitch, yaw) {
+  const cp = cos(pitch), sp = sin(pitch);
+  const cy = cos(yaw),   sy = sin(yaw);
+  return { fx: -cp * sy, fy: sp, fz: -cp * cy, cp, sp, cy, sy };
+}
+
+/**
+ * Converts a local barrel offset (lz forward, ly up) into a world-space
+ * displacement, given the pre-computed trig components from _calcForwardDir.
+ * @param {number} lz  Local z offset (negative = forward in model space).
+ * @param {number} ly  Local y offset (negative = upward in world space).
+ * @param {number} cp  cos(pitch).
+ * @param {number} sp  sin(pitch).
+ * @param {number} cy  cos(yaw).
+ * @param {number} sy  sin(yaw).
+ * @returns {{dx,dy,dz}}  World-space displacement to add to the ship position.
+ */
+function _calcBarrelOffset(lz, ly, cp, sp, cy, sy) {
+  const y1 = ly * cp - lz * sp;
+  const z1 = ly * sp + lz * cp;
+  return { dx: z1 * sy, dy: y1, dz: z1 * cy };
+}
+
+/**
  * Calculates the initial position and velocity for a projectile fired from
  * the given ship state.  The spawn point is offset 30 units in front of and
  * 10 units below the ship nose so the projectile starts at the gun barrel.
@@ -93,13 +123,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
  * @returns {{x,y,z,vx,vy,vz,life}}  Projectile state object.
  */
 function spawnProjectile(s, power, life) {
-  let cp = cos(s.pitch), sp = sin(s.pitch);
-  let cy = cos(s.yaw), sy = sin(s.yaw);
-
-  // Forward unit vector in world space
-  let fx = -cp * sy;
-  let fy = sp;
-  let fz = -cp * cy;
+  const { fx, fy, fz, cp, sp, cy, sy } = _calcForwardDir(s.pitch, s.yaw);
 
   // Barrel offset: 30 units forward. Ground vehicles have guns on top (negative ly),
   // while aircraft typically have them slightly below center (positive ly).
@@ -112,13 +136,10 @@ function spawnProjectile(s, power, life) {
     lz = -40; // And a bit further forward
   }
 
-  let y1 = ly * cp - lz * sp;
-  let z1 = ly * sp + lz * cp;
+  const { dx, dy, dz } = _calcBarrelOffset(lz, ly, cp, sp, cy, sy);
 
   return {
-    x: s.x + z1 * sy,
-    y: s.y + y1,
-    z: s.z + z1 * cy,
+    x: s.x + dx, y: s.y + dy, z: s.z + dz,
     vx: fx * power + s.vx,
     vy: fy * power + s.vy,
     vz: fz * power + s.vz,
@@ -178,31 +199,22 @@ function fireTankShell(p) {
   // Give the shell a slight upward kick so it always arcs even at flat aim
   const turretPitchOffset = -0.15;
 
-  // Custom spawn with ly aligned to the tank turret (-20)
   const s = p.ship;
-  const cp = cos(s.pitch + turretPitchOffset), sp = sin(s.pitch + turretPitchOffset);
-  const cy = cos(s.yaw), sy = sin(s.yaw);
-  const fx = -cp * sy, fy = sp, fz = -cp * cy;
+  const { fx, fy, fz, cp, sp, cy, sy } = _calcForwardDir(s.pitch + turretPitchOffset, s.yaw);
+  // Turret barrel: 45 units forward, 20 units UP from centre
+  const { dx, dy, dz } = _calcBarrelOffset(-45, -20, cp, sp, cy, sy);
 
-  const lz = -45, ly = -20; // 45 units forward, 20 units UP from centre
-  const y1 = ly * cp - lz * sp;
-  const z1 = ly * sp + lz * cp;
-
-  let shell = {
-    x: s.x + z1 * sy,
-    y: s.y + y1,
-    z: s.z + z1 * cy,
+  p.tankShells.push({
+    x: s.x + dx, y: s.y + dy, z: s.z + dz,
     vx: fx * power + s.vx,
     vy: fy * power + s.vy,
     vz: fz * power + s.vz,
     life
-  };
-
-  p.tankShells.push(shell);
+  });
 
   if (typeof gameSFX !== 'undefined') {
-    gameSFX.playShot(p.ship.x, p.ship.y, p.ship.z);
-    gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
+    gameSFX.playShot(s.x, s.y, s.z);
+    gameSFX.playMissileFire(s.x, s.y, s.z);
   }
 }
 

@@ -19,6 +19,12 @@ class GameLoop {
     return s * s;
   }
 
+  /** @private Returns squared size multiplier used for Kraken radius checks. */
+  static _krakenScaleSq(e) {
+    const s = e && e.krakenScale ? e.krakenScale : 1;
+    return s * s;
+  }
+
   /**
    * Resolves a sphere-to-sphere collision by pushing the ship out along the normal.
    * @private
@@ -191,8 +197,8 @@ class GameLoop {
 
   /**
    * Checks whether any projectile in `projectiles` hits enemy `e` (at enemies[j]).
-   * Removes the matched projectile (and enemy, if not a Colossus) on hit.
-   * Returns true when the enemy was destroyed; returns false when the Colossus was
+   * Removes the matched projectile (and enemy, if not a boss type) on hit.
+   * Returns true when the enemy was destroyed; returns false when a boss was
    * hit but survived (so other weapon types are still tested this frame).
    * @private
    * @param {object[]} projectiles   Player's projectile array (mutated on hit).
@@ -204,9 +210,9 @@ class GameLoop {
    * @param {number}   colossusRadSq Hit-radius² for Colossus (multiplied by its scale²).
    * @param {number}   shakeAmt      Camera shake strength on a normal-enemy kill.
    * @param {number}   normalScore   Score awarded for a normal-enemy kill.
-   * @param {number}   colossusDmg   HP damage applied to Colossus on hit.
-   * @param {number}   colossusFlash Flash duration (frames) for Colossus hit feedback.
-   * @param {number}   colossusHitScore Score awarded per Colossus hit.
+   * @param {number}   colossusDmg   HP damage applied to boss on hit.
+   * @param {number}   colossusFlash Flash duration (frames) for boss hit feedback.
+   * @param {number}   colossusHitScore Score awarded per boss hit.
    * @returns {boolean}
    */
   static _checkProjectileArrayVsEnemy(
@@ -216,17 +222,24 @@ class GameLoop {
     colossusDmg, colossusFlash, colossusHitScore
   ) {
     const isColossus = e.type === 'colossus';
-    const hitRadSq = (isColossus
-      ? colossusRadSq * this._colossusScaleSq(e)
-      : normalRadSq) * enemyScaleSq;
+    const isKraken = e.type === 'kraken';
+    const isBoss = isColossus || isKraken;
+    let hitRadSq;
+    if (isColossus) {
+      hitRadSq = colossusRadSq * this._colossusScaleSq(e) * enemyScaleSq;
+    } else if (isKraken) {
+      hitRadSq = colossusRadSq * this._krakenScaleSq(e) * enemyScaleSq;
+    } else {
+      hitRadSq = normalRadSq * enemyScaleSq;
+    }
 
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const proj = projectiles[i];
       const dx = proj.x - e.x, dy = proj.y - e.y, dz = proj.z - e.z;
       if (dx * dx + dy * dy + dz * dz < hitRadSq) {
-        if (isColossus) {
+        if (isBoss) {
           swapRemove(projectiles, i);
-          return this._damageColossus(player, j, colossusDmg, colossusFlash, colossusHitScore, 2000);
+          return this._damageBoss(player, j, colossusDmg, colossusFlash, colossusHitScore, 2000);
         } else {
           particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
           if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(shakeAmt);
@@ -239,11 +252,11 @@ class GameLoop {
   }
 
   /**
-   * Applies damage to a Colossus enemy from a weapon hit.
+   * Applies damage to a boss enemy (Colossus or Kraken) from a weapon hit.
    * Removes enemy and awards kill bonus if HP drops to zero.
    * @private
    */
-  static _damageColossus(player, enemyIdx, dmg, flashDur, hitScore, killBonus) {
+  static _damageBoss(player, enemyIdx, dmg, flashDur, hitScore, killBonus) {
     let e = enemyManager.enemies[enemyIdx];
     e.hp = (e.hp || 0) - dmg;
     e.hitFlash = flashDur;
@@ -402,6 +415,14 @@ class GameLoop {
               this._resolveSphereCollision(s, bx, by, bz, br, shipRad);
               break; // One part is enough
             }
+          }
+        } else if (e.type === 'kraken') {
+          // Broad-phase check for Kraken (large sphere collision)
+          const kScale = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
+          const krakenBodyRad = 200 * kScale;
+          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < (krakenBodyRad + shipRad) ** 2) {
+            if (speedSq > 49.0) { killPlayer(player); return; }
+            this._resolveSphereCollision(s, e.x, e.y, e.z, krakenBodyRad, shipRad);
           }
         } else {
           // Normal enemy check + resolution

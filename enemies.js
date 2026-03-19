@@ -3,7 +3,7 @@
 //
 // Owns the active enemy list and all AI update + rendering logic.
 //
-// Eight enemy types are implemented:
+// Ten enemy types are implemented:
 //   seeder   — slow drifter; randomly drops normal infection bombs below itself
 //   bomber   — fast drifter; drops large 'mega' bombs every 600 frames (~10 s)
 //   crab     — ground-hugging unit that tracks the nearest player and infects tiles
@@ -13,6 +13,9 @@
 //   scorpion — ground-hugging; targets sentinel buildings to infect them, then launchpad
 //   colossus — BOSS: giant block-humanoid ground walker; massive HP, shoots burst salvos,
 //              walks on two animated legs, leaves a virus trail behind it
+//   wolf     — ground-hugging predator; hunts villagers and targets villages to spread virus
+//   kraken   — BOSS: giant water-bound creature; massive HP, shoots 3-bullet bursts,
+//              lashes out with far-reaching tentacle strikes, only lives on water tiles
 // =============================================================================
 
 // Seeder double-diamond geometry: two layers, each defined by [yOffset, [r, g, b]].
@@ -29,6 +32,13 @@ const COLOSSUS_HP_STEP = 30;
 const COLOSSUS_SIZE_STEP = 0.35;
 const COLOSSUS_MAX_SIZE_MULT = 2.4;
 
+// Kraken progression: HP increases by 40 each spawn. Larger than colossus base, but
+// movement is restricted to water so the player can use land as a refuge.
+const KRAKEN_HP_BASE = 60;
+const KRAKEN_HP_STEP = 40;
+const KRAKEN_SIZE_STEP = 0.25;
+const KRAKEN_MAX_SIZE_MULT = 2.0;
+
 const ENEMY_COLORS = {
   fighter: [255, 150, 0],
   bomber: [180, 20, 180],
@@ -37,7 +47,9 @@ const ENEMY_COLORS = {
   squid: [100, 100, 150],
   scorpion: [20, 180, 120],
   colossus: [255, 60, 20],
-  yellowCrab: [255, 255, 0]
+  yellowCrab: [255, 255, 0],
+  wolf: [110, 80, 55],
+  kraken: [20, 80, 160]
 };
 
 // Shadow dimensions [width, height] for each airborne enemy type.
@@ -70,7 +82,9 @@ class EnemyManager {
       scorpion: (e, alivePlayers, refShip) => this.updateScorpion(e, alivePlayers, refShip),
       colossus: (e, alivePlayers, refShip) => this.updateColossus(e, alivePlayers, refShip),
       yellowCrab: (e, alivePlayers, refShip) => this.updateYellowCrab(e, alivePlayers, refShip),
-      seeder: (e, _alivePlayers, refShip) => this.updateSeeder(e, refShip)
+      seeder: (e, _alivePlayers, refShip) => this.updateSeeder(e, refShip),
+      wolf: (e, alivePlayers, refShip) => this.updateWolf(e, alivePlayers, refShip),
+      kraken: (e, alivePlayers, refShip) => this.updateKraken(e, alivePlayers, refShip)
     };
     // Reusable alive-player list — reset with .length=0 each frame to avoid
     // allocating a fresh array every update() call (which is called at 60 fps).
@@ -83,7 +97,9 @@ class EnemyManager {
       yellowCrab: (e) => this._drawCrab(e),
       squid:      (e) => this._drawSquid(e),
       scorpion:   (e) => this._drawScorpion(e),
-      colossus:   (e) => this._drawColossus(e)
+      colossus:   (e) => this._drawColossus(e),
+      wolf:       (e) => this._drawWolf(e),
+      kraken:     (e) => this._drawKraken(e)
     };
     this._vertexDrawHandlers = {
       fighter: (e) => this._drawFighter(e),
@@ -247,28 +263,34 @@ class EnemyManager {
    * begins immediately.  Subsequent enemies are weighted randomly.
    *
    * Spawn probability weights (when not forced):
-   *   Seeder 35% | Fighter 22% | Bomber 15% | Crab 12% | Hunter 6% | Squid 6% | Scorpion 4%
-   * The Colossus is guaranteed to appear once every 3 levels.
+   *   Seeder 32% | Fighter 22% | Bomber 15% | Crab 12% | Hunter/YellowCrab 6% |
+   *   Squid 6% | Scorpion 4% | Wolf 3%
+   * The Colossus is guaranteed to appear once every 3 levels (not Kraken levels).
+   * The Kraken appears every 5 levels as an alternative boss.
    *
    * @param {boolean} [forceSeeder=false]  If true, always spawns a seeder regardless of level.
    * @param {boolean} [forceColossus=false] If true, forces a Colossus boss spawn.
+   * @param {boolean} [forceKraken=false]  If true, forces a Kraken boss spawn.
    */
-  spawn(forceSeeder = false, forceColossus = false) {
+  spawn(forceSeeder = false, forceColossus = false, forceKraken = false) {
     let type = 'seeder';
-    if (forceColossus) {
+    if (forceKraken) {
+      type = 'kraken';
+    } else if (forceColossus) {
       type = 'colossus';
     } else if (!forceSeeder && gameState.level > 0) {
       let r = random();
-      if (r < 0.35) type = 'seeder';
-      else if (r < 0.57) type = 'fighter';
-      else if (r < 0.72) type = 'bomber';
-      else if (r < 0.84) type = 'crab';
-      else if (r < 0.90) {
-        if (gameState.level >= 4 && r < 0.87) type = 'yellowCrab'; // Steal 3% from hunters for yellow crab
+      if (r < 0.32) type = 'seeder';
+      else if (r < 0.54) type = 'fighter';
+      else if (r < 0.69) type = 'bomber';
+      else if (r < 0.81) type = 'crab';
+      else if (r < 0.87) {
+        if (gameState.level >= 4 && r < 0.84) type = 'yellowCrab'; // Steal 3% from hunters for yellow crab
         else type = 'hunter';
       }
-      else if (r < 0.96) type = 'squid';
-      else type = 'scorpion';
+      else if (r < 0.93) type = 'squid';
+      else if (r < 0.97) type = 'scorpion';
+      else type = 'wolf';
     }
 
     // Colossus spawns must be far enough from the centre so the player has time to react
@@ -279,11 +301,41 @@ class EnemyManager {
       ex = cos(angle) * dist;
       ez = sin(angle) * dist;
       ey = terrain.getAltitude(ex, ez);  // On the ground — will be adjusted each frame
+    } else if (type === 'kraken') {
+      // Spawn on a water tile, far enough from centre for the player to react.
+      // Search in an outward spiral to maximise chance of landing on the ocean.
+      let angle = random(TWO_PI);
+      let dist = random(2000, 3500);
+      let attempts = 0;
+      let foundWater = false;
+      do {
+        angle = random(TWO_PI);
+        dist = random(1500, 4500);
+        ex = cos(angle) * dist;
+        ez = sin(angle) * dist;
+        ey = terrain.getAltitude(ex, ez);
+        attempts++;
+        if (aboveSea(ey)) { foundWater = true; break; }
+      } while (attempts < 60);
+      // Hard fallback: scan a grid of candidate positions to guarantee water spawn
+      if (!foundWater) {
+        outer: for (let r = 1500; r <= 5000; r += 400) {
+          for (let a = 0; a < 16; a++) {
+            const cx = cos((a / 16) * TWO_PI) * r;
+            const cz = sin((a / 16) * TWO_PI) * r;
+            if (aboveSea(terrain.getAltitude(cx, cz))) {
+              ex = cx; ez = cz;
+              ey = terrain.getAltitude(ex, ez);
+              break outer;
+            }
+          }
+        }
+      }
     } else {
       ex = random(-4000, 4000);
       ez = random(-4000, 4000);
       ey = random(-300, -800);
-      if (type === 'crab' || type === 'scorpion' || type === 'yellowCrab') {
+      if (type === 'crab' || type === 'scorpion' || type === 'yellowCrab' || type === 'wolf') {
         // Ground-hugging enemies spawn ON the ground surface rather than at altitude
         ey = terrain.getAltitude(ex, ez) - 10;
       }
@@ -308,6 +360,18 @@ class EnemyManager {
       entry.hp = hp;
       entry.maxHp = hp;
       entry.hitFlash = 0; // frames of bright flash after being hit
+    }
+
+    // Kraken progression: +40 HP per spawn, larger body each time.
+    if (type === 'kraken') {
+      gameState.krakensSpawnCount = (gameState.krakensSpawnCount || 0) + 1;
+      const tier = gameState.krakensSpawnCount;
+      const hp = KRAKEN_HP_BASE + (tier - 1) * KRAKEN_HP_STEP;
+      entry.krakenTier = tier;
+      entry.krakenScale = min(1 + (tier - 1) * KRAKEN_SIZE_STEP, KRAKEN_MAX_SIZE_MULT);
+      entry.hp = hp;
+      entry.maxHp = hp;
+      entry.hitFlash = 0;
     }
 
     this.enemies.push(entry);
@@ -649,6 +713,173 @@ class EnemyManager {
   }
 
   /**
+   * Wolf AI: a ground-hugging predator that hunts villagers and targets villages.
+   * - Seeks out the nearest villager and kills it on contact.
+   * - When no villager is nearby, it steers toward the nearest village (pagoda) to
+   *   spread the virus there.
+   * - Falls back to targeting the player ship if no villages exist.
+   * - Leaves a virus trail in its wake, prioritising village tiles.
+   * @param {object}   e            Enemy state.
+   * @param {object[]} alivePlayers Alive ship states.
+   * @param {object}   refShip      Fallback target.
+   */
+  updateWolf(e, alivePlayers, refShip) {
+    let targetX = null, targetZ = null;
+    let bestDistSq = Infinity;
+
+    // Priority 1: seek the nearest villager
+    if (typeof villagerManager !== 'undefined') {
+      for (let v of villagerManager.villagers) {
+        const d2 = (v.x - e.x) ** 2 + (v.z - e.z) ** 2;
+        if (d2 < bestDistSq) {
+          bestDistSq = d2;
+          targetX = v.x;
+          targetZ = v.z;
+        }
+      }
+    }
+
+    // If within striking range of a villager, kill it
+    if (targetX !== null && bestDistSq < 3600) {   // ~60 units
+      if (typeof villagerManager !== 'undefined') {
+        for (let i = villagerManager.villagers.length - 1; i >= 0; i--) {
+          const v = villagerManager.villagers[i];
+          if ((v.x - e.x) ** 2 + (v.z - e.z) ** 2 < 3600) {
+            villagerManager._killVillager(v, i);
+            break;
+          }
+        }
+      }
+    }
+
+    // Priority 2: if no villager nearby, head to the nearest village (pagoda, type 2)
+    if (targetX === null || bestDistSq > 800 * 800) {
+      let villageBest = Infinity;
+      for (let b of gameState.buildings) {
+        if (b.type !== 2) continue;
+        const d2 = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
+        if (d2 < villageBest) {
+          villageBest = d2;
+          targetX = b.x;
+          targetZ = b.z;
+        }
+      }
+    }
+
+    // Fallback: chase the player
+    if (targetX === null) {
+      const tShip = this._getTargetShip(e, alivePlayers, refShip);
+      targetX = tShip.x;
+      targetZ = tShip.z;
+    }
+
+    this._steer2D(e, targetX, targetZ, 2.0, 0.05);
+    e.x += e.vx; e.z += e.vz;
+
+    // Snap to ground
+    const gyW = terrain.getAltitude(e.x, e.z);
+    e.y = gyW - 10;
+
+    // Spread virus; higher probability near villages (infects neighbours)
+    if (random() < 0.03) {
+      this._tryInfectGround(e, gyW, 'normal', 1.0, true);
+    }
+  }
+
+  /**
+   * Kraken BOSS AI: a massive water-bound sea creature.
+   * - Confined strictly to water tiles; reflects velocity when approaching land.
+   * - Fires burst salvos of 3 aimed bullets every 150 frames when in range.
+   * - Periodically lashes out with far-reaching tentacle strikes in all directions.
+   * - HP starts at 60 and increases by +40 for each Kraken spawn in a run.
+   * - Size scales by spawn tier (capped).
+   * @param {object}   e            Enemy state (carries hp, maxHp, hitFlash, krakenScale).
+   * @param {object[]} alivePlayers Alive ship states.
+   * @param {object}   refShip      Fallback target.
+   */
+  updateKraken(e, alivePlayers, refShip) {
+    const tShip = this._getTargetShip(e, alivePlayers, refShip);
+
+    // Slow, deliberate 2D movement across the water surface
+    let { d } = this._steer2D(e, tShip.x, tShip.z, 0.9, 0.018);
+
+    // Water boundary enforcement: test each axis separately before committing
+    const testX = e.x + e.vx;
+    const testZ = e.z + e.vz;
+    const gyTestX = terrain.getAltitude(testX, e.z);
+    const gyTestZ = terrain.getAltitude(e.x, testZ);
+    if (!aboveSea(gyTestX)) e.vx *= -1;
+    if (!aboveSea(gyTestZ)) e.vz *= -1;
+
+    e.x += e.vx;
+    e.z += e.vz;
+
+    // Keep at sea level (positive Y = deeper in WEBGL coords)
+    e.y = SEA;
+
+    // Tick down hit-flash timer
+    if (e.hitFlash > 0) e.hitFlash--;
+
+    // --- Burst fire: 3 bullets spaced 10 frames apart every 150 frames ---
+    e.fireTimer = (e.fireTimer || 0) + 1;
+    if (d < 3000 && e.fireTimer >= 150) {
+      e.burstCount = 3;
+      e.burstCooldown = 0;
+      e.fireTimer = 0;
+    }
+    if (e.burstCount > 0) {
+      e.burstCooldown = (e.burstCooldown || 0) + 1;
+      if (e.burstCooldown >= 10) {
+        e.burstCooldown = 0;
+        e.burstCount--;
+        const kScale = e.krakenScale || 1;
+        const muzzleYOffset = 80 * kScale;
+        let bdx = tShip.x - e.x, bdy = tShip.y - (e.y - muzzleYOffset), bdz = tShip.z - e.z;
+        let bd = mag3(bdx, bdy, bdz);
+        if (bd > 0) {
+          let spread = 0.14;
+          particleSystem.enemyBullets.push({
+            x: e.x, y: e.y - muzzleYOffset, z: e.z,
+            vx: (bdx / bd) * 12 + random(-spread, spread) * 12,
+            vy: (bdy / bd) * 12,
+            vz: (bdz / bd) * 12 + random(-spread, spread) * 12,
+            life: 1200
+          });
+          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - muzzleYOffset, e.z);
+        }
+      }
+    }
+
+    // --- Tentacle lash: 4 radial projectiles + 1 aimed at player every 220 frames ---
+    e._tentacleTimer = (e._tentacleTimer || 0) + 1;
+    if (d < 2800 && e._tentacleTimer >= 220) {
+      e._tentacleTimer = 0;
+      const kScale = e.krakenScale || 1;
+      const lashY = e.y - 40 * kScale;
+      // Four radial sweeps
+      for (let t = 0; t < 4; t++) {
+        const a = (t / 4) * TWO_PI + random(-0.3, 0.3);
+        particleSystem.enemyBullets.push({
+          x: e.x, y: lashY, z: e.z,
+          vx: cos(a) * 8, vy: random(-1, 0), vz: sin(a) * 8,
+          life: 900
+        });
+      }
+      // One aimed tentacle strike at the player
+      const adx = tShip.x - e.x, adz = tShip.z - e.z;
+      const ad = mag2(adx, adz);
+      if (ad > 0) {
+        particleSystem.enemyBullets.push({
+          x: e.x, y: lashY, z: e.z,
+          vx: (adx / ad) * 10, vy: -0.5, vz: (adz / ad) * 10,
+          life: 900
+        });
+      }
+      if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, lashY, e.z);
+    }
+  }
+
+  /**
    * Squid AI: medium-speed 3D pursuer with an ink-squirt ability.
    * Instead of a constant trail, it periodically releases one very large,
    * dark cloud that rapidly blooms and obscures a wide area.
@@ -965,6 +1196,143 @@ class EnemyManager {
     push(); translate(0, -348, 51); box(104, 15, 8); pop();
   }
 
+  /** @private Renders a wolf enemy (quadruped predator with animated four-legged gait and tail). */
+  _drawWolf(e) {
+    let yaw = atan2(e.vx || 0, e.vz || 0);
+    rotateY(yaw);
+    noStroke();
+
+    const wfR = 110, wfG = 80, wfB = 55;    // Main fur
+    const wdR = 70, wdG = 50, wdB = 35;     // Darker underbelly / legs
+    const weR = 255, weG = 80, weB = 0;     // Glowing amber eyes
+    const wsR = 200, wsG = 200, wsB = 220;  // Teeth / snout highlight
+
+    let walkSpeed = mag2(e.vx || 0, e.vz || 0);
+    let walkCycle = frameCount * 0.18 * (walkSpeed > 0.1 ? 1 : 0) + (e.id || 0);
+
+    // Body (elongated, low to the ground)
+    this._setColor(wfR, wfG, wfB);
+    push(); translate(0, -8, 0); box(14, 10, 30); pop();
+
+    // Shoulder hump
+    push(); translate(0, -14, 8); box(12, 8, 12); pop();
+
+    // Neck
+    this._setColor(wfR, wfG, wfB);
+    push(); translate(0, -16, 17); rotateX(-0.35); box(9, 14, 8); pop();
+
+    // Head
+    push(); translate(0, -22, 25);
+    this._setColor(wfR, wfG, wfB);
+    box(12, 10, 14);
+    // Snout
+    this._setColor(wdR, wdG, wdB);
+    push(); translate(0, 2, 8); box(7, 6, 8); pop();
+    // Ears
+    this._setColor(wdR, wdG, wdB);
+    push(); translate(-5, -7, 2); rotateZ(0.3); box(4, 8, 3); pop();
+    push(); translate(5, -7, 2); rotateZ(-0.3); box(4, 8, 3); pop();
+    // Eyes (glowing amber)
+    this._setColor(weR, weG, weB);
+    push(); translate(-4, -3, 7); box(3, 3, 3); pop();
+    push(); translate(4, -3, 7); box(3, 3, 3); pop();
+    pop();
+
+    // Animated tail (arched, wagging)
+    let tailWag = sin(frameCount * 0.2 + e.id) * 0.4;
+    this._setColor(wfR, wfG, wfB);
+    push(); translate(0, -10, -14);
+    for (let i = 0; i < 4; i++) {
+      let tw = tailWag * (1 + i * 0.3);
+      rotateX(-0.25);
+      rotateY(tw);
+      translate(0, -4, -4);
+      box(6 - i, 6 - i, 6);
+    }
+    pop();
+
+    // Four animated legs
+    this._setColor(wdR, wdG, wdB);
+    const legPairs = [{ z: 12, phase: 0 }, { z: -10, phase: PI }];
+    for (let pair of legPairs) {
+      for (let side = -1; side <= 1; side += 2) {
+        let lp = walkCycle + pair.phase + side * 0.5;
+        let lift = max(0, sin(lp)) * 4;
+        let stride = cos(lp) * 0.3;
+        push();
+        translate(side * 7, -3, pair.z);
+        rotateX(stride);
+        translate(0, 6, 0); box(5, 12, 5);
+        translate(0, lift > 1 ? -lift : 0, 6);
+        box(4, 10, 4);
+        pop();
+      }
+    }
+  }
+
+  /**
+   * @private Renders a kraken BOSS (giant sea-creature body, animated tentacles and glowing eyes).
+   * The kraken sits at sea level; tentacles radiate outward and undulate sinusoidally.
+   * All geometry uses local-space units (not scaled by krakenScale here) because the
+   * caller's draw() applies scale(ENEMY_DRAW_SCALE * krakenScale) before invoking this
+   * method — the same pattern used by the Colossus renderer.
+   */
+  _drawKraken(e) {
+    noStroke();
+    const kScale = e.krakenScale || 1;
+    let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
+
+    const bR = lerp(20, 200, hitT), bG = lerp(80, 200, hitT), bB = lerp(160, 255, hitT);  // Body
+    const dkR = 10, dkG = 50, dkB = 100;   // Dark mantle
+    const glR = 0, glG = 220, glB = 255;   // Glowing cyan eyes
+    const tentR = lerp(15, 180, hitT), tentG = lerp(60, 180, hitT), tentB = lerp(130, 220, hitT);
+
+    // Main body dome (use rotated cylinders to fake a dome shape)
+    this._setColor(bR, bG, bB);
+    push();
+    rotateX(PI / 2);
+    cylinder(50, 30, 12, 1);
+    pop();
+    // Flattened cap
+    push();
+    translate(0, -20, 0);
+    rotateX(PI / 2);
+    cylinder(40, 14, 12, 1);
+    pop();
+
+    // Dark mantle ring
+    this._setColor(dkR, dkG, dkB);
+    push();
+    translate(0, -4, 0);
+    rotateX(PI / 2);
+    cylinder(52, 8, 12, 1);
+    pop();
+
+    // Glowing eyes
+    this._setColor(glR, glG, glB);
+    push(); translate(-20, -18, 40); box(14, 10, 8); pop();
+    push(); translate(20, -18, 40); box(14, 10, 8); pop();
+
+    // 8 animated tentacles radiating outward
+    this._setColor(tentR, tentG, tentB);
+    const numTentacles = 8;
+    for (let i = 0; i < numTentacles; i++) {
+      const a = (i / numTentacles) * TWO_PI;
+      const phase = frameCount * 0.07 + e.id + i * 0.8;
+      push();
+      rotateY(a);
+      translate(45, 8, 0);
+      for (let seg = 0; seg < 6; seg++) {
+        let wave = sin(phase + seg * 0.6) * 0.25;
+        rotateZ(0.12 + wave);
+        rotateX(wave * 0.3);
+        translate(0, 0, 12);
+        box(10 - seg, 10 - seg, 14);
+      }
+      pop();
+    }
+  }
+
   /** @private Renders a fighter enemy (arrowhead body, fins, animated tail — yaw/pitch aligned). */
   _drawFighter(e) {
     let fvX = e.vx || 0.1, fvY = e.vy || 0, fvZ = e.vz || 0.1;
@@ -1113,8 +1481,8 @@ class EnemyManager {
     const sx = s.x, sz = s.z;
 
     // Single culling pass — build list of enemies visible this frame.
-    // The Colossus has an enlarged cull radius that grows with its tier,
-    // so its localCullSq is stored on the object for re-use in the shadow pass.
+    // The Colossus and Kraken have enlarged cull radii that grow with their tier,
+    // so the localCullSq is stored on the object for re-use in the shadow pass.
     const vis = [];
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
@@ -1123,6 +1491,10 @@ class EnemyManager {
         const colScale = e.colossusScale || 1;
         localCullSq = (CULL_DIST * (1.5 + (colScale - 1) * 0.4)) ** 2;
         e._shadowCullSq = localCullSq; // cache enlarged radius for shadow pass
+      } else if (e.type === 'kraken') {
+        const kScale = e.krakenScale || 1;
+        localCullSq = (CULL_DIST * (1.4 + (kScale - 1) * 0.3)) ** 2;
+        e._shadowCullSq = localCullSq;
       }
       if ((e.x - sx) ** 2 + (e.z - sz) ** 2 > localCullSq) continue;
       vis.push(e);
@@ -1161,6 +1533,7 @@ class EnemyManager {
       translate(e.x, e.y, e.z);
       if (e.type === 'crab' || e.type === 'yellowCrab') translate(0, -10, 0);
       if (e.type === 'colossus') scale(ENEMY_DRAW_SCALE * (e.colossusScale || 1));
+      else if (e.type === 'kraken') scale(ENEMY_DRAW_SCALE * (e.krakenScale || 1));
       else scale(ENEMY_DRAW_SCALE);
       handler(e);
       pop();
@@ -1186,10 +1559,13 @@ class EnemyManager {
     resetShader();
     setSceneLighting();
 
-    // Shadow pass — crab/scorpion/yellowCrab hug the ground and have no airborne shadow.
+    // Shadow pass — ground-hugging enemies have no meaningful airborne shadow.
+    // Wolf hugs the ground like crab/scorpion; kraken sits at sea level so its shadow
+    // would fall at the same Y — skip it too.
     for (let i = 0; i < vis.length; i++) {
       const e = vis[i];
-      if (e.type === 'crab' || e.type === 'scorpion' || e.type === 'yellowCrab') continue;
+      if (e.type === 'crab' || e.type === 'scorpion' || e.type === 'yellowCrab' ||
+          e.type === 'wolf' || e.type === 'kraken') continue;
       const gy = terrain.getAltitude(e.x, e.z);
       const casterH = max(24, gy - e.y);
       let sw, sh;

@@ -1718,11 +1718,10 @@ class Terrain {
       } else {
         let bGeom = this._getBuildingGeom(b, inf);
         if (bGeom) model(bGeom);
-        // Rotating magic ring for type 4 wizard tower
+        // Rotating crown for type 4 sentinel tower
         if (b.type === 4) {
           const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
-          // Healthy: purple-blue spinning ring; infected: orange-red.
-          fill(safeR(inf ? 220 : 80), inf ? 60 : 60, inf ? 22 : 220);
+          fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
           push();
           translate(0, -b.h * 0.87, 0);
           rotateY(millis() * 0.00192 + b.x * 0.001);

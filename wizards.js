@@ -1,8 +1,8 @@
 // =============================================================================
 // wizards.js — WizardManager class
 //
-// Spawns a single wizard figure from each uninfected sentinel tower
-// (building type 4). Wizards are more powerful than villagers: they actively
+// Spawns a single wizard figure from each uninfected wizard tower
+// (building type 0 — blue square box with pyramid roof). Wizards are more powerful than villagers: they actively
 // hunt infection across a wider radius, cast spells that clear a 2×2 block of
 // virus tiles in one go, and are slightly taller in appearance.
 //
@@ -41,7 +41,7 @@ class WizardManager {
     // Reused across draw() to avoid per-frame allocation.
     this._visible = [];
 
-    /** @type {Array<object>} Cached reference to all sentinel tower buildings (type 4). */
+    /** @type {Array<object>} Cached reference to all wizard tower buildings (type 0). */
     this.towers = [];
   }
 
@@ -56,7 +56,7 @@ class WizardManager {
     }
 
     // Refresh tower list from current world buildings.
-    this.towers = gameState.buildings.filter(b => b.type === 4);
+    this.towers = gameState.buildings.filter(b => b.type === 0);
 
     if (gameState.level === 1) {
       for (const b of this.towers) {
@@ -420,55 +420,44 @@ class WizardManager {
 
       scale(WIZARD_DRAW_SCALE);
 
-      // --- Robe body (cylinder) ---
-      this._setColor(80, 40, 160);
-      push(); translate(0, -11, 0); cylinder(4.5, 14, 8, 1); pop();
+      // --- Head (same box as villager) ---
+      this._setColor(220, 185, 150);  // Skin tone
+      push(); translate(0, -22, 0); box(5, 5, 5); pop();
 
-      // --- Robe hem (wider flare at the bottom) ---
-      this._setColor(60, 25, 130);
-      push(); translate(0, -4, 0); rotateX(Math.PI); cone(6, 7, 8, 1); pop();
+      // --- Body — blue tunic (same as villager, just bigger via scale) ---
+      this._setColor(60, 120, 200);
+      push(); translate(0, -16, 0); box(6, 8, 4); pop();
 
-      // --- Head ---
+      // --- Legs (animated, matching villager style) ---
+      this._setColor(80, 60, 40);  // Brown
+      const legSwing = isWalking ? sin(phase) * 0.6 : 0;
+      push(); translate(-1.5, -11, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+      push(); translate( 1.5, -11, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+
+      // --- Left arm (animated like villager) ---
       this._setColor(220, 185, 150);
-      push(); translate(0, -21, 0); box(5, 5, 5); pop();
+      const leftArmSwing = isWalking ? sin(phase + PI) * 0.5 : (w.isCasting ? sin(w.castPhase * 3) * 0.3 : 0);
+      push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2, 5, 2); pop();
 
-      // --- White beard ---
-      this._setColor(210, 210, 220);
-      push(); translate(0, -18, 2.5); box(3.5, 5, 1); pop();
+      // --- Right arm: holds staff — raises while casting ---
+      const staffArm = w.isCasting
+        ? -Math.PI * 0.6 + Math.sin(w.castPhase) * 0.15
+        : (isWalking ? sin(phase) * 0.5 : -0.15);
 
-      // --- Pointed wizard hat ---
-      this._setColor(80, 40, 160);
-      push(); translate(0, -28, 0); rotateX(Math.PI); cone(3.5, 11, 6, 1); pop();
-
-      // Hat brim
-      this._setColor(55, 20, 120);
-      push(); translate(0, -22.5, 0); cylinder(5.5, 1.5, 8, 1); pop();
-
-      // --- Staff (right arm) ---
-      // Arm swings while walking; raises dramatically while casting.
-      const staffAngle = w.isCasting
-        ? -Math.PI * 0.65 + Math.sin(w.castPhase) * 0.15
-        : (isWalking ? Math.sin(phase + Math.PI) * 0.5 : -0.2);
-
-      this._setColor(100, 70, 40);   // Brown wood shaft
+      this._setColor(220, 185, 150);
       push();
-      translate(5, -17, 0);
-      rotateX(staffAngle);
-      translate(0, -8, 0);
-      cylinder(0.9, 18, 4, 1);       // Shaft
-      // Gem at staff tip
-      this._setColor(w.isCasting ? 160 : 100, w.isCasting ? 230 : 200, 255);
-      push(); translate(0, -10, 0); sphere(2.2, 6, 4); pop();
-      pop();
-
-      // --- Left arm ---
-      this._setColor(80, 40, 160);
-      const leftArmAngle = isWalking ? Math.sin(phase) * 0.4 : 0;
-      push();
-      translate(-5, -17, 0);
-      rotateX(leftArmAngle);
+      translate(4.5, -17, 0);
+      rotateX(staffArm);
       translate(0, 3, 0);
-      box(2, 5, 2);
+      box(2, 5, 2);     // Arm
+
+      // Staff shaft extending from the hand
+      this._setColor(100, 70, 40);
+      push(); translate(0, -12, 0); cylinder(0.8, 16, 4, 1); pop();
+
+      // Staff gem at tip
+      this._setColor(w.isCasting ? 120 : 80, w.isCasting ? 220 : 190, 255);
+      push(); translate(0, -21, 0); sphere(2.0, 6, 4); pop();
       pop();
 
       pop(); // End of wizard transform

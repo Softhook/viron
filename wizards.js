@@ -41,16 +41,132 @@ const WIZARD_DRAW_SCALE      = 2.5;          // Slightly taller than a villager 
 // tiles² closer than the current one (prevents oscillation between equal targets).
 const WIZARD_TARGET_HYSTERESIS_SQ = 4;       // ≈ 2 tiles
 
-class WizardManager {
+class WizardManager extends AgentManager {
   constructor() {
-    /** @type {Array<object>} Active wizard objects. */
-    this.wizards = [];
+    super(0, {
+      maxHealth: WIZARD_MAX_HEALTH,
+      infectionDam: WIZARD_INFECTION_DAM,
+      healRate: WIZARD_HEAL_RATE,
+      speed: WIZARD_SPEED,
+      searchRadius: WIZARD_SEARCH_RADIUS,
+      targetHysteresisSq: WIZARD_TARGET_HYSTERESIS_SQ,
+      stopDist: WIZARD_STOP_DIST,
+      maxWanderDistSq: WIZARD_MAX_WANDER_DIST_SQ,
+      wanderSpeedMult: 0.4
+    }); // Tower building type
+    // Aliases to seamlessly patch rendering and old logic references seamlessly 
+    this.wizards = this.agents;
+    this.towers = this.hubs;
+  }
 
-    // Reused across draw() to avoid per-frame allocation.
-    this._visible = [];
+  onWanderExceeded(w) { w.isCasting = false; }
+  onWalkToTarget(w) { w.isCasting = false; }
+  onReachTarget(w) {
+    if (w.spells.length === 0) {
+      if (random() < WIZARD_CAST_PROB) {
+        this._castSpell(w);
+      } else {
+        w.isCasting = false;
+      }
+    }
+  }
+  onNoTarget(w) { w.isCasting = false; }
 
-    /** @type {Array<object>} Cached reference to all wizard tower buildings (type 0). */
-    this.towers = [];
+  onAgentDeath(w) {
+    for (let p = 0; p < 16; p++) {
+      particleSystem.particles.push({
+        x: w.x, y: w.y - 8, z: w.z,
+        vx: random(-3, 3), vy: random(-5, -1), vz: random(-3, 3),
+        life: 220, decay: 9, size: random(3, 7),
+        color: p % 2 === 0 ? [200, 50, 40] : [255, 195, 50]
+      });
+    }
+
+    if (typeof gameSFX !== 'undefined') {
+      gameSFX.playVillagerDeath(w.x, w.y, w.z);
+    }
+
+    // Allow the home tower to spawn a replacement wizard.
+    if (w.towerRef) w.towerRef._wizardSpawned = false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Geometry Baking
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Pre-bakes 64 frames of wizard animations into cached p5.Geometry objects.
+   * Eliminates expensive per-part draw calls and fill state changes.
+   * @private
+   */
+  _ensureGeoms() {
+    if (WizardManager._geoms) return;
+    WizardManager._geoms = [];
+    WizardManager._castingGeoms = [];
+
+    const buildWiz = (isCasting, phase, castPhase) => {
+      return _safeBuildGeometry(() => {
+        noStroke();
+        
+        // Head
+        fill(_bldgSafeR(220), 185, 150);
+        push(); translate(0, -22, 0); box(5, 5, 5); pop();
+
+        // Beard
+        fill(_bldgSafeR(235), 235, 230);
+        push(); translate(0, -19, 2.5); box(3, 4, 2); pop();
+
+        // Hat
+        fill(_bldgSafeR(90), 140, 60);
+        push(); translate(0, -26, 0); cylinder(8, 1.5, 8, 1); pop();
+        push(); translate(0, -30, 0); rotateX(Math.PI); cone(5, 7, 8, 1); pop();
+        fill(_bldgSafeR(220), 185, 50);
+        push(); translate(0, -26.8, 0); cylinder(8.1, 0.6, 8, 1); pop();
+
+        // Robe
+        fill(_bldgSafeR(175), 40, 50);
+        push(); translate(0, -16, 0); box(7, 8, 4); pop();
+        fill(_bldgSafeR(220), 185, 50);
+        push(); translate(0, -12.5, 0); box(8, 1.8, 5); pop();
+        fill(_bldgSafeR(175), 40, 50);
+        push(); translate(0, -9, 0); box(8, 5, 5); pop();
+
+        // Legs
+        fill(_bldgSafeR(130), 30, 35);
+        const legSwing = isCasting ? 0 : Math.sin(phase) * 0.6;
+        push(); translate(-1.5, -6.5, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+        push(); translate( 1.5, -6.5, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+
+        // Left Arm
+        fill(_bldgSafeR(175), 40, 50);
+        const leftArmSwing = isCasting ? Math.sin(castPhase * 3) * 0.3 : Math.sin(phase + Math.PI) * 0.5;
+        push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2.5, 5, 2.5); pop();
+
+        // Right Arm (Staff)
+        const staffArm = isCasting
+          ? -Math.PI * 0.6 + Math.sin(castPhase) * 0.15
+          : (legSwing !== 0 ? Math.sin(phase) * 0.5 : -0.15); // Stand idle: -0.15
+        
+        fill(_bldgSafeR(175), 40, 50);
+        push(); translate(4.5, -17, 0); rotateX(staffArm); translate(0, 3, 0); box(2.5, 5, 2.5);
+        
+        // Staff & Orb
+        fill(_bldgSafeR(90), 140, 60);
+        push(); translate(0, -13, 0); cylinder(0.8, 18, 5, 1); pop();
+        fill(_bldgSafeR(220), 185, 50);
+        push(); translate(0, -22.5, 0); rotateX(Math.PI / 2); torus(2.5, 0.5, 8, 4); pop();
+        fill(_bldgSafeR(isCasting ? 55 : 40), isCasting ? 225 : 200, isCasting ? 145 : 120);
+        push(); translate(0, -25, 0); sphere(2.0, 6, 4); pop();
+        pop(); // right arm group
+      });
+    };
+
+    for (let f = 0; f < 64; f++) {
+      const phase = (f / 64) * Math.PI * 2;
+      WizardManager._geoms[f] = buildWiz(false, phase, 0);
+      WizardManager._castingGeoms[f] = buildWiz(true, 0, phase);
+    }
+    WizardManager._staticGeom = buildWiz(false, 0, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -59,15 +175,9 @@ class WizardManager {
 
   /** Resets wizard state. Called at every level start. */
   clear() {
+    super.clear();
     if (gameState.level === 1) {
-      this.wizards.length = 0;
-    }
-
-    // Refresh tower list from current world buildings.
-    this.towers = gameState.buildings.filter(b => b.type === 0);
-
-    if (gameState.level === 1) {
-      for (const b of this.towers) {
+      for (const b of this.hubs) {
         b._wizardSpawned = false;
         b._wizardTimer   = 0;
       }
@@ -81,42 +191,25 @@ class WizardManager {
   update() {
     if (typeof window !== 'undefined' && window.BENCHMARK && window.BENCHMARK.disableVillagers) return;
 
+    super.update();
+    const targets = this.getTargetHubs();
+
     // Try to spawn one wizard per clean, un-occupied tower.
-    this._trySpawn();
+    this._trySpawn(targets);
 
     // Update every active wizard.
-    for (let i = this.wizards.length - 1; i >= 0; i--) {
-      const w = this.wizards[i];
-
-      // Health: take damage when standing on infected tile.
-      const tk = tileKey(toTile(w.x), toTile(w.z));
-      if (infection.has(tk)) {
-        w.health -= WIZARD_INFECTION_DAM;
-        if (w.health <= 0) {
-          this._killWizard(w, i);
-          continue;
-        }
-      } else if (w.health < WIZARD_MAX_HEALTH) {
-        w.health = Math.min(WIZARD_MAX_HEALTH, w.health + WIZARD_HEAL_RATE);
-      }
+    for (let i = this.agents.length - 1; i >= 0; i--) {
+      const w = this.agents[i];
 
       // Advance in-flight spell blobs first so they can clear tiles this tick.
       this._updateSpells(w);
 
       // Steer toward nearest infection cluster.
-      this._steerTowardInfection(w);
+      this._steerTowardInfection(w, w.towerX, w.towerZ);
 
-      // Integrate movement.
-      w.x += w.vx;
-      w.z += w.vz;
-
-      // Snap to ground.
-      const gy = terrain.getAltitude(w.x, w.z);
-      w.y = gy;
-
-      // Kill if wizard walked into the sea.
-      if (aboveSea(gy)) {
-        this._killWizard(w, i);
+      // --- Health & Physics Integration ---
+      if (!this._applyHealthAndPhysics(w)) {
+        this.killAgent(w, i);
         continue;
       }
 
@@ -127,6 +220,8 @@ class WizardManager {
       if (w.isCasting) {
         w.castPhase = (w.castPhase + 0.18) % (Math.PI * 2);
       }
+
+      this._smoothRotation(w);
     }
   }
 
@@ -186,8 +281,8 @@ class WizardManager {
   // ---------------------------------------------------------------------------
 
   /** @private Attempts to spawn a wizard from each eligible sentinel tower. */
-  _trySpawn() {
-    for (const b of this.towers) {
+  _trySpawn(towersArray) {
+    for (const b of towersArray) {
       // One wizard per tower.
       if (b._wizardSpawned) continue;
 
@@ -214,7 +309,7 @@ class WizardManager {
       b._wizardSpawned = true;
       b._wizardTimer   = 0;
 
-      this.wizards.push({
+      this.agents.push({
         x: sx, y: sy, z: sz,
         vx: 0, vz: 0,
         targetTx: null, targetTz: null,
@@ -226,114 +321,11 @@ class WizardManager {
         health: WIZARD_MAX_HEALTH,
         isCasting: false,
         castPhase: 0,
-        facingAngle: 0,
-        spells: []
+        facingAngle: angle,
+        spells: [],
+        _retargetTimer: Math.floor(random(60)) // Stagger CPU spikes
       });
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // AI
-  // ---------------------------------------------------------------------------
-
-  /** @private Steers a wizard toward infection; casts a spell when in range. */
-  _steerTowardInfection(w) {
-    // Enforce max wander distance — return toward tower if exceeded.
-    const dxH = w.x - w.towerX;
-    const dzH = w.z - w.towerZ;
-    if (dxH * dxH + dzH * dzH > WIZARD_MAX_WANDER_DIST_SQ) {
-      w.targetTx = null;
-      w.targetTz = null;
-      const d = Math.hypot(dxH, dzH);
-      if (d > 0) {
-        w.vx = lerp(w.vx || 0, (-dxH / d) * WIZARD_SPEED, 0.15);
-        w.vz = lerp(w.vz || 0, (-dzH / d) * WIZARD_SPEED, 0.15);
-      }
-      return;
-    }
-
-    // Retarget periodically or when the tile is no longer infected.
-    w._retargetTimer = (w._retargetTimer || 0) + 1;
-    const needsRetarget =
-      w.targetTx === null ||
-      w._retargetTimer > 60 ||
-      !infection.has(tileKey(w.targetTx, w.targetTz));
-
-    if (needsRetarget) {
-      w._retargetTimer = 0;
-      this._findNearestInfection(w);
-    }
-
-    if (w.targetTx !== null) {
-      const targetWx = w.targetTx * TILE + TILE * 0.5;
-      const targetWz = w.targetTz * TILE + TILE * 0.5;
-      const dx = targetWx - w.x;
-      const dz = targetWz - w.z;
-      const d  = Math.hypot(dx, dz);
-
-      if (d > WIZARD_STOP_DIST) {
-        // Walk toward target — lerp smooths out rapid direction changes (hysteresis).
-        w.vx = lerp(w.vx || 0, (dx / d) * WIZARD_SPEED, 0.15);
-        w.vz = lerp(w.vz || 0, (dz / d) * WIZARD_SPEED, 0.15);
-        w.isCasting = false;
-      } else {
-        // In casting range — stop and face target.
-        w.vx = 0;
-        w.vz = 0;
-        w.facingAngle = atan2(dx, dz);
-
-        // Cast only when no spell is already in flight.
-        if (w.spells.length === 0) {
-          if (random() < WIZARD_CAST_PROB) {
-            this._castSpell(w);
-          } else {
-            w.isCasting = false;
-          }
-        }
-      }
-    } else {
-      // No target — wander slowly back toward the tower.
-      w.isCasting = false;
-      if (random() < 0.02) {
-        const angle = random(TWO_PI);
-        w.vx = cos(angle) * WIZARD_SPEED * 0.4;
-        w.vz = sin(angle) * WIZARD_SPEED * 0.4;
-      }
-    }
-  }
-
-  /** @private Scans for nearest infected tile within WIZARD_SEARCH_RADIUS. */
-  _findNearestInfection(w) {
-    const wtx = toTile(w.x), wtz = toTile(w.z);
-    let bestDist = Infinity;
-    let bestTx = null, bestTz = null;
-    const r = WIZARD_SEARCH_RADIUS;
-
-    for (let dz = -r; dz <= r; dz++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const tx = wtx + dx, tz = wtz + dz;
-        if (infection.has(tileKey(tx, tz))) {
-          const distSq = dx * dx + dz * dz;
-          if (distSq < bestDist) {
-            bestDist = distSq;
-            bestTx = tx;
-            bestTz = tz;
-          }
-        }
-      }
-    }
-
-    // Hysteresis: keep the current target unless the new one is meaningfully
-    // closer (> WIZARD_TARGET_HYSTERESIS_SQ) or the current target is no longer infected.
-    if (bestTx !== null && w.targetTx !== null &&
-        infection.has(tileKey(w.targetTx, w.targetTz))) {
-      const curDx = w.targetTx - wtx, curDz = w.targetTz - wtz;
-      const curDistSq = curDx * curDx + curDz * curDz;
-      if (bestDist + WIZARD_TARGET_HYSTERESIS_SQ >= curDistSq) return; // Not worth switching
-    }
-
-    w.targetTx = bestTx;
-    w.targetTz = bestTz;
   }
 
   /** @private Launches a spell blob toward the wizard's current target tile. */
@@ -363,31 +355,6 @@ class WizardManager {
   }
 
   // ---------------------------------------------------------------------------
-  // Death
-  // ---------------------------------------------------------------------------
-
-  /** @private Removes a wizard, plays a crimson death burst, and frees the tower slot. */
-  _killWizard(w, idx) {
-    for (let p = 0; p < 16; p++) {
-      particleSystem.particles.push({
-        x: w.x, y: w.y - 8, z: w.z,
-        vx: random(-3, 3), vy: random(-5, -1), vz: random(-3, 3),
-        life: 220, decay: 9, size: random(3, 7),
-        color: p % 2 === 0 ? [200, 50, 40] : [255, 195, 50]
-      });
-    }
-
-    if (typeof gameSFX !== 'undefined') {
-      gameSFX.playVillagerDeath(w.x, w.y, w.z);
-    }
-
-    // Allow the home tower to spawn a replacement wizard.
-    if (w.towerRef) w.towerRef._wizardSpawned = false;
-
-    swapRemove(this.wizards, idx);
-  }
-
-  // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
 
@@ -402,28 +369,54 @@ class WizardManager {
    * @param {{x,y,z}} s  Ship state used for distance culling.
    */
   draw(s) {
-    if (this.wizards.length === 0) return;
+    if (this.agents.length === 0) return;
 
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
-    const sx = s.x, sz = s.z;
-    const vis = this._visible;
-    vis.length = 0;
-
-    const cam = terrain._cam;
-    for (let i = 0; i < this.wizards.length; i++) {
-      const w = this.wizards[i];
-      if ((w.x - sx) ** 2 + (w.z - sz) ** 2 > WIZARD_CULL_DIST_SQ) continue;
-      if (cam && !terrain.inFrustum(cam, w.x, w.z)) continue;
-      vis.push(w);
-    }
+    const vis = this._cullVisible(s, WIZARD_CULL_DIST_SQ);
 
     if (vis.length === 0) {
       if (profiler) profiler.recordWizards(0, performance.now() - start);
       return;
     }
 
+    this._ensureGeoms();
+    noStroke();
+
+    // 1. Draw wizards with vertex-baked geometries using the standard terrain shader
+    terrain.applyShader();
+
+    for (let i = 0; i < vis.length; i++) {
+      const w = vis[i];
+      const vx = w.vx || 0;
+      const vz = w.vz || 0;
+      const isWalking = (vx * vx + vz * vz) > 0.01;
+
+      push();
+      translate(w.x, w.y, w.z);
+      rotateY(w.facingAngle);
+      scale(WIZARD_DRAW_SCALE);
+
+      let geom;
+      if (isWalking) {
+        const TWO_PI_MATH = Math.PI * 2;
+        const fIdx = Math.floor(((w.walkPhase % TWO_PI_MATH + TWO_PI_MATH) % TWO_PI_MATH) / TWO_PI_MATH * 64);
+        geom = WizardManager._geoms[fIdx];
+      } else if (w.isCasting) {
+        const TWO_PI_MATH = Math.PI * 2;
+        const fIdx = Math.floor(((w.castPhase % TWO_PI_MATH + TWO_PI_MATH) % TWO_PI_MATH) / TWO_PI_MATH * 64);
+        geom = WizardManager._castingGeoms[fIdx];
+      } else {
+        geom = WizardManager._staticGeom;
+      }
+
+      if (geom) model(geom);
+
+      pop(); // End of wizard transform
+    }
+
+    // 2. Draw in-flight spell blobs in world space using fill shader (no scanlines)
     if (terrain.fillShader) {
       terrain.applyFillColorShader();
       terrain.setScanlineWeight(0.0);
@@ -431,92 +424,8 @@ class WizardManager {
       setSceneLighting();
     }
 
-    noStroke();
-
     for (let i = 0; i < vis.length; i++) {
-      const w = vis[i];
-      const walkSpeed = Math.hypot(w.vx || 0, w.vz || 0);
-      const isWalking = walkSpeed > 0.1;
-      const phase     = w.walkPhase;
-
-      push();
-      translate(w.x, w.y, w.z);
-
-      if (isWalking) {
-        rotateY(atan2(w.vx || 0, w.vz || 0));
-      } else if (w.facingAngle !== undefined) {
-        rotateY(w.facingAngle);
-      }
-
-      scale(WIZARD_DRAW_SCALE);
-
-      // --- Head ---
-      this._setColor(220, 185, 150);  // Skin tone
-      push(); translate(0, -22, 0); box(5, 5, 5); pop();
-
-      // --- White beard (below chin, slightly forward) ---
-      this._setColor(235, 235, 230);
-      push(); translate(0, -19, 2.5); box(3, 4, 2); pop();
-
-      // --- Bamboo conical hat (wide flat brim + tapering crown) ---
-      this._setColor(90, 140, 60);   // bamboo green brim
-      push(); translate(0, -26, 0); cylinder(8, 1.5, 8, 1); pop();
-      push(); translate(0, -30, 0); rotateX(PI); cone(5, 7, 8, 1); pop();  // conical crown, point up
-      this._setColor(220, 185, 50);  // gold hat band
-      push(); translate(0, -26.8, 0); cylinder(8.1, 0.6, 8, 1); pop();
-
-      // --- Body — deep crimson robe ---
-      this._setColor(175, 40, 50);
-      push(); translate(0, -16, 0); box(7, 8, 4); pop();
-
-      // --- Golden sash across waist ---
-      this._setColor(220, 185, 50);
-      push(); translate(0, -12.5, 0); box(8, 1.8, 5); pop();
-
-      // --- Lower robe hem (wider, suggests flowing robe) ---
-      this._setColor(175, 40, 50);
-      push(); translate(0, -9, 0); box(8, 5, 5); pop();
-
-      // --- Legs (barely visible beneath robe hem) ---
-      this._setColor(130, 30, 35);
-      const legSwing = isWalking ? sin(phase) * 0.6 : 0;
-      push(); translate(-1.5, -6.5, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 4, 2.5); pop();
-      push(); translate( 1.5, -6.5, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
-
-      // --- Left sleeve (crimson) ---
-      this._setColor(175, 40, 50);
-      const leftArmSwing = isWalking ? sin(phase + PI) * 0.5 : (w.isCasting ? sin(w.castPhase * 3) * 0.3 : 0);
-      push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2.5, 5, 2.5); pop();
-
-      // --- Right sleeve: holds bamboo staff — raises while casting ---
-      const staffArm = w.isCasting
-        ? -Math.PI * 0.6 + Math.sin(w.castPhase) * 0.15
-        : (isWalking ? sin(phase) * 0.5 : -0.15);
-
-      this._setColor(175, 40, 50);
-      push();
-      translate(4.5, -17, 0);
-      rotateX(staffArm);
-      translate(0, 3, 0);
-      box(2.5, 5, 2.5);     // Sleeve
-
-      // Bamboo staff shaft
-      this._setColor(90, 140, 60);
-      push(); translate(0, -13, 0); cylinder(0.8, 18, 5, 1); pop();
-
-      // Gold ring ornament near staff top
-      this._setColor(220, 185, 50);
-      push(); translate(0, -22.5, 0); rotateX(PI / 2); torus(2.5, 0.5, 8, 4); pop();
-
-      // Jade orb at staff tip — brightens when casting
-      this._setColor(w.isCasting ? 55 : 40, w.isCasting ? 225 : 200, w.isCasting ? 145 : 120);
-      push(); translate(0, -25, 0); sphere(2.0, 6, 4); pop();
-      pop();  // end right arm/staff
-
-      pop(); // End of wizard transform
-
-      // Draw in-flight spell blobs in world space (fill shader still active).
-      this._drawSpells(w);
+      this._drawSpells(vis[i]);
     }
 
     resetShader();

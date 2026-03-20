@@ -478,6 +478,7 @@ class TileManager {
       arr.push(obj);
     }
     if (isTileOnLaunchpad(tx, tz)) this.launchpadCount++;
+    if (this.onInvalidate) this.onInvalidate(tx, tz);
     return obj;
   }
 
@@ -489,6 +490,8 @@ class TileManager {
   remove(k) {
     const obj = this.tiles.get(k);
     if (!obj) return false;
+
+    const tx = obj.tx, tz = obj.tz;
 
     // Remove from keyList
     const idx = obj._idx;
@@ -518,13 +521,15 @@ class TileManager {
       }
     }
 
-    if (isTileOnLaunchpad(obj.tx, obj.tz)) this.launchpadCount--;
+    if (isTileOnLaunchpad(tx, tz)) this.launchpadCount--;
 
     this.tiles.delete(k);
     this.count--;
 
     // When a tile is removed, its neighbors might become "frontier" again
-    this.reactivateNeighbors(obj.tx, obj.tz);
+    this.reactivateNeighbors(tx, tz);
+
+    if (this.onInvalidate) this.onInvalidate(tx, tz);
 
     return true;
   }

@@ -17,7 +17,7 @@ const VILLAGER_MAX_WANDER_DIST_SQ = 1440 * 1440; // Max distance squared (12 til
 const VILLAGER_SPEED = 0.8;     // World units per physics tick
 const VILLAGER_CURE_PROB = 0.004;   // Per-tick probability of curing a nearby virus tile
 const VILLAGER_SEARCH_RADIUS = 4;      // Tile radius to search for infected tiles
-const VILLAGER_CURE_RADIUS = 1;       // Must be within 1 tile to attempt a cure
+const VILLAGER_CURE_RADIUS = 1;       // Must be within 1 tile to attempt a cure (matches 100 unit stop dist)
 const VILLAGER_CULL_DIST_SQ = CULL_DIST * CULL_DIST;
 const VILLAGER_MAX_HEALTH = 100;
 const VILLAGER_INFECTION_DAM = 1.2;    // Health loss per tick on infected tile
@@ -27,18 +27,135 @@ const VILLAGER_STOP_DIST = 100;     // Target distance to start curing (units)
 // tiles² closer than the current one (prevents oscillation between equal targets).
 const VILLAGER_TARGET_HYSTERESIS_SQ = 4; // ≈ 2 tiles
 
-class VillagerManager {
+class VillagerManager extends AgentManager {
   constructor() {
-    /** @type {Array<object>} Active villager objects. */
-    this.villagers = [];
+    super(2, {
+      maxHealth: VILLAGER_MAX_HEALTH,
+      infectionDam: VILLAGER_INFECTION_DAM,
+      healRate: VILLAGER_HEAL_RATE,
+      speed: VILLAGER_SPEED,
+      searchRadius: VILLAGER_SEARCH_RADIUS,
+      targetHysteresisSq: VILLAGER_TARGET_HYSTERESIS_SQ,
+      stopDist: VILLAGER_STOP_DIST,
+      maxWanderDistSq: VILLAGER_MAX_WANDER_DIST_SQ,
+      wanderSpeedMult: 0.3
+    }); // Pagoda building type
+    // Aliases to seamlessly patch rendering and old logic references seamlessly 
+    this.villagers = this.agents;
+    this.villages = this.hubs;
+  }
 
-    // Reusable array for the draw pass — avoids per-frame allocation.
-    this._visible = [];
+  onWanderExceeded(v) { v.isCuring = false; }
+  onWalkToTarget(v) { v.isCuring = false; }
+  onReachTarget(v) { v.isCuring = true; }
+  onNoTarget(v) { v.isCuring = false; }
 
-    /** @type {Array<object>} Cached reference to all village buildings (pagodas). */
-    this.villages = [];
-    /** @type {Array<object>} Villages currently within simulation range. */
-    this.activeVillages = [];
+  onAgentDeath(v) {
+    // Death particles
+    for (let p = 0; p < 12; p++) {
+      particleSystem.particles.push({
+        x: v.x, y: v.y - 8, z: v.z,
+        vx: random(-3, 3), vy: random(-4, -1), vz: random(-3, 3),
+        life: 200, decay: 10, size: random(2, 5),
+        color: [200, 60, 40]
+      });
+    }
+
+    // Audio
+    if (typeof gameSFX !== 'undefined') {
+      gameSFX.playVillagerDeath(v.x, v.y, v.z);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Geometry Baking
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Pre-bakes 64 frames of villager walking animation into cached p5.Geometry
+   * objects. Baking vertex colours directly into the mesh eliminates the need
+   * for expensive per-part fill() and terrain.setFillColor() calls in the loop.
+   *
+   * Uses _bldgSafeR() for all colours to ensure we don't accidentally trigger
+   * special terrain-shader material logic (like wood textures or viron glows).
+   * @private
+   */
+  _ensureGeoms() {
+    if (VillagerManager._geoms) return;
+    VillagerManager._geoms = [];
+
+    // Base palette
+    const skinR = _bldgSafeR(220), skinG = 185, skinB = 150;
+    const tunicR = _bldgSafeR(60), tunicG = 120, tunicB = 200;
+    const legR = _bldgSafeR(80), legG = 60, legB = 40;
+
+    for (let f = 0; f < 64; f++) {
+      const phase = (f / 64) * TWO_PI;
+      const legSwing = sin(phase) * 0.6;
+      const armSwing = sin(phase + PI) * 0.5;
+
+      VillagerManager._geoms[f] = _safeBuildGeometry(() => {
+        noStroke();
+        translate(0, 5, 0); // Anchor feet precisely to Y=0
+
+        // --- Head ---
+        fill(skinR, skinG, skinB);
+        push(); translate(0, -22, 0); box(5, 5, 5); pop();
+
+        // --- Body ---
+        fill(tunicR, tunicG, tunicB);
+        push(); translate(0, -16, 0); box(6, 8, 4); pop();
+
+        // --- Legs ---
+        fill(legR, legG, legB);
+        // Left
+        push(); translate(-1.5, -11, 0); rotateX(legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        // Right
+        push(); translate(1.5, -11, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+
+        // --- Arms ---
+        fill(skinR, skinG, skinB);
+        // Left
+        push(); translate(-4.5, -17, 0); rotateX(armSwing); translate(0, 3, 0); box(2, 5, 2); pop();
+        // Right
+        push(); translate(4.5, -17, 0); rotateX(-armSwing); translate(0, 3, 0); box(2, 5, 2); pop();
+      });
+    }
+
+    // Static frame for standing still
+    VillagerManager._staticGeom = _safeBuildGeometry(() => {
+      noStroke();
+      translate(0, 5, 0); // Anchor feet precisely to Y=0
+
+      fill(skinR, skinG, skinB); push(); translate(0, -22, 0); box(5, 5, 5); pop();
+      fill(tunicR, tunicG, tunicB); push(); translate(0, -16, 0); box(6, 8, 4); pop();
+      fill(legR, legG, legB);
+      push(); translate(-1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+      push(); translate(1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+      fill(skinR, skinG, skinB);
+      push(); translate(-4.5, -17, 0); translate(0, 3, 0); box(2, 5, 2); pop();
+      push(); translate(4.5, -17, 0); translate(0, 3, 0); box(2, 5, 2); pop();
+    });
+
+    // Special "curing" frame with waving arms
+    VillagerManager._curingGeoms = [];
+    for (let f = 0; f < 64; f++) {
+      const phase = (f / 64) * TWO_PI;
+      const wave = sin(phase * 3) * 0.8; // Match original procedural wave speed (phase * 3)
+      VillagerManager._curingGeoms[f] = _safeBuildGeometry(() => {
+        noStroke();
+        translate(0, 5, 0); // Anchor feet precisely to Y=0
+
+        fill(skinR, skinG, skinB); push(); translate(0, -22, 0); box(5, 5, 5); pop();
+        fill(tunicR, tunicG, tunicB); push(); translate(0, -16, 0); box(6, 8, 4); pop();
+        fill(legR, legG, legB);
+        push(); translate(-1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        push(); translate(1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        fill(skinR, skinG, skinB);
+        push(); translate(-4.5, -17, 0); rotateX(wave); translate(0, 3, 0); box(2, 5, 2); pop();
+        push(); translate(4.5, -17, 0); rotateX(-wave); translate(0, 3, 0); box(2, 5, 2); pop();
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -47,29 +164,17 @@ class VillagerManager {
 
   /** Resets all villager state. Called at level start. */
   clear() {
-    // Only completely clear the active list on Level 1.
-    // On subsequent levels, the villagers persist as requested.
-    if (gameState.level === 1) {
-      this.villagers.length = 0;
-    }
-
-    // Always refresh the village cache based on the current world buildings
-    this.villages = gameState.buildings.filter(b => b.type === 2);
-    this.activeVillages = [];
-
+    super.clear();
     // Only reset budgets on Level 1. On higher levels, the budget from the 
     // previous level carries over (and will continue to regenerate over time).
     if (gameState.level === 1) {
-      for (const b of this.villages) {
+      for (const b of this.hubs) {
         b._villagerBudget = VILLAGER_MAX_PER_VILLAGE;
         b._villagerTimer = 0;
         b._villagerRegenTimer = 0;
         b._villagerSpawned = 0;
       }
     }
-
-    this._updateActiveVillages();
-    this._frameCounter = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -79,54 +184,26 @@ class VillagerManager {
   update() {
     if (typeof window !== 'undefined' && window.BENCHMARK && window.BENCHMARK.disableVillagers) return;
 
-    let targetVillages = this.villages;
+    super.update();
 
-    if (!(typeof window !== 'undefined' && window.BENCHMARK && window.BENCHMARK.disableVillagerCulling)) {
-      // 0. Determine which villages are close enough to simulate (update every 30 frames)
-      this._frameCounter = (this._frameCounter || 0) + 1;
-      if (this._frameCounter >= 30) {
-        this._frameCounter = 0;
-        this._updateActiveVillages();
-      }
-      targetVillages = this.activeVillages;
-    }
+    const targets = this.getTargetHubs();
 
     // 1. Regenerate villager budgets over time
-    this._regenerateBudgets(targetVillages);
+    this._regenerateBudgets(targets);
 
     // 2. Try to spawn new villagers from uninfected active pagodas
-    this._trySpawn(targetVillages);
+    this._trySpawn(targets);
 
     // 2. Update each active villager
-    for (let i = this.villagers.length - 1; i >= 0; i--) {
-      const v = this.villagers[i];
-
-      // --- Health management: damage from infection ---
-      const tk = tileKey(toTile(v.x), toTile(v.z));
-      if (infection.has(tk)) {
-        v.health -= VILLAGER_INFECTION_DAM;
-        if (v.health <= 0) {
-          this._killVillager(v, i);
-          continue;
-        }
-      } else if (v.health < VILLAGER_MAX_HEALTH) {
-        v.health = Math.min(VILLAGER_MAX_HEALTH, v.health + VILLAGER_HEAL_RATE);
-      }
+    for (let i = this.agents.length - 1; i >= 0; i--) {
+      const v = this.agents[i];
 
       // --- AI: find nearest infected tile and walk toward it ---
-      this._steerTowardInfection(v);
+      this._steerTowardInfection(v, v.villageX, v.villageZ);
 
-      // --- Movement integration ---
-      v.x += v.vx;
-      v.z += v.vz;
-
-      // Snap to ground
-      const gy = terrain.getAltitude(v.x, v.z);
-      v.y = gy;
-
-      // Kill if walked into the sea
-      if (aboveSea(gy)) {
-        this._killVillager(v, i);
+      // --- Health & Physics Integration ---
+      if (!this._applyHealthAndPhysics(v)) {
+        this.killAgent(v, i);
         continue;
       }
 
@@ -163,40 +240,13 @@ class VillagerManager {
 
       // Walk animation phase
       v.walkPhase += 0.15;
+
+      this._smoothRotation(v);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Spawning
   // ---------------------------------------------------------------------------
-
-  /** @private Filters villages based on distance to active players to reduce CPU load. */
-  _updateActiveVillages() {
-    this.activeVillages.length = 0;
-    const SIMULATION_DIST = CULL_DIST + 1000;
-    const SIMULATION_DIST_SQ = SIMULATION_DIST * SIMULATION_DIST;
-
-    if (!gameState.players || gameState.players.length === 0) return;
-
-    for (const b of this.villages) {
-      let isActive = false;
-      for (const p of gameState.players) {
-        if (!p.dead && p.ship) {
-          const dx = b.x - p.ship.x;
-          const dz = b.z - p.ship.z;
-          if (dx * dx + dz * dz <= SIMULATION_DIST_SQ) {
-            isActive = true;
-            break;
-          }
-        }
-      }
-      if (isActive) {
-        this.activeVillages.push(b);
-      }
-    }
-  }
-
-  /** @private */
   _regenerateBudgets(villagesArray) {
     for (const b of villagesArray) {
       // Initialize on first encounter if not set
@@ -258,134 +308,16 @@ class VillagerManager {
         villageX: b.x,             // Home pagoda position (for reference)
         villageZ: b.z,
         health: VILLAGER_MAX_HEALTH,
-        isCuring: false
+        isCuring: false,
+        facingAngle: angle,        // Start facing outward from spawn
+        _retargetTimer: Math.floor(random(60)) // Stagger CPU spikes
       });
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // AI
-  // ---------------------------------------------------------------------------
-
-  /** @private Steers villager toward nearest infected tile within search radius. */
-  _steerTowardInfection(v) {
-    // Ensure we don't wander too far from home.
-    const dxFromHome = v.x - v.villageX;
-    const dzFromHome = v.z - v.villageZ;
-    if (dxFromHome * dxFromHome + dzFromHome * dzFromHome > VILLAGER_MAX_WANDER_DIST_SQ) {
-      v.targetTx = null;
-      v.targetTz = null;
-      const d = Math.hypot(dxFromHome, dzFromHome);
-      if (d > 0) {
-        v.vx = lerp(v.vx || 0, (-dxFromHome / d) * VILLAGER_SPEED, 0.15);
-        v.vz = lerp(v.vz || 0, (-dzFromHome / d) * VILLAGER_SPEED, 0.15);
-      }
-      return;
-    }
-
-    // Retarget periodically or when target is missing
-    v._retargetTimer = (v._retargetTimer || 0) + 1;
-    const needsRetarget = v.targetTx === null ||
-      v._retargetTimer > 60 ||
-      (v.targetTx !== null && !infection.has(tileKey(v.targetTx, v.targetTz)));
-
-    if (needsRetarget) {
-      v._retargetTimer = 0;
-      this._findNearestInfection(v);
-    }
-
-    if (v.targetTx !== null) {
-      const targetWx = v.targetTx * TILE + TILE * 0.5;
-      const targetWz = v.targetTz * TILE + TILE * 0.5;
-      const dx = targetWx - v.x;
-      const dz = targetWz - v.z;
-      const d = Math.hypot(dx, dz);
-      if (d > VILLAGER_STOP_DIST) {
-        // Smooth direction changes to prevent oscillation (hysteresis in velocity).
-        v.vx = lerp(v.vx || 0, (dx / d) * VILLAGER_SPEED, 0.15);
-        v.vz = lerp(v.vz || 0, (dz / d) * VILLAGER_SPEED, 0.15);
-        v.isCuring = false;
-      } else {
-        // Within range — stop and face target
-        v.vx = 0;
-        v.vz = 0;
-        v.isCuring = true;
-        // Turn to face the exact tile center
-        v.facingAngle = atan2(dx, dz);
-      }
-    } else {
-      // No target — wander slowly
-      if (random() < 0.02) {
-        const angle = random(TWO_PI);
-        v.vx = cos(angle) * VILLAGER_SPEED * 0.3;
-        v.vz = sin(angle) * VILLAGER_SPEED * 0.3;
-      }
-    }
-  }
-
-  /** @private Scans for nearest infected tile within VILLAGER_SEARCH_RADIUS. */
-  _findNearestInfection(v) {
-    const vtx = toTile(v.x), vtz = toTile(v.z);
-    let bestDist = Infinity;
-    let bestTx = null, bestTz = null;
-    const r = VILLAGER_SEARCH_RADIUS;
-
-    for (let dz = -r; dz <= r; dz++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const tx = vtx + dx, tz = vtz + dz;
-        if (infection.has(tileKey(tx, tz))) {
-          const distSq = dx * dx + dz * dz;
-          if (distSq < bestDist) {
-            bestDist = distSq;
-            bestTx = tx;
-            bestTz = tz;
-          }
-        }
-      }
-    }
-
-    // Hysteresis: keep the current target unless the new one is meaningfully
-    // closer (> VILLAGER_TARGET_HYSTERESIS_SQ) or the current target is no longer infected.
-    if (bestTx !== null && v.targetTx !== null &&
-        infection.has(tileKey(v.targetTx, v.targetTz))) {
-      const curDx = v.targetTx - vtx, curDz = v.targetTz - vtz;
-      const curDistSq = curDx * curDx + curDz * curDz;
-      if (bestDist + VILLAGER_TARGET_HYSTERESIS_SQ >= curDistSq) return; // Not worth switching
-    }
-
-    v.targetTx = bestTx;
-    v.targetTz = bestTz;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Death
-  // ---------------------------------------------------------------------------
-
-  /** Kills the villager at the given index. Called externally (e.g., wolf AI). */
   killVillagerAtIndex(idx) {
-    const v = this.villagers[idx];
-    if (v) this._killVillager(v, idx);
-  }
-
-  /** @private Removes villager and plays death effect. */
-  _killVillager(v, idx) {
-    // Death particles
-    for (let p = 0; p < 12; p++) {
-      particleSystem.particles.push({
-        x: v.x, y: v.y - 8, z: v.z,
-        vx: random(-3, 3), vy: random(-4, -1), vz: random(-3, 3),
-        life: 200, decay: 10, size: random(2, 5),
-        color: [200, 60, 40]
-      });
-    }
-
-    // Audio
-    if (typeof gameSFX !== 'undefined') {
-      gameSFX.playVillagerDeath(v.x, v.y, v.z);
-    }
-
-    // Remove using swap-remove for O(1)
-    swapRemove(this.villagers, idx);
+    const v = this.agents[idx];
+    if (v) this.killAgent(v, idx);
   }
 
   // ---------------------------------------------------------------------------
@@ -399,110 +331,54 @@ class VillagerManager {
    * @param {{x,y,z}} s  Ship state for culling.
    */
   draw(s) {
-    if (this.villagers.length === 0) return;
+    if (this.agents.length === 0) return;
 
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
-    const sx = s.x, sz = s.z;
-    const vis = this._visible;
-    vis.length = 0;
-
-    // Cull to visible range and frustum
-    const cam = terrain._cam;
-    for (let i = 0; i < this.villagers.length; i++) {
-      const v = this.villagers[i];
-      if ((v.x - sx) ** 2 + (v.z - sz) ** 2 > VILLAGER_CULL_DIST_SQ) continue;
-      if (cam && !terrain.inFrustum(cam, v.x, v.z)) continue;
-      vis.push(v);
-    }
+    const vis = this._cullVisible(s, VILLAGER_CULL_DIST_SQ);
 
     if (vis.length === 0) {
       if (profiler) profiler.recordVillagers(0, performance.now() - start);
       return;
     }
 
-    // Use fill-color shader for box/cylinder primitives
-    if (terrain.fillShader) {
-      terrain.applyFillColorShader();
-      terrain.setScanlineWeight(0.0); // Remove stripey texture for small villagers
-    } else {
-      setSceneLighting();
-    }
+    // Use the standard terrain shader for villagers. This supports vertex-baked
+    // colours and shared lighting uniforms, ensuring they match the world lighting.
+    terrain.applyShader();
 
+
+    this._ensureGeoms();
     noStroke();
 
     for (let i = 0; i < vis.length; i++) {
       const v = vis[i];
-      const walkSpeed = Math.hypot(v.vx || 0, v.vz || 0);
-      const isWalking = walkSpeed > 0.1;
-      const phase = v.walkPhase;
+      const vx = v.vx || 0;
+      const vz = v.vz || 0;
+      const isWalking = (vx * vx + vz * vz) > 0.01;
 
       push();
       translate(v.x, v.y, v.z);
 
-      // Face movement direction or target
-      if (isWalking) {
-        rotateY(atan2(v.vx || 0, v.vz || 0));
-      } else if (v.isCuring && v.facingAngle !== undefined) {
-        rotateY(v.facingAngle);
-      }
+      // Face current smoothed angle
+      rotateY(v.facingAngle);
 
       // Scale down — villagers are small
       scale(2);
 
-      // --- Head (sphere-like box) ---
-      this._setColor(220, 185, 150);  // Skin tone
-      push();
-      translate(0, -22, 0);
-      box(5, 5, 5);
-      pop();
+      // Selection of the pre-baked geometry frame based on animation state
+      let geom;
+      if (isWalking) {
+        const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
+        geom = VillagerManager._geoms[fIdx];
+      } else if (v.isCuring) {
+        const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
+        geom = VillagerManager._curingGeoms[fIdx];
+      } else {
+        geom = VillagerManager._staticGeom;
+      }
 
-      // --- Body ---
-      this._setColor(60, 120, 200);  // Blue tunic
-      push();
-      translate(0, -16, 0);
-      box(6, 8, 4);
-      pop();
-
-      // --- Legs (animated) ---
-      this._setColor(80, 60, 40);  // Brown
-      const legSwing = isWalking ? sin(phase) * 0.6 : 0;
-      // Left leg
-      push();
-      translate(-1.5, -11, 0);
-      rotateX(legSwing);
-      translate(0, 3, 0);
-      box(2.5, 6, 2.5);
-      pop();
-      // Right leg
-      push();
-      translate(1.5, -11, 0);
-      rotateX(-legSwing);
-      translate(0, 3, 0);
-      box(2.5, 6, 2.5);
-      pop();
-
-      // --- Arms (animated) ---
-      this._setColor(220, 185, 150);
-
-      // Swing arms while walking or wave them while curing
-      const armSwing = isWalking ? sin(phase + PI) * 0.5 : (v.isCuring ? sin(phase * 3) * 0.8 : 0);
-
-      // Left arm
-      push();
-      translate(-4.5, -17, 0);
-      rotateX(armSwing);
-      translate(0, 3, 0);
-      box(2, 5, 2);
-      pop();
-      // Right arm
-      push();
-      translate(4.5, -17, 0);
-      rotateX(-armSwing);
-      translate(0, 3, 0);
-      box(2, 5, 2);
-      pop();
+      if (geom) model(geom);
 
       pop(); // End of villager transform
     }
@@ -511,16 +387,6 @@ class VillagerManager {
     setSceneLighting();
 
     if (profiler) profiler.recordVillagers(vis.length, performance.now() - start);
-  }
-
-  /**
-   * Sets both the p5 fill colour and the terrain shader uniform.
-   * Mirrors EnemyManager._setColor().
-   * @private
-   */
-  _setColor(r, g, b) {
-    fill(r, g, b);
-    terrain.setFillColor(r, g, b);
   }
 }
 

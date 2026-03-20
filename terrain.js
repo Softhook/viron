@@ -172,6 +172,13 @@ class Terrain {
     this._renderPassId = 0;
     this._uniformUploadedPassId = [-1, -1];
 
+    /** @type {Map<string,p5.Geometry>} Chunk-level mesh cache for overlays (infection/barriers). */
+    this._overlayCaches = new Map();
+
+    // Hook TileManager invalidation so the overlay cache stays in sync.
+    // Note: gameState.barrierTiles is initialized later in setup();
+    // we hook it lazily in _drawTileOverlays if needed.
+    infection.onInvalidate = (tx, tz) => this._invalidateOverlay(0, tx, tz);
   }
 
   /**
@@ -257,6 +264,14 @@ class Terrain {
       const keys = this._procTreeChunkCache.keys();
       for (let i = 0; i < 600; i++) this._procTreeChunkCache.delete(keys.next().value);
     }
+
+    // Overlay caches (infection/barrier geometry per chunk).
+    if (this._overlayCaches.size > 600) {
+      const keys = this._overlayCaches.keys();
+      for (let i = 0, n = this._overlayCaches.size >> 1; i < n; i++) {
+        this._overlayCaches.delete(keys.next().value);
+      }
+    }
   }
 
   /**
@@ -267,6 +282,7 @@ class Terrain {
     this.altCache.clear();
     this.chunkCache.clear();
     this._procTreeChunkCache.clear();
+    this._overlayCaches.clear();
     // Reset smoothing state so fog doesn't jump instantly
     this._fogFrameStamp = -1;
   }
@@ -743,7 +759,15 @@ class Terrain {
    */
   applyShader() {
     shader(this.shader);
+
+    // _uploadSharedUniforms updates this._uniformUploadedPassId[0], so we must
+    // check it BEFORE calling that method to know if terrain-specific uniforms
+    // are also needed this pass.
+    const needsTerrainUpload = (this._uniformUploadedPassId[0] !== this._renderPassId);
+
     this._uploadSharedUniforms(this.shader);
+
+    if (!needsTerrainUpload) return;
 
     this.shader.setUniform('uTileSize', TILE);
     this.shader.setUniform('uPalette', TERRAIN_PALETTE_FLAT);
@@ -829,109 +853,185 @@ class Terrain {
   }
 
   /**
+   * Invalidates cached overlay geometry for the chunk containing (tx, tz).
+   * Removes all material variants for the given manager/chunk combination.
+   * @param {number} managerId 0=infection, 1=barriers.
+   * @param {number} tx Tile X.
+   * @param {number} tz Tile Z.
+   * @private
+   */
+  _invalidateOverlay(managerId, tx, tz) {
+    const bk = chunkKey(tx >> 4, tz >> 4);
+    const prefix = `${managerId}_${bk}_`;
+    for (const k of this._overlayCaches.keys()) {
+      if (k.startsWith(prefix)) this._overlayCaches.delete(k);
+    }
+  }
+
+  /**
+   * Returns true if a chunk centre is within the camera frustum.
+   * Shared frustum test used by _drawTerrainChunks, _drawTileOverlays and drawTrees.
+   * @param {object} cam       Camera descriptor with x, z, fwdX, fwdZ, fovSlope, skipFrustum.
+   * @param {number} cx        Chunk grid X.
+   * @param {number} cz        Chunk grid Z.
+   * @param {number} chunkHalf Half-width of a chunk in world units (margin).
+   * @returns {boolean}
+   * @private
+   */
+  _isChunkVisible(cam, cx, cz, chunkHalf) {
+    if (cam.skipFrustum) return true;
+    const chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
+    const chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
+    const dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
+    const fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
+    if (fwdDist < -chunkHalf) return false;
+    const rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
+    const halfWidth = (fwdDist > 0 ? fwdDist : 0) * cam.fovSlope + chunkHalf;
+    return Math.abs(rightDist) <= halfWidth;
+  }
+
+  /**
    * Renders sets of tile overlay quads using the currently bound terrain shader.
+   * Uses cached chunk-level meshes to avoid expensive per-tile vertex() calls.
    *
    * @param {object}   manager     TileManager instance (infection or barrierTiles).
    * @param {object}   typeConfigs Mapping of type names to [matEven, matOdd] ID pairs.
    * @param {number}   yOffset     Y offset applied to each vertex corner altitude.
    * @param {object}   cam         Camera descriptor.
    * @param {number}   fovSlope    FOV slope for lateral frustum culling.
-   * @param {number}   minTx       Tile-space view bound (min X).
-   * @param {number}   maxTx       Tile-space view bound (max X).
-   * @param {number}   minTz       Tile-space view bound (min Z).
-   * @param {number}   maxTz       Tile-space view bound (max Z).
+   * @param {number}   minTx       ignored (dist handled by pass-through chunks)
+   * @param {number}   maxTx       ignored
+   * @param {number}   minTz       ignored
+   * @param {number}   maxTz       ignored
    * @param {string}   tag         Profiler tag.
-   * @param {number}   [minCx]     Chunk-space min X (optional for bucketed iteration).
-   * @param {number}   [maxCx]     Chunk-space max X.
-   * @param {number}   [minCz]     Chunk-space min Z.
-   * @param {number}   [maxCz]     Chunk-space max Z.
+   * @param {number}   minCx       Chunk-space min X (required).
+   * @param {number}   maxCx       Chunk-space max X.
+   * @param {number}   minCz       Chunk-space min Z.
+   * @param {number}   maxCz       Chunk-space max Z.
    */
   _drawTileOverlays(manager, typeConfigs, yOffset, cam, fovSlope, minTx, maxTx, minTz, maxTz, tag, minCx, maxCx, minCz, maxCz) {
     const profiler = getVironProfiler();
     const overlayStart = profiler ? performance.now() : 0;
+    const managerId = (manager === infection) ? 0 : 1;
 
-    if (!this._buckets) this._buckets = {};
-    for (const k in this._buckets) this._buckets[k].length = 0;
-
-    let overlayCount = 0;
-
-    const processTile = (t) => {
-      if (t.tx < minTx || t.tx > maxTx || t.tz < minTz || t.tz > maxTz) return;
-
-      const tcx = t.tx * TILE + TILE * 0.5, tcz = t.tz * TILE + TILE * 0.5;
-      const tdx = tcx - cam.x, tdz = tcz - cam.z;
-      if (!cam.skipFrustum) {
-        const tFwd = tdx * cam.fwdX + tdz * cam.fwdZ;
-        if (tFwd < -TILE * 2) return;
-        if (Math.abs(tdx * -cam.fwdZ + tdz * cam.fwdX) > (tFwd > 0 ? tFwd : 0) * fovSlope + TILE * 4) return;
-      }
-
-      const type = t.type || 'default';
-      const parity = (t.tx + t.tz) % 2 === 0 ? 0 : 1;
-      const config = typeConfigs[type] || typeConfigs['default'];
-      if (!config) return;
-
-      const matId = (parity === 0) ? config[0] : config[1];
-      if (!this._buckets[matId]) this._buckets[matId] = [];
-      this._buckets[matId].push(t);
-
-      if (!t.verts) {
-        const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
-        const y00 = this.getGridAltitude(t.tx, t.tz) + yOffset;
-        const y10 = this.getGridAltitude(t.tx + 1, t.tz) + yOffset;
-        const y01 = this.getGridAltitude(t.tx, t.tz + 1) + yOffset;
-        const y11 = this.getGridAltitude(t.tx + 1, t.tz + 1) + yOffset;
-        t.verts = new Float32Array([
-          xP, y00, zP, xP1, y10, zP, xP, y01, zP1,
-          xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1
-        ]);
-      }
-      overlayCount++;
-    };
-
-    if (manager.buckets && minCx !== undefined) {
-      for (let cz = minCz; cz <= maxCz; cz++) {
-        for (let cx = minCx; cx <= maxCx; cx++) {
-          const arr = manager.buckets.get(chunkKey(cx, cz));
-          if (arr) {
-            for (let i = 0; i < arr.length; i++) processTile(arr[i]);
-          }
-        }
-      }
-    } else {
-      const list = manager.keyList || manager.values();
-      for (let i = 0; i < list.length; i++) processTile(list[i]);
+    // Ensure we have the invalidation hook
+    if (!manager.onInvalidate) {
+      manager.onInvalidate = (tx, tz) => this._invalidateOverlay(managerId, tx, tz);
     }
 
+    let totalTiles = 0;
+    const chunkHalf = CHUNK_SIZE * TILE;
+
+    // Polygon offset prevents Z-fighting between overlay quads and the terrain
+    // mesh that sits at the same altitude plane.
     const _gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
-    if (_gl && overlayCount > 0) {
+    if (_gl) {
       _gl.enable(_gl.POLYGON_OFFSET_FILL);
       _gl.polygonOffset(-1.0, -2.0);
     }
 
-    for (const matId in this._buckets) {
-      const tileList = this._buckets[matId];
-      const count = tileList.length;
-      if (count === 0) continue;
+    for (let cz = minCz; cz <= maxCz; cz++) {
+      for (let cx = minCx; cx <= maxCx; cx++) {
+        const bk = chunkKey(cx, cz);
+        const tileList = manager.buckets ? manager.buckets.get(bk) : null;
+        if (!tileList || tileList.length === 0) continue;
 
-      fill(parseInt(matId), 0, 0, 255);
-      beginShape(TRIANGLES);
-      normal(0, 1, 0);
-      for (let i = 0; i < count; i++) {
-        const v = tileList[i].verts;
-        for (let j = 0; j < 18; j += 3) vertex(v[j], v[j + 1], v[j + 2]);
+        // Chunk-level frustum culling
+        if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
+
+        // Collect distinct material cache keys for this chunk to check validity
+        // before doing the more expensive per-tile material bucketing.
+        const matIdSet = new Set();
+        for (let i = 0; i < tileList.length; i++) {
+          const t = tileList[i];
+          const type = t.type || 'default';
+          const parity = (t.tx + t.tz) % 2 === 0 ? 0 : 1;
+          const config = typeConfigs[type] || typeConfigs['default'];
+          if (config) matIdSet.add(config[parity]);
+        }
+
+        // Fast path: if every material variant is already cached, skip bucketing
+        // and draw directly from the cache.
+        let allCached = true;
+        for (const matId of matIdSet) {
+          if (this._overlayCaches.get(`${managerId}_${bk}_${matId}`) === undefined) {
+            allCached = false;
+            break;
+          }
+        }
+
+        if (allCached) {
+          for (const matId of matIdSet) {
+            const geom = this._overlayCaches.get(`${managerId}_${bk}_${matId}`);
+            if (geom) {
+              model(geom);
+              totalTiles += tileList.length; // Approximate — counted once per matId set
+            }
+          }
+          continue;
+        }
+
+        // Slow path: split tiles by material ID and bake any missing geometry.
+        const matBuckets = {};
+        for (let i = 0; i < tileList.length; i++) {
+          const t = tileList[i];
+          const type = t.type || 'default';
+          const parity = (t.tx + t.tz) % 2 === 0 ? 0 : 1;
+          const config = typeConfigs[type] || typeConfigs['default'];
+          if (!config) continue;
+          const matId = config[parity];
+          if (!matBuckets[matId]) matBuckets[matId] = [];
+          matBuckets[matId].push(t);
+        }
+
+        for (const matId in matBuckets) {
+          const cacheKey = `${managerId}_${bk}_${matId}`;
+          let geom = this._overlayCaches.get(cacheKey);
+
+          if (geom === undefined) {
+            const mList = matBuckets[matId];
+            geom = _safeBuildGeometry(() => {
+              beginShape(TRIANGLES);
+              normal(0, 1, 0);
+              fill(parseInt(matId), 0, 0, 255);
+              for (let i = 0; i < mList.length; i++) {
+                const t = mList[i];
+                if (!t.verts) {
+                  const xP = t.tx * TILE, zP = t.tz * TILE, xP1 = xP + TILE, zP1 = zP + TILE;
+                  const y00 = this.getGridAltitude(t.tx, t.tz) + yOffset;
+                  const y10 = this.getGridAltitude(t.tx + 1, t.tz) + yOffset;
+                  const y01 = this.getGridAltitude(t.tx, t.tz + 1) + yOffset;
+                  const y11 = this.getGridAltitude(t.tx + 1, t.tz + 1) + yOffset;
+                  t.verts = new Float32Array([
+                    xP, y00, zP, xP1, y10, zP, xP, y01, zP1,
+                    xP1, y10, zP, xP1, y11, zP1, xP, y01, zP1
+                  ]);
+                }
+                const v = t.verts;
+                for (let j = 0; j < 18; j += 3) vertex(v[j], v[j + 1], v[j + 2]);
+              }
+              endShape();
+            });
+            this._overlayCaches.set(cacheKey, geom);
+          }
+
+          if (geom) {
+            model(geom);
+            totalTiles += matBuckets[matId].length;
+          }
+        }
       }
-      endShape();
     }
 
-    if (_gl && overlayCount > 0) {
+    if (_gl) {
       _gl.disable(_gl.POLYGON_OFFSET_FILL);
     }
+
     if (profiler && tag) {
-      const elapsed = performance.now() - overlayStart;
-      profiler.recordOverlay(tag, overlayCount, elapsed);
+      profiler.recordOverlay(tag, totalTiles, performance.now() - overlayStart);
     }
   }
+
 
   /**
    * Renders the visible terrain chunks, infected tile overlays, sea plane and
@@ -1054,20 +1154,10 @@ class Terrain {
    * @private
    */
   _drawTerrainChunks(cam, minCx, maxCx, minCz, maxCz) {
-    const chunkHalf = CHUNK_SIZE * TILE;   // One chunk width — lateral frustum margin
-    const fovSlope  = cam.fovSlope;
+    const chunkHalf = CHUNK_SIZE * TILE;
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
-        if (!cam.skipFrustum) {
-          const chunkWorldX = (cx + 0.5) * CHUNK_SIZE * TILE;
-          const chunkWorldZ = (cz + 0.5) * CHUNK_SIZE * TILE;
-          const dx = chunkWorldX - cam.x, dz = chunkWorldZ - cam.z;
-          const fwdDist = dx * cam.fwdX + dz * cam.fwdZ;
-          if (fwdDist < -chunkHalf) continue;   // More than one chunk behind
-          const rightDist = dx * -cam.fwdZ + dz * cam.fwdX;
-          const halfWidth = (fwdDist > 0 ? fwdDist : 0) * fovSlope + chunkHalf;
-          if (Math.abs(rightDist) > halfWidth) continue;  // Lateral frustum cull
-        }
+        if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
         const geom = this.getChunkGeometry(cx, cz);
         if (geom) model(geom);
       }
@@ -1585,8 +1675,12 @@ class Terrain {
     // Apply terrain shader so trees inherit world fog and lighting.
     this.applyShader();
 
+    const chunkHalf = CHUNK_SIZE * TILE;
+
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
+        if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
+
         const trees = this.getProceduralTreesForChunk(cx, cz);
         for (let t of trees) {
           let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;

@@ -1298,115 +1298,124 @@ class EnemyManager {
   }
 
   /**
-   * @private Renders a kraken BOSS (giant sea-creature body, animated tentacles and glowing eyes).
-   * The kraken sits at sea level; tentacles radiate outward and undulate sinusoidally.
-   * All geometry uses local-space units (not scaled by krakenScale here) because the
-   * caller's draw() applies scale(ENEMY_DRAW_SCALE * krakenScale) before invoking this
-   * method — the same pattern used by the Colossus renderer.
+   * @private Renders a kraken BOSS.
+   *
+   * Visual design:
+   *   - Body: a wide flat half-dome sitting ON the water surface, with large
+   *     glowing eyes on its front face.
+   *   - Tentacles: 6 main arms + 2 long reach arms that emerge from below
+   *     the waterline, rise up into the air, then arc outward.  They move
+   *     very slowly for a menacing, atmospheric feel.
+   *
+   * All geometry is in local-space units; the caller applies
+   * scale(ENEMY_DRAW_SCALE * krakenScale) before invoking this.
+   *
+   * Performance notes:
+   *   - 6×8 + 2×10 = 68 tentacle box() calls + 7 body/eye calls = 75 total.
+   *   - Trig phase is computed once per tentacle, not per segment.
+   *   - Colors are pre-lerped at each segment index before the inner draw
+   *     (p5 fill() can accept floats, so no floor() needed in the hot path).
    */
   _drawKraken(e) {
     noStroke();
-    let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
+    const hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
 
-    // --- Colour palette ---
-    const mantleR = lerp(40, 220, hitT),  mantleG = lerp(10, 200, hitT),  mantleB = lerp(100, 255, hitT);
-    const bodyR   = lerp(20, 180, hitT),  bodyG   = lerp(55, 180, hitT),  bodyB   = lerp(130, 240, hitT);
-    const darkR   = lerp(8,  100, hitT),  darkG   = lerp(18, 100, hitT),  darkB   = lerp(55,  160, hitT);
-    const tBase   = [lerp(30, 200, hitT), lerp(80, 200, hitT), lerp(150, 225, hitT)];
-    const tTip    = [lerp(80, 255, hitT), lerp(220, 255, hitT), lerp(230, 255, hitT)];
-    const eyeR = 0, eyeG = 255, eyeB = 190;
-    const pupilR = 0, pupilG = 30, pupilB = 20;
+    // --- Colour palette (deep-sea bioluminescent; flashes bright on hit) ---
+    const domeR = lerp(20,  180, hitT), domeG = lerp(75,  200, hitT), domeB = lerp(155, 255, hitT);
+    const darkR = lerp(6,   80,  hitT), darkG = lerp(14,  80,  hitT), darkB = lerp(42,  120, hitT);
+    const eyeG  = lerp(220, 255, hitT), eyeB  = lerp(160, 230, hitT);
+    const tb0   = lerp(18,  140, hitT), tb1   = lerp(50,  140, hitT), tb2   = lerp(110, 185, hitT);
+    const tt0   = lerp(55,  200, hitT), tt1   = lerp(190, 235, hitT), tt2   = lerp(185, 255, hitT);
 
-    // ── BODY ────────────────────────────────────────────────────────────────
-    // Wide flat skirt that sits at the waterline
+    // ── BODY: flat half-dome at the water surface ────────────────────────────
+    // Dark collar / skirt at and just below the waterline
     this._setColor(darkR, darkG, darkB);
-    push(); rotateX(PI / 2); cylinder(95, 12, 14, 1); pop();
+    push(); rotateX(PI / 2); cylinder(82, 26, 10, 1); pop();
 
-    // Primary dome
-    this._setColor(bodyR, bodyG, bodyB);
-    push(); translate(0, -18, 0); rotateX(PI / 2); cylinder(80, 44, 14, 1); pop();
+    // Main dome — a sphere squished to half height so it looks like a dome
+    // protruding from the surface rather than a full ball.
+    // translate(-26) places the sphere centre 26 units above the waterline
+    // (local y < 0 = above sea in p5 WebGL where Y-down).
+    this._setColor(domeR, domeG, domeB);
+    push();
+    translate(0, -26, 0);
+    scale(1.0, 0.52, 1.0);
+    sphere(74, 8, 6);
+    pop();
 
-    // Mid-dome taper
-    this._setColor(mantleR, mantleG, mantleB);
-    push(); translate(0, -48, 0); rotateX(PI / 2); cylinder(60, 34, 12, 1); pop();
-
-    // Upper crown
-    push(); translate(0, -74, 0); rotateX(PI / 2); cylinder(36, 24, 10, 1); pop();
-
-    // Apex tip
-    push(); translate(0, -95, 0); rotateX(PI / 2); cylinder(14, 16, 8, 1); pop();
-
-    // Frill / ridge ring at mantle join
+    // Ridge ring where dome meets waterline
     this._setColor(darkR, darkG, darkB);
-    push(); translate(0, -36, 0); rotateX(PI / 2); cylinder(84, 7, 14, 1); pop();
+    push(); translate(0, -8, 0); rotateX(PI / 2); cylinder(80, 14, 10, 1); pop();
 
-    // ── EYES ────────────────────────────────────────────────────────────────
-    this._setColor(eyeR, eyeG, eyeB);
-    push(); translate(-30, -60, 55); box(26, 20, 14); pop();
-    push(); translate(30, -60, 55);  box(26, 20, 14); pop();
-    this._setColor(pupilR, pupilG, pupilB);
-    push(); translate(-30, -60, 64); box(12, 12, 8); pop();
-    push(); translate(30, -60, 64);  box(12, 12, 8); pop();
+    // ── EYES: large glowing ovals on the dome's forward face ─────────────────
+    this._setColor(0, eyeG, eyeB);
+    push(); translate(-24, -32, 64); sphere(14, 6, 4); pop();
+    push(); translate( 24, -32, 64); sphere(14, 6, 4); pop();
+    this._setColor(0, 18, 12);
+    push(); translate(-24, -32, 75); sphere(7, 5, 3); pop();
+    push(); translate( 24, -32, 75); sphere(7, 5, 3); pop();
 
-    // ── TENTACLES ───────────────────────────────────────────────────────────
-    // 8 main tentacles: radiate from body skirt, sweep along / just above the water,
-    // and curl dramatically with a large-amplitude wave.
-    const phase = frameCount * 0.07 + (e.id || 0);
-    const NUM_MAIN = 8;
-    const MAIN_SEGS = 12;       // segments per tentacle
-    const SEG_LEN   = 24;       // length per segment (local units)
-    const BASE_RADIUS = 88;     // starting radius from kraken centre
+    // ── TENTACLES ─────────────────────────────────────────────────────────────
+    // Tentacles start just below the waterline at the body's outer edge and are
+    // initially angled upward with rotateX(+angle) so they RISE out of the water
+    // before curling back outward. In p5 WebGL (Y-down), rotateX(+θ) rotates the
+    // +Z axis toward −Y (upward), so the tentacle emerges above sea level.
+    //
+    // Per-segment: a slow sinusoidal side-wave (rotateZ) + a small downward drift
+    // (rotateX per step) gradually brings the tip from vertical to roughly
+    // horizontal, creating a natural arc.
+    //
+    // Animation phase runs at 0.02 rad/frame (≈ 3.5 × slower than before).
 
+    const phase   = frameCount * 0.02 + (e.id || 0) * 0.15;
+    const SEG_LEN = 28;   // local units per tentacle segment
+
+    // 6 main tentacles (8 segments each)
+    const NUM_MAIN  = 6;
+    const MAIN_SEGS = 8;
     for (let i = 0; i < NUM_MAIN; i++) {
-      const a = (i / NUM_MAIN) * TWO_PI;
-      const tentPhase = phase + i * (TWO_PI / NUM_MAIN);
+      const a      = (i / NUM_MAIN) * TWO_PI;
+      const tPhase = phase + i * (TWO_PI / NUM_MAIN);
       push();
       rotateY(a);
-      translate(BASE_RADIUS, 8, 0);  // Start at body edge, just below waterline
+      translate(74, 5, 0);  // body edge, slightly below waterline
+      rotateX(0.82);         // tilt upward — tentacle rises out of the water
       for (let seg = 0; seg < MAIN_SEGS; seg++) {
-        const t = seg / (MAIN_SEGS - 1);
-        const curl      = sin(tentPhase + seg * 0.55) * 0.32 + 0.06;
-        const sideWave  = cos(tentPhase + seg * 0.42) * 0.20;
-        const w = lerp(18, 2, t);
-        const cr = floor(lerp(tBase[0], tTip[0], t));
-        const cg = floor(lerp(tBase[1], tTip[1], t));
-        const cb = floor(lerp(tBase[2], tTip[2], t));
+        const t  = seg / (MAIN_SEGS - 1);
+        const sw = sin(tPhase + seg * 0.5) * 0.22;   // side-to-side wave
+        const cr = lerp(tb0, tt0, t), cg = lerp(tb1, tt1, t), cb = lerp(tb2, tt2, t);
         this._setColor(cr, cg, cb);
-        rotateZ(curl);
-        rotateY(sideWave);
+        rotateZ(sw);
+        rotateX(sin(tPhase * 0.6 + seg * 0.4) * 0.08 - 0.07);  // gentle downward arc
         translate(0, 0, SEG_LEN);
-        box(w, w * 0.65, SEG_LEN + 4);
+        const w = lerp(21, 3, t);
+        box(w, w * 0.7, SEG_LEN + 4);
       }
       pop();
     }
 
-    // 2 long "reach" tentacles — thinner but 50% longer, tip slightly upward
-    // so they look like the kraken is grasping for something above the water.
-    const NUM_LONG = 2;
-    const LONG_SEGS = 16;
-    const LONG_SEG_LEN = 26;
-
+    // 2 long "reach" tentacles (10 segments each) — steeper initial rise,
+    // longer reach, used for dramatic visual presence above the waterline.
+    const NUM_LONG  = 2;
+    const LONG_SEGS = 10;
+    const LONG_LEN  = 30;
     for (let i = 0; i < NUM_LONG; i++) {
-      const a = (i / NUM_LONG) * TWO_PI + PI * 0.25;
-      const tentPhase = phase + i * PI + 2.0;
+      const a      = (i / NUM_LONG) * TWO_PI + PI / 6;
+      const tPhase = phase + i * PI + 1.8;
       push();
       rotateY(a);
-      translate(70, 4, 0);
-      // Tip the whole tentacle slightly upward at the start
-      rotateX(-0.18);
+      translate(62, 4, 0);
+      rotateX(1.08);  // steeper upward angle for extra height
       for (let seg = 0; seg < LONG_SEGS; seg++) {
-        const t = seg / (LONG_SEGS - 1);
-        const curl     = sin(tentPhase + seg * 0.45) * 0.26 + 0.04;
-        const sideWave = cos(tentPhase + seg * 0.38) * 0.22;
-        const w = lerp(12, 1, t);
-        const cr = floor(lerp(tBase[0], tTip[0], t));
-        const cg = floor(lerp(tBase[1], tTip[1], t));
-        const cb = floor(lerp(tBase[2], tTip[2], t));
+        const t  = seg / (LONG_SEGS - 1);
+        const sw = sin(tPhase + seg * 0.45) * 0.20;
+        const cr = lerp(tb0, tt0, t), cg = lerp(tb1, tt1, t), cb = lerp(tb2, tt2, t);
         this._setColor(cr, cg, cb);
-        rotateZ(curl);
-        rotateY(sideWave);
-        translate(0, 0, LONG_SEG_LEN);
-        box(w, w * 0.6, LONG_SEG_LEN + 4);
+        rotateZ(sw);
+        rotateX(sin(tPhase * 0.55 + seg * 0.38) * 0.08 - 0.06);
+        translate(0, 0, LONG_LEN);
+        const w = lerp(15, 2, t);
+        box(w, w * 0.7, LONG_LEN + 4);
       }
       pop();
     }

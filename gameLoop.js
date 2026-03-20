@@ -417,12 +417,24 @@ class GameLoop {
             }
           }
         } else if (e.type === 'kraken') {
-          // Broad-phase check for Kraken (large sphere collision)
-          const kScale = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
-          const krakenBodyRad = 200 * kScale;
-          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < (krakenBodyRad + shipRad) ** 2) {
+          // Kraken has two collision zones:
+          //   1. Dome body sphere — bounces or kills at speed.
+          //   2. Tentacle reach annulus — instantly lethal (tentacle contact).
+          //
+          // Radius math (world units):
+          //   kScale = krakenScale * ENEMY_DRAW_SCALE
+          //   body: sphere(74) local × kScale → ~296 world units
+          //   tentacles: max reach = start(62) + 10 segs × 30 = 362 local × kScale → ~1448 world units
+          const kScale  = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
+          const bodyRad = 74 * kScale;    // dome body sphere
+          const tentRad = 362 * kScale;   // max tentacle reach (long reach tentacles)
+          const dSq = dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z);
+          if (dSq < (bodyRad + shipRad) ** 2) {
             if (speedSq > 49.0) { killPlayer(player); return; }
-            this._resolveSphereCollision(s, e.x, e.y, e.z, krakenBodyRad, shipRad);
+            this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
+          } else if (dSq < (tentRad + shipRad) ** 2) {
+            // Inside tentacle reach — contact is lethal
+            killPlayer(player); return;
           }
         } else {
           // Normal enemy check + resolution

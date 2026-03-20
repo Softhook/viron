@@ -39,9 +39,11 @@ const KRAKEN_HP_STEP = 40;
 const KRAKEN_SIZE_STEP = 0.25;
 const KRAKEN_MAX_SIZE_MULT = 2.0;
 
-// Scorpion stuck-detection: if the same sentinel is targeted for this many ticks
-// without being infected the scorpion adds it to a temporary skip-list.
-const SCORPION_STUCK_THRESHOLD_TICKS = 600;   // ~10 s at 60 Hz
+// Scorpion stuck-detection: if the scorpion stops making progress toward its chosen
+// sentinel (distance is not decreasing) for this many consecutive ticks, the target
+// is added to a temporary skip-list.  Using distance-delta instead of a raw timer
+// avoids prematurely skipping sentinels that are merely far away.
+const SCORPION_STUCK_THRESHOLD_TICKS = 300;   // ~5 s of no progress at 60 Hz
 const SCORPION_SKIP_DURATION_TICKS   = 1800;  // ~30 s skip window
 
 const ENEMY_COLORS = {
@@ -633,17 +635,33 @@ class EnemyManager {
         if (distSq < bestDist) { bestDist = distSq; targetX = b.x; targetZ = b.z; chosen = b; }
       }
 
-      // Stuck detection: if the same sentinel has been targeted for too long
-      // without being infected, skip it temporarily to avoid getting stuck.
+      // Stuck detection: only count ticks when the scorpion is NOT closing the
+      // gap to its target.  This prevents prematurely skipping sentinels that are
+      // simply far away — the counter only rises when the scorpion has stopped
+      // making meaningful progress (e.g. blocked by terrain or a barrier).
       if (chosen !== e._scorpionTarget) {
+        // New target — reset tracking state.
         e._scorpionTarget = chosen;
         e._scorpionStuckTicks = 0;
+        e._scorpionPrevDistSq = chosen !== null
+          ? (chosen.x - e.x) ** 2 + (chosen.z - e.z) ** 2
+          : Infinity;
       } else if (chosen !== null) {
-        e._scorpionStuckTicks = (e._scorpionStuckTicks || 0) + 1;
+        const curDistSq = (chosen.x - e.x) ** 2 + (chosen.z - e.z) ** 2;
+        // Only increment the stuck counter when distance is not improving.
+        if (curDistSq >= (e._scorpionPrevDistSq || Infinity)) {
+          e._scorpionStuckTicks = (e._scorpionStuckTicks || 0) + 1;
+        } else {
+          // Making progress — gradually unwind the counter so temporary obstacles
+          // don't accumulate across multiple separate brief blockages.
+          e._scorpionStuckTicks = Math.max(0, (e._scorpionStuckTicks || 0) - 1);
+        }
+        e._scorpionPrevDistSq = curDistSq;
         if (e._scorpionStuckTicks > SCORPION_STUCK_THRESHOLD_TICKS) {
           e._skipSentinels.set(chosen, _simTick + SCORPION_SKIP_DURATION_TICKS);
           e._scorpionTarget = null;
           e._scorpionStuckTicks = 0;
+          e._scorpionPrevDistSq = Infinity;
           targetX = null; targetZ = null;
           // Find next best excluding the just-skipped sentinel
           let altBest = Infinity;

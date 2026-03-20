@@ -65,6 +65,11 @@ class VillagerManager extends AgentManager {
     if (typeof gameSFX !== 'undefined') {
       gameSFX.playVillagerDeath(v.x, v.y, v.z);
     }
+
+    // Release budget slot
+    if (v.villageRef) {
+      v.villageRef._activeVillagers = Math.max(0, (v.villageRef._activeVillagers || 0) - 1);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -173,6 +178,7 @@ class VillagerManager extends AgentManager {
         b._villagerTimer = 0;
         b._villagerRegenTimer = 0;
         b._villagerSpawned = 0;
+        b._activeVillagers = 0;
       }
     }
   }
@@ -255,9 +261,11 @@ class VillagerManager extends AgentManager {
         b._villagerTimer = 0;
         b._villagerRegenTimer = 0;
         b._villagerSpawned = 0;
+        b._activeVillagers = 0;
       }
 
-      if (b._villagerBudget < VILLAGER_MAX_PER_VILLAGE) {
+      // Only regenerate if the total population (active + available budget) is below the cap
+      if (b._villagerBudget + (b._activeVillagers || 0) < VILLAGER_MAX_PER_VILLAGE) {
         b._villagerRegenTimer = (b._villagerRegenTimer || 0) + 1;
         if (b._villagerRegenTimer > VILLAGER_RESPAWN_INTERVAL) {
           b._villagerRegenTimer = 0;
@@ -289,6 +297,7 @@ class VillagerManager extends AgentManager {
       b._villagerTimer = 0;
       b._villagerBudget--;
       b._villagerSpawned++;
+      b._activeVillagers = (b._activeVillagers || 0) + 1;
 
       // Spawn position: near the pagoda, slightly offset
       const angle = random(TWO_PI);
@@ -297,7 +306,12 @@ class VillagerManager extends AgentManager {
       const sz = b.z + sin(angle) * dist;
       const sy = terrain.getAltitude(sx, sz);
 
-      if (aboveSea(sy)) continue;  // Skip if spawn point is underwater
+      if (aboveSea(sy)) {
+        // Refund if we couldn't spawn
+        b._villagerBudget++;
+        b._activeVillagers--;
+        continue;
+      }
 
       this.villagers.push({
         x: sx, y: sy, z: sz,
@@ -307,6 +321,7 @@ class VillagerManager extends AgentManager {
         id: random(),              // Unique seed for animation offsets
         villageX: b.x,             // Home pagoda position (for reference)
         villageZ: b.z,
+        villageRef: b,             // Pointer to home village for budget tracking
         health: VILLAGER_MAX_HEALTH,
         isCuring: false,
         facingAngle: angle,        // Start facing outward from spawn

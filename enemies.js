@@ -39,6 +39,13 @@ const KRAKEN_HP_STEP = 40;
 const KRAKEN_SIZE_STEP = 0.25;
 const KRAKEN_MAX_SIZE_MULT = 2.0;
 
+// Scorpion stuck-detection: if the scorpion stops making progress toward its chosen
+// sentinel (distance is not decreasing) for this many consecutive ticks, the target
+// is added to a temporary skip-list.  Using distance-delta instead of a raw timer
+// avoids prematurely skipping sentinels that are merely far away.
+const SCORPION_STUCK_THRESHOLD_TICKS = 300;   // ~5 s of no progress at 60 Hz
+const SCORPION_SKIP_DURATION_TICKS   = 1800;  // ~30 s skip window
+
 const ENEMY_COLORS = {
   fighter: [255, 150, 0],
   bomber: [180, 20, 180],
@@ -607,17 +614,68 @@ class EnemyManager {
       targetX = tShip.x;
       targetZ = tShip.z;
     } else {
-      // --- Mode 1: Hunt nearest healthy (uninfected) sentinel ---
+      // Lazily evict timed-out skip entries so a previously-blocked sentinel
+      // can be retried after its barrier is removed.
+      if (!e._skipSentinels) e._skipSentinels = new Map();
+      for (const [s, expiry] of e._skipSentinels) {
+        if (_simTick >= expiry) e._skipSentinels.delete(s);
+      }
+
+      // --- Mode 1: Hunt nearest healthy, reachable (unbarriered) sentinel ---
       let bestDist = Infinity;
       targetX = null; targetZ = null;
+      let chosen = null;
       for (let b of gameState.buildings) {
         if (b.type !== 4) continue;
-        let sk = tileKey(toTile(b.x), toTile(b.z));
-        if (infection.has(sk)) continue;  // Already infected — skip
-        let distSq = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
-        if (distSq < bestDist) { bestDist = distSq; targetX = b.x; targetZ = b.z; }
+        if (e._skipSentinels.has(b)) continue;       // Temporarily skipped
+        const sk = tileKey(toTile(b.x), toTile(b.z));
+        if (infection.has(sk)) continue;             // Already infected — skip
+        if (gameState.barrierTiles.has(sk)) continue; // Barrier-protected — can never be infected
+        const distSq = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
+        if (distSq < bestDist) { bestDist = distSq; targetX = b.x; targetZ = b.z; chosen = b; }
       }
-      // --- Mode 2: No healthy sentinels left — march toward the launchpad ---
+
+      // Stuck detection: only count ticks when the scorpion is NOT closing the
+      // gap to its target.  This prevents prematurely skipping sentinels that are
+      // simply far away — the counter only rises when the scorpion has stopped
+      // making meaningful progress (e.g. blocked by terrain or a barrier).
+      if (chosen !== e._scorpionTarget) {
+        // New target — reset tracking state.
+        e._scorpionTarget = chosen;
+        e._scorpionStuckTicks = 0;
+        e._scorpionPrevDistSq = chosen !== null
+          ? (chosen.x - e.x) ** 2 + (chosen.z - e.z) ** 2
+          : Infinity;
+      } else if (chosen !== null) {
+        const curDistSq = (chosen.x - e.x) ** 2 + (chosen.z - e.z) ** 2;
+        // Only increment the stuck counter when distance is not improving.
+        if (curDistSq >= (e._scorpionPrevDistSq || Infinity)) {
+          e._scorpionStuckTicks = (e._scorpionStuckTicks || 0) + 1;
+        } else {
+          // Making progress — gradually unwind the counter so temporary obstacles
+          // don't accumulate across multiple separate brief blockages.
+          e._scorpionStuckTicks = Math.max(0, (e._scorpionStuckTicks || 0) - 1);
+        }
+        e._scorpionPrevDistSq = curDistSq;
+        if (e._scorpionStuckTicks > SCORPION_STUCK_THRESHOLD_TICKS) {
+          e._skipSentinels.set(chosen, _simTick + SCORPION_SKIP_DURATION_TICKS);
+          e._scorpionTarget = null;
+          e._scorpionStuckTicks = 0;
+          e._scorpionPrevDistSq = Infinity;
+          targetX = null; targetZ = null;
+          // Find next best excluding the just-skipped sentinel
+          let altBest = Infinity;
+          for (let b of gameState.buildings) {
+            if (b.type !== 4 || e._skipSentinels.has(b)) continue;
+            const sk = tileKey(toTile(b.x), toTile(b.z));
+            if (infection.has(sk) || gameState.barrierTiles.has(sk)) continue;
+            const distSq = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
+            if (distSq < altBest) { altBest = distSq; targetX = b.x; targetZ = b.z; }
+          }
+        }
+      }
+
+      // --- Mode 2: No valid sentinel — march toward the launchpad ---
       if (targetX === null) {
         targetX = LP_CENTER;
         targetZ = LP_CENTER;

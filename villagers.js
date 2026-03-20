@@ -23,6 +23,9 @@ const VILLAGER_MAX_HEALTH = 100;
 const VILLAGER_INFECTION_DAM = 1.2;    // Health loss per tick on infected tile
 const VILLAGER_HEAL_RATE = 0.5;    // Health recovery per tick when safe
 const VILLAGER_STOP_DIST = 100;     // Target distance to start curing (units)
+// Retarget hysteresis: only switch to a new infection target if it is this many
+// tiles² closer than the current one (prevents oscillation between equal targets).
+const VILLAGER_TARGET_HYSTERESIS_SQ = 4; // ≈ 2 tiles
 
 class VillagerManager {
   constructor() {
@@ -274,8 +277,8 @@ class VillagerManager {
       v.targetTz = null;
       const d = Math.hypot(dxFromHome, dzFromHome);
       if (d > 0) {
-        v.vx = (-dxFromHome / d) * VILLAGER_SPEED;
-        v.vz = (-dzFromHome / d) * VILLAGER_SPEED;
+        v.vx = lerp(v.vx || 0, (-dxFromHome / d) * VILLAGER_SPEED, 0.15);
+        v.vz = lerp(v.vz || 0, (-dzFromHome / d) * VILLAGER_SPEED, 0.15);
       }
       return;
     }
@@ -298,8 +301,9 @@ class VillagerManager {
       const dz = targetWz - v.z;
       const d = Math.hypot(dx, dz);
       if (d > VILLAGER_STOP_DIST) {
-        v.vx = (dx / d) * VILLAGER_SPEED;
-        v.vz = (dz / d) * VILLAGER_SPEED;
+        // Smooth direction changes to prevent oscillation (hysteresis in velocity).
+        v.vx = lerp(v.vx || 0, (dx / d) * VILLAGER_SPEED, 0.15);
+        v.vz = lerp(v.vz || 0, (dz / d) * VILLAGER_SPEED, 0.15);
         v.isCuring = false;
       } else {
         // Within range — stop and face target
@@ -338,6 +342,15 @@ class VillagerManager {
           }
         }
       }
+    }
+
+    // Hysteresis: keep the current target unless the new one is meaningfully
+    // closer (> VILLAGER_TARGET_HYSTERESIS_SQ) or the current target is no longer infected.
+    if (bestTx !== null && v.targetTx !== null &&
+        infection.has(tileKey(v.targetTx, v.targetTz))) {
+      const curDx = v.targetTx - vtx, curDz = v.targetTz - vtz;
+      const curDistSq = curDx * curDx + curDz * curDz;
+      if (bestDist + VILLAGER_TARGET_HYSTERESIS_SQ >= curDistSq) return; // Not worth switching
     }
 
     v.targetTx = bestTx;

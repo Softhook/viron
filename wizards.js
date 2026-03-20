@@ -37,6 +37,9 @@ const WIZARD_INFECTION_DAM   = 1.2;          // Health loss per tick on infected
 const WIZARD_HEAL_RATE       = 0.5;          // Health recovery per tick when safe
 const WIZARD_SPELL_DURATION  = 28;           // Ticks for a spell blob to reach its target
 const WIZARD_DRAW_SCALE      = 2.5;          // Slightly taller than a villager (2.0)
+// Retarget hysteresis: only switch to a new infection target if it is this many
+// tiles² closer than the current one (prevents oscillation between equal targets).
+const WIZARD_TARGET_HYSTERESIS_SQ = 4;       // ≈ 2 tiles
 
 class WizardManager {
   constructor() {
@@ -243,8 +246,8 @@ class WizardManager {
       w.targetTz = null;
       const d = Math.hypot(dxH, dzH);
       if (d > 0) {
-        w.vx = (-dxH / d) * WIZARD_SPEED;
-        w.vz = (-dzH / d) * WIZARD_SPEED;
+        w.vx = lerp(w.vx || 0, (-dxH / d) * WIZARD_SPEED, 0.15);
+        w.vz = lerp(w.vz || 0, (-dzH / d) * WIZARD_SPEED, 0.15);
       }
       return;
     }
@@ -269,9 +272,9 @@ class WizardManager {
       const d  = Math.hypot(dx, dz);
 
       if (d > WIZARD_STOP_DIST) {
-        // Walk toward target.
-        w.vx = (dx / d) * WIZARD_SPEED;
-        w.vz = (dz / d) * WIZARD_SPEED;
+        // Walk toward target — lerp smooths out rapid direction changes (hysteresis).
+        w.vx = lerp(w.vx || 0, (dx / d) * WIZARD_SPEED, 0.15);
+        w.vz = lerp(w.vz || 0, (dz / d) * WIZARD_SPEED, 0.15);
         w.isCasting = false;
       } else {
         // In casting range — stop and face target.
@@ -318,6 +321,15 @@ class WizardManager {
           }
         }
       }
+    }
+
+    // Hysteresis: keep the current target unless the new one is meaningfully
+    // closer (> WIZARD_TARGET_HYSTERESIS_SQ) or the current target is no longer infected.
+    if (bestTx !== null && w.targetTx !== null &&
+        infection.has(tileKey(w.targetTx, w.targetTz))) {
+      const curDx = w.targetTx - wtx, curDz = w.targetTz - wtz;
+      const curDistSq = curDx * curDx + curDz * curDz;
+      if (bestDist + WIZARD_TARGET_HYSTERESIS_SQ >= curDistSq) return; // Not worth switching
     }
 
     w.targetTx = bestTx;

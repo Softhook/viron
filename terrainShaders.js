@@ -103,12 +103,30 @@ const _GLSL_PULSE_LOOP = `
       float type = uPulses[i].w;
       vec2 diff = (vWorldPos.xz - uPulses[i].xy) * 0.01;
       float distToPulse = length(diff) * 100.0;
-      float radius = type == 1.0 ? age * 300.0 : (type == 2.0 ? age * 1200.0 : age * 800.0);
-      float ringThickness = type == 1.0 ? 30.0 : (type == 2.0 ? 150.0 : 80.0);
+      float radius = 
+          type == 1.0 ? age * 300.0 : 
+          (type == 2.0 ? age * 1200.0 : 
+          (type == 3.0 ? age * 160.0 :  // Type 3: Small curing pulse
+          (type == 4.0 ? age * 320.0 :  // Type 4: Orange crab pulse
+          age * 800.0)));
+          
+      float ringThickness = 
+          type == 1.0 ? 30.0 : 
+          (type == 2.0 ? 150.0 : 
+          (type == 3.0 ? 12.0 :  // Thin ring for small pulse
+          (type == 4.0 ? 40.0 :  // Normal thickness for crab
+          80.0)));
+          
       float ring = smoothstep(radius - ringThickness, radius, distToPulse) * (1.0 - smoothstep(radius, radius + ringThickness, distToPulse));
       float fade = 1.0 - (age / 3.0);
-      vec3 pulseColor = type == 1.0 ? vec3(0.2, 0.6, 1.0) : (type == 2.0 ? vec3(1.0, 0.8, 0.2) : vec3(1.0, 0.1, 0.1));
-      cyberColor += pulseColor * ring * fade * 2.0;
+      vec3 pulseColor = 
+          type == 1.0 ? vec3(0.2, 0.6, 1.0) : 
+          (type == 2.0 ? vec3(1.0, 0.8, 0.2) : 
+          (type == 3.0 ? vec3(0.2, 1.0, 0.5) :  // Greenish-blue for curing
+          (type == 4.0 ? vec3(1.0, 0.4, 0.1) :  // Orange for crab
+          vec3(1.0, 0.1, 0.1))));
+          
+      cyberColor += pulseColor * ring * fade * 2.5;
     }
   }
 `;

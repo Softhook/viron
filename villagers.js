@@ -223,7 +223,7 @@ class VillagerManager extends AgentManager {
             if (infection.has(cureKey)) {
               infection.remove(cureKey);
               // Visual + audio feedback
-              terrain.addPulse(v.targetTx * TILE, v.targetTz * TILE, 1.0);
+              terrain.addPulse(v.targetTx * TILE, v.targetTz * TILE, 3.0);
               if (typeof gameSFX !== 'undefined') {
                 gameSFX.playVillagerCure(v.x, v.y, v.z);
               }

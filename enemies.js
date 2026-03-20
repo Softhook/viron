@@ -448,7 +448,7 @@ class EnemyManager {
    * @param {object}   refShip      Fallback target ship.
    */
   updateCrab(e, alivePlayers, refShip) {
-    this._updateCrabAI(e, alivePlayers, refShip, 1.2, 0.02, 'normal', 1.0);
+    this._updateCrabAI(e, alivePlayers, refShip, 1.2, 0.02, 'normal', 4.0);
   }
 
   /**

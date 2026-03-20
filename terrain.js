@@ -225,7 +225,7 @@ class Terrain {
    * Registers a new expanding shockwave ring on the terrain surface.
    * @param {number} x    World-space X origin of the pulse.
    * @param {number} z    World-space Z origin of the pulse.
-   * @param {number} type 0 = bomb/normal, 1 = crab infection, 2 = ship explosion.
+   * @param {number} type 0 = bomb (red), 1 = unused (blue), 2 = explosion (gold), 3 = curing (small), 4 = crab (orange).
    */
   addPulse(x, z, type = 0.0) {
     // Prepend so the newest pulse is first; cap list at 5 so the shader array stays in sync.

@@ -12,6 +12,7 @@ class GameState {
     this.level = 1;
     this.currentMaxEnemies = 2;
     this.colossusSpawnCount = 0;
+    this.krakenSpawnCount = 0;
     this.levelComplete = false;
     this.levelEndTime = 0;
     this.infectionStarted = false;
@@ -93,12 +94,15 @@ class GameState {
   }
 
   _spawnLevelWave(lvl) {
-    // Every 3rd level guarantees a Colossus boss.
-    const hasColossus = (lvl >= 3 && lvl % 3 === 0);
+    // Level 5, 10, 15, … → Kraken boss.
+    // Level 3, 6, 9, … (except Kraken levels) → Colossus boss.
+    const hasKraken = (lvl >= 5 && lvl % 5 === 0);
+    const hasColossus = (!hasKraken && lvl >= 3 && lvl % 3 === 0);
     for (let i = 0; i < this.currentMaxEnemies; i++) {
       const forceSeeder = (i === 0);
-      const forceColossus = (!forceSeeder && hasColossus && i === 1);
-      enemyManager.spawn(forceSeeder, forceColossus);
+      const forceKraken = (!forceSeeder && hasKraken && i === 1);
+      const forceColossus = (!forceSeeder && !forceKraken && hasColossus && i === 1);
+      enemyManager.spawn(forceSeeder, forceColossus, forceKraken);
     }
   }
 
@@ -146,6 +150,7 @@ class GameState {
     this.numPlayers = np;
     this.gameStartTime = millis();
     this.colossusSpawnCount = 0;
+    this.krakenSpawnCount = 0;
     this.mouseReleasedSinceStart = !this.leftMouseDown;
 
     this.players = this._createPlayers(np);

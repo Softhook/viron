@@ -392,6 +392,9 @@ class WizardManager {
   draw(s) {
     if (this.wizards.length === 0) return;
 
+    const profiler = getVironProfiler();
+    const start = profiler ? performance.now() : 0;
+
     const sx = s.x, sz = s.z;
     const vis = this._visible;
     vis.length = 0;
@@ -402,7 +405,10 @@ class WizardManager {
       vis.push(w);
     }
 
-    if (vis.length === 0) return;
+    if (vis.length === 0) {
+      if (profiler) profiler.recordWizards(0, performance.now() - start);
+      return;
+    }
 
     if (terrain.fillShader) {
       terrain.applyFillColorShader();
@@ -501,6 +507,8 @@ class WizardManager {
 
     resetShader();
     setSceneLighting();
+
+    if (profiler) profiler.recordWizards(vis.length, performance.now() - start);
   }
 
   /**

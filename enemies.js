@@ -1566,6 +1566,9 @@ class EnemyManager {
   draw(s) {
     if (this.enemies.length === 0) return;
 
+    const profiler = getVironProfiler();
+    const start = profiler ? performance.now() : 0;
+
     const cullSq = CULL_DIST * CULL_DIST;
     const sx = s.x, sz = s.z;
 
@@ -1669,6 +1672,8 @@ class EnemyManager {
       }
       drawShadow(e.x, gy, e.z, sw, sh, casterH);
     }
+
+    if (profiler) profiler.record('enemies', performance.now() - start);
   }
 }
 

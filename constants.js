@@ -587,6 +587,16 @@ function createVironProfiler(cfg) {
     overlayInfectionTiles: 0,
     overlayBarrierTiles: 0,
     spreadSteps: 0,
+    // New metrics
+    villagerMs: 0,
+    villagerCount: 0,
+    wizardMs: 0,
+    wizardCount: 0,
+    terrainMs: 0,
+    treeMs: 0,
+    buildingMs: 0,
+    enemyMs: 0,
+    particleMs: 0,
     frames: 0,
   };
   let active = true;
@@ -603,6 +613,16 @@ function createVironProfiler(cfg) {
       vironTiles: Math.round(totals.overlayInfectionTiles / frames),
       barrierOverlayMs: +(totals.overlayBarrier / frames).toFixed(3),
       barrierTiles: Math.round(totals.overlayBarrierTiles / frames),
+      // New summary fields
+      villagerMs: +(totals.villagerMs / frames).toFixed(3),
+      villagerCount: Math.round(totals.villagerCount / frames),
+      wizardMs: +(totals.wizardMs / frames).toFixed(3),
+      wizardCount: Math.round(totals.wizardCount / frames),
+      terrainMs: +(totals.terrainMs / frames).toFixed(3),
+      treeMs: +(totals.treeMs / frames).toFixed(3),
+      buildingMs: +(totals.buildingMs / frames).toFixed(3),
+      enemyMs: +(totals.enemyMs / frames).toFixed(3),
+      particleMs: +(totals.particleMs / frames).toFixed(3),
     };
     const prefix = label ? `VIRON_PROFILE[${label}]` : 'VIRON_PROFILE';
     console.log(`${prefix}:${JSON.stringify(summary)}`);
@@ -614,6 +634,8 @@ function createVironProfiler(cfg) {
     totals.frame = totals.spread = totals.shader = 0;
     totals.overlayInfection = totals.overlayBarrier = totals.spreadSteps = 0;
     totals.overlayInfectionTiles = totals.overlayBarrierTiles = 0;
+    totals.villagerMs = totals.villagerCount = totals.wizardMs = totals.wizardCount = 0;
+    totals.terrainMs = totals.treeMs = totals.buildingMs = totals.enemyMs = totals.particleMs = 0;
     totals.frames = 0;
     if (cfg.once) active = false;
   }
@@ -625,6 +647,11 @@ function createVironProfiler(cfg) {
       if (!active) return;
       if (name === 'spread') totals.spread += delta;
       else if (name === 'shader') totals.shader += delta;
+      else if (name === 'terrain') totals.terrainMs += delta;
+      else if (name === 'trees') totals.treeMs += delta;
+      else if (name === 'buildings') totals.buildingMs += delta;
+      else if (name === 'enemies') totals.enemyMs += delta;
+      else if (name === 'particles') totals.particleMs += delta;
     },
     recordSpread(delta) {
       if (!active) return;
@@ -641,18 +668,18 @@ function createVironProfiler(cfg) {
         totals.overlayBarrierTiles += tiles;
       }
     },
+    recordVillagers(count, delta) {
+      if (!active) return;
+      totals.villagerMs += delta;
+      totals.villagerCount += count;
+    },
+    recordWizards(count, delta) {
+      if (!active) return;
+      totals.wizardMs += delta;
+      totals.wizardCount += count;
+    },
     snapshot() {
-      return {
-        frames: totals.frames,
-        frame: totals.frame,
-        spread: totals.spread,
-        shader: totals.shader,
-        overlayInfection: totals.overlayInfection,
-        overlayBarrier: totals.overlayBarrier,
-        overlayInfectionTiles: totals.overlayInfectionTiles,
-        overlayBarrierTiles: totals.overlayBarrierTiles,
-        spreadSteps: totals.spreadSteps,
-      };
+      return { ...totals };
     },
     flush() {
       if (!active || totals.frames === 0) return false;

@@ -991,6 +991,7 @@ class Terrain {
     this.applyShader();
     if (profiler) profiler.record('shader', performance.now() - shaderStart);
 
+    const terrainStart = profiler ? performance.now() : 0;
     const minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
     const maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
     const minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
@@ -1024,6 +1025,7 @@ class Terrain {
     }
 
     this._drawSeaPlane(s);
+    if (profiler) profiler.record('terrain', performance.now() - terrainStart);
 
     // Exit the terrain GLSL shader and restore p5 lighting for subsequent
     // non-terrain draw calls (trees, buildings, enemies, ships).
@@ -1561,6 +1563,9 @@ class Terrain {
    * @param {{x,y,z,yaw}} s  Ship state (used as the view origin for culling).
    */
   drawTrees(s) {
+    const profiler = getVironProfiler();
+    const start = profiler ? performance.now() : 0;
+
     let treeCullDist = VIEW_FAR * TILE;
     let cullSq = treeCullDist * treeCullDist;
     // Uses the same camera params cached by drawLandscape
@@ -1628,6 +1633,8 @@ class Terrain {
     _endShadowStencil();
     resetShader();
     setSceneLighting();
+
+    if (profiler) profiler.record('trees', performance.now() - start);
   }
 
   _getBuildingGeom(b, inf) {
@@ -1672,6 +1679,9 @@ class Terrain {
    * Draws all buildings using single coherent meshes and the terrain shader.
    */
   drawBuildings(s) {
+    const profiler = getVironProfiler();
+    const start = profiler ? performance.now() : 0;
+
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
     let cam = this._cam || this.getCameraParams(s);
     const sun = this._getSunShadowBasis();
@@ -1774,6 +1784,8 @@ class Terrain {
     _endShadowStencil();
     resetShader();
     setSceneLighting();
+
+    if (profiler) profiler.record('buildings', performance.now() - start);
   }
 }
 

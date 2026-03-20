@@ -388,6 +388,9 @@ class VillagerManager {
   draw(s) {
     if (this.villagers.length === 0) return;
 
+    const profiler = getVironProfiler();
+    const start = profiler ? performance.now() : 0;
+
     const sx = s.x, sz = s.z;
     const vis = this._visible;
     vis.length = 0;
@@ -399,7 +402,10 @@ class VillagerManager {
       vis.push(v);
     }
 
-    if (vis.length === 0) return;
+    if (vis.length === 0) {
+      if (profiler) profiler.recordVillagers(0, performance.now() - start);
+      return;
+    }
 
     // Use fill-color shader for box/cylinder primitives
     if (terrain.fillShader) {
@@ -488,6 +494,8 @@ class VillagerManager {
 
     resetShader();
     setSceneLighting();
+
+    if (profiler) profiler.recordVillagers(vis.length, performance.now() - start);
   }
 
   /**

@@ -254,7 +254,6 @@ class GameRenderer {
     } else {
       this._renderSinglePass(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     }
-
     // HUD overlay (2D)
     gl.clear(gl.DEPTH_BUFFER_BIT);
     drawPlayerHUD(player, playerIdx, viewW, viewH);
@@ -278,7 +277,11 @@ class GameRenderer {
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     this._drawSharedWorld(s, player, viewW / viewH, true);
+    
+    const profiler = getVironProfiler();
+    let pStart = profiler ? performance.now() : 0;
     particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
+    if (profiler) profiler.record('particles', performance.now() - pStart);
     pop();
     this.sceneFBO.end();
 
@@ -299,7 +302,10 @@ class GameRenderer {
     this._applyViewportScissor(gl, vx, vw, vh);
     push();
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
+    
+    pStart = profiler ? performance.now() : 0;
     particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, this.sceneFBO);
+    if (profiler) profiler.record('particles', performance.now() - pStart);
     pop();
   }
 
@@ -315,7 +321,11 @@ class GameRenderer {
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     this._drawSharedWorld(s, player, viewW / viewH, false);
+    
+    const profiler = getVironProfiler();
+    const pStart = profiler ? performance.now() : 0;
     particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
+    if (profiler) profiler.record('particles', performance.now() - pStart);
     if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
     pop();
   }

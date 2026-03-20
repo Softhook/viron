@@ -47,9 +47,8 @@ const SHADOW_HEIGHT_FADE_MIN = 0.45;
 const SHADOW_OPACITY_MAX = 1;
 // Shadow projection clamp: avoid projecting shadows past the far view plane.
 const SHADOW_MAX_VIEW_FRACTION = 0.9;
-// Adjust shadow color scales to compensate for the brighter ambient constants
-const SHADOW_AMBIENT_RG_SCALE = 0.20;
-const SHADOW_AMBIENT_B_SCALE = 0.25;
+// Shadow alpha is the only control needed; color is now pure black (0,0,0) for correct darkening.
+
 const TREE_SHADOW_BASE_ALPHA = 75;
 const TREE_DEFAULT_TRUNK_HEIGHT = 40;
 

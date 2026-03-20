@@ -386,8 +386,9 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   if (hull.length < 3) return;
 
   noStroke();
-  // Sky-tinted shadow: dark cool blue (sky fill colors the shadow, not pure black)
-  fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, alpha * getOpacityFactor(casterH));
+  // Pure black shadow with alpha is most consistent for darkening background terrain.
+  fill(0, 0, 0, alpha * getOpacityFactor(casterH));
+
   _beginShadowStencil();
   beginShape();
   for (const p of hull) {

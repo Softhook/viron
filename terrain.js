@@ -1348,7 +1348,7 @@ class Terrain {
     noStroke();
     const shadowAlpha = alpha * this._shadowOpacityFactor(casterH);
     // Bake the precise shadow color/alpha into the vertex colors
-    fill(AMBIENT_R * SHADOW_AMBIENT_RG_SCALE, AMBIENT_G * SHADOW_AMBIENT_RG_SCALE, AMBIENT_B * SHADOW_AMBIENT_B_SCALE, shadowAlpha);
+    fill(0, 0, 0, shadowAlpha);
 
     if (!isBaking) {
       if (lightsWereOn) noLights();

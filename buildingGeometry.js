@@ -80,7 +80,7 @@ function buildType0Geometry(b, inf) {
   const rh1 = bw * 0.54;  // lower eave cone height
   const rh2 = bw * 0.38;  // upper eave cone height
 
-  // Stone plinth base — wide octagonal footing
+  // Stone plinth base — wide rectangular footing
   fill(goldR, goldG, goldB);
   push(); translate(0, -bh * 0.08, 0); box(bw * 1.15, bh * 0.16, bd * 1.15); pop();
 
@@ -285,7 +285,7 @@ function getBuildingFootprint(b) {
   let footprint, casterH;
 
   if (b.type === 0) {
-    // Plinth is bw * 1.15 wide; use 0.575 * bw half-extents for the footprint.
+    // Plinth is ~1.15× building size; use 0.575 * bw/bd half-extents for the footprint.
     const hw = bw * 0.575, hd = bd * 0.575;
     footprint = [
       { x: -hw, z: -hd }, { x: hw, z: -hd },

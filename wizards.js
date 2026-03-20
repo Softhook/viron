@@ -330,12 +330,15 @@ class WizardManager {
     w.isCasting = true;
     w.castPhase = 0;
 
-    // Staff tip position in world space: ~WIZARD_DRAW_SCALE * 22 units above ground.
-    const staffTipY = w.y - WIZARD_DRAW_SCALE * 22;
-    // Horizontal offset toward the facing direction (right-hand side of wizard).
+    // Staff tip position in world space, derived from the rendered model's local geometry:
+    //   arm base: translate(4.5, -17, 0) → hand: translate(0, 3, 0) → orb: translate(0, -25, 0)
+    //   net pre-scale local Y = -17 + 3 - 25 = -39  →  world offset = WIZARD_DRAW_SCALE * 39
+    //   net pre-scale local X = 4.5 (right side of wizard)
+    const staffTipY = w.y - WIZARD_DRAW_SCALE * 39;
+    // Horizontal offset: staff is on the right-hand side, perpendicular to facing direction.
     const fa = w.facingAngle;
-    const staffOffX = Math.sin(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 5;
-    const staffOffZ = Math.cos(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 5;
+    const staffOffX = Math.sin(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 4.5;
+    const staffOffZ = Math.cos(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 4.5;
 
     w.spells.push({
       startX:   w.x   + staffOffX,

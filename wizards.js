@@ -2,11 +2,16 @@
 // wizards.js — WizardManager class
 //
 // Spawns a single wizard figure from each uninfected wizard tower
-// (building type 0 — blue square box with pyramid roof). Wizards are more powerful than villagers: they actively
-// hunt infection across a wider radius, cast spells that clear a 2×2 block of
-// virus tiles in one go, and are slightly taller in appearance.
+// (building type 0 — two-tiered jade tower with cinnabar eaves). Wizards are
+// more powerful than villagers: they actively hunt infection across a wider
+// radius, cast spells that clear a 2×2 block of virus tiles in one go, and
+// are slightly taller in appearance.
 //
-// Spell animation: a blue magic blob travels along a parabolic arc from the
+// Eastern-magic aesthetic: each wizard wears deep-crimson robes with a gold
+// sash, a wide bamboo conical hat, a flowing white beard, and carries a
+// bamboo staff topped with a jade ring ornament and glowing jade orb.
+//
+// Spell animation: a golden amber orb travels along a parabolic arc from the
 // wizard's staff to the target, then detonates and clears up to 4 tiles.
 //
 // Rules:
@@ -147,7 +152,7 @@ class WizardManager {
         }
 
         if (cleared > 0) {
-          // Blue impact burst particles.
+          // Amber/gold impact burst particles.
           const ix = htx * TILE + TILE * 0.5;
           const iz = htz * TILE + TILE * 0.5;
           const iy = terrain.getAltitude(ix, iz);
@@ -156,7 +161,7 @@ class WizardManager {
               x: ix, y: iy - 8, z: iz,
               vx: random(-3.5, 3.5), vy: random(-6, -1), vz: random(-3.5, 3.5),
               life: 220, decay: 7, size: random(4, 10),
-              color: [80, 180, 255]
+              color: p % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
             });
           }
           if (typeof gameSFX !== 'undefined') {
@@ -325,12 +330,15 @@ class WizardManager {
     w.isCasting = true;
     w.castPhase = 0;
 
-    // Staff tip position in world space: ~WIZARD_DRAW_SCALE * 22 units above ground.
-    const staffTipY = w.y - WIZARD_DRAW_SCALE * 22;
-    // Horizontal offset toward the facing direction (right-hand side of wizard).
+    // Staff tip position in world space, derived from the rendered model's local geometry:
+    //   arm base: translate(4.5, -17, 0) → hand: translate(0, 3, 0) → orb: translate(0, -25, 0)
+    //   net pre-scale local Y = -17 + 3 - 25 = -39  →  world offset = WIZARD_DRAW_SCALE * 39
+    //   net pre-scale local X = 4.5 (right side of wizard)
+    const staffTipY = w.y - WIZARD_DRAW_SCALE * 39;
+    // Horizontal offset: staff is on the right-hand side, perpendicular to facing direction.
     const fa = w.facingAngle;
-    const staffOffX = Math.sin(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 5;
-    const staffOffZ = Math.cos(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 5;
+    const staffOffX = Math.sin(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 4.5;
+    const staffOffZ = Math.cos(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 4.5;
 
     w.spells.push({
       startX:   w.x   + staffOffX,
@@ -346,14 +354,14 @@ class WizardManager {
   // Death
   // ---------------------------------------------------------------------------
 
-  /** @private Removes a wizard, plays a purple death burst, and frees the tower slot. */
+  /** @private Removes a wizard, plays a crimson death burst, and frees the tower slot. */
   _killWizard(w, idx) {
     for (let p = 0; p < 16; p++) {
       particleSystem.particles.push({
         x: w.x, y: w.y - 8, z: w.z,
         vx: random(-3, 3), vy: random(-5, -1), vz: random(-3, 3),
         life: 220, decay: 9, size: random(3, 7),
-        color: [120, 60, 200]
+        color: p % 2 === 0 ? [200, 50, 40] : [255, 195, 50]
       });
     }
 
@@ -374,8 +382,10 @@ class WizardManager {
   /**
    * Draws all in-range wizards and their in-flight spell blobs.
    *
-   * Each wizard is a robed figure with a pointed hat, white beard, and a staff.
-   * Spell blobs travel as glowing blue spheres along a parabolic arc.
+   * Each wizard wears deep-crimson robes with a gold sash, a wide bamboo
+   * conical hat, a flowing white beard, and carries a bamboo staff topped with
+   * a jade ring and glowing jade orb.  Spell orbs travel as glowing amber
+   * spheres along a parabolic arc.
    *
    * @param {{x,y,z}} s  Ship state used for distance culling.
    */
@@ -420,45 +430,68 @@ class WizardManager {
 
       scale(WIZARD_DRAW_SCALE);
 
-      // --- Head (same box as villager) ---
+      // --- Head ---
       this._setColor(220, 185, 150);  // Skin tone
       push(); translate(0, -22, 0); box(5, 5, 5); pop();
 
-      // --- Body — blue tunic (same as villager, just bigger via scale) ---
-      this._setColor(60, 120, 200);
-      push(); translate(0, -16, 0); box(6, 8, 4); pop();
+      // --- White beard (below chin, slightly forward) ---
+      this._setColor(235, 235, 230);
+      push(); translate(0, -19, 2.5); box(3, 4, 2); pop();
 
-      // --- Legs (animated, matching villager style) ---
-      this._setColor(80, 60, 40);  // Brown
+      // --- Bamboo conical hat (wide flat brim + tapering crown) ---
+      this._setColor(90, 140, 60);   // bamboo green brim
+      push(); translate(0, -26, 0); cylinder(8, 1.5, 8, 1); pop();
+      push(); translate(0, -30, 0); rotateX(PI); cone(5, 7, 8, 1); pop();  // conical crown, point up
+      this._setColor(220, 185, 50);  // gold hat band
+      push(); translate(0, -26.8, 0); cylinder(8.1, 0.6, 8, 1); pop();
+
+      // --- Body — deep crimson robe ---
+      this._setColor(175, 40, 50);
+      push(); translate(0, -16, 0); box(7, 8, 4); pop();
+
+      // --- Golden sash across waist ---
+      this._setColor(220, 185, 50);
+      push(); translate(0, -12.5, 0); box(8, 1.8, 5); pop();
+
+      // --- Lower robe hem (wider, suggests flowing robe) ---
+      this._setColor(175, 40, 50);
+      push(); translate(0, -9, 0); box(8, 5, 5); pop();
+
+      // --- Legs (barely visible beneath robe hem) ---
+      this._setColor(130, 30, 35);
       const legSwing = isWalking ? sin(phase) * 0.6 : 0;
-      push(); translate(-1.5, -11, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-      push(); translate( 1.5, -11, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+      push(); translate(-1.5, -6.5, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+      push(); translate( 1.5, -6.5, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
 
-      // --- Left arm (animated like villager) ---
-      this._setColor(220, 185, 150);
+      // --- Left sleeve (crimson) ---
+      this._setColor(175, 40, 50);
       const leftArmSwing = isWalking ? sin(phase + PI) * 0.5 : (w.isCasting ? sin(w.castPhase * 3) * 0.3 : 0);
-      push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2, 5, 2); pop();
+      push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2.5, 5, 2.5); pop();
 
-      // --- Right arm: holds staff — raises while casting ---
+      // --- Right sleeve: holds bamboo staff — raises while casting ---
       const staffArm = w.isCasting
         ? -Math.PI * 0.6 + Math.sin(w.castPhase) * 0.15
         : (isWalking ? sin(phase) * 0.5 : -0.15);
 
-      this._setColor(220, 185, 150);
+      this._setColor(175, 40, 50);
       push();
       translate(4.5, -17, 0);
       rotateX(staffArm);
       translate(0, 3, 0);
-      box(2, 5, 2);     // Arm
+      box(2.5, 5, 2.5);     // Sleeve
 
-      // Staff shaft extending from the hand
-      this._setColor(100, 70, 40);
-      push(); translate(0, -12, 0); cylinder(0.8, 16, 4, 1); pop();
+      // Bamboo staff shaft
+      this._setColor(90, 140, 60);
+      push(); translate(0, -13, 0); cylinder(0.8, 18, 5, 1); pop();
 
-      // Staff gem at tip
-      this._setColor(w.isCasting ? 120 : 80, w.isCasting ? 220 : 190, 255);
-      push(); translate(0, -21, 0); sphere(2.0, 6, 4); pop();
-      pop();
+      // Gold ring ornament near staff top
+      this._setColor(220, 185, 50);
+      push(); translate(0, -22.5, 0); rotateX(PI / 2); torus(2.5, 0.5, 8, 4); pop();
+
+      // Jade orb at staff tip — brightens when casting
+      this._setColor(w.isCasting ? 55 : 40, w.isCasting ? 225 : 200, w.isCasting ? 145 : 120);
+      push(); translate(0, -25, 0); sphere(2.0, 6, 4); pop();
+      pop();  // end right arm/staff
 
       pop(); // End of wizard transform
 
@@ -495,12 +528,12 @@ class WizardManager {
       // Blob pulses in size as it travels.
       const blobR = 4 + t * 6 + Math.sin(t * Math.PI * 8) * 1.5;
 
-      // Bright blue core.
-      this._setColor(60, 160, 255);
+      // Amber/gold core.
+      this._setColor(255, 200, 55);
       push(); translate(bx, by, bz); sphere(blobR, 6, 4); pop();
 
-      // Lighter glow halo.
-      this._setColor(160, 220, 255);
+      // Lighter amber halo.
+      this._setColor(255, 240, 145);
       push(); translate(bx, by, bz); sphere(blobR * 0.55, 5, 3); pop();
 
       // Trailing sparkle particles (occasional, cheap).
@@ -509,7 +542,7 @@ class WizardManager {
           x: bx, y: by, z: bz,
           vx: random(-0.8, 0.8), vy: random(-0.6, 0.6), vz: random(-0.8, 0.8),
           life: 28, decay: 3, size: random(2, 5),
-          color: [80, 180, 255]
+          color: [255, 200, 50]
         });
       }
     }

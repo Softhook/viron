@@ -59,25 +59,58 @@ function _bldgSafeR(r) {
 // ---------------------------------------------------------------------------
 
 /**
- * Draws a Pyramid-Roofed House / Wizard Tower (building type 0).
- * The blue square body and four-sided pyramid roof identify this as a wizard
- * tower.  A small glowing orb sits at the pyramid tip to mark it as magical.
+ * Draws an Eastern Mystical Tower / Wizard Tower (building type 0).
+ * A slender two-tiered tower with an octagonal body, jade-green walls,
+ * cinnabar-red swept eaves, gold trim rings, and a glowing jade orb at the apex.
+ * Inspired by East Asian incense towers and celestial observatory designs rather
+ * than generic western wizard architecture.
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType0Geometry(b, inf) {
-  // Box body: blue/cyan when healthy, infected red when overrun.
-  fill(inf ? 41 : 40, inf ? 50 : 220, inf ? 50 : 220);
-  push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
+  const bw = b.w, bh = b.h, bd = b.d;
 
-  // Pyramid roof: pink/red cap.
-  fill(_bldgSafeR(inf ? 150 : 220), inf ? 30 : 50, inf ? 30 : 50);
-  let rh = b.w / 1.5;
-  push(); translate(0, -b.h - rh / 2, 0); rotateX(PI); rotateY(PI / 4); cone(b.w * 0.8, rh, 4, 1); pop();
+  // Color palette: jade-green walls, cinnabar-red eaves, gold trim.
+  // When infected the whole tower shows a corruption-red wash.
+  const wallR = _bldgSafeR(inf ? 200 : 22),  wallG = inf ? 30 : 145, wallB = inf ? 30 : 85;
+  const eaveR = _bldgSafeR(inf ? 220 : 178),  eaveG = inf ? 20 : 45,  eaveB = inf ? 20 : 30;
+  const goldR = _bldgSafeR(inf ? 178 : 195),  goldG = inf ? 20 : 168, goldB = inf ? 20 : 32;
+  const orbR  = _bldgSafeR(inf ? 255 : 55),   orbG  = inf ? 80 : 210,  orbB  = inf ? 30 : 140;
 
-  // Glowing orb at the pyramid tip — magical marker for the wizard tower.
-  fill(_bldgSafeR(inf ? 255 : 80), inf ? 80 : 220, inf ? 30 : 255);
-  push(); translate(0, -b.h - rh - b.w * 0.06, 0); sphere(b.w * 0.07, 5, 3); pop();
+  const rh1 = bw * 0.54;  // lower eave cone height
+  const rh2 = bw * 0.38;  // upper eave cone height
+
+  // Stone plinth base — wide rectangular footing
+  fill(goldR, goldG, goldB);
+  push(); translate(0, -bh * 0.08, 0); box(bw * 1.15, bh * 0.16, bd * 1.15); pop();
+
+  // Lower tower body (octagonal cylinder)
+  fill(wallR, wallG, wallB);
+  push(); translate(0, -bh * 0.38, 0); cylinder(bw * 0.44, bh * 0.44, 8, 1); pop();
+
+  // Decorative gold ring band at mid-tower
+  fill(goldR, goldG, goldB);
+  push(); translate(0, -bh * 0.54, 0); cylinder(bw * 0.47, bh * 0.025, 8, 1); pop();
+
+  // Lower eave — wide cinnabar-red swept roof
+  fill(eaveR, eaveG, eaveB);
+  push(); translate(0, -bh * 0.62 - rh1 / 2, 0); rotateX(PI); cone(bw * 0.84, rh1, 8, 1); pop();
+
+  // Upper tower body (narrower)
+  fill(wallR, wallG, wallB);
+  push(); translate(0, -bh * 0.77, 0); cylinder(bw * 0.27, bh * 0.22, 8, 1); pop();
+
+  // Upper eave — smaller swept roof
+  fill(eaveR, eaveG, eaveB);
+  push(); translate(0, -bh * 0.88 - rh2 / 2, 0); rotateX(PI); cone(bw * 0.57, rh2, 8, 1); pop();
+
+  // Finial spire (slender gold rod)
+  fill(goldR, goldG, goldB);
+  push(); translate(0, -bh * 0.97, 0); cylinder(bw * 0.035, bh * 0.1, 5, 1); pop();
+
+  // Jade orb at the very apex — glows green/jade when healthy
+  fill(orbR, orbG, orbB);
+  push(); translate(0, -bh - bw * 0.04, 0); sphere(bw * 0.1, 6, 4); pop();
 }
 
 /**
@@ -252,7 +285,8 @@ function getBuildingFootprint(b) {
   let footprint, casterH;
 
   if (b.type === 0) {
-    const hw = bw * 0.5, hd = bd * 0.5;
+    // Plinth is ~1.15× building size; use 0.575 * bw/bd half-extents for the footprint.
+    const hw = bw * 0.575, hd = bd * 0.575;
     footprint = [
       { x: -hw, z: -hd }, { x: hw, z: -hd },
       { x:  hw, z:  hd }, { x: -hw, z:  hd }

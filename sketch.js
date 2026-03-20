@@ -252,6 +252,7 @@ function draw() {
     for (let p of gameState.players) updateShipInput(p);
     enemyManager.update();
     if (typeof villagerManager !== 'undefined') villagerManager.update();
+    if (typeof wizardManager !== 'undefined') wizardManager.update();
     for (let p of gameState.players) GameLoop.checkCollisions(p);
     GameLoop.spreadInfection();
     particleSystem.updatePhysics();

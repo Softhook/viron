@@ -10,7 +10,7 @@
 // pop, translate, box, cylinder, cone, sphere, rotateX, rotateY, torus).
 //
 // Building type catalogue:
-//   0 — Pyramid-Roofed House
+//   0 — Wizard Tower (Pyramid-Roofed blue square tower with glowing orb tip)
 //   1 — Cylindrical Observatory
 //   2 — Pagoda
 //   3 — Floating UFO / Powerup  (see buildPowerupGeometry)
@@ -59,16 +59,25 @@ function _bldgSafeR(r) {
 // ---------------------------------------------------------------------------
 
 /**
- * Draws a Pyramid-Roofed House (building type 0).
+ * Draws a Pyramid-Roofed House / Wizard Tower (building type 0).
+ * The blue square body and four-sided pyramid roof identify this as a wizard
+ * tower.  A small glowing orb sits at the pyramid tip to mark it as magical.
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType0Geometry(b, inf) {
+  // Box body: blue/cyan when healthy, infected red when overrun.
   fill(inf ? 41 : 40, inf ? 50 : 220, inf ? 50 : 220);
   push(); translate(0, -b.h / 2, 0); box(b.w, b.h, b.d); pop();
+
+  // Pyramid roof: pink/red cap.
   fill(_bldgSafeR(inf ? 150 : 220), inf ? 30 : 50, inf ? 30 : 50);
   let rh = b.w / 1.5;
   push(); translate(0, -b.h - rh / 2, 0); rotateX(PI); rotateY(PI / 4); cone(b.w * 0.8, rh, 4, 1); pop();
+
+  // Glowing orb at the pyramid tip — magical marker for the wizard tower.
+  fill(_bldgSafeR(inf ? 255 : 80), inf ? 80 : 220, inf ? 30 : 255);
+  push(); translate(0, -b.h - rh - b.w * 0.06, 0); sphere(b.w * 0.07, 5, 3); pop();
 }
 
 /**

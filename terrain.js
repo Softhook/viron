@@ -1718,7 +1718,7 @@ class Terrain {
       } else {
         let bGeom = this._getBuildingGeom(b, inf);
         if (bGeom) model(bGeom);
-        // Rotating crown for type 4
+        // Rotating crown for type 4 sentinel tower
         if (b.type === 4) {
           const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
           fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);

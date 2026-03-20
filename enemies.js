@@ -752,17 +752,44 @@ class EnemyManager {
       }
     }
 
-    // Priority 2: if no villager nearby, head to the nearest village (pagoda, type 2)
+    // Priority 2: if no villager nearby, head to a village (pagoda, type 2).
+    // The wolf persists a _wolfNextVillage target across frames so the arrival
+    // check can fire after the wolf has physically moved there.
+    // Skips the last-visited village as long as the wolf remains close to it,
+    // so it roams from village to village instead of getting stuck at one.
     if (targetX === null || bestDistSq > 800 * 800) {
-      let villageBest = Infinity;
-      for (let b of gameState.buildings) {
-        if (b.type !== 2) continue;
-        const d2 = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
-        if (d2 < villageBest) {
-          villageBest = d2;
-          targetX = b.x;
-          targetZ = b.z;
+      // Only pick a new village target when we don't already have one pending
+      if (!e._wolfNextVillage) {
+        let villageBest = Infinity;
+        for (let b of gameState.buildings) {
+          if (b.type !== 2) continue;
+          // Skip the last village we just visited — unless we've moved far enough away
+          // from it that it's fair game again (prevents getting glued to one pagoda).
+          if (b === e._wolfLastVillage) {
+            const d2ToLast = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
+            if (d2ToLast < 250 * 250) continue;  // Still close — skip it
+            else e._wolfLastVillage = null;       // Moved away — clear the block
+          }
+          const d2 = (b.x - e.x) ** 2 + (b.z - e.z) ** 2;
+          if (d2 < villageBest) {
+            villageBest = d2;
+            e._wolfNextVillage = b;
+          }
         }
+      }
+
+      if (e._wolfNextVillage) {
+        targetX = e._wolfNextVillage.x;
+        targetZ = e._wolfNextVillage.z;
+      }
+    }
+
+    // Arrived at the pending village — register it so we pick a different one next time
+    if (e._wolfNextVillage) {
+      const vd2 = (e._wolfNextVillage.x - e.x) ** 2 + (e._wolfNextVillage.z - e.z) ** 2;
+      if (vd2 < 150 * 150) {
+        e._wolfLastVillage = e._wolfNextVillage;
+        e._wolfNextVillage = null;
       }
     }
 
@@ -1279,55 +1306,107 @@ class EnemyManager {
    */
   _drawKraken(e) {
     noStroke();
-    const kScale = e.krakenScale || 1;
     let hitT = e.hitFlash > 0 ? min(1, e.hitFlash / 8) : 0;
 
-    const bR = lerp(20, 200, hitT), bG = lerp(80, 200, hitT), bB = lerp(160, 255, hitT);  // Body
-    const dkR = 10, dkG = 50, dkB = 100;   // Dark mantle
-    const glR = 0, glG = 220, glB = 255;   // Glowing cyan eyes
-    const tentR = lerp(15, 180, hitT), tentG = lerp(60, 180, hitT), tentB = lerp(130, 220, hitT);
+    // --- Colour palette ---
+    const mantleR = lerp(40, 220, hitT),  mantleG = lerp(10, 200, hitT),  mantleB = lerp(100, 255, hitT);
+    const bodyR   = lerp(20, 180, hitT),  bodyG   = lerp(55, 180, hitT),  bodyB   = lerp(130, 240, hitT);
+    const darkR   = lerp(8,  100, hitT),  darkG   = lerp(18, 100, hitT),  darkB   = lerp(55,  160, hitT);
+    const tBase   = [lerp(30, 200, hitT), lerp(80, 200, hitT), lerp(150, 225, hitT)];
+    const tTip    = [lerp(80, 255, hitT), lerp(220, 255, hitT), lerp(230, 255, hitT)];
+    const eyeR = 0, eyeG = 255, eyeB = 190;
+    const pupilR = 0, pupilG = 30, pupilB = 20;
 
-    // Main body dome (use rotated cylinders to fake a dome shape)
-    this._setColor(bR, bG, bB);
-    push();
-    rotateX(PI / 2);
-    cylinder(50, 30, 12, 1);
-    pop();
-    // Flattened cap
-    push();
-    translate(0, -20, 0);
-    rotateX(PI / 2);
-    cylinder(40, 14, 12, 1);
-    pop();
+    // ── BODY ────────────────────────────────────────────────────────────────
+    // Wide flat skirt that sits at the waterline
+    this._setColor(darkR, darkG, darkB);
+    push(); rotateX(PI / 2); cylinder(95, 12, 14, 1); pop();
 
-    // Dark mantle ring
-    this._setColor(dkR, dkG, dkB);
-    push();
-    translate(0, -4, 0);
-    rotateX(PI / 2);
-    cylinder(52, 8, 12, 1);
-    pop();
+    // Primary dome
+    this._setColor(bodyR, bodyG, bodyB);
+    push(); translate(0, -18, 0); rotateX(PI / 2); cylinder(80, 44, 14, 1); pop();
 
-    // Glowing eyes
-    this._setColor(glR, glG, glB);
-    push(); translate(-20, -18, 40); box(14, 10, 8); pop();
-    push(); translate(20, -18, 40); box(14, 10, 8); pop();
+    // Mid-dome taper
+    this._setColor(mantleR, mantleG, mantleB);
+    push(); translate(0, -48, 0); rotateX(PI / 2); cylinder(60, 34, 12, 1); pop();
 
-    // 8 animated tentacles radiating outward
-    this._setColor(tentR, tentG, tentB);
-    const numTentacles = 8;
-    for (let i = 0; i < numTentacles; i++) {
-      const a = (i / numTentacles) * TWO_PI;
-      const phase = frameCount * 0.07 + e.id + i * 0.8;
+    // Upper crown
+    push(); translate(0, -74, 0); rotateX(PI / 2); cylinder(36, 24, 10, 1); pop();
+
+    // Apex tip
+    push(); translate(0, -95, 0); rotateX(PI / 2); cylinder(14, 16, 8, 1); pop();
+
+    // Frill / ridge ring at mantle join
+    this._setColor(darkR, darkG, darkB);
+    push(); translate(0, -36, 0); rotateX(PI / 2); cylinder(84, 7, 14, 1); pop();
+
+    // ── EYES ────────────────────────────────────────────────────────────────
+    this._setColor(eyeR, eyeG, eyeB);
+    push(); translate(-30, -60, 55); box(26, 20, 14); pop();
+    push(); translate(30, -60, 55);  box(26, 20, 14); pop();
+    this._setColor(pupilR, pupilG, pupilB);
+    push(); translate(-30, -60, 64); box(12, 12, 8); pop();
+    push(); translate(30, -60, 64);  box(12, 12, 8); pop();
+
+    // ── TENTACLES ───────────────────────────────────────────────────────────
+    // 8 main tentacles: radiate from body skirt, sweep along / just above the water,
+    // and curl dramatically with a large-amplitude wave.
+    const phase = frameCount * 0.07 + (e.id || 0);
+    const NUM_MAIN = 8;
+    const MAIN_SEGS = 12;       // segments per tentacle
+    const SEG_LEN   = 24;       // length per segment (local units)
+    const BASE_RADIUS = 88;     // starting radius from kraken centre
+
+    for (let i = 0; i < NUM_MAIN; i++) {
+      const a = (i / NUM_MAIN) * TWO_PI;
+      const tentPhase = phase + i * (TWO_PI / NUM_MAIN);
       push();
       rotateY(a);
-      translate(45, 8, 0);
-      for (let seg = 0; seg < 6; seg++) {
-        let wave = sin(phase + seg * 0.6) * 0.25;
-        rotateZ(0.12 + wave);
-        rotateX(wave * 0.3);
-        translate(0, 0, 12);
-        box(10 - seg, 10 - seg, 14);
+      translate(BASE_RADIUS, 8, 0);  // Start at body edge, just below waterline
+      for (let seg = 0; seg < MAIN_SEGS; seg++) {
+        const t = seg / (MAIN_SEGS - 1);
+        const curl      = sin(tentPhase + seg * 0.55) * 0.32 + 0.06;
+        const sideWave  = cos(tentPhase + seg * 0.42) * 0.20;
+        const w = lerp(18, 2, t);
+        const cr = floor(lerp(tBase[0], tTip[0], t));
+        const cg = floor(lerp(tBase[1], tTip[1], t));
+        const cb = floor(lerp(tBase[2], tTip[2], t));
+        this._setColor(cr, cg, cb);
+        rotateZ(curl);
+        rotateY(sideWave);
+        translate(0, 0, SEG_LEN);
+        box(w, w * 0.65, SEG_LEN + 4);
+      }
+      pop();
+    }
+
+    // 2 long "reach" tentacles — thinner but 50% longer, tip slightly upward
+    // so they look like the kraken is grasping for something above the water.
+    const NUM_LONG = 2;
+    const LONG_SEGS = 16;
+    const LONG_SEG_LEN = 26;
+
+    for (let i = 0; i < NUM_LONG; i++) {
+      const a = (i / NUM_LONG) * TWO_PI + PI * 0.25;
+      const tentPhase = phase + i * PI + 2.0;
+      push();
+      rotateY(a);
+      translate(70, 4, 0);
+      // Tip the whole tentacle slightly upward at the start
+      rotateX(-0.18);
+      for (let seg = 0; seg < LONG_SEGS; seg++) {
+        const t = seg / (LONG_SEGS - 1);
+        const curl     = sin(tentPhase + seg * 0.45) * 0.26 + 0.04;
+        const sideWave = cos(tentPhase + seg * 0.38) * 0.22;
+        const w = lerp(12, 1, t);
+        const cr = floor(lerp(tBase[0], tTip[0], t));
+        const cg = floor(lerp(tBase[1], tTip[1], t));
+        const cb = floor(lerp(tBase[2], tTip[2], t));
+        this._setColor(cr, cg, cb);
+        rotateZ(curl);
+        rotateY(sideWave);
+        translate(0, 0, LONG_SEG_LEN);
+        box(w, w * 0.6, LONG_SEG_LEN + 4);
       }
       pop();
     }

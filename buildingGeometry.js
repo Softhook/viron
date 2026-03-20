@@ -14,7 +14,7 @@
 //   1 — Cylindrical Observatory
 //   2 — Pagoda
 //   3 — Floating UFO / Powerup  (see buildPowerupGeometry)
-//   4 — Sentinel Tower
+//   4 — Wizard Tower
 //   5 — Chinese Hut (two variants selected by world position)
 // =============================================================================
 
@@ -123,50 +123,70 @@ function buildType2Geometry(b, inf) {
 }
 
 /**
- * Draws a Sentinel Tower (building type 4) — multi-stage industrial spire
- * with a central reactor sphere and a rotating torus crown (crown drawn
- * separately in drawBuildings so it animates every frame).
+ * Draws a Wizard Tower (building type 4) — a stone cylindrical tower with a
+ * pointed turret cap, glowing magic crystal, and decorative battlements.
+ * A rotating torus crown is drawn separately in drawBuildings() each frame.
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType4Geometry(b, inf) {
-  const matID = inf ? 47 : 46;
-  let steelR   = matID,                    steelG   = inf ? 38 : 68,  steelB   = inf ? 38 : 90;
-  let plinthR  = _bldgSafeR(inf ? 130 : 38), plinthG  = inf ? 28 : 52,  plinthB  = inf ? 28 : 72;
-  let accentR  = _bldgSafeR(inf ? 200 : 40), accentG  = inf ? 55 : 200, accentB  = inf ? 20 : 185;
-  let reactorR = _bldgSafeR(inf ? 255 : 80), reactorG = inf ? 100 : 240, reactorB = inf ? 30 : 215;
-  let spireR   = _bldgSafeR(inf ? 240 : 160), spireG  = inf ? 80 : 240, spireB   = inf ? 40 : 255;
+  // Stone walls: medium grey (healthy) or sickly olive-red (infected).
+  let stoneR  = _bldgSafeR(inf ? 130 : 95),  stoneG  = inf ? 38 : 90,  stoneB  = inf ? 38 : 95;
+  // Darker mortar courses.
+  let mortarR = _bldgSafeR(inf ? 100 : 65),  mortarG = inf ? 25 : 65,  mortarB = inf ? 25 : 70;
+  // Magical accent / window glow: purple-blue (healthy) or toxic orange (infected).
+  let accentR = _bldgSafeR(inf ? 220 : 60),  accentG = inf ? 60 : 100, accentB = inf ? 22 : 220;
+  // Crystal orb atop the spire: cyan-white (healthy) or deep red (infected).
+  let crystalR = _bldgSafeR(inf ? 255 : 100), crystalG = inf ? 80 : 220, crystalB = inf ? 30 : 255;
+  // Pointed spire cone: dark indigo (healthy) or charred black-red (infected).
+  let spireR  = _bldgSafeR(inf ? 180 : 50),  spireG  = inf ? 40 : 30,  spireB  = inf ? 22 : 110;
+
   let bw = b.w, bh = b.h;
-  let rh = bh * 0.24;
+  let rh = bh * 0.28; // Height of the pointed spire cone.
 
-  fill(plinthR, plinthG, plinthB);
-  push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
+  // Base plinth — wide flat cylinder.
+  fill(mortarR, mortarG, mortarB);
+  push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.15, bh * 0.08, 6, 1); pop();
+
+  // Lower tower body — broad stone cylinder.
+  fill(stoneR, stoneG, stoneB);
+  push(); translate(0, -bh * 0.24, 0); cylinder(bw * 0.78, bh * 0.32, 8, 1); pop();
+
+  // First mortar course band.
+  fill(mortarR, mortarG, mortarB);
+  push(); translate(0, -bh * 0.38, 0); cylinder(bw * 0.81, bh * 0.016, 8, 1); pop();
+
+  // Mid tower body — slightly narrower.
+  fill(stoneR, stoneG, stoneB);
+  push(); translate(0, -bh * 0.54, 0); cylinder(bw * 0.58, bh * 0.28, 8, 1); pop();
+
+  // Second mortar course band.
+  fill(mortarR, mortarG, mortarB);
+  push(); translate(0, -bh * 0.67, 0); cylinder(bw * 0.61, bh * 0.016, 8, 1); pop();
+
+  // Magic crystal orb (central glow — the tower's power source).
+  fill(crystalR, crystalG, crystalB);
+  push(); translate(0, -bh * 0.42, 0); sphere(bw * 0.28, 8, 6); pop();
+
+  // Accent ring around crystal window.
   fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
+  push(); translate(0, -bh * 0.42, 0); cylinder(bw * 0.35, bh * 0.012, 8, 1); pop();
 
-  fill(steelR, steelG, steelB);
-  push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
-  fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
+  // Upper tower body — narrow neck.
+  fill(stoneR, stoneG, stoneB);
+  push(); translate(0, -bh * 0.78, 0); cylinder(bw * 0.34, bh * 0.20, 8, 1); pop();
 
-  fill(steelR, steelG, steelB);
-  push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
-  fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
+  // Battlement ledge just below the spire.
+  fill(mortarR, mortarG, mortarB);
+  push(); translate(0, -bh * 0.86, 0); cylinder(bw * 0.38, bh * 0.016, 8, 1); pop();
 
-  fill(reactorR, reactorG, reactorB);
-  push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
-
-  fill(steelR, steelG, steelB);
-  push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
-  fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
-
+  // Pointed turret spire.
   fill(spireR, spireG, spireB);
-  // Top of last cylinder is -bh * 0.85 - bh * 0.1 = -bh * 0.95
-  push(); translate(0, -bh * 0.95 - rh / 2, 0); rotateX(PI); cone(bw * 0.18, rh, 6, 1); pop();
-  fill(reactorR, reactorG, reactorB);
-  push(); translate(0, -bh * 0.95 - rh - bw * 0.08, 0); sphere(bw * 0.08, 6, 4); pop();
+  push(); translate(0, -bh * 0.95 - rh / 2, 0); rotateX(PI); cone(bw * 0.22, rh, 6, 1); pop();
+
+  // Small crystal sphere at the very tip.
+  fill(crystalR, crystalG, crystalB);
+  push(); translate(0, -bh * 0.95 - rh - bw * 0.08, 0); sphere(bw * 0.09, 6, 4); pop();
 }
 
 /**

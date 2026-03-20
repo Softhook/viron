@@ -217,6 +217,7 @@ class GameRenderer {
     terrain.drawBuildings(s);
     enemyManager.draw(s);
     if (typeof villagerManager !== 'undefined') villagerManager.draw(s);
+    if (typeof wizardManager !== 'undefined') wizardManager.draw(s);
     this._drawEnemyBeams(s);
     for (let p of gameState.players) {
       if (!p.dead && (p !== player || !gameState.firstPersonView)) shipDisplay(p.ship, p.labelColor);

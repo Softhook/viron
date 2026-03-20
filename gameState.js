@@ -206,6 +206,7 @@ class GameState {
     enemyManager.clear();
     particleSystem.clear();
     if (typeof villagerManager !== 'undefined') villagerManager.clear();
+    if (typeof wizardManager !== 'undefined') wizardManager.clear();
     terrain.activePulses = [];
 
     this._spawnLevelWave(lvl);

@@ -12,7 +12,7 @@ class GameState {
     this.level = 1;
     this.currentMaxEnemies = 2;
     this.colossusSpawnCount = 0;
-    this.krakensSpawnCount = 0;
+    this.krakenSpawnCount = 0;
     this.levelComplete = false;
     this.levelEndTime = 0;
     this.infectionStarted = false;
@@ -150,7 +150,7 @@ class GameState {
     this.numPlayers = np;
     this.gameStartTime = millis();
     this.colossusSpawnCount = 0;
-    this.krakensSpawnCount = 0;
+    this.krakenSpawnCount = 0;
     this.mouseReleasedSinceStart = !this.leftMouseDown;
 
     this.players = this._createPlayers(np);

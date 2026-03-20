@@ -348,6 +348,12 @@ class VillagerManager {
   // Death
   // ---------------------------------------------------------------------------
 
+  /** Kills the villager at the given index. Called externally (e.g., wolf AI). */
+  killVillagerAtIndex(idx) {
+    const v = this.villagers[idx];
+    if (v) this._killVillager(v, idx);
+  }
+
   /** @private Removes villager and plays death effect. */
   _killVillager(v, idx) {
     // Death particles

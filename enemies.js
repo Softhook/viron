@@ -303,7 +303,8 @@ class EnemyManager {
       ey = terrain.getAltitude(ex, ez);  // On the ground — will be adjusted each frame
     } else if (type === 'kraken') {
       // Spawn on a water tile, far enough from centre for the player to react.
-      // Search in an outward spiral to maximise chance of landing on the ocean.
+      // Uses random angle/distance sampling (60 attempts) to maximise chance of
+      // landing on the ocean, with a grid-scan fallback if all attempts miss.
       let angle = random(TWO_PI);
       let dist = random(2000, 3500);
       let attempts = 0;
@@ -364,8 +365,8 @@ class EnemyManager {
 
     // Kraken progression: +40 HP per spawn, larger body each time.
     if (type === 'kraken') {
-      gameState.krakensSpawnCount = (gameState.krakensSpawnCount || 0) + 1;
-      const tier = gameState.krakensSpawnCount;
+      gameState.krakenSpawnCount = (gameState.krakenSpawnCount || 0) + 1;
+      const tier = gameState.krakenSpawnCount;
       const hp = KRAKEN_HP_BASE + (tier - 1) * KRAKEN_HP_STEP;
       entry.krakenTier = tier;
       entry.krakenScale = min(1 + (tier - 1) * KRAKEN_SIZE_STEP, KRAKEN_MAX_SIZE_MULT);
@@ -745,7 +746,7 @@ class EnemyManager {
         for (let i = villagerManager.villagers.length - 1; i >= 0; i--) {
           const v = villagerManager.villagers[i];
           if ((v.x - e.x) ** 2 + (v.z - e.z) ** 2 < 3600) {
-            villagerManager._killVillager(v, i);
+            villagerManager.killVillagerAtIndex(i);
             break;
           }
         }

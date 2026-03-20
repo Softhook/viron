@@ -1573,9 +1573,8 @@ class EnemyManager {
     const sx = s.x, sz = s.z;
 
     // Single culling pass — build list of enemies visible this frame.
-    // The Colossus and Kraken have enlarged cull radii that grow with their tier,
-    // so the localCullSq is stored on the object for re-use in the shadow pass.
     const vis = [];
+    const cam = terrain._cam;
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       let localCullSq = cullSq;
@@ -1589,6 +1588,7 @@ class EnemyManager {
         e._shadowCullSq = localCullSq;
       }
       if ((e.x - sx) ** 2 + (e.z - sz) ** 2 > localCullSq) continue;
+      if (cam && !terrain.inFrustum(cam, e.x, e.z)) continue;
       vis.push(e);
     }
 

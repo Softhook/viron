@@ -399,9 +399,11 @@ class WizardManager {
     const vis = this._visible;
     vis.length = 0;
 
+    const cam = terrain._cam;
     for (let i = 0; i < this.wizards.length; i++) {
       const w = this.wizards[i];
       if ((w.x - sx) ** 2 + (w.z - sz) ** 2 > WIZARD_CULL_DIST_SQ) continue;
+      if (cam && !terrain.inFrustum(cam, w.x, w.z)) continue;
       vis.push(w);
     }
 

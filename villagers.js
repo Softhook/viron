@@ -395,10 +395,12 @@ class VillagerManager {
     const vis = this._visible;
     vis.length = 0;
 
-    // Cull to visible range
+    // Cull to visible range and frustum
+    const cam = terrain._cam;
     for (let i = 0; i < this.villagers.length; i++) {
       const v = this.villagers[i];
       if ((v.x - sx) ** 2 + (v.z - sz) ** 2 > VILLAGER_CULL_DIST_SQ) continue;
+      if (cam && !terrain.inFrustum(cam, v.x, v.z)) continue;
       vis.push(v);
     }
 

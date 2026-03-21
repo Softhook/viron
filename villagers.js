@@ -252,7 +252,11 @@ class VillagerManager extends AgentManager {
       const v = this.agents[i];
 
       // --- AI: find nearest infected tile and walk toward it ---
-      this._steerTowardInfection(v, v.villageX, v.villageZ);
+      // Skip while in idle planting mode: _steerTowardInfection's random-wander
+      // fallback (no-target branch) fires ~2% of ticks and causes jerky turns.
+      if (!v.isPlanting && v.plantTargetX === null) {
+        this._steerTowardInfection(v, v.villageX, v.villageZ);
+      }
 
       // --- Idle planting when no infection is nearby ---
       if (v.targetTx === null) {

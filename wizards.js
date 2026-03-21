@@ -104,10 +104,14 @@ class WizardManager extends AgentManager {
     WizardManager._geoms = [];
     WizardManager._castingGeoms = [];
 
-    const buildWiz = (isCasting, phase, castPhase) => {
+    const buildWiz = (isCasting, phase, castPhase, isSitting = false) => {
       return _safeBuildGeometry(() => {
         noStroke();
         
+        if (isSitting) {
+          translate(0, 5, 0); // lower to the ground
+        }
+
         // Head
         fill(_bldgSafeR(220), 185, 150);
         push(); translate(0, -22, 0); box(5, 5, 5); pop();
@@ -133,19 +137,27 @@ class WizardManager extends AgentManager {
 
         // Legs
         fill(_bldgSafeR(130), 30, 35);
-        const legSwing = isCasting ? 0 : Math.sin(phase) * 0.6;
-        push(); translate(-1.5, -6.5, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 4, 2.5); pop();
-        push(); translate( 1.5, -6.5, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+        let legSwing = 0;
+        if (isSitting) {
+          push(); translate(-1.5, -6.5, 0); rotateX(Math.PI * 0.4); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+          push(); translate( 1.5, -6.5, 0); rotateX(Math.PI * 0.4); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+        } else {
+          legSwing = isCasting ? 0 : Math.sin(phase) * 0.6;
+          push(); translate(-1.5, -6.5, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+          push(); translate( 1.5, -6.5, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+        }
 
         // Left Arm
         fill(_bldgSafeR(175), 40, 50);
-        const leftArmSwing = isCasting ? Math.sin(castPhase * 3) * 0.3 : Math.sin(phase + Math.PI) * 0.5;
+        const leftArmSwing = isSitting ? 0.3 : (isCasting ? Math.sin(castPhase * 3) * 0.3 : Math.sin(phase + Math.PI) * 0.5);
         push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2.5, 5, 2.5); pop();
 
         // Right Arm (Staff)
-        const staffArm = isCasting
-          ? -Math.PI * 0.6 + Math.sin(castPhase) * 0.15
-          : (legSwing !== 0 ? Math.sin(phase) * 0.5 : -0.15); // Stand idle: -0.15
+        const staffArm = isSitting 
+          ? 0.3 
+          : (isCasting
+            ? -Math.PI * 0.6 + Math.sin(castPhase) * 0.15
+            : (legSwing !== 0 ? Math.sin(phase) * 0.5 : -0.15)); // Stand idle: -0.15
         
         fill(_bldgSafeR(175), 40, 50);
         push(); translate(4.5, -17, 0); rotateX(staffArm); translate(0, 3, 0); box(2.5, 5, 2.5);
@@ -163,10 +175,11 @@ class WizardManager extends AgentManager {
 
     for (let f = 0; f < 64; f++) {
       const phase = (f / 64) * Math.PI * 2;
-      WizardManager._geoms[f] = buildWiz(false, phase, 0);
-      WizardManager._castingGeoms[f] = buildWiz(true, 0, phase);
+      WizardManager._geoms[f] = buildWiz(false, phase, 0, false);
+      WizardManager._castingGeoms[f] = buildWiz(true, 0, phase, false);
     }
-    WizardManager._staticGeom = buildWiz(false, 0, 0);
+    WizardManager._staticGeom = buildWiz(false, 0, 0, false);
+    WizardManager._sittingGeom = buildWiz(false, 0, 0, true);
   }
 
   // ---------------------------------------------------------------------------
@@ -206,6 +219,17 @@ class WizardManager extends AgentManager {
 
       // Steer toward nearest infection cluster.
       this._steerTowardInfection(w, w.towerX, w.towerZ);
+
+      // Interpret idle state
+      // Only sit if we are not actively being leashed back home.
+      const distFromTowerSq = (w.x - w.towerX) * (w.x - w.towerX) + (w.z - w.towerZ) * (w.z - w.towerZ);
+      if (w.targetTx === null && distFromTowerSq <= WIZARD_MAX_WANDER_DIST_SQ) {
+        w.isSitting = true;
+        w.vx = 0;
+        w.vz = 0;
+      } else {
+        w.isSitting = false;
+      }
 
       // --- Health & Physics Integration ---
       if (!this._applyHealthAndPhysics(w)) {
@@ -320,6 +344,7 @@ class WizardManager extends AgentManager {
         towerRef: b,         // Back-reference so death can clear _wizardSpawned.
         health: WIZARD_MAX_HEALTH,
         isCasting: false,
+        isSitting: false,
         castPhase: 0,
         facingAngle: angle,
         spells: [],
@@ -407,6 +432,8 @@ class WizardManager extends AgentManager {
         const TWO_PI_MATH = Math.PI * 2;
         const fIdx = Math.floor(((w.castPhase % TWO_PI_MATH + TWO_PI_MATH) % TWO_PI_MATH) / TWO_PI_MATH * 64);
         geom = WizardManager._castingGeoms[fIdx];
+      } else if (w.isSitting) {
+        geom = WizardManager._sittingGeom;
       } else {
         geom = WizardManager._staticGeom;
       }

@@ -318,23 +318,40 @@ class Terrain {
       const keys = this._buildingShadowChunkCache.keys();
       for (let i = 0, n = this._buildingShadowChunkCache.size >> 1; i < n; i++) this._buildingShadowChunkCache.delete(keys.next().value);
     }
+    if (this._geoms && this._geoms.size > 3000) {
+      const keys = this._geoms.keys();
+      for (let i = 0, n = this._geoms.size >> 1; i < n; i++) this._geoms.delete(keys.next().value);
+    }
   }
 
   /**
    * Resets the terrain system by clearing all memoised altitude and geometry caches.
    * Required when mountain peaks or other global terrain parameters are modified.
    */
-  reset() {
+  /**
+   * @param {number} [seed] Optional new world seed. If it matches the current seed,
+   *                      caches are preserved to allow seamless session restarts.
+   */
+  reset(seed) {
+    if (seed !== undefined && seed === this._seed) {
+      // Seed is unchanged: preserve the expensive geometry caches (Terrain, Trees, Buildings)
+      // but clear ephemeral state that might fluctuate (active pulses).
+      this.activePulses = [];
+      return;
+    }
+    this._seed = seed;
     this.altCache.clear();
     this.chunkCache.clear();
     this._procTreeChunkCache.clear();
     this._overlayCaches.clear();
+    if (this._overlayDirtyQueue) this._overlayDirtyQueue.clear();
     this._treeChunkMeshCache.clear();
     this._treeShadowChunkCache.clear();
     this._buildingChunkMeshCache.clear();
     this._buildingShadowChunkCache.clear();
     this._buildingBucketsCount = 0;
     if (this._buildingBuckets) this._buildingBuckets.clear();
+    if (this._geoms) this._geoms.clear();
     this._fogFrameStamp = -1;
   }
 
@@ -913,10 +930,8 @@ class Terrain {
    */
   _invalidateOverlay(managerId, tx, tz) {
     const bk = chunkKey(tx >> 4, tz >> 4);
-    const prefix = `${managerId}_${bk}_`;
-    for (const k of this._overlayCaches.keys()) {
-      if (k.startsWith(prefix)) this._overlayCaches.delete(k);
-    }
+    if (!this._overlayDirtyQueue) this._overlayDirtyQueue = new Set();
+    this._overlayDirtyQueue.add(`${managerId}_${bk}`);
   }
 
   /**
@@ -968,6 +983,21 @@ class Terrain {
     // Ensure we have the invalidation hook
     if (!manager.onInvalidate) {
       manager.onInvalidate = (tx, tz) => this._invalidateOverlay(managerId, tx, tz);
+    }
+
+    if (this._overlayDirtyQueue && this._overlayDirtyQueue.size > 0) {
+      // Process a small fraction of invalidations per frame to prevent GC thrashing when the virus spreads aggressively.
+      // Up to 2 chunks per frame ensures overlay rendering rarely spikes above 2-3ms, while staying visually real-time.
+      const numToProcess = Math.min(2, Math.max(1, Math.ceil(this._overlayDirtyQueue.size / 20)));
+      let processed = 0;
+      for (const dirtyPrefix of this._overlayDirtyQueue) {
+        this._overlayDirtyQueue.delete(dirtyPrefix);
+        const searchPrefix = `${dirtyPrefix}_`;
+        for (const k of this._overlayCaches.keys()) {
+          if (k.startsWith(searchPrefix)) this._overlayCaches.delete(k);
+        }
+        if (++processed >= numToProcess) break;
+      }
     }
 
     let totalTiles = 0;
@@ -1104,6 +1134,11 @@ class Terrain {
    * @param {boolean} [firstPerson=false]  Whether to render from a first-person camera.
    */
   drawLandscape(s, viewAspect, firstPerson = false) {
+    const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
+    if (this._bakeFrame !== currentFrame) {
+      this._bakeFrame = currentFrame;
+      this._bakeStart = performance.now();
+    }
     const gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
@@ -1524,57 +1559,34 @@ class Terrain {
     return geom;
   }
 
-  _getTreeGeom(t, inf) {
+  _drawTreeImmediate(t, inf) {
     const { trunkH: h, canopyScale: sc, variant: vi } = t;
-    // Cache both key variants (clean + infected) on the tree object so toFixed()
-    // string allocation is paid only once per tree lifetime.
-    // t._geomKeyPair[0] = clean key, t._geomKeyPair[1] = infected key.
-    if (!t._geomKeyPair) {
-      const base = `tree_${vi}_${sc.toFixed(2)}_${h.toFixed(1)}_`;
-      t._geomKeyPair = [base + 'false', base + 'true'];
+    let tv = TREE_VARIANTS[vi];
+
+    // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
+    const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
+
+    fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
+    push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
+
+    let c1 = inf ? tv.infected : tv.healthy;
+    fill(safeR(c1[0]), c1[1], c1[2]);
+
+    if (vi === 2) {
+      push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
+    } else {
+      let cn = tv.cones[0];
+      push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
+      if (tv.cones2) {
+        let c2 = inf ? tv.infected2 : tv.healthy2;
+        fill(safeR(c2[0]), c2[1], c2[2]);
+        let cn2 = tv.cones2[0];
+        push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+      }
     }
-    const key = t._geomKeyPair[inf ? 1 : 0];
-    if (!this._geoms) this._geoms = new Map();
-    if (this._geoms.has(key)) return this._geoms.get(key);
-
-    if (this._isBuildingShadow) return null;
-    this._isBuildingShadow = true;
-    let geom = null;
-    try {
-      geom = _safeBuildGeometry(() => {
-        let tv = TREE_VARIANTS[vi];
-
-        // Ensure R values avoid terrain palette indices (1,2, 10,11, 20,21)
-        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
-
-        fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
-        push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
-
-        let c1 = inf ? tv.infected : tv.healthy;
-        fill(safeR(c1[0]), c1[1], c1[2]);
-
-        if (vi === 2) {
-          push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
-        } else {
-          let cn = tv.cones[0];
-          push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
-          if (tv.cones2) {
-            let c2 = inf ? tv.infected2 : tv.healthy2;
-            fill(safeR(c2[0]), c2[1], c2[2]);
-            let cn2 = tv.cones2[0];
-            push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
-          }
-        }
-      });
-    } catch (err) {
-      console.error("[Viron] Tree geometry build failed:", err);
-    } finally {
-      this._isBuildingShadow = false;
-    }
-
-    this._geoms.set(key, geom);
-    return geom;
   }
+
+
 
   /**
    * Draws all trees within rendering range, applying fog colour blending and
@@ -1604,15 +1616,6 @@ class Terrain {
       return null;
     }
 
-    // Pre-warm base geometric variants before opening the chunk builder,
-    // as p5.js does not support nested buildGeometry() calls.
-    for (const t of trees) {
-        if (!aboveSea(t.y) && !isLaunchpad(t.x, t.z)) {
-            const inf = infection.has(t.k);
-            this._getTreeGeom(t, inf);
-        }
-    }
-
     if (this._isBuildingShadow) return null;
     this._isBuildingShadow = true;
     let geom = null;
@@ -1621,13 +1624,10 @@ class Terrain {
         for (const t of trees) {
           if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
           const inf = infection.has(t.k);
-          const tGeom = this._getTreeGeom(t, inf);
-          if (tGeom) {
-            push();
-            translate(t.x, t.y, t.z);
-            model(tGeom);
-            pop();
-          }
+          push();
+          translate(t.x, t.y, t.z);
+          this._drawTreeImmediate(t, inf);
+          pop();
         }
       });
     } catch (err) {
@@ -1749,10 +1749,9 @@ class Terrain {
           for (const t of trees) {
             if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
             const inf = infection.has(t.k);
-            const tGeom = this._getTreeGeom(t, inf);
-            if (tGeom) {
-              push(); translate(t.x, t.y, t.z); model(tGeom); pop();
-            }
+            push(); translate(t.x, t.y, t.z); 
+            this._drawTreeImmediate(t, inf);
+            pop();
           }
         }
       }
@@ -1770,6 +1769,7 @@ class Terrain {
         model(shadowMesh);
       } else if (!this._treeShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         // Fallback: draw individually if chunk shadow timed out
+        if (gameState.mode === 'menu') continue;
         const trees = this.getProceduralTreesForChunk(c.cx, c.cz);
         for (const t of trees) {
           if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
@@ -1805,43 +1805,15 @@ class Terrain {
   }
 
 
-  _getBuildingGeom(b, inf) {
-    // Cache both key variants (clean + infected) on the building so toFixed()
-    // string allocation is paid only once per building lifetime rather than
-    // every frame.  b._geomKeyPair[0] = clean key, b._geomKeyPair[1] = infected key.
-    if (!b._geomKeyPair) {
-      const base = `bldg_${b.type}_${b.w.toFixed(1)}_${b.h.toFixed(1)}_${b.d.toFixed(1)}_`;
-      const colSuffix = (b.type === 2) ? `_${b.col[0]}_${b.col[1]}_${b.col[2]}` : '';
-      // Type 5 (Chinese hut) selects variant A or B from position, so include position
-      // in the key so different huts with identical dimensions don't share cached geometry.
-      const posSuffix = (b.type === 5) ? `_${b.x | 0}_${b.z | 0}` : '';
-      b._geomKeyPair = [base + 'false' + colSuffix + posSuffix, base + 'true' + colSuffix + posSuffix];
-    }
-    const key = b._geomKeyPair[inf ? 1 : 0];
-
-    if (!this._geoms) this._geoms = new Map();
-    if (this._geoms.has(key)) return this._geoms.get(key);
-
-    if (this._isBuildingShadow) return null;
-    this._isBuildingShadow = true;
-    let geom = null;
-    try {
-      geom = _safeBuildGeometry(() => {
-        if      (b.type === 0) buildType0Geometry(b, inf);
-        else if (b.type === 1) buildType1Geometry(b, inf);
-        else if (b.type === 2) buildType2Geometry(b, inf);
-        else if (b.type === 4) buildType4Geometry(b, inf);
-        else if (b.type === 5) buildType5Geometry(b, inf);
-      });
-    } catch (err) {
-      console.error("[Viron] Building geometry build failed:", err);
-    } finally {
-      this._isBuildingShadow = false;
-    }
-
-    this._geoms.set(key, geom);
-    return geom;
+  _drawBuildingImmediate(b, inf) {
+    if      (b.type === 0) buildType0Geometry(b, inf);
+    else if (b.type === 1) buildType1Geometry(b, inf);
+    else if (b.type === 2) buildType2Geometry(b, inf);
+    else if (b.type === 4) buildType4Geometry(b, inf);
+    else if (b.type === 5) buildType5Geometry(b, inf);
   }
+
+
 
   /**
    * Draws all buildings using single coherent meshes and the terrain shader.
@@ -1910,15 +1882,6 @@ class Terrain {
       return null;
     }
 
-    // Pre-warm base geometric variants before opening the chunk builder.
-    for (const b of bldgs) {
-      if (b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
-        if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
-        const inf = infection.has(b._tileKey);
-        this._getBuildingGeom(b, inf);
-      }
-    }
-
     if (this._isBuildingShadow) return null;
     this._isBuildingShadow = true;
     let geom = null;
@@ -1930,13 +1893,10 @@ class Terrain {
           if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
           const inf = infection.has(b._tileKey);
           
-          const bGeom = this._getBuildingGeom(b, inf);
-          if (bGeom) {
-              push();
-              translate(b.x, b.y, b.z);
-              model(bGeom);
-              pop();
-          }
+          push();
+          translate(b.x, b.y, b.z);
+          this._drawBuildingImmediate(b, inf);
+          pop();
         }
       });
     } catch (err) { console.error(err); } finally { this._isBuildingShadow = false; }
@@ -2040,10 +2000,9 @@ class Terrain {
             if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
             if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
             const inf = infection.has(b._tileKey);
-            const bGeom = this._getBuildingGeom(b, inf);
-            if (bGeom) {
-              push(); translate(b.x, b.y, b.z); model(bGeom); pop();
-            }
+            push(); translate(b.x, b.y, b.z); 
+            this._drawBuildingImmediate(b, inf);
+            pop();
           }
         }
 
@@ -2097,6 +2056,7 @@ class Terrain {
         model(geom);
       } else if (!this._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         // Fallback: draw individually if chunk building shadow timed out
+        if (gameState.mode === 'menu') continue;
         const chunkBldgs = this._getBuildingsForChunk(c.cx, c.cz);
         for (const b of chunkBldgs) {
           if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;

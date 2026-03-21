@@ -158,9 +158,11 @@ class GameState {
     // Reset quality scaling penalty from previous session
     if (window._perf) window._perf.cooldown = 0;
 
-    // Ensure we start with a clean world for the new game session
-    this.worldSeed = floor(millis() + second() * 1000 + minute() * 60000);
-    this.resetWorld();
+    // We maintain the same world seed for the entire session to ensure the 
+    // transition from the menu is instant.  However, we STILL call resetWorld
+    // to ensure ephemeral entities like powerups and buildings respawn correctly
+    // for a fresh game start.  Terrain caching itself is preserved inside terrain.reset().
+    this.resetWorld(this.worldSeed);
     if (typeof initWorld === 'function') initWorld(this.worldSeed);
 
     this.startLevel(1);
@@ -371,12 +373,12 @@ class GameState {
     }
   }
 
-  resetWorld() {
+  resetWorld(seed) {
     this.buildings = [];
     this.sentinelBuildings = [];
-    this.trees = []; // Though trees are currently procedural, clearing this keeps it clean
+    this.trees = []; 
     if (typeof terrain !== 'undefined' && terrain.reset) {
-      terrain.reset();
+      terrain.reset(seed);
     }
   }
 }

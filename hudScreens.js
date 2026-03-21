@@ -427,7 +427,10 @@ function drawBackgroundLandscape() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   push();
-  perspective(PI / 3, width / height, 10, VIEW_FAR * TILE * 1.5);
+  // Lower culling range on menu to prioritize background baking and UI responsiveness.
+  const originalViewFar = VIEW_FAR;
+  const menuViewFar = 30;
+  perspective(PI / 3, width / height, 10, menuViewFar * TILE * 1.5);
   gameState.menuCam.yaw += 0.0006;
   let cx = gameState.menuCam.x + sin(gameState.menuCam.yaw) * 550;
   let cz = gameState.menuCam.z + cos(gameState.menuCam.yaw) * 550;
@@ -435,11 +438,14 @@ function drawBackgroundLandscape() {
   let cy = min(-90, terrainY - 60);
   camera(cx, cy, cz, gameState.menuCam.x, -10, gameState.menuCam.z, 0, 1, 0);
 
+  // Briefly set VIEW_FAR so terrain/tree methods use the tighter bounds
+  VIEW_FAR = menuViewFar;
   let fakeShip = { x: gameState.menuCam.x, y: cy, z: gameState.menuCam.z, yaw: gameState.menuCam.yaw, pitch: 0 };
   setSceneLighting();
   terrain.drawLandscape(fakeShip, width / height);
   terrain.drawTrees(fakeShip);
   terrain.drawBuildings(fakeShip);
+  VIEW_FAR = originalViewFar;
   pop();
 
   gl.clear(gl.DEPTH_BUFFER_BIT);

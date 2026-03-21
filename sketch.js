@@ -150,8 +150,8 @@ function setup() {
     aimAssist.enabled = gameState.isMobile;
   }
 
-  // Initial world generation for the menu view
-  gameState.worldSeed = 12345; // Default menu seed
+  // Randomize the initial world seed so the menu and first gameplay session are unique and reusable
+  gameState.worldSeed = floor(random(1, 1000000)); 
   initWorld(gameState.worldSeed);
 
   gameState.mode = 'menu';
@@ -670,8 +670,9 @@ function randomizeMountainPeaks() {
  * Uses the provided seed for deterministic variety.
  */
 function initWorld(seed) {
-  const finalSeed = seed !== undefined ? seed : floor(millis() + second() * 1000 + minute() * 60000);
+  const finalSeed = seed !== undefined ? seed : floor(millis() + (typeof second === 'function' ? second() : 0) * 1000);
   randomSeed(finalSeed);
+  noiseSeed(finalSeed);
   gameState.worldSeed = finalSeed;
   
   console.log(`%c[Viron] WORLD SEED: ${finalSeed}`, 'color: #00ffcc; font-weight: bold; font-size: 1.2em;');

@@ -26,6 +26,9 @@ const VILLAGER_STOP_DIST = 100;     // Target distance to start curing (units)
 // Retarget hysteresis: only switch to a new infection target if it is this many
 // tiles² closer than the current one (prevents oscillation between equal targets).
 const VILLAGER_TARGET_HYSTERESIS_SQ = 4; // ≈ 2 tiles
+// --- Idle planting constants ---
+const VILLAGER_PLANT_DURATION = 180;   // Ticks to animate planting at one spot (~3 s at 60 Hz)
+const VILLAGER_PLANT_RADIUS = 3;       // Base tile radius from pagoda when picking a crop plot (actual range ~0.5–2× this value)
 
 class VillagerManager extends AgentManager {
   constructor() {
@@ -45,10 +48,10 @@ class VillagerManager extends AgentManager {
     this.villages = this.hubs;
   }
 
-  onWanderExceeded(v) { v.isCuring = false; }
-  onWalkToTarget(v) { v.isCuring = false; }
-  onReachTarget(v) { v.isCuring = true; }
-  onNoTarget(v) { v.isCuring = false; }
+  onWanderExceeded(v) { v.isCuring = false; v.isPlanting = false; v.plantTargetX = null; v.plantTargetZ = null; }
+  onWalkToTarget(v)   { v.isCuring = false; v.isPlanting = false; v.plantTargetX = null; v.plantTargetZ = null; }
+  onReachTarget(v)    { v.isCuring = true;  v.isPlanting = false; }
+  onNoTarget(v)       { v.isCuring = false; }
 
   onAgentDeath(v) {
     // Death particles
@@ -161,6 +164,50 @@ class VillagerManager extends AgentManager {
         push(); translate(4.5, -17, 0); rotateX(-wave); translate(0, 3, 0); box(2, 5, 2); pop();
       });
     }
+
+    // Idle planting frames: body bent forward at waist, arms alternating down toward ground.
+    // 64 pre-baked frames keep the hot-path draw() loop allocation-free.
+    VillagerManager._plantingGeoms = [];
+    for (let f = 0; f < 64; f++) {
+      const phase = (f / 64) * TWO_PI;
+      // Subtle body-sway while bending (±10°)
+      // Negative angle bends the top of the body toward +Z (forward in model space).
+      const bendAngle = -(0.75 + sin(phase * 2) * 0.1);
+      // Alternating arm plunge toward the ground: positive rotateX tips the arm tip
+      // toward +Z (forward / ground-ward) in the already-forward-tilted torso frame.
+      const leftArmDip  = 0.9 + sin(phase * 2)      * 0.55;
+      const rightArmDip = 0.9 + sin(phase * 2 + PI) * 0.55;
+
+      VillagerManager._plantingGeoms[f] = _safeBuildGeometry(() => {
+        noStroke();
+        translate(0, 5, 0); // feet at Y=0
+
+        // Legs — slightly bent at knees for a crouching posture
+        fill(legR, legG, legB);
+        push(); translate(-1.5, -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        push(); translate(1.5,  -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+
+        // Upper body: pivot at hip (~y=-13), rotate forward to simulate waist-bend
+        push();
+        translate(0, -13, 0); // hip pivot
+        rotateX(bendAngle);   // bend forward (negative = top toward +Z)
+
+        // Torso
+        fill(tunicR, tunicG, tunicB);
+        push(); translate(0, -4, 0); box(6, 8, 4); pop();
+
+        // Head (follows torso bend)
+        fill(skinR, skinG, skinB);
+        push(); translate(0, -10, 0); box(5, 5, 5); pop();
+
+        // Left arm — plunges down to plant, then lifts back
+        push(); translate(-4.5, -5, 0); rotateX(leftArmDip);  translate(0, 3, 0); box(2, 5, 2); pop();
+        // Right arm — opposite phase for natural alternating motion
+        push(); translate( 4.5, -5, 0); rotateX(rightArmDip); translate(0, 3, 0); box(2, 5, 2); pop();
+
+        pop(); // end upper-body pivot
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -205,7 +252,19 @@ class VillagerManager extends AgentManager {
       const v = this.agents[i];
 
       // --- AI: find nearest infected tile and walk toward it ---
+      // Always run the infection scan so a newly infected tile aborts planting.
+      // When in planting mode and no infection is found, restore vx/vz afterwards
+      // to prevent the no-target random-wander branch from causing jerky rotation.
+      const inPlanting = v.isPlanting || v.plantTargetX !== null;
+      const savedVx = inPlanting ? v.vx : 0;
+      const savedVz = inPlanting ? v.vz : 0;
       this._steerTowardInfection(v, v.villageX, v.villageZ);
+      if (inPlanting && v.targetTx === null) { v.vx = savedVx; v.vz = savedVz; }
+
+      // --- Idle planting when no infection is nearby ---
+      if (v.targetTx === null) {
+        this._updateIdlePlanting(v);
+      }
 
       // --- Health & Physics Integration ---
       if (!this._applyHealthAndPhysics(v)) {
@@ -324,9 +383,82 @@ class VillagerManager extends AgentManager {
         villageRef: b,             // Pointer to home village for budget tracking
         health: VILLAGER_MAX_HEALTH,
         isCuring: false,
+        isPlanting: false,         // True while performing idle crop-planting animation
+        plantTimer: 0,             // Ticks spent at current plant spot
+        plantTargetX: null,        // World X of chosen crop plot
+        plantTargetZ: null,        // World Z of chosen crop plot
         facingAngle: angle,        // Start facing outward from spawn
         _retargetTimer: Math.floor(random(60)) // Stagger CPU spikes
       });
+    }
+  }
+
+  /**
+   * Handles idle crop-planting behaviour when a villager is not actively pursuing
+   * an infection target.
+   * State machine:
+   *   1. No plot chosen → pick a random spot near the home pagoda (~2% chance / tick).
+   *   2. Walking to plot → steer toward it at reduced speed.
+   *   3. At plot → play planting animation for VILLAGER_PLANT_DURATION ticks, then reset.
+   *
+   * Infection steering always runs before this method; if a target is found the
+   * onWalkToTarget callback clears isPlanting/plantTargetX so this method is
+   * effectively bypassed for that tick.
+   * @private
+   */
+  _updateIdlePlanting(v) {
+    if (v.isPlanting) {
+      // Freeze movement; increment timer until the planting duration elapses.
+      v.vx = 0;
+      v.vz = 0;
+      v.plantTimer = (v.plantTimer || 0) + 1;
+      if (v.plantTimer >= VILLAGER_PLANT_DURATION) {
+        v.isPlanting = false;
+        v.plantTimer = 0;
+        v.plantTargetX = null;  // ensure clean state for next idle cycle
+        v.plantTargetZ = null;
+      }
+      return;
+    }
+
+    if (v.plantTargetX !== null) {
+      // Walk toward the chosen crop plot at a slow, deliberate pace.
+      const dx = v.plantTargetX - v.x;
+      const dz = v.plantTargetZ - v.z;
+      const distSq = dx * dx + dz * dz;
+      const arrivalSq = (TILE * 0.5) * (TILE * 0.5);
+
+      if (distSq < arrivalSq) {
+        // Arrived — begin planting animation.
+        v.vx = 0;
+        v.vz = 0;
+        v.isPlanting = true;
+        v.plantTimer = 0;
+        v.plantTargetX = null;
+        v.plantTargetZ = null;
+      } else {
+        const d = Math.sqrt(distSq);
+        const spd = VILLAGER_SPEED * 0.4;
+        v.vx = lerp(v.vx || 0, (dx / d) * spd, 0.15);
+        v.vz = lerp(v.vz || 0, (dz / d) * spd, 0.15);
+      }
+      return;
+    }
+
+    // Pick a new crop-plot position near the home pagoda (~2 % chance per tick
+    // so villagers don't all rush to a new spot on the same frame).
+    if (random() < 0.02) {
+      const angle = random(Math.PI * 2);
+      const dist  = (0.5 + random(1.5)) * TILE * VILLAGER_PLANT_RADIUS;
+      const tx = v.villageX + Math.cos(angle) * dist;
+      const tz = v.villageZ + Math.sin(angle) * dist;
+      // Keep within the max wander leash
+      const dhx = tx - v.villageX;
+      const dhz = tz - v.villageZ;
+      if (dhx * dhx + dhz * dhz <= VILLAGER_MAX_WANDER_DIST_SQ) {
+        v.plantTargetX = tx;
+        v.plantTargetZ = tz;
+      }
     }
   }
 
@@ -389,6 +521,9 @@ class VillagerManager extends AgentManager {
       } else if (v.isCuring) {
         const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
         geom = VillagerManager._curingGeoms[fIdx];
+      } else if (v.isPlanting) {
+        const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
+        geom = VillagerManager._plantingGeoms[fIdx];
       } else {
         geom = VillagerManager._staticGeom;
       }

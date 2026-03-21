@@ -624,33 +624,33 @@ const SHIP_DESIGNS = [
             };
 
             // Main Skirt / Hull base
-            drawFace([[-25, 0, 35], [25, 0, 35], [25, 0, -35], [-25, 0, -35]], [40, 40, 45]); // Bottom skirt
-            drawFace([[-22, -8, -30], [22, -8, -30], [22, -8, 30], [-22, -8, 30]], light); // Deck
+            drawFace([[22, 0, -35], [-22, 0, -35], [-25, 0, 35], [25, 0, 35]], [40, 40, 45]); // Bottom skirt (Tapered front)
+            drawFace([[22, -8, 30], [-22, -8, 30], [-10, -8, -30], [10, -8, -30]], light); // Deck (Tapered front)
 
             // Sides connecting skirt to deck
-            drawFace([[-22, -8, -30], [-25, 0, -35], [25, 0, -35], [22, -8, -30]], dark); // Front
-            drawFace([[22, -8, 30], [25, 0, 35], [-25, 0, 35], [-22, -8, 30]], dark); // Back
-            drawFace([[-22, -8, 30], [-25, 0, 35], [-25, 0, -35], [-22, -8, -30]], tintColor); // Left
-            drawFace([[22, -8, -30], [25, 0, -35], [25, 0, 35], [22, -8, 30]], tintColor); // Right
+            drawFace([[10, -8, -30], [22, 0, -35], [-22, 0, -35], [-10, -8, -30]], dark); // New Front (Tapered)
+            drawFace([[22, -8, 30], [25, 0, 35], [-25, 0, 35], [-22, -8, 30]], dark); // New Back
+            drawFace([[22, -8, 30], [25, 0, 35], [22, 0, -35], [10, -8, -30]], tintColor); // Right
+            drawFace([[-22, -8, 30], [-25, 0, 35], [-22, 0, -35], [-10, -8, -30]], tintColor); // Left
 
-            // Cockpit
-            drawFace([[-10, -8, 5], [-8, -18, -5], [8, -18, -5], [10, -8, 5]], [180, 220, 255, 150]);
+            // Cockpit (Flipped to face forward at Z negative)
+            drawFace([[10, -8, -5], [8, -18, 5], [-8, -18, 5], [-10, -8, -5]], [180, 220, 255, 150]);
 
-            // Gun (Tilted with aimTransform) - Shifted slightly up so Bottom (-8.1) avoids Deck (-8.0)
+            // Gun (Tilted with aimTransform) - Centered further forward to ensure correct pointing
             const gCol = [50, 50, 55];
-            dBox(-15, -10.1, -20, 4, 4, 30, gCol, aimTransform);
-            dBox(15, -10.1, -20, 4, 4, 30, gCol, aimTransform);
+            dBox(-15, -10.1, -25, 4, 4, 40, gCol, aimTransform);
+            dBox(15, -10.1, -25, 4, 4, 40, gCol, aimTransform);
 
-            // Rear Propulsion Fan (enclosed)
-            dBox(0, -16.5, -27.5, 24, 17, 5, engineGray);
+            // Rear Propulsion Fan (enclosed) - Height reduced to 10
+            dBox(0, -13, 27.5, 24, 10, 5, engineGray);
             
-            // Fan blades (simplified cross)
+            // Fan blades (centered in the new lower fan housing)
             let fanA = frameCount * 0.4;
-            let f1 = [Math.cos(fanA) * 10, Math.sin(fanA) * 10 - 16, -30.1];
-            let f2 = [-Math.cos(fanA) * 10, -Math.sin(fanA) * 10 - 16, -30.1];
-            drawFace([[0, -16, -30.1], f2, f1], [255, 255, 255, 100]);
+            let f1 = [Math.cos(fanA) * 8, Math.sin(fanA) * 8 - 13, 30.1];
+            let f2 = [-Math.cos(fanA) * 8, -Math.sin(fanA) * 8 - 13, 30.1];
+            drawFace([[0, -13, 30.1], f2, f1], [255, 255, 255, 100]);
 
-            return [{ x: 0, y: -16, z: -32 }];
+            return [{ x: 0, y: -13, z: 32 }];
         }
     }
 ];

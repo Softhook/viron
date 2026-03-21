@@ -546,15 +546,19 @@ function drawShipPreview(designIdx, tintColor) {
   let engineGray = [80, 80, 85];
 
   noStroke();
-  const drawFace = (pts, col) => {
+  const drawFace = (pts, col, xform) => {
+    const activeTransform = xform || transform;
     fill(col[0], col[1], col[2], col[3] || 255);
     beginShape();
-    for (let p of pts) vertex(p[0], p[1], p[2]);
+    for (let p of pts) {
+      let t = activeTransform(p);
+      vertex(t[0], t[1], t[2]);
+    }
     endShape(CLOSE);
   };
   const sFake = { pitch: 0, yaw: 0 };
   const transform = (pt) => pt;
-  design.draw(drawFace, tintColor, engineGray, light, dark, false, sFake, transform);
+  design.draw(drawFace, tintColor, engineGray, light, dark, false, sFake, transform, transform);
 }
 
 /**

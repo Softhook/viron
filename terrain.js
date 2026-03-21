@@ -174,11 +174,43 @@ class Terrain {
 
     /** @type {Map<string,p5.Geometry>} Chunk-level mesh cache for overlays (infection/barriers). */
     this._overlayCaches = new Map();
+    this._treeChunkMeshCache = new Map();
+    this._treeShadowChunkCache = new Map();
+    this._buildingChunkMeshCache = new Map();
+    this._buildingShadowChunkCache = new Map();
+    this._bakedShadowSun = { x: 0, y: 1, z: 0 };
+    this._buildingBucketsCount = 0;
 
     // Hook TileManager invalidation so the overlay cache stays in sync.
     // Note: gameState.barrierTiles is initialized later in setup();
     // we hook it lazily in _drawTileOverlays if needed.
-    infection.onInvalidate = (tx, tz) => this._invalidateOverlay(0, tx, tz);
+    infection.onInvalidate = (tx, tz) => {
+      this._invalidateOverlay(0, tx, tz);
+      this._invalidateChunkProps(tx, tz);
+    };
+  }
+
+  _invalidateChunkProps(tx, tz) {
+    const cx = tx >> 4, cz = tz >> 4;
+    const bk = `${cx},${cz}`;
+    const k = tx + "," + tz;
+
+    let treeHit = false;
+    const trees = this.getProceduralTreesForChunk(cx, cz);
+    for (let i = 0; i < trees.length; i++) {
+        if (trees[i].k === k) { treeHit = true; break; }
+    }
+    if (treeHit) this._treeChunkMeshCache.delete(bk);
+
+    let bldgHit = false;
+    const bldgs = this._getBuildingsForChunk(cx, cz);
+    for (let i = 0; i < bldgs.length; i++) {
+        if (bldgs[i]._tileKey === k) { bldgHit = true; break; }
+    }
+    if (bldgHit) {
+        this._buildingChunkMeshCache.delete(bk);
+        this._buildingShadowChunkCache.delete(bk);
+    }
   }
 
   /**
@@ -268,9 +300,23 @@ class Terrain {
     // Overlay caches (infection/barrier geometry per chunk).
     if (this._overlayCaches.size > 600) {
       const keys = this._overlayCaches.keys();
-      for (let i = 0, n = this._overlayCaches.size >> 1; i < n; i++) {
-        this._overlayCaches.delete(keys.next().value);
-      }
+      for (let i = 0, n = this._overlayCaches.size >> 1; i < n; i++) this._overlayCaches.delete(keys.next().value);
+    }
+    if (this._treeChunkMeshCache.size > 600) {
+      const keys = this._treeChunkMeshCache.keys();
+      for (let i = 0, n = this._treeChunkMeshCache.size >> 1; i < n; i++) this._treeChunkMeshCache.delete(keys.next().value);
+    }
+    if (this._treeShadowChunkCache.size > 600) {
+      const keys = this._treeShadowChunkCache.keys();
+      for (let i = 0, n = this._treeShadowChunkCache.size >> 1; i < n; i++) this._treeShadowChunkCache.delete(keys.next().value);
+    }
+    if (this._buildingChunkMeshCache.size > 600) {
+      const keys = this._buildingChunkMeshCache.keys();
+      for (let i = 0, n = this._buildingChunkMeshCache.size >> 1; i < n; i++) this._buildingChunkMeshCache.delete(keys.next().value);
+    }
+    if (this._buildingShadowChunkCache.size > 600) {
+      const keys = this._buildingShadowChunkCache.keys();
+      for (let i = 0, n = this._buildingShadowChunkCache.size >> 1; i < n; i++) this._buildingShadowChunkCache.delete(keys.next().value);
     }
   }
 
@@ -283,7 +329,12 @@ class Terrain {
     this.chunkCache.clear();
     this._procTreeChunkCache.clear();
     this._overlayCaches.clear();
-    // Reset smoothing state so fog doesn't jump instantly
+    this._treeChunkMeshCache.clear();
+    this._treeShadowChunkCache.clear();
+    this._buildingChunkMeshCache.clear();
+    this._buildingShadowChunkCache.clear();
+    this._buildingBucketsCount = 0;
+    if (this._buildingBuckets) this._buildingBuckets.clear();
     this._fogFrameStamp = -1;
   }
 
@@ -1439,127 +1490,6 @@ class Terrain {
    * @param {{}} t    Tree descriptor from getProceduralTreesForChunk.
    * @param {{}} sun  Sun shadow basis from _getSunShadowBasis().
    */
-  _ensureTreeShadowBaked(t, sun) {
-    // Invalidate cached geometry when the sun angle changes.
-    if (t._bakedSun && (t._bakedSun.x !== sun.x || t._bakedSun.y !== sun.y || t._bakedSun.z !== sun.z)) {
-      t._shadowGeom = null;
-      t._shadowBakeFails = 0;
-    }
-
-    if (!t._shadowHull) {
-      const { trunkH: h, canopyScale: sc, variant: vi } = t;
-      // Half-radii matching _drawProjectedEllipseShadow(rx, rz) → rx*0.5, rz*0.5
-      const hrx = (vi === 2) ? 20 * sc : 17 * sc;
-      const hrz = (vi === 2) ? 14 * sc : 12 * sc;
-      const trunkHalf = 2.5;
-      const footprint = [];
-      footprint.push(
-        { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
-        { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
-      );
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * TWO_PI;
-        footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
-      }
-      t._footprint = footprint;
-      t._shadowCasterH = h + (vi === 2 ? 24 : 18) * sc;
-      t._shadowHull = true;
-    }
-
-    // t._shadowGeom lifecycle:
-    //   undefined  → not yet attempted
-    //   null       → invalidated or bake failed (but not exhausted); rebuild next frame
-    //   false      → bake permanently skipped (degenerate hull or failures exhausted)
-    //   p5.Geometry → valid cached shadow mesh
-    if (t._shadowGeom == null && !this._isBuildingShadow) {
-      if (!sun || !t._footprint) return;
-      this._isBuildingShadow = true;
-      const casterH = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
-      try {
-        t._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        const built = _safeBuildGeometry(() => {
-          this._drawProjectedFootprintShadow(t.x, t.z, t.y, casterH, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
-        });
-        t._shadowGeom = (built && built.vertices.length) ? built : false;
-        if (t._shadowGeom) t._shadowBakeFails = 0;
-      } catch (err) {
-        console.error("[Viron] Shadow bake failed for tree:", err);
-        t._shadowBakeFails = (t._shadowBakeFails || 0) + 1;
-        t._shadowGeom = (t._shadowBakeFails >= 3) ? false : null;
-      } finally {
-        this._isBuildingShadow = false;
-      }
-    }
-  }
-
-  /**
-   * Ensures the shadow geometry for a static building (types 0, 1, 2, 4) is baked
-   * and cached. Handles sun-change invalidation, hull init, and geometry baking.
-   * Type 3 (floating UFO) has an animated caster height and is handled separately.
-   * @param {{}} b       Building descriptor from gameState.buildings.
-   * @param {number} groundY  Ground Y for the bake.
-   * @param {{}} sun     Sun shadow basis from _getSunShadowBasis().
-   * @param {boolean} inf  Whether the building tile is currently infected.
-   */
-  _ensureBuildingShadowBaked(b, groundY, sun, inf) {
-    // Invalidate cached geometry when the sun angle changes.
-    if (b._bakedSun && (b._bakedSun.x !== sun.x || b._bakedSun.y !== sun.y || b._bakedSun.z !== sun.z)) {
-      b._shadowGeom = null;
-      b._shadowBakeFails = 0;
-    }
-
-    // Invalidate cached geometry when infection state changes (type 4 shadow alpha
-    // differs between infected/healthy, so the baked vertex colors must be rebuilt).
-    if (b._shadowGeom && b._bakedInf !== inf) {
-      b._shadowGeom = null;
-      b._shadowBakeFails = 0;
-    }
-
-    if (!b._shadowHull) {
-      const { footprint, casterH } = getBuildingFootprint(b);
-      b._footprint = footprint;
-      b._shadowCasterH = casterH;
-      b._shadowHull = true;
-    }
-
-    const casterH = b._shadowCasterH || b.h;
-    const baseAlpha = (b.type === 4) ? (inf ? 75 : 65) : (b.type === 0 ? 85 : 80);
-
-    // b._shadowGeom lifecycle mirrors tree shadow lifecycle (see _ensureTreeShadowBaked).
-    if (b._shadowGeom == null && !this._isBuildingShadow) {
-      if (!sun || !b._footprint) return;
-      this._isBuildingShadow = true;
-      try {
-        b._bakedSun = { x: sun.x, y: sun.y, z: sun.z };
-        b._bakedInf = inf;
-        const built = _safeBuildGeometry(() => {
-          this._drawProjectedFootprintShadow(b.x, b.z, groundY, casterH, b._footprint, baseAlpha, sun, false, true);
-        });
-        b._shadowGeom = (built && built.vertices.length) ? built : false;
-        if (b._shadowGeom) b._shadowBakeFails = 0;
-      } catch (err) {
-        console.error("[Viron] Shadow bake failed for building:", err);
-        b._shadowBakeFails = (b._shadowBakeFails || 0) + 1;
-        b._shadowGeom = (b._shadowBakeFails >= 3) ? false : null;
-      } finally {
-        this._isBuildingShadow = false;
-      }
-    }
-  }
-
-  /**
-   * Draws a single cached projected shadow for a building.
-   *
-   * Previous design had 2-3 overlapping draw calls per building causing:
-   *   • Composited alpha overlap (type 4 reached ~70% opacity at center — unphysical)
-   *   • 2-3× more WebGL draw calls per building per frame
-   *   • O(n log n) convex hull recomputed every frame for static geometry
-   *
-   * New design: one shadow hull per building, cached after first frame.
-   * Only used for type 3 (animated UFO) which cannot be batched; the caller in
-   * drawBuildings guards `b.type === 3` before invoking this. Static types
-   * (0, 1, 2, 4) are now batched in drawBuildings via _ensureBuildingShadowBaked.
-   */
   _drawBuildingShadow(b, groundY, sun) {
     // Caller guarantees b.type === 3.
     const bw = b.w, bh = b.h;
@@ -1652,18 +1582,136 @@ class Terrain {
    * Ground shadows are projected from component silhouettes (trunk + canopy tiers).
    * @param {{x,y,z,yaw}} s  Ship state (used as the view origin for culling).
    */
+
+  _getChunkTreeMesh(cx, cz) {
+    const key = `${cx},${cz}`;
+    if (this._treeChunkMeshCache.has(key)) return this._treeChunkMeshCache.get(key);
+
+    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) return null;
+
+    const trees = this.getProceduralTreesForChunk(cx, cz);
+    
+    let hasRenderable = false;
+    for (const t of trees) {
+        if (!aboveSea(t.y) && !isLaunchpad(t.x, t.z)) {
+            hasRenderable = true;
+            break;
+        }
+    }
+
+    if (!hasRenderable) {
+      this._treeChunkMeshCache.set(key, null);
+      return null;
+    }
+
+    // Pre-warm base geometric variants before opening the chunk builder,
+    // as p5.js does not support nested buildGeometry() calls.
+    for (const t of trees) {
+        if (!aboveSea(t.y) && !isLaunchpad(t.x, t.z)) {
+            const inf = infection.has(t.k);
+            this._getTreeGeom(t, inf);
+        }
+    }
+
+    if (this._isBuildingShadow) return null;
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = _safeBuildGeometry(() => {
+        for (const t of trees) {
+          if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
+          const inf = infection.has(t.k);
+          const tGeom = this._getTreeGeom(t, inf);
+          if (tGeom) {
+            push();
+            translate(t.x, t.y, t.z);
+            model(tGeom);
+            pop();
+          }
+        }
+      });
+    } catch (err) {
+      console.error("[Viron] Chunk tree geometry build failed:", err);
+    } finally {
+      this._isBuildingShadow = false;
+    }
+
+    this._treeChunkMeshCache.set(key, geom);
+    return geom;
+  }
+
+  _getChunkTreeShadow(cx, cz, sun) {
+    const key = `${cx},${cz}`;
+    let cached = this._treeShadowChunkCache.get(key);
+    if (cached && cached.sunX === sun.x && cached.sunY === sun.y && cached.sunZ === sun.z) {
+      return cached.geom;
+    }
+
+    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) {
+      // Time budget exceeded. Since sun changed, we have a STALE shadow geometry.
+      // Return it to prevent expensive fallback individual rendering while waiting for background baking.
+      if (cached && cached.geom) return cached.geom;
+      return null;
+    }
+
+    const trees = this.getProceduralTreesForChunk(cx, cz);
+    let hasRenderable = false;
+    for (const t of trees) {
+        if (!aboveSea(t.y) && !isLaunchpad(t.x, t.z)) {
+            hasRenderable = true;
+            break;
+        }
+    }
+    if (!hasRenderable) {
+      this._treeShadowChunkCache.set(key, { geom: null, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
+      return null;
+    }
+
+    if (this._isBuildingShadow) return null;
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = _safeBuildGeometry(() => {
+        for (const t of trees) {
+          if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
+          if (!t._shadowHull) {
+            const { trunkH: h, canopyScale: sc, variant: vi } = t;
+            const hrx = (vi === 2) ? 20 * sc : 17 * sc;
+            const hrz = (vi === 2) ? 14 * sc : 12 * sc;
+            const trunkHalf = 2.5;
+            const footprint = [];
+            footprint.push(
+              { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
+              { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
+            );
+            for (let i = 0; i < 16; i++) {
+              const a = (i / 16) * TWO_PI;
+              footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
+            }
+            t._footprint = footprint;
+            t._shadowCasterH = h + (vi === 2 ? 24 : 18) * sc;
+            t._shadowHull = true;
+          }
+          const casterH = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
+          this._drawProjectedFootprintShadow(t.x, t.z, t.y, casterH, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
+        }
+      });
+    } catch (err) {
+      console.error("[Viron] Chunk tree shadow geometry build failed:", err);
+    } finally {
+      this._isBuildingShadow = false;
+    }
+
+    this._treeShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
+    return geom;
+  }
+
   drawTrees(s) {
+    this._bakeStart = performance.now();
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
-    let treeCullDist = VIEW_FAR * TILE;
-    let cullSq = treeCullDist * treeCullDist;
-    // Uses the same camera params cached by drawLandscape
     let cam = this._cam || this.getCameraParams(s);
-    // Reuse the per-instance shadow queue array to avoid a per-frame allocation.
-    const shadowQueue = this._treeShadowQueue;
-    shadowQueue.length = 0;
-
     let gx = toTile(s.x), gz = toTile(s.z);
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
@@ -1671,35 +1719,37 @@ class Terrain {
     let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
 
     noStroke();
-
-    // Apply terrain shader so trees inherit world fog and lighting.
     this.applyShader();
 
     const chunkHalf = CHUNK_SIZE * TILE;
+    const sun = this._getSunShadowBasis();
+    const visibleChunks = [];
+
+    // We purposefully DO NOT globally clear shadow caches here anymore when sun changes.
+    // Chunk caching handles stale retries internally so we don't drop 50 chunks at once.
+    if (sun.x !== this._bakedShadowSun.x || sun.y !== this._bakedShadowSun.y || sun.z !== this._bakedShadowSun.z) {
+      this._bakedShadowSun = { x: sun.x, y: sun.y, z: sun.z };
+    }
 
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
         if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
-
-        const trees = this.getProceduralTreesForChunk(cx, cz);
-        for (let t of trees) {
-          let dSq = (s.x - t.x) ** 2 + (s.z - t.z) ** 2;
-          if (dSq >= cullSq || !this.inFrustum(cam, t.x, t.z)) continue;
-
-          let y = t.y;
-          if (aboveSea(y) || isLaunchpad(t.x, t.z)) continue;
-
-          let inf = infection.has(t.k);
-          let geom = this._getTreeGeom(t, inf);
-
-          if (geom) {
-            push();
-            translate(t.x, y, t.z);
-            model(geom);
-            pop();
+        
+        visibleChunks.push({ cx, cz });
+        const mesh = this._getChunkTreeMesh(cx, cz);
+        if (mesh) {
+          model(mesh);
+        } else if (!this._treeChunkMeshCache.has(`${cx},${cz}`)) {
+          // Fallback: draw individually if chunk generation timed out
+          const trees = this.getProceduralTreesForChunk(cx, cz);
+          for (const t of trees) {
+            if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
+            const inf = infection.has(t.k);
+            const tGeom = this._getTreeGeom(t, inf);
+            if (tGeom) {
+              push(); translate(t.x, t.y, t.z); model(tGeom); pop();
+            }
           }
-
-          if (dSq < 9000000) shadowQueue.push(t);
         }
       }
     }
@@ -1707,22 +1757,41 @@ class Terrain {
     resetShader();
     setSceneLighting();
 
-    // Draw all tree shadows in a single batched pass.
-    // _ensureTreeShadowBaked() handles baking for any tree that doesn't yet have a
-    // cached shadow mesh. All valid meshes are then rendered under one shared
-    // stencil/lighting setup instead of toggling WebGL state per tree.
-    //
-    // Each shadow geometry has its alpha baked into vertex colors by
-    // _drawProjectedFootprintShadow (called with isBaking=true). model() uses those
-    // baked vertex colors, so no per-tree fill() call is required here.
-    const sun = this._getSunShadowBasis();
-    for (const t of shadowQueue) this._ensureTreeShadowBaked(t, sun);
-
     noLights(); noStroke();
     this.applyShadowShader();
     _beginShadowStencil();
-    for (const t of shadowQueue) {
-      if (t._shadowGeom) { push(); model(t._shadowGeom); pop(); }
+    for (const c of visibleChunks) {
+      const shadowMesh = this._getChunkTreeShadow(c.cx, c.cz, sun);
+      if (shadowMesh) {
+        model(shadowMesh);
+      } else if (!this._treeShadowChunkCache.has(`${c.cx},${c.cz}`)) {
+        // Fallback: draw individually if chunk shadow timed out
+        const trees = this.getProceduralTreesForChunk(c.cx, c.cz);
+        for (const t of trees) {
+          if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
+          if (!t._shadowHull) {
+            const { trunkH: h, canopyScale: sc, variant: vi } = t;
+            const hrx = (vi === 2) ? 20 * sc : 17 * sc;
+            const hrz = (vi === 2) ? 14 * sc : 12 * sc;
+            const trunkHalf = 2.5;
+            const footprint = [];
+            footprint.push(
+              { x: -trunkHalf, z: -trunkHalf }, { x: trunkHalf, z: -trunkHalf },
+              { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
+            );
+            for (let i = 0; i < 16; i++) {
+              const a = (i / 16) * TWO_PI;
+              footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
+            }
+            t._footprint = footprint;
+            t._shadowCasterH = h + (vi === 2 ? 24 : 18) * sc;
+            t._shadowHull = true;
+          }
+          const casterH = t._shadowCasterH || t.trunkH || TREE_DEFAULT_TRUNK_HEIGHT;
+          // isBaking=true because the caller (drawTrees) has already applied the shadow shader and stencil setup
+          this._drawProjectedFootprintShadow(t.x, t.z, t.y, casterH, t._footprint, TREE_SHADOW_BASE_ALPHA, sun, false, true);
+        }
+      }
     }
     _endShadowStencil();
     resetShader();
@@ -1730,6 +1799,7 @@ class Terrain {
 
     if (profiler) profiler.record('trees', performance.now() - start);
   }
+
 
   _getBuildingGeom(b, inf) {
     // Cache both key variants (clean + infected) on the building so toFixed()
@@ -1772,46 +1842,222 @@ class Terrain {
   /**
    * Draws all buildings using single coherent meshes and the terrain shader.
    */
+
+  _getBuildingsForChunk(cx, cz) {
+    if (typeof gameState === 'undefined' || !gameState.buildings) return [];
+    if (!this._buildingBuckets || this._buildingBucketsCount !== gameState.buildings.length) {
+      const newBuckets = new Map();
+      const newCount = gameState.buildings.length;
+      for (const b of gameState.buildings) {
+        if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+        const tX = toTile(b.x);
+        const tZ = toTile(b.z);
+        const bcx = tX >> 4;
+        const bcz = tZ >> 4;
+        const bk = `${bcx},${bcz}`;
+        let arr = newBuckets.get(bk);
+        if (!arr) { arr = []; newBuckets.set(bk, arr); }
+        arr.push(b);
+      }
+
+      if (this._buildingBucketsCount !== 0 && this._buildingBuckets) {
+        // Only invalidate chunks where the building arrangement actually changed
+        for (const [bk, oldArr] of this._buildingBuckets.entries()) {
+           const newArr = newBuckets.get(bk) || [];
+           if (oldArr.length !== newArr.length || oldArr.some((b, i) => b !== newArr[i])) {
+              this._buildingChunkMeshCache.delete(bk);
+              this._buildingShadowChunkCache.delete(bk);
+           }
+        }
+        for (const bk of newBuckets.keys()) {
+           if (!this._buildingBuckets.has(bk)) {
+              this._buildingChunkMeshCache.delete(bk);
+              this._buildingShadowChunkCache.delete(bk);
+           }
+        }
+      } else {
+        // Initial setup or full reset
+        this._buildingChunkMeshCache.clear();
+        this._buildingShadowChunkCache.clear();
+      }
+
+      this._buildingBuckets = newBuckets;
+      this._buildingBucketsCount = newCount;
+    }
+    return this._buildingBuckets.get(`${cx},${cz}`) || [];
+  }
+
+  _getChunkBuildingMesh(cx, cz) {
+    const key = `${cx},${cz}`;
+    if (this._buildingChunkMeshCache.has(key)) return this._buildingChunkMeshCache.get(key);
+
+    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) return null;
+
+    const bldgs = this._getBuildingsForChunk(cx, cz);
+    let hasStatic = false;
+    for (const b of bldgs) {
+      if (b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
+        hasStatic = true; break;
+      }
+    }
+
+    if (!hasStatic) {
+      this._buildingChunkMeshCache.set(key, null);
+      return null;
+    }
+
+    // Pre-warm base geometric variants before opening the chunk builder.
+    for (const b of bldgs) {
+      if (b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
+        if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+        const inf = infection.has(b._tileKey);
+        this._getBuildingGeom(b, inf);
+      }
+    }
+
+    if (this._isBuildingShadow) return null;
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = _safeBuildGeometry(() => {
+        for (const b of bldgs) {
+          if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
+          
+          if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+          const inf = infection.has(b._tileKey);
+          
+          const bGeom = this._getBuildingGeom(b, inf);
+          if (bGeom) {
+              push();
+              translate(b.x, b.y, b.z);
+              model(bGeom);
+              pop();
+          }
+        }
+      });
+    } catch (err) { console.error(err); } finally { this._isBuildingShadow = false; }
+    
+    this._buildingChunkMeshCache.set(key, geom);
+    return geom;
+  }
+
+  _getChunkBuildingShadow(cx, cz, sun) {
+    const key = `${cx},${cz}`;
+    let cached = this._buildingShadowChunkCache.get(key);
+    if (cached && cached.sunX === sun.x && cached.sunY === sun.y && cached.sunZ === sun.z) {
+      return cached.geom;
+    }
+
+    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) {
+      if (cached && cached.geom) return cached.geom;
+      return null;
+    }
+
+    const bldgs = this._getBuildingsForChunk(cx, cz);
+    let hasStatic = false;
+    for (const b of bldgs) {
+      if (b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
+        hasStatic = true; break;
+      }
+    }
+
+    if (!hasStatic) {
+      this._buildingShadowChunkCache.set(key, { geom: null, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
+      return null;
+    }
+
+    if (this._isBuildingShadow) return null;
+    this._isBuildingShadow = true;
+    let geom = null;
+    try {
+      geom = _safeBuildGeometry(() => {
+        for (const b of bldgs) {
+          if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
+          
+          if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+          const inf = infection.has(b._tileKey);
+          
+          if (!b._shadowHull) {
+            const { footprint, casterH } = getBuildingFootprint(b);
+            b._footprint = footprint;
+            b._shadowCasterH = casterH;
+            b._shadowHull = true;
+          }
+          const casterH = b._shadowCasterH || b.h;
+          const baseAlpha = (b.type === 4) ? (inf ? 75 : 65) : (b.type === 0 ? 85 : 80);
+          
+          this._drawProjectedFootprintShadow(b.x, b.z, b.y, casterH, b._footprint, baseAlpha, sun, false, true);
+        }
+      });
+    } catch (err) { console.error(err); } finally { this._isBuildingShadow = false; }
+    
+    this._buildingShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
+    return geom;
+  }
+
   drawBuildings(s) {
+    this._bakeStart = performance.now(); // Reset bake budget per pass over chunks
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
     let cam = this._cam || this.getCameraParams(s);
     const sun = this._getSunShadowBasis();
-    // Reuse the per-instance shadow queue arrays to avoid per-frame allocation.
-    // _buildingShadowInf is a parallel array carrying the already-computed
-    // infection flag so the shadow pass never recomputes infection.has().
-    const shadowQueue = this._buildingShadowQueue;
-    const shadowInf   = this._buildingShadowInf;
-    shadowQueue.length = 0;
-    shadowInf.length   = 0;
+    
+    let gx = toTile(s.x), gz = toTile(s.z);
+    let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
+    let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
+    let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
+    let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
 
-    // Apply terrain shader to natively handle fog and lighting
+    const chunkHalf = CHUNK_SIZE * TILE;
+
     this.applyShader();
 
-    for (let b of gameState.buildings) {
-      let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
-      if (dSq >= cullSq || !this.inFrustum(cam, b.x, b.z)) continue;
-      let y = b.y;
+    const visibleBldgs = [];
+    const visibleChunks = [];
+
+    for (let cz = minCz; cz <= maxCz; cz++) {
+      for (let cx = minCx; cx <= maxCx; cx++) {
+        if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
+        
+        visibleChunks.push({ cx, cz });
+        const mesh = this._getChunkBuildingMesh(cx, cz);
+        if (mesh) {
+          model(mesh);
+        } else if (!this._buildingChunkMeshCache.has(`${cx},${cz}`)) {
+          // Fallback: draw individually if chunk building mesh timed out
+          const chunkBldgs = this._getBuildingsForChunk(cx, cz);
+          for (const b of chunkBldgs) {
+            if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
+            if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+            const inf = infection.has(b._tileKey);
+            const bGeom = this._getBuildingGeom(b, inf);
+            if (bGeom) {
+              push(); translate(b.x, b.y, b.z); model(bGeom); pop();
+            }
+          }
+        }
+
+        const bldgs = this._getBuildingsForChunk(cx, cz);
+        for (const b of bldgs) {
+           let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
+           if (dSq >= cullSq) continue;
+           visibleBldgs.push({ b, dSq });
+        }
+      }
+    }
+
+    noStroke();
+    for (const v of visibleBldgs) {
+      const b = v.b;
+      const y = b.y;
       if (aboveSea(y) || isLaunchpad(b.x, b.z)) continue;
-
-      // Cache the numeric tile-key on the building so toTile() + arithmetic
-      // is only computed once per building lifetime rather than every frame.
-      // Assumes building positions are static after creation — valid for all
-      // current building types (spawned once at level start, never moved).
-      if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
-      let inf = infection.has(b._tileKey);
-
-      push(); translate(b.x, y, b.z); noStroke();
+      
+      const inf = infection.has(b._tileKey);
 
       if (b.type === 3) {
-        // Floating UFO handles its own animation, drawn immediately rather than cached
-        push();
-        // Floating UFO: animation uses millis() so it stays in sync with
-        // the _simTick-based collision floatY in gameLoop.js.
-        // Equivalences at 60 ticks/s:  frameCount*0.02 → millis()*0.0012
-        //   frameCount*0.01 → millis()*0.0006,  frameCount*0.015 → millis()*0.0009
+        push(); translate(b.x, y, b.z);
         let floatY = y - b.h - 100 - sin(millis() * 0.0012 + b.x) * 50;
         translate(0, floatY - y, 0);
         rotateY(millis() * 0.0006 + b.x);
@@ -1819,68 +2065,63 @@ class Terrain {
         let geom = this._getPowerupGeom(b, inf);
         if (geom) model(geom);
         pop();
-      } else {
-        let bGeom = this._getBuildingGeom(b, inf);
-        if (bGeom) model(bGeom);
-        // Rotating crown for type 4 sentinel tower
-        if (b.type === 4) {
-          const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
-          fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
-          push();
-          translate(0, -b.h * 0.87, 0);
-          rotateY(millis() * 0.00192 + b.x * 0.001);
-          torus(b.w * 0.32, b.w * 0.07, 14, 6);
-          pop();
-        }
-      }
-
-      pop();
-
-      // Defer ground shadow drawing.  Carry inf so the shadow pass reuses it
-      // without calling infection.has() a second time per building.
-      if (dSq < 2250000) {
-        shadowQueue.push(b);
-        shadowInf.push(inf);
+      } else if (b.type === 4) {
+        push(); translate(b.x, y, b.z);
+        const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
+        fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
+        translate(0, -b.h * 0.87, 0);
+        rotateY(millis() * 0.00192 + b.x * 0.001);
+        torus(b.w * 0.32, b.w * 0.07, 14, 6);
+        pop();
       }
     }
 
     resetShader();
     setSceneLighting();
 
-    // Draw building shadows in a single batched pass.
-    // Type 3 (floating UFO) cannot be cached — draw it immediately via its own stencil.
-    // All other types bake once and render under one shared stencil setup.
-    // Shadow alpha is baked into vertex colors by _drawProjectedFootprintShadow
-    // (isBaking=true), so no per-building fill() is needed in the render loop.
     noLights(); noStroke();
-    for (let qi = 0; qi < shadowQueue.length; qi++) {
-      const b = shadowQueue[qi], inf = shadowInf[qi];
-      if (b.type === 3) {
-        // UFO: animated shadow, handled individually (includes its own stencil setup).
-        this._drawBuildingShadow(b, b.y, sun);
-      } else {
-        this._ensureBuildingShadowBaked(b, b.y, sun, inf);
-      }
-    }
-
     this.applyShadowShader();
     _beginShadowStencil();
-    // Ensure lighting is disabled for the batched static-shadow pass.
-    // Type-3 UFO shadows may have re-enabled lighting via _drawBuildingShadow().
-    noLights();
-    for (const b of shadowQueue) {
-      if (b.type !== 3 && b._shadowGeom) {
-        push();
-        model(b._shadowGeom);
-        pop();
+    
+    for (const c of visibleChunks) {
+      const geom = this._getChunkBuildingShadow(c.cx, c.cz, sun);
+      if (geom) {
+        model(geom);
+      } else if (!this._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
+        // Fallback: draw individually if chunk building shadow timed out
+        const chunkBldgs = this._getBuildingsForChunk(c.cx, c.cz);
+        for (const b of chunkBldgs) {
+          if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
+          if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+          const inf = infection.has(b._tileKey);
+          if (!b._shadowHull) {
+            const { footprint, casterH } = getBuildingFootprint(b);
+            b._footprint = footprint;
+            b._shadowCasterH = casterH;
+            b._shadowHull = true;
+          }
+          const casterH = b._shadowCasterH || b.h;
+          const baseAlpha = (b.type === 4) ? (inf ? 75 : 65) : (b.type === 0 ? 85 : 80);
+          // isBaking=true because the caller (drawBuildings) has already applied the shadow shader and stencil setup
+          this._drawProjectedFootprintShadow(b.x, b.z, b.y, casterH, b._footprint, baseAlpha, sun, false, true);
+        }
       }
     }
     _endShadowStencil();
+
+    for (const v of visibleBldgs) {
+      const b = v.b;
+      if (b.type === 3 && v.dSq < 2250000 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
+        this._drawBuildingShadow(b, b.y, sun);
+      }
+    }
+
     resetShader();
     setSceneLighting();
 
     if (profiler) profiler.record('buildings', performance.now() - start);
   }
+
 }
 
 // Singleton instance used by all other modules

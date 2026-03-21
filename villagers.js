@@ -27,7 +27,7 @@ const VILLAGER_STOP_DIST = 100;     // Target distance to start curing (units)
 // tiles² closer than the current one (prevents oscillation between equal targets).
 const VILLAGER_TARGET_HYSTERESIS_SQ = 4; // ≈ 2 tiles
 // --- Idle planting constants ---
-const VILLAGER_PLANT_DURATION = 180;   // Ticks to animate planting at one spot (~3 s at 60 Hz)
+const VILLAGER_PLANT_DURATION = 240;   // Ticks to animate planting at one spot (~4 s at 60 Hz)
 const VILLAGER_PLANT_RADIUS = 3;       // Base tile radius from pagoda when picking a crop plot (actual range ~0.5–2× this value)
 
 class VillagerManager extends AgentManager {
@@ -49,9 +49,9 @@ class VillagerManager extends AgentManager {
   }
 
   onWanderExceeded(v) { v.isCuring = false; v.isPlanting = false; v.plantTargetX = null; v.plantTargetZ = null; }
-  onWalkToTarget(v)   { v.isCuring = false; v.isPlanting = false; v.plantTargetX = null; v.plantTargetZ = null; }
-  onReachTarget(v)    { v.isCuring = true;  v.isPlanting = false; }
-  onNoTarget(v)       { v.isCuring = false; }
+  onWalkToTarget(v) { v.isCuring = false; v.isPlanting = false; v.plantTargetX = null; v.plantTargetZ = null; }
+  onReachTarget(v) { v.isCuring = true; v.isPlanting = false; }
+  onNoTarget(v) { v.isCuring = false; }
 
   onAgentDeath(v) {
     // Death particles
@@ -175,7 +175,7 @@ class VillagerManager extends AgentManager {
       const bendAngle = -(0.75 + sin(phase * 2) * 0.1);
       // Alternating arm plunge toward the ground: positive rotateX tips the arm tip
       // toward +Z (forward / ground-ward) in the already-forward-tilted torso frame.
-      const leftArmDip  = 0.9 + sin(phase * 2)      * 0.55;
+      const leftArmDip = 0.9 + sin(phase * 2) * 0.55;
       const rightArmDip = 0.9 + sin(phase * 2 + PI) * 0.55;
 
       VillagerManager._plantingGeoms[f] = _safeBuildGeometry(() => {
@@ -185,7 +185,7 @@ class VillagerManager extends AgentManager {
         // Legs — slightly bent at knees for a crouching posture
         fill(legR, legG, legB);
         push(); translate(-1.5, -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-        push(); translate(1.5,  -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        push(); translate(1.5, -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
 
         // Upper body: pivot at hip (~y=-13), rotate forward to simulate waist-bend
         push();
@@ -201,9 +201,9 @@ class VillagerManager extends AgentManager {
         push(); translate(0, -10, 0); box(5, 5, 5); pop();
 
         // Left arm — plunges down to plant, then lifts back
-        push(); translate(-4.5, -5, 0); rotateX(leftArmDip);  translate(0, 3, 0); box(2, 5, 2); pop();
+        push(); translate(-4.5, -5, 0); rotateX(leftArmDip); translate(0, 3, 0); box(2, 5, 2); pop();
         // Right arm — opposite phase for natural alternating motion
-        push(); translate( 4.5, -5, 0); rotateX(rightArmDip); translate(0, 3, 0); box(2, 5, 2); pop();
+        push(); translate(4.5, -5, 0); rotateX(rightArmDip); translate(0, 3, 0); box(2, 5, 2); pop();
 
         pop(); // end upper-body pivot
       });
@@ -449,7 +449,7 @@ class VillagerManager extends AgentManager {
     // so villagers don't all rush to a new spot on the same frame).
     if (random() < 0.02) {
       const angle = random(Math.PI * 2);
-      const dist  = (0.5 + random(1.5)) * TILE * VILLAGER_PLANT_RADIUS;
+      const dist = (0.5 + random(1.5)) * TILE * VILLAGER_PLANT_RADIUS;
       const tx = v.villageX + Math.cos(angle) * dist;
       const tz = v.villageZ + Math.sin(angle) * dist;
       // Keep within the max wander leash

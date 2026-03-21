@@ -28,7 +28,7 @@ const VILLAGER_STOP_DIST = 100;     // Target distance to start curing (units)
 const VILLAGER_TARGET_HYSTERESIS_SQ = 4; // ≈ 2 tiles
 // --- Idle planting constants ---
 const VILLAGER_PLANT_DURATION = 180;   // Ticks to animate planting at one spot (~3 s at 60 Hz)
-const VILLAGER_PLANT_RADIUS = 3;       // Max tiles from pagoda when picking a crop plot
+const VILLAGER_PLANT_RADIUS = 3;       // Base tile radius from pagoda when picking a crop plot (actual range ~0.5–2× this value)
 
 class VillagerManager extends AgentManager {
   constructor() {
@@ -252,11 +252,14 @@ class VillagerManager extends AgentManager {
       const v = this.agents[i];
 
       // --- AI: find nearest infected tile and walk toward it ---
-      // Skip while in idle planting mode: _steerTowardInfection's random-wander
-      // fallback (no-target branch) fires ~2% of ticks and causes jerky turns.
-      if (!v.isPlanting && v.plantTargetX === null) {
-        this._steerTowardInfection(v, v.villageX, v.villageZ);
-      }
+      // Always run the infection scan so a newly infected tile aborts planting.
+      // When in planting mode and no infection is found, restore vx/vz afterwards
+      // to prevent the no-target random-wander branch from causing jerky rotation.
+      const inPlanting = v.isPlanting || v.plantTargetX !== null;
+      const savedVx = inPlanting ? v.vx : 0;
+      const savedVz = inPlanting ? v.vz : 0;
+      this._steerTowardInfection(v, v.villageX, v.villageZ);
+      if (inPlanting && v.targetTx === null) { v.vx = savedVx; v.vz = savedVz; }
 
       // --- Idle planting when no infection is nearby ---
       if (v.targetTx === null) {
@@ -391,13 +394,16 @@ class VillagerManager extends AgentManager {
   }
 
   /**
-   * Handles idle crop-planting behaviour when a villager has no infection target.
+   * Handles idle crop-planting behaviour when a villager is not actively pursuing
+   * an infection target.
    * State machine:
-   *   1. No plot chosen → pick a random spot near the home pagoda (2 % chance / tick).
+   *   1. No plot chosen → pick a random spot near the home pagoda (~2% chance / tick).
    *   2. Walking to plot → steer toward it at reduced speed.
    *   3. At plot → play planting animation for VILLAGER_PLANT_DURATION ticks, then reset.
    *
-   * Called only when v.targetTx === null (infection steering already ran).
+   * Infection steering always runs before this method; if a target is found the
+   * onWalkToTarget callback clears isPlanting/plantTargetX so this method is
+   * effectively bypassed for that tick.
    * @private
    */
   _updateIdlePlanting(v) {

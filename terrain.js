@@ -1707,7 +1707,11 @@ class Terrain {
   }
 
   drawTrees(s) {
-    this._bakeStart = performance.now();
+    const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
+    if (this._bakeFrame !== currentFrame) {
+      this._bakeFrame = currentFrame;
+      this._bakeStart = performance.now();
+    }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
@@ -1996,7 +2000,11 @@ class Terrain {
   }
 
   drawBuildings(s) {
-    this._bakeStart = performance.now(); // Reset bake budget per pass over chunks
+    const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
+    if (this._bakeFrame !== currentFrame) {
+      this._bakeFrame = currentFrame;
+      this._bakeStart = performance.now();
+    }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 

@@ -173,10 +173,10 @@ class VillagerManager extends AgentManager {
       // Subtle body-sway while bending (±10°)
       // Negative angle bends the top of the body toward +Z (forward in model space).
       const bendAngle = -(0.75 + sin(phase * 2) * 0.1);
-      // Alternating arm plunge toward the ground: negative rotateX tips the arm tip
-      // down toward +Z (forward / ground-ward) in the already-forward-tilted torso frame.
-      const leftArmDip  = -(0.9 + sin(phase * 2)      * 0.55);
-      const rightArmDip = -(0.9 + sin(phase * 2 + PI) * 0.55);
+      // Alternating arm plunge toward the ground: positive rotateX tips the arm tip
+      // toward +Z (forward / ground-ward) in the already-forward-tilted torso frame.
+      const leftArmDip  = 0.9 + sin(phase * 2)      * 0.55;
+      const rightArmDip = 0.9 + sin(phase * 2 + PI) * 0.55;
 
       VillagerManager._plantingGeoms[f] = _safeBuildGeometry(() => {
         noStroke();

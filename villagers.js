@@ -171,10 +171,12 @@ class VillagerManager extends AgentManager {
     for (let f = 0; f < 64; f++) {
       const phase = (f / 64) * TWO_PI;
       // Subtle body-sway while bending (±10°)
-      const bendAngle = 0.75 + sin(phase * 2) * 0.1;
-      // Alternating arm plunge: each arm is half a cycle out of phase
-      const leftArmDip  = 0.9 + sin(phase * 2)        * 0.55;
-      const rightArmDip = 0.9 + sin(phase * 2 + PI)   * 0.55;
+      // Negative angle bends the top of the body toward +Z (forward in model space).
+      const bendAngle = -(0.75 + sin(phase * 2) * 0.1);
+      // Alternating arm plunge toward the ground: negative rotateX tips the arm tip
+      // down toward +Z (forward / ground-ward) in the already-forward-tilted torso frame.
+      const leftArmDip  = -(0.9 + sin(phase * 2)      * 0.55);
+      const rightArmDip = -(0.9 + sin(phase * 2 + PI) * 0.55);
 
       VillagerManager._plantingGeoms[f] = _safeBuildGeometry(() => {
         noStroke();
@@ -182,13 +184,13 @@ class VillagerManager extends AgentManager {
 
         // Legs — slightly bent at knees for a crouching posture
         fill(legR, legG, legB);
-        push(); translate(-1.5, -11, 0); rotateX(0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-        push(); translate(1.5,  -11, 0); rotateX(0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        push(); translate(-1.5, -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        push(); translate(1.5,  -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
 
         // Upper body: pivot at hip (~y=-13), rotate forward to simulate waist-bend
         push();
         translate(0, -13, 0); // hip pivot
-        rotateX(bendAngle);   // bend forward
+        rotateX(bendAngle);   // bend forward (negative = top toward +Z)
 
         // Torso
         fill(tunicR, tunicG, tunicB);

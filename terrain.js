@@ -98,6 +98,18 @@ function _safeBuildGeometry(callback) {
 const TREE_BATCH_SIZE = 4;
 const BUILDING_BATCH_SIZE = 2;
 
+// Maximum total wall-clock time (ms) that buildGeometry() bake calls are allowed
+// to consume in a single frame across all chunks and all types.  Acts as a safety
+// valve for the case where many chunks appear simultaneously (e.g. fast travel).
+// Each individual bake costs ~0.5–2 ms, so BAKE_BUDGET_MS=2 allows 1–4 batches
+// per frame under typical conditions.  Different chunks may each do one bake per
+// frame as long as this budget is not exceeded, which is enforced separately by
+// the per-chunk _chunksBakedThisFrame Set.
+// Note: this is a soft limit — the budget is checked before starting a bake, so
+// the last batch of a given frame may push the actual total slightly above 2 ms.
+// The overshoot is bounded by one batch (~0.5–2 ms), which is acceptable.
+const BAKE_BUDGET_MS = 2.0;
+
 // =============================================================================
 // Terrain class
 // =============================================================================
@@ -196,16 +208,21 @@ class Terrain {
     // bake window was opened by drawTrees() (so terrain rendering time does not
     // consume the baking allowance).  drawBuildings() shares the window by checking
     // _bakeFrame === currentFrame.
-    // _bakesThisFrame counts how many buildGeometry() calls have fired in the current
-    // frame across ALL categories (tree mesh, tree shadow, building mesh, building
-    // shadow).  We allow at most 1 bake call per frame: without this cap, a 2 ms tree
-    // mesh batch leaves room for shadow baking and building baking to also fire in the
-    // same frame, compounding bake overhead to ~5 ms and pushing frame time to 8–10 ms.
-    // One bake per frame caps spike overhead at ≤ ~2 ms.
-    // Initialized to sentinel values so the very first drawTrees call always opens
-    // a fresh bake window.
+    //
+    // _chunksBakedThisFrame: Set of "cx,cz" keys for chunks that have already
+    // performed one buildGeometry() call this frame.  Prevents any single chunk
+    // from doing compound baking (e.g. tree mesh + shadow + building mesh all in
+    // the same frame), which would stack multiple ~1–2 ms costs into a single
+    // 5+ ms spike.  Multiple DIFFERENT chunks can each bake once per frame, which
+    // is far better than the previous global counter that serialised ALL chunks.
+    //
+    // _bakeBudgetUsedMs: wall-clock ms spent on buildGeometry() this frame across
+    // all chunks.  Safety valve: once this exceeds BAKE_BUDGET_MS, no further bakes
+    // fire this frame regardless of per-chunk token state.  Prevents runaway cost
+    // when many chunks appear simultaneously (fast travel / first load).
     this._bakeFrame = -1;
-    this._bakesThisFrame = 0;
+    this._chunksBakedThisFrame = new Set();
+    this._bakeBudgetUsedMs = 0;
 
     // Hook TileManager invalidation so the overlay cache stays in sync.
     // Note: gameState.barrierTiles is initialized later in setup();
@@ -380,7 +397,8 @@ class Terrain {
     this._buildingBakeState.clear();
     this._buildingShadowChunkCache.clear();
     this._bakeFrame = -1;
-    this._bakesThisFrame = 0;
+    this._chunksBakedThisFrame.clear();
+    this._bakeBudgetUsedMs = 0;
     this._buildingBucketsCount = 0;
     if (this._buildingBuckets) this._buildingBuckets.clear();
     if (this._geoms) this._geoms.clear();
@@ -1657,8 +1675,9 @@ class Terrain {
       return state;
     }
 
-    // Cap: only 1 bake call (of any type) per frame; also guard against mutex.
-    if (this._bakesThisFrame >= 1 || this._isBuildingShadow) {
+    // This chunk already baked something this frame, the global time budget is
+    // exhausted, or another bake is in progress — defer to the next frame.
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
       if (existing === undefined) this._treeBakeState.set(key, state);
       return state;
     }
@@ -1666,7 +1685,7 @@ class Terrain {
     // Bake the next TREE_BATCH_SIZE trees.
     const end = Math.min(state.nextIdx + TREE_BATCH_SIZE, state.trees.length);
     this._isBuildingShadow = true;
-    this._bakesThisFrame++;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
@@ -1682,6 +1701,8 @@ class Terrain {
     } finally {
       this._isBuildingShadow = false;
     }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
 
     if (geom) state.batches.push(geom);
     // Always advance past this batch (even on failure) so a permanently failing
@@ -1700,9 +1721,9 @@ class Terrain {
       return cached.geom;
     }
 
-    if (this._bakesThisFrame >= 1 || this._isBuildingShadow) {
-      // Already baked something this frame (or mutex busy); return stale geometry
-      // (if any) so shadows are never worse than one sun-step behind.
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
+      // This chunk already baked, budget exhausted, or mutex busy; return stale
+      // geometry so shadows are never worse than one sun-step behind.
       if (cached && cached.geom) return cached.geom;
       return null;
     }
@@ -1722,7 +1743,7 @@ class Terrain {
 
     if (this._isBuildingShadow) return null;
     this._isBuildingShadow = true;
-    this._bakesThisFrame++;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
@@ -1755,6 +1776,8 @@ class Terrain {
     } finally {
       this._isBuildingShadow = false;
     }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
 
     this._treeShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
     return geom;
@@ -1764,7 +1787,8 @@ class Terrain {
     const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
     if (this._bakeFrame !== currentFrame) {
       this._bakeFrame = currentFrame;
-      this._bakesThisFrame = 0;
+      this._chunksBakedThisFrame.clear();
+      this._bakeBudgetUsedMs = 0;
     }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
@@ -1823,9 +1847,9 @@ class Terrain {
       } else if (!this._treeShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         // Fallback: draw individually if chunk shadow timed out
         if (gameState.mode === 'menu') continue;
-        // Skip expensive per-tree shadow draws when a bake already ran this
-        // frame; shadows will appear once baked in a subsequent frame.
-        if (this._bakesThisFrame >= 1) continue;
+        // This chunk already baked this frame (shadow will fire next available frame)
+        // or the frame budget is exhausted — skip individual draws for now.
+        if (this._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
         const trees = this.getProceduralTreesForChunk(c.cx, c.cz);
         for (const t of trees) {
           if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
@@ -1957,15 +1981,16 @@ class Terrain {
       return state;
     }
 
-    // Cap: only 1 bake call (of any type) per frame; also guard against mutex.
-    if (this._bakesThisFrame >= 1 || this._isBuildingShadow) {
+    // This chunk already baked something this frame, the global time budget is
+    // exhausted, or another bake is in progress — defer to the next frame.
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
       if (existing === undefined) this._buildingBakeState.set(key, state);
       return state;
     }
 
     const end = Math.min(state.nextIdx + BUILDING_BATCH_SIZE, state.buildings.length);
     this._isBuildingShadow = true;
-    this._bakesThisFrame++;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
@@ -1977,6 +2002,8 @@ class Terrain {
         }
       });
     } catch (err) { console.error('[Viron] Building batch bake failed:', err); } finally { this._isBuildingShadow = false; }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
 
     if (geom) state.batches.push(geom);
     state.nextIdx = end;
@@ -1991,8 +2018,9 @@ class Terrain {
       return cached.geom;
     }
 
-    if (this._bakesThisFrame >= 1 || this._isBuildingShadow) {
-      // Already baked something this frame; return stale geometry if available.
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
+      // This chunk already baked, budget exhausted, or mutex busy; return stale
+      // geometry so shadows are never worse than one sun-step behind.
       if (cached && cached.geom) return cached.geom;
       return null;
     }
@@ -2012,7 +2040,7 @@ class Terrain {
 
     if (this._isBuildingShadow) return null;
     this._isBuildingShadow = true;
-    this._bakesThisFrame++;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
@@ -2035,6 +2063,8 @@ class Terrain {
         }
       });
     } catch (err) { console.error(err); } finally { this._isBuildingShadow = false; }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
     
     this._buildingShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
     return geom;
@@ -2044,7 +2074,8 @@ class Terrain {
     const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
     if (this._bakeFrame !== currentFrame) {
       this._bakeFrame = currentFrame;
-      this._bakesThisFrame = 0;
+      this._chunksBakedThisFrame.clear();
+      this._bakeBudgetUsedMs = 0;
     }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
@@ -2136,9 +2167,9 @@ class Terrain {
       } else if (!this._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         // Fallback: draw individually if chunk building shadow timed out
         if (gameState.mode === 'menu') continue;
-        // Skip expensive per-building shadow draws when a bake already ran this
-        // frame; shadows will appear once baked in a subsequent frame.
-        if (this._bakesThisFrame >= 1) continue;
+        // This chunk already baked this frame (shadow will fire next available frame)
+        // or the frame budget is exhausted — skip individual draws for now.
+        if (this._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
         const chunkBldgs = this._getBuildingsForChunk(c.cx, c.cz);
         for (const b of chunkBldgs) {
           if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;

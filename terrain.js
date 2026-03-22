@@ -101,14 +101,16 @@ const BUILDING_BATCH_SIZE = 2;
 // Maximum total wall-clock time (ms) that buildGeometry() bake calls are allowed
 // to consume in a single frame across all chunks and all types.  Acts as a safety
 // valve for the case where many chunks appear simultaneously (e.g. fast travel).
-// Each individual bake costs ~0.5–2 ms, so BAKE_BUDGET_MS=2 allows 1–4 batches
+// Each individual bake costs ~0.5–2 ms, so BAKE_BUDGET_MS=4 allows 1–8 batches
 // per frame under typical conditions.  Different chunks may each do one bake per
 // frame as long as this budget is not exceeded, which is enforced separately by
 // the per-chunk _chunksBakedThisFrame Set.
 // Note: this is a soft limit — the budget is checked before starting a bake, so
-// the last batch of a given frame may push the actual total slightly above 2 ms.
+// the last batch of a given frame may push the actual total slightly above 4 ms.
 // The overshoot is bounded by one batch (~0.5–2 ms), which is acceptable.
-const BAKE_BUDGET_MS = 2.0;
+// Shadow bakes in isBaking mode use maxDepth=2 (~2.5 ms each at Dusk/Dawn low sun),
+// so a budget of 4 ms allows 1-2 shadow bakes per frame, halving warmup time.
+const BAKE_BUDGET_MS = 4.0;
 
 // =============================================================================
 // Terrain class
@@ -1459,7 +1461,13 @@ class Terrain {
     // Threshold tuned for robust terrain coverage; depth 5 allows precise "draping"
     const threshold = TILE * TILE * 0.4; // Tighter threshold for better geometry tracking 
     const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
-    const maxDepth = gameState.isMobile ? 4 : 5;
+    // When baking geometry for the cache, cap at depth 2.  At low sun angles (Dusk/Dawn)
+    // the shadow polygon can span 500+ world units, causing the threshold to permit depth 3
+    // which generates ~207 000 getAltitude() calls per 30-tree chunk (~10 ms).  Depth 2
+    // cuts that to ~52 000 calls (~2.5 ms) while still conforming to terrain at ~1 tile
+    // granularity — imperceptible in practice.  Real-time individual-draw paths keep the
+    // full depth for maximum fidelity.
+    const maxDepth = isBaking ? 2 : (gameState.isMobile ? 4 : 5);
 
     // Hard cap on emitted triangles to prevent push.apply overflowing V8's
     // call-stack argument limit (~65 536).  p5's addGeometry uses

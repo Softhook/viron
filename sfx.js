@@ -32,12 +32,22 @@ class GameSFX {
 
             // Master compressor to prevent clipping when multiple sounds (explosions, shots, engines)
             // overlap, especially likely in two-player mode.
+            //
+            // Tuning rationale – avoids the two most common game-audio artifacts:
+            //   Pumping:   threshold at -6 dBFS means normal sounds (gun shots ≈ -10 dBFS)
+            //              pass through uncompressed; only true peaks trigger gain reduction.
+            //              Release of 80 ms ensures the compressor fully recovers between
+            //              rapid-fire shots (~100 ms apart at max fire rate).
+            //   Clipping:  ratio 4:1 with a tight 6 dB knee gives gentle, transparent
+            //              compression on the loudest sounds without hard-limiting every
+            //              transient.  Explosion gains are kept ≤ 0.9 (see playExplosion)
+            //              so the compressor only activates when many sounds stack.
             this.master = this.ctx.createDynamicsCompressor();
-            this.master.threshold.setValueAtTime(-18, this.ctx.currentTime);
-            this.master.knee.setValueAtTime(24, this.ctx.currentTime);
-            this.master.ratio.setValueAtTime(10, this.ctx.currentTime);
+            this.master.threshold.setValueAtTime(-6, this.ctx.currentTime);
+            this.master.knee.setValueAtTime(6, this.ctx.currentTime);
+            this.master.ratio.setValueAtTime(4, this.ctx.currentTime);
             this.master.attack.setValueAtTime(0.003, this.ctx.currentTime);
-            this.master.release.setValueAtTime(0.25, this.ctx.currentTime);
+            this.master.release.setValueAtTime(0.08, this.ctx.currentTime);
             this.master.connect(this.ctx.destination);
 
             this.distCurve = this.createDistortionCurve(400);
@@ -715,7 +725,10 @@ class GameSFX {
             noiseFilter.frequency.exponentialRampToValueAtTime(60, t + dur);
         }
 
-        const initVol = isLarge ? (type === '' ? 1.4 : 1.6) : (isBomber || isColossus ? 1.8 : 1.1);
+        // Cap gains at ≤ 0.9 so the post-waveshaper signal stays below 0 dBFS
+        // before the master compressor.  Values > 1.0 caused pre-compressor
+        // clipping artifacts (scraping / distortion heard in the issue).
+        const initVol = isLarge ? (type === '' ? 0.9 : 0.9) : (isBomber || isColossus ? 0.9 : 0.75);
         const noiseGain = this._makeGainEnv(ctx, t, initVol, 0.006, dur);
 
         const toClean = [distortion, noise, noiseFilter, noiseGain];

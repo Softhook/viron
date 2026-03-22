@@ -186,9 +186,12 @@ class Terrain {
     // subsequent baking for the remainder of the session.
     this._isBuildingShadow = false;
     // Per-frame bake budget tracking.  _bakeFrame is the last frameCount whose
-    // 4 ms budget was started; _bakeStart is the performance.now() timestamp
-    // when that budget began.  Initialized to sentinel values so the very first
-    // drawLandscape / drawTrees / drawBuildings call always opens a fresh budget.
+    // 4 ms baking budget was started; _bakeStart is the performance.now() timestamp
+    // when that budget began.  The budget is opened by drawTrees() (not drawLandscape)
+    // so that terrain rendering time does not consume the baking allowance.
+    // drawBuildings() shares the same budget by checking _bakeFrame === currentFrame.
+    // Initialized to sentinel values so the very first drawTrees call always opens
+    // a fresh budget.
     this._bakeFrame = -1;
     this._bakeStart = 0;
 
@@ -1149,11 +1152,6 @@ class Terrain {
    * @param {boolean} [firstPerson=false]  Whether to render from a first-person camera.
    */
   drawLandscape(s, viewAspect, firstPerson = false) {
-    const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
-    if (this._bakeFrame !== currentFrame) {
-      this._bakeFrame = currentFrame;
-      this._bakeStart = performance.now();
-    }
     const gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 

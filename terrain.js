@@ -91,6 +91,28 @@ function _safeBuildGeometry(callback) {
   }
 }
 
+// Trees / buildings per buildGeometry() batch call.  Keeping batches small
+// (~4 trees ≈ 2 ms, ~2 buildings ≈ 2–4 ms) means a cold-cache chunk no longer
+// causes a 7–9 ms single-frame spike; un-baked geometry falls back to per-item
+// individual draws until baking completes over several frames.
+const TREE_BATCH_SIZE = 4;
+const BUILDING_BATCH_SIZE = 2;
+
+// Maximum total wall-clock time (ms) that buildGeometry() bake calls are allowed
+// to consume in a single frame across all chunks and all types.  Acts as a safety
+// valve for the case where many chunks appear simultaneously (e.g. fast travel).
+// Each individual bake costs ~0.5–2 ms, so BAKE_BUDGET_MS=4 allows 1–8 batches
+// per frame under typical conditions.  Different chunks may each do one bake per
+// frame as long as this budget is not exceeded, which is enforced separately by
+// the per-chunk _chunksBakedThisFrame Set.
+// Note: this is a soft limit — the budget is checked before starting a bake, so
+// the last batch of a given frame may push the actual total slightly above 4 ms.
+// The overshoot is bounded by one batch (~0.5–2 ms), which is acceptable.
+// Shadow bakes in isBaking mode use maxDepth=1 (~2.5 ms each at Dusk/Dawn low sun),
+// so a budget of 4 ms allows ~2 shadow bakes per frame, keeping the warmup window
+// short after any time-of-day change without dominating the frame budget.
+const BAKE_BUDGET_MS = 4.0;
+
 // =============================================================================
 // Terrain class
 // =============================================================================
@@ -174,12 +196,36 @@ class Terrain {
 
     /** @type {Map<string,p5.Geometry>} Chunk-level mesh cache for overlays (infection/barriers). */
     this._overlayCaches = new Map();
-    this._treeChunkMeshCache = new Map();
+    this._treeBakeState = new Map();
     this._treeShadowChunkCache = new Map();
-    this._buildingChunkMeshCache = new Map();
+    this._buildingBakeState = new Map();
     this._buildingShadowChunkCache = new Map();
     this._bakedShadowSun = { x: 0, y: 1, z: 0 };
     this._buildingBucketsCount = 0;
+    // Mutex flag: true while a _safeBuildGeometry() bake call is in progress,
+    // preventing re-entrant geometry builds.  Must be initialized to false so a
+    // stray exception in an earlier bake cannot permanently lock out all
+    // subsequent baking for the remainder of the session.
+    this._isBuildingShadow = false;
+    // Per-frame bake tracking.  _bakeFrame is the last frameCount for which the
+    // bake window was opened by drawTrees() (so terrain rendering time does not
+    // consume the baking allowance).  drawBuildings() shares the window by checking
+    // _bakeFrame === currentFrame.
+    //
+    // _chunksBakedThisFrame: Set of "cx,cz" keys for chunks that have already
+    // performed one buildGeometry() call this frame.  Prevents any single chunk
+    // from doing compound baking (e.g. tree mesh + shadow + building mesh all in
+    // the same frame), which would stack multiple ~1–2 ms costs into a single
+    // 5+ ms spike.  Multiple DIFFERENT chunks can each bake once per frame, which
+    // is far better than the previous global counter that serialised ALL chunks.
+    //
+    // _bakeBudgetUsedMs: wall-clock ms spent on buildGeometry() this frame across
+    // all chunks.  Safety valve: once this exceeds BAKE_BUDGET_MS, no further bakes
+    // fire this frame regardless of per-chunk token state.  Prevents runaway cost
+    // when many chunks appear simultaneously (fast travel / first load).
+    this._bakeFrame = -1;
+    this._chunksBakedThisFrame = new Set();
+    this._bakeBudgetUsedMs = 0;
 
     // Hook TileManager invalidation so the overlay cache stays in sync.
     // Note: gameState.barrierTiles is initialized later in setup();
@@ -193,14 +239,18 @@ class Terrain {
   _invalidateChunkProps(tx, tz) {
     const cx = tx >> 4, cz = tz >> 4;
     const bk = `${cx},${cz}`;
-    const k = tx + "," + tz;
+    // Use numeric tileKey to match tree.k and building._tileKey which are both
+    // set via tileKey() — NOT a "tx,tz" string. Mismatching types caused the
+    // === comparison to always be false, so baked chunk meshes were never
+    // invalidated when infection spread to them.
+    const k = tileKey(tx, tz);
 
     let treeHit = false;
     const trees = this.getProceduralTreesForChunk(cx, cz);
     for (let i = 0; i < trees.length; i++) {
         if (trees[i].k === k) { treeHit = true; break; }
     }
-    if (treeHit) this._treeChunkMeshCache.delete(bk);
+    if (treeHit) this._treeBakeState.delete(bk);
 
     let bldgHit = false;
     const bldgs = this._getBuildingsForChunk(cx, cz);
@@ -208,7 +258,7 @@ class Terrain {
         if (bldgs[i]._tileKey === k) { bldgHit = true; break; }
     }
     if (bldgHit) {
-        this._buildingChunkMeshCache.delete(bk);
+        this._buildingBakeState.delete(bk);
         this._buildingShadowChunkCache.delete(bk);
     }
   }
@@ -302,17 +352,17 @@ class Terrain {
       const keys = this._overlayCaches.keys();
       for (let i = 0, n = this._overlayCaches.size >> 1; i < n; i++) this._overlayCaches.delete(keys.next().value);
     }
-    if (this._treeChunkMeshCache.size > 600) {
-      const keys = this._treeChunkMeshCache.keys();
-      for (let i = 0, n = this._treeChunkMeshCache.size >> 1; i < n; i++) this._treeChunkMeshCache.delete(keys.next().value);
+    if (this._treeBakeState.size > 600) {
+      const keys = this._treeBakeState.keys();
+      for (let i = 0, n = this._treeBakeState.size >> 1; i < n; i++) this._treeBakeState.delete(keys.next().value);
     }
     if (this._treeShadowChunkCache.size > 600) {
       const keys = this._treeShadowChunkCache.keys();
       for (let i = 0, n = this._treeShadowChunkCache.size >> 1; i < n; i++) this._treeShadowChunkCache.delete(keys.next().value);
     }
-    if (this._buildingChunkMeshCache.size > 600) {
-      const keys = this._buildingChunkMeshCache.keys();
-      for (let i = 0, n = this._buildingChunkMeshCache.size >> 1; i < n; i++) this._buildingChunkMeshCache.delete(keys.next().value);
+    if (this._buildingBakeState.size > 600) {
+      const keys = this._buildingBakeState.keys();
+      for (let i = 0, n = this._buildingBakeState.size >> 1; i < n; i++) this._buildingBakeState.delete(keys.next().value);
     }
     if (this._buildingShadowChunkCache.size > 600) {
       const keys = this._buildingShadowChunkCache.keys();
@@ -345,10 +395,13 @@ class Terrain {
     this._procTreeChunkCache.clear();
     this._overlayCaches.clear();
     if (this._overlayDirtyQueue) this._overlayDirtyQueue.clear();
-    this._treeChunkMeshCache.clear();
+    this._treeBakeState.clear();
     this._treeShadowChunkCache.clear();
-    this._buildingChunkMeshCache.clear();
+    this._buildingBakeState.clear();
     this._buildingShadowChunkCache.clear();
+    this._bakeFrame = -1;
+    this._chunksBakedThisFrame.clear();
+    this._bakeBudgetUsedMs = 0;
     this._buildingBucketsCount = 0;
     if (this._buildingBuckets) this._buildingBuckets.clear();
     if (this._geoms) this._geoms.clear();
@@ -1134,11 +1187,6 @@ class Terrain {
    * @param {boolean} [firstPerson=false]  Whether to render from a first-person camera.
    */
   drawLandscape(s, viewAspect, firstPerson = false) {
-    const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
-    if (this._bakeFrame !== currentFrame) {
-      this._bakeFrame = currentFrame;
-      this._bakeStart = performance.now();
-    }
     const gx = toTile(s.x), gz = toTile(s.z);
     noStroke();
 
@@ -1414,7 +1462,13 @@ class Terrain {
     // Threshold tuned for robust terrain coverage; depth 5 allows precise "draping"
     const threshold = TILE * TILE * 0.4; // Tighter threshold for better geometry tracking 
     const liftY = -3.5; // Aggressive lift to stay above terrain triangles quad-splits
-    const maxDepth = gameState.isMobile ? 4 : 5;
+    // When baking geometry for the cache, cap at depth 1.  At low sun angles (Sunset/Dusk/Dawn,
+    // sun.y ≈ 0.12) the shadow polygon spans ~333 world units.  The recursive threshold allows
+    // depth 2 to trigger, generating 11 520 tris/chunk and 34 560 getAltitude() calls (~10 ms).
+    // Depth 1 limits each chunk to 2 880 tris and 8 640 calls (~2.5 ms) while still conforming
+    // to terrain at ~0.7–1.4 tile granularity — imperceptible in practice for a multi-frame
+    // cache.  Real-time individual-draw paths keep the full depth 4/5 for maximum fidelity.
+    const maxDepth = isBaking ? 1 : (gameState.isMobile ? 4 : 5);
 
     // Hard cap on emitted triangles to prevent push.apply overflowing V8's
     // call-stack argument limit (~65 536).  p5's addGeometry uses
@@ -1595,49 +1649,78 @@ class Terrain {
    * @param {{x,y,z,yaw}} s  Ship state (used as the view origin for culling).
    */
 
-  _getChunkTreeMesh(cx, cz) {
+  /**
+   * Returns the progressive bake state for a tree chunk, advancing one batch
+   * (TREE_BATCH_SIZE trees) if the per-frame budget has not yet been exhausted.
+   *
+   * State shape: null (no renderable trees) | { batches: p5.Geometry[],
+   *   nextIdx: number, trees: Object[] }
+   * where trees is the filtered renderable list for this chunk.
+   * nextIdx === trees.length means the chunk is fully baked.
+   * Un-baked trees (indices nextIdx..trees.length-1) must be drawn individually
+   * by the caller on the same frame.
+   */
+  _advanceChunkTreeBatch(cx, cz) {
     const key = `${cx},${cz}`;
-    if (this._treeChunkMeshCache.has(key)) return this._treeChunkMeshCache.get(key);
+    const existing = this._treeBakeState.get(key);
 
-    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) return null;
+    if (existing === null) return null; // Confirmed: no renderable trees.
 
-    const trees = this.getProceduralTreesForChunk(cx, cz);
-    
-    let hasRenderable = false;
-    for (const t of trees) {
-        if (!aboveSea(t.y) && !isLaunchpad(t.x, t.z)) {
-            hasRenderable = true;
-            break;
-        }
+    let state = existing; // undefined = first visit; object = in-progress / done.
+
+    if (state === undefined) {
+      const allTrees = this.getProceduralTreesForChunk(cx, cz);
+      const trees = allTrees.filter(t => !aboveSea(t.y) && !isLaunchpad(t.x, t.z));
+      if (trees.length === 0) {
+        this._treeBakeState.set(key, null);
+        return null;
+      }
+      state = { batches: [], nextIdx: 0, trees };
     }
 
-    if (!hasRenderable) {
-      this._treeChunkMeshCache.set(key, null);
-      return null;
+    // Fully baked — just cache and return.
+    if (state.nextIdx >= state.trees.length) {
+      if (existing === undefined) this._treeBakeState.set(key, state);
+      return state;
     }
 
-    if (this._isBuildingShadow) return null;
+    // This chunk already baked something this frame, the global time budget is
+    // exhausted, or another bake is in progress — defer to the next frame.
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
+      if (existing === undefined) this._treeBakeState.set(key, state);
+      return state;
+    }
+
+    // Bake the next TREE_BATCH_SIZE trees.
+    const end = Math.min(state.nextIdx + TREE_BATCH_SIZE, state.trees.length);
     this._isBuildingShadow = true;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
-        for (const t of trees) {
-          if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
-          const inf = infection.has(t.k);
-          push();
-          translate(t.x, t.y, t.z);
-          this._drawTreeImmediate(t, inf);
+        for (let i = state.nextIdx; i < end; i++) {
+          const t = state.trees[i];
+          push(); translate(t.x, t.y, t.z);
+          this._drawTreeImmediate(t, infection.has(t.k));
           pop();
         }
       });
     } catch (err) {
-      console.error("[Viron] Chunk tree geometry build failed:", err);
+      console.error('[Viron] Tree batch bake failed:', err);
     } finally {
       this._isBuildingShadow = false;
     }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
 
-    this._treeChunkMeshCache.set(key, geom);
-    return geom;
+    if (geom) state.batches.push(geom);
+    // Always advance past this batch (even on failure) so a permanently failing
+    // buildGeometry call does not cause an infinite retry loop.  In practice
+    // _safeBuildGeometry only returns null on catastrophic errors; those 4 trees
+    // will be absent until the chunk is evicted and re-baked.
+    state.nextIdx = end;
+    this._treeBakeState.set(key, state);
+    return state;
   }
 
   _getChunkTreeShadow(cx, cz, sun) {
@@ -1647,9 +1730,9 @@ class Terrain {
       return cached.geom;
     }
 
-    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) {
-      // Time budget exceeded. Since sun changed, we have a STALE shadow geometry.
-      // Return it to prevent expensive fallback individual rendering while waiting for background baking.
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
+      // This chunk already baked, budget exhausted, or mutex busy; return stale
+      // geometry so shadows are never worse than one sun-step behind.
       if (cached && cached.geom) return cached.geom;
       return null;
     }
@@ -1669,6 +1752,7 @@ class Terrain {
 
     if (this._isBuildingShadow) return null;
     this._isBuildingShadow = true;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
@@ -1701,6 +1785,8 @@ class Terrain {
     } finally {
       this._isBuildingShadow = false;
     }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
 
     this._treeShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
     return geom;
@@ -1710,7 +1796,8 @@ class Terrain {
     const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
     if (this._bakeFrame !== currentFrame) {
       this._bakeFrame = currentFrame;
-      this._bakeStart = performance.now();
+      this._chunksBakedThisFrame.clear();
+      this._bakeBudgetUsedMs = 0;
     }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
@@ -1740,20 +1827,19 @@ class Terrain {
         if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
         
         visibleChunks.push({ cx, cz });
-        const mesh = this._getChunkTreeMesh(cx, cz);
-        if (mesh) {
-          model(mesh);
-        } else if (!this._treeChunkMeshCache.has(`${cx},${cz}`)) {
-          // Fallback: draw individually if chunk generation timed out
-          const trees = this.getProceduralTreesForChunk(cx, cz);
-          for (const t of trees) {
-            if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
-            const inf = infection.has(t.k);
-            push(); translate(t.x, t.y, t.z); 
-            this._drawTreeImmediate(t, inf);
+        const treeState = this._advanceChunkTreeBatch(cx, cz);
+        if (treeState) {
+          // Draw all completed batches (fast single model() per batch).
+          for (const geom of treeState.batches) model(geom);
+          // Draw remaining un-baked trees individually this frame.
+          for (let i = treeState.nextIdx; i < treeState.trees.length; i++) {
+            const t = treeState.trees[i];
+            push(); translate(t.x, t.y, t.z);
+            this._drawTreeImmediate(t, infection.has(t.k));
             pop();
           }
         }
+        // null means no renderable trees — nothing to draw.
       }
     }
 
@@ -1770,6 +1856,9 @@ class Terrain {
       } else if (!this._treeShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         // Fallback: draw individually if chunk shadow timed out
         if (gameState.mode === 'menu') continue;
+        // This chunk already baked this frame (shadow will fire next available frame)
+        // or the frame budget is exhausted — skip individual draws for now.
+        if (this._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
         const trees = this.getProceduralTreesForChunk(c.cx, c.cz);
         for (const t of trees) {
           if (aboveSea(t.y) || isLaunchpad(t.x, t.z)) continue;
@@ -1841,19 +1930,19 @@ class Terrain {
         for (const [bk, oldArr] of this._buildingBuckets.entries()) {
            const newArr = newBuckets.get(bk) || [];
            if (oldArr.length !== newArr.length || oldArr.some((b, i) => b !== newArr[i])) {
-              this._buildingChunkMeshCache.delete(bk);
+              this._buildingBakeState.delete(bk);
               this._buildingShadowChunkCache.delete(bk);
            }
         }
         for (const bk of newBuckets.keys()) {
            if (!this._buildingBuckets.has(bk)) {
-              this._buildingChunkMeshCache.delete(bk);
+              this._buildingBakeState.delete(bk);
               this._buildingShadowChunkCache.delete(bk);
            }
         }
       } else {
         // Initial setup or full reset
-        this._buildingChunkMeshCache.clear();
+        this._buildingBakeState.clear();
         this._buildingShadowChunkCache.clear();
       }
 
@@ -1863,46 +1952,72 @@ class Terrain {
     return this._buildingBuckets.get(`${cx},${cz}`) || [];
   }
 
-  _getChunkBuildingMesh(cx, cz) {
+  /**
+   * Returns the progressive bake state for a building chunk, advancing one
+   * batch (BUILDING_BATCH_SIZE static buildings) per call when budget allows.
+   *
+   * State shape: null (no static buildings) | { batches: p5.Geometry[],
+   *   nextIdx: number, buildings: Object[] }
+   * Buildings in indices nextIdx..buildings.length-1 must be drawn individually
+   * by the caller on the same frame.
+   */
+  _advanceChunkBuildingBatch(cx, cz) {
     const key = `${cx},${cz}`;
-    if (this._buildingChunkMeshCache.has(key)) return this._buildingChunkMeshCache.get(key);
+    const existing = this._buildingBakeState.get(key);
 
-    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) return null;
+    if (existing === null) return null; // Confirmed: no static buildings.
 
-    const bldgs = this._getBuildingsForChunk(cx, cz);
-    let hasStatic = false;
-    for (const b of bldgs) {
-      if (b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
-        hasStatic = true; break;
+    let state = existing;
+
+    if (state === undefined) {
+      const allBldgs = this._getBuildingsForChunk(cx, cz);
+      const buildings = allBldgs.filter(b => b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z));
+      // Pre-compute _tileKey for all buildings up front.  Trees already have
+      // t.k set by getProceduralTreesForChunk() via tileKey(); buildings are
+      // mutable world objects whose _tileKey is initialised lazily here instead.
+      for (const b of buildings) {
+        if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
       }
+      if (buildings.length === 0) {
+        this._buildingBakeState.set(key, null);
+        return null;
+      }
+      state = { batches: [], nextIdx: 0, buildings };
     }
 
-    if (!hasStatic) {
-      this._buildingChunkMeshCache.set(key, null);
-      return null;
+    if (state.nextIdx >= state.buildings.length) {
+      if (existing === undefined) this._buildingBakeState.set(key, state);
+      return state;
     }
 
-    if (this._isBuildingShadow) return null;
+    // This chunk already baked something this frame, the global time budget is
+    // exhausted, or another bake is in progress — defer to the next frame.
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
+      if (existing === undefined) this._buildingBakeState.set(key, state);
+      return state;
+    }
+
+    const end = Math.min(state.nextIdx + BUILDING_BATCH_SIZE, state.buildings.length);
     this._isBuildingShadow = true;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
-        for (const b of bldgs) {
-          if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
-          
-          if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
-          const inf = infection.has(b._tileKey);
-          
-          push();
-          translate(b.x, b.y, b.z);
-          this._drawBuildingImmediate(b, inf);
+        for (let i = state.nextIdx; i < end; i++) {
+          const b = state.buildings[i];
+          push(); translate(b.x, b.y, b.z);
+          this._drawBuildingImmediate(b, infection.has(b._tileKey));
           pop();
         }
       });
-    } catch (err) { console.error(err); } finally { this._isBuildingShadow = false; }
-    
-    this._buildingChunkMeshCache.set(key, geom);
-    return geom;
+    } catch (err) { console.error('[Viron] Building batch bake failed:', err); } finally { this._isBuildingShadow = false; }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
+
+    if (geom) state.batches.push(geom);
+    state.nextIdx = end;
+    this._buildingBakeState.set(key, state);
+    return state;
   }
 
   _getChunkBuildingShadow(cx, cz, sun) {
@@ -1912,7 +2027,9 @@ class Terrain {
       return cached.geom;
     }
 
-    if (this._bakeStart && performance.now() - this._bakeStart > 4.0) {
+    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
+      // This chunk already baked, budget exhausted, or mutex busy; return stale
+      // geometry so shadows are never worse than one sun-step behind.
       if (cached && cached.geom) return cached.geom;
       return null;
     }
@@ -1932,6 +2049,7 @@ class Terrain {
 
     if (this._isBuildingShadow) return null;
     this._isBuildingShadow = true;
+    const t0 = performance.now();
     let geom = null;
     try {
       geom = _safeBuildGeometry(() => {
@@ -1954,6 +2072,8 @@ class Terrain {
         }
       });
     } catch (err) { console.error(err); } finally { this._isBuildingShadow = false; }
+    this._bakeBudgetUsedMs += performance.now() - t0;
+    this._chunksBakedThisFrame.add(key);
     
     this._buildingShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
     return geom;
@@ -1963,7 +2083,8 @@ class Terrain {
     const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
     if (this._bakeFrame !== currentFrame) {
       this._bakeFrame = currentFrame;
-      this._bakeStart = performance.now();
+      this._chunksBakedThisFrame.clear();
+      this._bakeBudgetUsedMs = 0;
     }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
@@ -1990,21 +2111,19 @@ class Terrain {
         if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
         
         visibleChunks.push({ cx, cz });
-        const mesh = this._getChunkBuildingMesh(cx, cz);
-        if (mesh) {
-          model(mesh);
-        } else if (!this._buildingChunkMeshCache.has(`${cx},${cz}`)) {
-          // Fallback: draw individually if chunk building mesh timed out
-          const chunkBldgs = this._getBuildingsForChunk(cx, cz);
-          for (const b of chunkBldgs) {
-            if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
-            if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
-            const inf = infection.has(b._tileKey);
-            push(); translate(b.x, b.y, b.z); 
-            this._drawBuildingImmediate(b, inf);
+        const bldgState = this._advanceChunkBuildingBatch(cx, cz);
+        if (bldgState) {
+          // Draw completed batches.
+          for (const geom of bldgState.batches) model(geom);
+          // Draw remaining un-baked buildings individually this frame.
+          for (let i = bldgState.nextIdx; i < bldgState.buildings.length; i++) {
+            const b = bldgState.buildings[i];
+            push(); translate(b.x, b.y, b.z);
+            this._drawBuildingImmediate(b, infection.has(b._tileKey));
             pop();
           }
         }
+        // null means no static buildings — nothing to draw.
 
         const bldgs = this._getBuildingsForChunk(cx, cz);
         for (const b of bldgs) {
@@ -2057,6 +2176,9 @@ class Terrain {
       } else if (!this._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         // Fallback: draw individually if chunk building shadow timed out
         if (gameState.mode === 'menu') continue;
+        // This chunk already baked this frame (shadow will fire next available frame)
+        // or the frame budget is exhausted — skip individual draws for now.
+        if (this._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
         const chunkBldgs = this._getBuildingsForChunk(c.cx, c.cz);
         for (const b of chunkBldgs) {
           if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;

@@ -424,7 +424,24 @@ function drawBackgroundLandscape() {
   let pxD = pixelDensity();
   gl.viewport(0, 0, width * pxD, height * pxD);
   gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // Clear stencil every frame so shadow stencil values from the previous menu
+  // frame don't accumulate and progressively block new shadow draws.
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+
+  // Pre-warm the desktop FBO and post-processing shader on the first background
+  // render so the first gameplay frame has no lazy-init stutter from FBO
+  // allocation and GLSL compilation.
+  if (!gameState.isMobile && !gameRenderer.masterFBO) {
+    gameRenderer.masterFBO = createFramebuffer();
+    gameRenderer.postShader = createShader(POST_VERT, POST_FRAG);
+    gameRenderer._postShaderReady = false;
+    // Call shader() once to trigger GLSL compilation now instead of on the
+    // first gameplay frame.  No geometry is drawn so no uniform validation occurs.
+    shader(gameRenderer.postShader);
+    gameRenderer.postShader.setUniform('uIsMobile', gameState.isMobile);
+    gameRenderer._postShaderReady = true;
+    resetShader();
+  }
 
   push();
   // Lower culling range on menu to prioritize background baking and UI responsiveness.

@@ -30,24 +30,13 @@ class GameSFX {
         if (typeof getAudioContext !== 'undefined') {
             this.ctx = getAudioContext();
 
-            // Master compressor to prevent clipping when multiple sounds (explosions, shots, engines)
-            // overlap, especially likely in two-player mode.
-            //
-            // Tuning rationale – avoids the two most common game-audio artifacts:
-            //   Pumping:   threshold at -6 dBFS means normal sounds (gun shots ≈ -10 dBFS)
-            //              pass through uncompressed; only true peaks trigger gain reduction.
-            //              Release of 80 ms ensures the compressor fully recovers between
-            //              rapid-fire shots (~100 ms apart at max fire rate).
-            //   Clipping:  ratio 4:1 with a tight 6 dB knee gives gentle, transparent
-            //              compression on the loudest sounds without hard-limiting every
-            //              transient.  Explosion gains are kept ≤ 0.9 (see playExplosion)
-            //              so the compressor only activates when many sounds stack.
-            this.master = this.ctx.createDynamicsCompressor();
-            this.master.threshold.setValueAtTime(-6, this.ctx.currentTime);
-            this.master.knee.setValueAtTime(6, this.ctx.currentTime);
-            this.master.ratio.setValueAtTime(4, this.ctx.currentTime);
-            this.master.attack.setValueAtTime(0.003, this.ctx.currentTime);
-            this.master.release.setValueAtTime(0.08, this.ctx.currentTime);
+            // Simple master gain — no dynamics compressor.
+            // A DynamicsCompressor causes audible pumping/ducking on every transient
+            // (gun shot, explosion) and can introduce crackle.  A fixed gain of 0.7
+            // gives ~3 dB of headroom so simultaneous sounds can stack without hard
+            // clipping, while producing zero dynamic artefacts.
+            this.master = this.ctx.createGain();
+            this.master.gain.value = 0.7;
             this.master.connect(this.ctx.destination);
 
             this.distCurve = this.createDistortionCurve(400);
@@ -528,8 +517,12 @@ class GameSFX {
         if (!this.ctx || x === undefined || y === undefined || z === undefined) return null;
         if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return null;
         let panner = this.ctx.createPanner();
-        panner.panningModel = 'HRTF';
-        panner.distanceModel = 'exponential';
+        // equalpower: simple stereo panning, no expensive HRTF convolution.
+        // HRTF can cause glitches/pops on rapid position updates.
+        panner.panningModel = 'equalpower';
+        // inverse: standard 1/r distance law — smooth and predictable.
+        // exponential model produces extreme gain discontinuities at range edges.
+        panner.distanceModel = 'inverse';
         panner.refDistance = 150;
         panner.maxDistance = 10000;
         panner.rolloffFactor = 1.0;

@@ -3,10 +3,9 @@
 /**
  * Unit tests for GameSFX.
  *
- * Verifies that compressor settings are within safe ranges (no pumping /
- * clipping artifacts), that gain levels stay at or below 0 dBFS before the
- * master compressor, and that every public play*() method executes without
- * exceptions when given a mock Web Audio API context.
+ * Verifies that the master output node is a plain GainNode (no compressor),
+ * that gain levels stay at or below 0 dBFS, and that every public play*()
+ * method executes without exceptions when given a mock Web Audio API context.
  *
  * Usage:  node tests/test-sfx.js
  * Exit 0 = PASS, Exit 1 = FAIL.
@@ -198,47 +197,30 @@ test('GameSFX initialises without error', () => {
     gameSFX.init();
     assert(gameSFX.initialized === true,   'initialized flag is true after init()');
     assert(gameSFX.ctx === mockCtx,        'ctx is the injected AudioContext');
-    assert(gameSFX.master !== null,        'master compressor node was created');
+    assert(gameSFX.master !== null,        'master gain node was created');
     assert(gameSFX.persistentNoise !== null, 'persistent noise buffer was created');
 });
 
-test('Master compressor – threshold: above gun-shot level to prevent pumping', () => {
-    // A player gun-shot peaks at ~0.32 linear ≈ -10 dBFS.  The compressor
-    // threshold must be ABOVE that (i.e. > -10 dBFS) so normal shots pass
-    // through uncompressed and do not cause audible volume pumping.
-    // A threshold ≤ -1 dBFS still catches true clipping peaks.
-    const thr = mockCtx._compressor.threshold.value;
-    assert(thr >= -10, `threshold ${thr} dBFS is ≥ -10 dBFS (won't compress normal gun-shots)`);
-    assert(thr <=  -1, `threshold ${thr} dBFS is ≤ -1 dBFS  (still catches hard peaks)`);
+test('Master output is a plain GainNode – no compressor pumping', () => {
+    // The DynamicsCompressor caused audible pumping/ducking on every gun shot
+    // and explosion and can introduce crackle.  The master stage is now a
+    // simple GainNode.  Gain must be < 1.0 to leave headroom, and > 0.4 so
+    // sounds are audible.
+    assert(
+        !(gameSFX.master instanceof DynamicsCompressor),
+        'master is NOT a DynamicsCompressor (no pumping/ducking)'
+    );
+    assert(
+        gameSFX.master instanceof GainNode,
+        'master is a GainNode (simple, artefact-free)'
+    );
+    const g = gameSFX.master.gain.value;
+    assert(g > 0.4 && g <= 1.0, `master gain ${g} is in range (0.4, 1.0]`);
 });
 
-test('Master compressor – ratio: gentle enough to avoid heavy gain-pumping', () => {
-    // A ratio of 10:1 is near-limiting and causes dramatic gain changes on
-    // each impulsive sound.  Keep ratio ≤ 6 for transparent compression.
-    const ratio = mockCtx._compressor.ratio.value;
-    assert(ratio >= 2, `ratio ${ratio} is ≥ 2 (some compression applied)`);
-    assert(ratio <= 6, `ratio ${ratio} is ≤ 6 (gentle, avoids heavy pumping)`);
-});
-
-test('Master compressor – release: fast enough to recover between rapid-fire shots', () => {
-    // At 10 shots/s the interval between shots is 100 ms.  If the release is
-    // longer than that, the compressor never fully recovers and the gain
-    // "breathes" audibly (pumping).  Keep release ≤ 100 ms.
-    const rel = mockCtx._compressor.release.value;
-    assert(rel <= 0.10, `release ${rel}s is ≤ 0.10 s (recovers between rapid shots)`);
-    assert(rel >= 0.01, `release ${rel}s is ≥ 0.01 s (not instantaneously abrupt)`);
-});
-
-test('Master compressor – knee: not so wide it compresses every quiet sound', () => {
-    // A 24 dB soft-knee applied at -18 dBFS means the compressor is already
-    // active at -30 dBFS — effectively always on.  Limit knee to ≤ 10 dB.
-    const knee = mockCtx._compressor.knee.value;
-    assert(knee <= 10, `knee ${knee} dB is ≤ 10 dB (avoids always-on compression zone)`);
-});
-
-test('Explosion noiseGain peak ≤ 1.0 – no pre-compressor clipping', () => {
+test('Explosion noiseGain peak ≤ 1.0 – no clipping before master gain', () => {
     // initVol values above 1.0 send the post-distortion signal above 0 dBFS
-    // before the master compressor even sees it, causing hard clipping artifacts
+    // into the master gain stage, causing hard clipping artifacts
     // (the "scraping and distortion" described in the issue).
     const match = sfxSrc.match(/const initVol\s*=\s*([^\n;]+)[;\n]/);
     assert(match !== null, 'initVol assignment found in playExplosion');

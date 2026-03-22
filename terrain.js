@@ -180,6 +180,17 @@ class Terrain {
     this._buildingShadowChunkCache = new Map();
     this._bakedShadowSun = { x: 0, y: 1, z: 0 };
     this._buildingBucketsCount = 0;
+    // Mutex flag: true while a _safeBuildGeometry() bake call is in progress,
+    // preventing re-entrant geometry builds.  Must be initialized to false so a
+    // stray exception in an earlier bake cannot permanently lock out all
+    // subsequent baking for the remainder of the session.
+    this._isBuildingShadow = false;
+    // Per-frame bake budget tracking.  _bakeFrame is the last frameCount whose
+    // 4 ms budget was started; _bakeStart is the performance.now() timestamp
+    // when that budget began.  Initialized to sentinel values so the very first
+    // drawLandscape / drawTrees / drawBuildings call always opens a fresh budget.
+    this._bakeFrame = -1;
+    this._bakeStart = 0;
 
     // Hook TileManager invalidation so the overlay cache stays in sync.
     // Note: gameState.barrierTiles is initialized later in setup();
@@ -193,7 +204,11 @@ class Terrain {
   _invalidateChunkProps(tx, tz) {
     const cx = tx >> 4, cz = tz >> 4;
     const bk = `${cx},${cz}`;
-    const k = tx + "," + tz;
+    // Use numeric tileKey to match tree.k and building._tileKey which are both
+    // set via tileKey() — NOT a "tx,tz" string. Mismatching types caused the
+    // === comparison to always be false, so baked chunk meshes were never
+    // invalidated when infection spread to them.
+    const k = tileKey(tx, tz);
 
     let treeHit = false;
     const trees = this.getProceduralTreesForChunk(cx, cz);

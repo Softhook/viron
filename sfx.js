@@ -261,7 +261,10 @@ class GameSFX {
         const dub = beatWindow(0.28, 0.08);
         const pulse = Math.min(1, lub + dub * 0.68);
 
-        const heartVol = this._heartIntensitySmoothed * 0.34;
+        // heartbeat is a direct sine wave (45 Hz through a lowpass) — amplitude is
+        // not attenuated by its filter, so heartVol maps 1:1 to output level.
+        // 0.25 leaves headroom for simultaneous action sounds.
+        const heartVol = this._heartIntensitySmoothed * 0.25;
         const heartFreq = 38 + this._heartIntensitySmoothed * 10 + pulse * 12;
         this._paramSetTarget(this.ambientNodes.heartbeat.osc.frequency, heartFreq, now, 0.06);
         this._paramSetTarget(this.ambientNodes.heartbeat.gain.gain, heartVol * pulse, now, 0.03);
@@ -321,8 +324,14 @@ class GameSFX {
         const targetProximity = proximityData.dist < 800 ? (1 - proximityData.dist / 800) : 0;
         this._infectionProximityAlpha = lerp(this._infectionProximityAlpha, targetProximity, 0.05);
 
-        // Steady Hum volume
-        const humVol = this._infectionProximityAlpha * 0.18;
+        // Steady Hum volume.
+        // The sawtooth (60 Hz) passes through a bandpass filter (Q=10, centre
+        // sweeping 200–600 Hz) that attenuates the signal to approximately 10–14%
+        // of the gain value — only the one or two harmonics that fall inside the
+        // narrow passband contribute.  humVol = 1.0 gives an effective output of
+        // ~0.10–0.14 at the targetNode, making the hum clearly audible.
+        // At 0.18 the effective output was ~0.018 — essentially inaudible.
+        const humVol = this._infectionProximityAlpha * 1.0;
         this._paramSetTarget(this.ambientNodes.proximityHum.gain.gain, humVol, now, 0.1);
         this._paramSetTarget(this.ambientNodes.proximityHum.filter.frequency, 200 + this._infectionProximityAlpha * 400, now, 0.1);
 
@@ -561,8 +570,12 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const dur = 0.18;
 
-        // Main volume envelope
-        const gainNode = this._makeGainEnv(ctx, t, 0.32, 0.005, dur);
+        // Main volume envelope.
+        // Three triangle oscillators share this gainNode via a common filter.
+        // With ±10-cent detune the beat period is ~790 ms (>> shot duration 0.18 s),
+        // so the three oscillators stay in-phase throughout and their amplitudes sum
+        // to ~3× at the filter node.  Peak = 3 × 0.10 = 0.30 — safe with headroom.
+        const gainNode = this._makeGainEnv(ctx, t, 0.10, 0.005, dur);
         // Low-pass filter to remove "annoying" high frequencies
         const filter = this._makeFilter(ctx, t, 'lowpass', 1800, 500, 0.15);
 
@@ -577,7 +590,7 @@ class GameSFX {
 
         // Sub-thrum for weight - with high-pass to avoid mud/scratchiness
         const subFilter = this._makeFilter(ctx, t, 'highpass', 40);
-        const subGain = this._makeGainEnv(ctx, t, 0.25, 0.005, 0.12);
+        const subGain = this._makeGainEnv(ctx, t, 0.14, 0.005, 0.12);
         // frequency sweep ends at 0.1 s; sub stops at 0.12 s
         const sub = this._makeOsc(ctx, t, 'sine', 80, 40, 0.1, subFilter, undefined, 0.12);
 
@@ -640,7 +653,10 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const dur = 0.6;
 
-        const gainNode = this._makeGainEnv(ctx, t, 0.5, 0.005, dur);
+        // Three square oscillators plus white noise all feed the same lowpass
+        // filter → gainNode.  Peak input to the gainNode can reach ~4× amplitude
+        // (3 correlated oscs + noise); gainNode 0.16 keeps peaks around 0.50–0.65.
+        const gainNode = this._makeGainEnv(ctx, t, 0.16, 0.005, dur);
         // Two-stage filter sweep: rise then fall
         const filter = this._makeFilter(ctx, t, 'lowpass', 400);
         filter.frequency.linearRampToValueAtTime(3500, t + 0.2);
@@ -670,8 +686,8 @@ class GameSFX {
 
         const gain = ctx.createGain();
         gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.linearRampToValueAtTime(isMega ? 0.6 : 0.3, t + 0.006);
-        gain.gain.linearRampToValueAtTime(isMega ? 0.8 : 0.4, t + dur * 0.5);
+        gain.gain.linearRampToValueAtTime(isMega ? 0.40 : 0.3, t + 0.006);
+        gain.gain.linearRampToValueAtTime(isMega ? 0.55 : 0.4, t + dur * 0.5);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
         const osc = ctx.createOscillator();
@@ -723,9 +739,12 @@ class GameSFX {
             noiseFilter.frequency.exponentialRampToValueAtTime(60, t + dur);
         }
 
-        // Cap gains at ≤ 0.9 so the post-waveshaper signal stays below 0 dBFS
-        // before the master compressor.  Values > 1.0 caused pre-compressor
-        // clipping artifacts (scraping / distortion heard in the issue).
+        // The distorted body (noise + oscs → WaveShaper) saturates at ~0.35; multiplied
+        // by noiseGain (0.9) the body contributes ~0.315 at targetNode.  The sub-rumble
+        // bypasses the WaveShaper and feeds targetNode directly, so subGain 0.35 gives
+        // a safe combined sum: 0.35 + 0.315 = 0.665.  The old 0.8 produced 1.115 → clip.
+        // noiseGain controls the output envelope of the entire WaveShaper path; its value
+        // barely affects peak amplitude since the WaveShaper already saturates to ≤0.35.
         const initVol = isLarge ? 0.9 : (isBomber || isColossus ? 0.9 : 0.75);
         const noiseGain = this._makeGainEnv(ctx, t, initVol, 0.006, dur);
 
@@ -733,7 +752,7 @@ class GameSFX {
 
         // Sub-rumble for weight on large explosions
         if (isLarge || isBomber || isColossus) {
-            const subGain = this._makeGainEnv(ctx, t, 0.8, 0.006, dur * 0.6);
+            const subGain = this._makeGainEnv(ctx, t, 0.35, 0.006, dur * 0.6);
             const sub = this._makeOsc(ctx, t, 'sine', 60, 20, dur * 0.5, subGain, undefined, dur);
             subGain.connect(targetNode);
             toClean.push(sub, subGain);
@@ -1422,7 +1441,9 @@ class GameSFX {
                 osc.frequency.value = freq;
                 osc.detune.value = det;
                 gain.gain.setValueAtTime(0.0, t);
-                gain.gain.linearRampToValueAtTime(0.2, t + 0.05);
+                // 9 oscillators connect directly to targetNode without filtering.
+                // Worst-case peak = 9 × 0.10 = 0.90; typical incoherent sum ≈ 0.35.
+                gain.gain.linearRampToValueAtTime(0.10, t + 0.05);
                 gain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
                 osc.connect(gain);
                 gain.connect(targetNode);

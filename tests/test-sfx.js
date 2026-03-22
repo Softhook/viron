@@ -248,6 +248,82 @@ test('Explosion noiseGain peak ≤ 1.0 – no clipping before master gain', () =
     }
 });
 
+test('playShot gainNode safe for 3 in-phase oscillator summation', () => {
+    // Three triangle oscillators share a single filter node → gainNode.
+    // With ±10-cent detune the beat period is ~790 ms — far longer than the
+    // 0.18 s shot, so the three waveforms stay in-phase and their amplitudes
+    // ADD to ~3× at the filter output.  gainNode must be ≤ 1.0/3 ≈ 0.333 so
+    // the combined output stays below 1.0 dBFS (was 0.32 → 3×0.32 = 0.96 + sub = 1.21 clip).
+    const match = sfxSrc.match(/playShot[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.005,\s*dur\)/);
+    assert(match !== null, 'playShot main _makeGainEnv(…,0.005,dur) found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak <= 0.333, `playShot gainNode peak ${peak} ≤ 0.333 (safe for 3-osc sum)`);
+    }
+});
+
+test('playMissileFire gainNode safe for 3-oscillator + noise summation', () => {
+    // Three square oscillators plus white noise all feed the same lowpass filter
+    // → gainNode.  Peak input reaches ~4× amplitude; gainNode must be ≤ 0.25
+    // to keep the combined output below 1.0 (was 0.5 → peak ~2.0 clip).
+    const match = sfxSrc.match(/playMissileFire[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
+    assert(match !== null, 'playMissileFire _makeGainEnv found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak <= 0.25, `playMissileFire gainNode peak ${peak} ≤ 0.25 (safe for 3-osc+noise sum)`);
+    }
+});
+
+test('playExplosion subGain leaves headroom for distorted body', () => {
+    // The explosion body (noise + oscs → WaveShaper) saturates at ~0.35; multiplied
+    // by noiseGain ≈ 0.9 the body contributes ~0.315 at targetNode.  The sub-rumble
+    // bypasses the WaveShaper entirely → subGain must be ≤ 0.685 so the combined
+    // sum stays below 1.0 (was 0.8 → 0.8+0.315 = 1.115 clip).
+    const match = sfxSrc.match(/subGain\s*=\s*this\._makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
+    assert(match !== null, 'explosion subGain _makeGainEnv found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak <= 0.685, `explosion subGain peak ${peak} ≤ 0.685 (leaves room for distorted body ~0.315)`);
+    }
+});
+
+test('proximityHum gain compensates for bandpass filter attenuation', () => {
+    // The proximity hum runs a 60 Hz sawtooth through a bandpass (Q=10, centre
+    // 200–600 Hz).  Only the one or two harmonics that fall inside the narrow
+    // passband pass; the dominant harmonic amplitude after filtering is ~10–14% of
+    // the gain value.  humVol must be ≥ 0.5 so the effective output is audible
+    // (was 0.18 → effective ~0.018, inaudible).
+    const match = sfxSrc.match(/humVol\s*=\s*this\._infectionProximityAlpha\s*\*\s*([\d.]+)/);
+    assert(match !== null, 'humVol formula found in updateAmbiance');
+    if (match) {
+        const coeff = Number(match[1]);
+        assert(coeff >= 0.5, `humVol coefficient ${coeff} ≥ 0.5 (compensates bandpass Q=10 attenuation; effective output ~0.10–0.14)`);
+    }
+});
+
+test('playBombDrop mega peak safe when thrust is simultaneously active', () => {
+    // Mega bomb drop is a single oscillator → gain → targetNode.  Thrust engine
+    // runs concurrently at ~0.32; mega bomb peak + thrust must stay below 1.0,
+    // so mega bomb peak ≤ 0.68.  The normal bomb peak ≤ 0.4 is already safe.
+    const match = sfxSrc.match(/isMega \? ([\d.]+) : 0\.4, t \+ dur \* 0\.5/);
+    assert(match !== null, 'playBombDrop mega peak assignment found');
+    if (match) {
+        const megaPeak = Number(match[1]);
+        assert(megaPeak <= 0.68, `mega bomb peak ${megaPeak} ≤ 0.68 (safe with concurrent thrust ~0.32)`);
+    }
+});
+
+test('playClearInfection per-oscillator gain is safe for 9-osc sum', () => {
+    // 9 sine oscillators connect directly to targetNode.  Worst-case peak amplitude
+    // = 9 × gain.  Must be ≤ 0.111 so 9 × gain ≤ 1.0 (was 0.2 → worst case 1.8 clip).
+    const match = sfxSrc.match(/playClearInfection[\s\S]{0,900}linearRampToValueAtTime\(([\d.]+),\s*t\s*\+\s*0\.05\)/);
+    assert(match !== null, 'playClearInfection per-osc gain ramp found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak <= 0.111, `playClearInfection per-osc gain ${peak} ≤ 0.111 (9 × gain ≤ 1.0)`);
+    }
+});
+
 test('playShot does not throw', () => {
     let threw = false;
     try { gameSFX.playShot(0, 0, 0); } catch (e) { threw = true; }

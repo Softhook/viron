@@ -32,11 +32,11 @@ class GameSFX {
 
             // Simple master gain — no dynamics compressor.
             // A DynamicsCompressor causes audible pumping/ducking on every transient
-            // (gun shot, explosion) and can introduce crackle.  A fixed gain of 0.7
-            // gives ~3 dB of headroom so simultaneous sounds can stack without hard
-            // clipping, while producing zero dynamic artefacts.
+            // (gun shot, explosion) and can introduce crackle.  1.0 passes all sounds
+            // at their individually tuned volumes; individual gains are kept well below
+            // 1.0 so simultaneous sounds stack without clipping.
             this.master = this.ctx.createGain();
-            this.master.gain.value = 0.7;
+            this.master.gain.value = 1.0;
             this.master.connect(this.ctx.destination);
 
             this.distCurve = this.createDistortionCurve(400);
@@ -523,7 +523,12 @@ class GameSFX {
         // inverse: standard 1/r distance law — smooth and predictable.
         // exponential model produces extreme gain discontinuities at range edges.
         panner.distanceModel = 'inverse';
-        panner.refDistance = 150;
+        // 600 units covers the typical camera-to-ship follow distance (~520 units,
+        // see _zoomOffset).  Any source within 600 units plays at full designed volume;
+        // only genuinely far-away sounds (off-screen explosions, distant enemies)
+        // fall off naturally.  Using 150 attenuated local player shots to ~29% and
+        // caused them to dip further when the ship changed Y (tilted).
+        panner.refDistance = 600;
         panner.maxDistance = 10000;
         panner.rolloffFactor = 1.0;
 

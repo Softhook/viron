@@ -204,8 +204,7 @@ test('GameSFX initialises without error', () => {
 test('Master output is a plain GainNode – no compressor pumping', () => {
     // The DynamicsCompressor caused audible pumping/ducking on every gun shot
     // and explosion and can introduce crackle.  The master stage is now a
-    // simple GainNode.  Gain must be < 1.0 to leave headroom, and > 0.4 so
-    // sounds are audible.
+    // simple GainNode at 1.0 so sounds play at their individually tuned volumes.
     assert(
         !(gameSFX.master instanceof DynamicsCompressor),
         'master is NOT a DynamicsCompressor (no pumping/ducking)'
@@ -215,7 +214,21 @@ test('Master output is a plain GainNode – no compressor pumping', () => {
         'master is a GainNode (simple, artefact-free)'
     );
     const g = gameSFX.master.gain.value;
-    assert(g > 0.4 && g <= 1.0, `master gain ${g} is in range (0.4, 1.0]`);
+    assert(g === 1.0, `master gain is 1.0 (sounds play at individually tuned volumes)`);
+});
+
+test('Spatializer refDistance covers camera-ship follow distance', () => {
+    // The camera follows the player at ~520 units distance (see _zoomOffset).
+    // refDistance must be >= 520 so that local player shots play at full designed
+    // volume even when the ship tilts (changes Y) within the follow range.
+    // At refDistance 150 local shots were attenuated to ~29% and dipped further
+    // on ship orientation changes.
+    const match = sfxSrc.match(/panner\.refDistance\s*=\s*(\d+)/);
+    assert(match !== null, 'panner.refDistance assignment found in createSpatializer');
+    if (match) {
+        const rd = Number(match[1]);
+        assert(rd >= 520, `refDistance ${rd} covers camera-ship follow distance (≥ 520)`);
+    }
 });
 
 test('Explosion noiseGain peak ≤ 1.0 – no clipping before master gain', () => {

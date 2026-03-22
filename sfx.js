@@ -936,12 +936,20 @@ class GameSFX {
             const osc = ctx.createOscillator();
             const tremoloOsc = ctx.createOscillator();
             const tremoloGain = ctx.createGain();
+            const tremoloAmp = ctx.createGain();   // intermediate amplitude stage for the LFO
             const masterGain = ctx.createGain();
             const filter = ctx.createBiquadFilter();
 
             osc.type = 'sawtooth'; osc.frequency.value = 55; // A1
             tremoloOsc.type = 'sine'; tremoloOsc.frequency.value = 6; // 6Hz tremolo
-            tremoloGain.gain.value = 0.5;
+            // LFO depth 0.4 applied to tremoloAmp whose base is 1.0 → range [0.6, 1.4].
+            // Routing the LFO through an intermediate gain stage (tremoloAmp) rather
+            // than directly into masterGain.gain keeps the signal amplitude strictly
+            // positive throughout the fade envelope.  Connecting ±0.5 directly to a
+            // gain AudioParam that starts at 0.0 (masterGain) made the effective gain
+            // swing from -0.5 to +0.8, causing 6 Hz phase-inversion clicks.
+            tremoloGain.gain.value = 0.4;
+            tremoloAmp.gain.value  = 1.0;   // base = 1.0; LFO adds ±0.4 around this
             filter.type = 'lowpass'; filter.frequency.value = 300; filter.Q.value = 5;
 
             masterGain.gain.setValueAtTime(0, t);
@@ -950,11 +958,11 @@ class GameSFX {
             masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
 
             tremoloOsc.connect(tremoloGain);
-            tremoloGain.connect(masterGain.gain); // Tremolo modulates the master gain
-            osc.connect(filter); filter.connect(masterGain); masterGain.connect(targetNode);
+            tremoloGain.connect(tremoloAmp.gain); // Modulate tremoloAmp's gain: 1.0 ± 0.4 = [0.6, 1.4]
+            osc.connect(filter); filter.connect(tremoloAmp); tremoloAmp.connect(masterGain); masterGain.connect(targetNode);
             osc.start(t); osc.stop(t + 3.6);
             tremoloOsc.start(t); tremoloOsc.stop(t + 3.6);
-            this._cleanupNodes([osc, tremoloOsc, tremoloGain, masterGain, filter], 3.6);
+            this._cleanupNodes([osc, tremoloOsc, tremoloGain, tremoloAmp, masterGain, filter], 3.6);
         },
 
         // 7 — Alien morse code: irregular high-pitched digital beeps with feedback ring

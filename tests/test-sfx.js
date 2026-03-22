@@ -74,11 +74,13 @@ class WaveShaperNode extends AudioNode {
 }
 
 class AudioBuffer {
-    constructor(channels, length) {
-        this._data = new Float32Array(length);
+    constructor(channels, length, sampleRate) {
+        this._data       = new Float32Array(length);
+        this._sampleRate = sampleRate || 44100;
     }
     getChannelData() { return this._data; }
-    get duration()   { return 1.0; }
+    get duration()   { return this._data.length / this._sampleRate; }
+    get length()     { return this._data.length; }
 }
 
 class BufferSourceNode extends AudioNode {
@@ -129,7 +131,7 @@ class MockAudioContext {
     createBiquadFilter()       { return new BiquadFilterNode(); }
     createWaveShaper()         { return new WaveShaperNode(); }
     createBufferSource()       { return new BufferSourceNode(); }
-    createBuffer(ch, len)      { return new AudioBuffer(ch, len); }
+    createBuffer(ch, len)      { return new AudioBuffer(ch, len, this.sampleRate); }
     createPanner()             { return new PannerNode(); }
     createStereoPanner()       { return new StereoPannerNode(); }
 }
@@ -145,16 +147,19 @@ global.lerp             = (a, b, t) => a + (b - a) * t;
 global.constrain        = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 global.gameState        = { players: [] };
 
+// Read sfx.js once and reuse across all tests that inspect the source.
+const sfxSrc = fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8');
+
 // Load GameSFX into the global scope.
-// eval() in a CommonJS module does not promote `class` or `const` declarations
-// to the outer scope, so we patch the two top-level declarations before
-// evaluating: the class becomes an assignment to global.GameSFX, and the
-// singleton const becomes an assignment to global.gameSFX.
+// sfx.js uses `class` and `const` at the top level, which eval() does not
+// promote to the module scope.  We therefore patch those two declarations to
+// global assignments before evaluating.  eval() of a local trusted file in a
+// Node.js test runner is an established pattern when the file under test was
+// not written as an ES/CommonJS module (it targets a browser global environment).
 {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8');
-    const patched = src
-        .replace(/^class GameSFX\b/m,          'global.GameSFX = class GameSFX')
-        .replace(/^const gameSFX\s*=/m,         'global.gameSFX =');
+    const patched = sfxSrc
+        .replace(/^class GameSFX\b/m,  'global.GameSFX = class GameSFX')
+        .replace(/^const gameSFX\s*=/m, 'global.gameSFX =');
     eval(patched); // eslint-disable-line no-eval
 }
 
@@ -235,9 +240,7 @@ test('Explosion noiseGain peak ≤ 1.0 – no pre-compressor clipping', () => {
     // initVol values above 1.0 send the post-distortion signal above 0 dBFS
     // before the master compressor even sees it, causing hard clipping artifacts
     // (the "scraping and distortion" described in the issue).
-    const src = fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8');
-    // Match the initVol assignment line inside playExplosion
-    const match = src.match(/const initVol\s*=\s*([^\n;]+)[;\n]/);
+    const match = sfxSrc.match(/const initVol\s*=\s*([^\n;]+)[;\n]/);
     assert(match !== null, 'initVol assignment found in playExplosion');
     if (match) {
         const expr   = match[1];
@@ -393,8 +396,160 @@ test('stopAll does not throw', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Summary
+// Rigorous oscillator, modulation and graph-structure tests
 // ─────────────────────────────────────────────────────────────────────────────
+
+test('All 18 _levelTunes entries execute without exception', () => {
+    assert(
+        gameSFX._levelTunes.length === 18,
+        `_levelTunes array has exactly 18 entries (found ${gameSFX._levelTunes.length})`
+    );
+    for (let i = 0; i < gameSFX._levelTunes.length; i++) {
+        let threw = false;
+        try {
+            gameSFX._levelTunes[i](mockCtx, mockCtx.currentTime, mockCtx.destination);
+        } catch (e) {
+            threw = true;
+            console.error(`    tune[${i}] threw: ${e.message}`);
+        }
+        assert(!threw, `_levelTunes[${i}] executes without exception`);
+    }
+});
+
+test('Distortion curves are bounded within [-1, 1]', () => {
+    // If a waveshaper curve exceeds ±1.0 the downstream audio signal will clip
+    // at the DAC, causing audible distortion artefacts independent of compression.
+    for (const amount of [60, 400]) {
+        const curve = gameSFX.createDistortionCurve(amount);
+        let allBounded = true;
+        let maxAbs = 0;
+        for (let i = 0; i < curve.length; i++) {
+            maxAbs = Math.max(maxAbs, Math.abs(curve[i]));
+            if (curve[i] < -1 || curve[i] > 1) { allBounded = false; }
+        }
+        assert(allBounded, `createDistortionCurve(${amount}) all values in [-1, 1] (maxAbs=${maxAbs.toFixed(4)})`);
+        assert(curve[curve.length - 1] > 0, `createDistortionCurve(${amount}) positive at x = +1`);
+        assert(curve[0] < 0,               `createDistortionCurve(${amount}) negative at x = -1`);
+    }
+});
+
+test('Persistent noise buffer has correct sample count and is filled', () => {
+    const buf = gameSFX.persistentNoise;
+    assert(buf !== null, 'persistentNoise is not null');
+
+    const expectedLen = Math.floor(mockCtx.sampleRate * 3.0); // 3 s at 44100 Hz
+    const data = buf.getChannelData(0);
+    assert(
+        data.length === expectedLen,
+        `noise buffer length ${data.length} === expected ${expectedLen} (3 s @ ${mockCtx.sampleRate} Hz)`
+    );
+
+    // Buffer must contain non-zero samples (random white noise was written)
+    const allZero = Array.from(data).every(v => v === 0);
+    assert(!allZero, 'noise buffer contains non-zero (white noise) samples');
+
+    // Cross-fade: the first sample should have been blended from the tail.
+    // After the blend loop, data[0] is replaced by data[len-blend+0], so the
+    // very first sample is no longer the same as an un-touched middle sample.
+    // We can verify the buffer is not a trivial all-zero or constant buffer.
+    const minVal = Math.min(...Array.from(data).slice(0, 100));
+    const maxVal = Math.max(...Array.from(data).slice(0, 100));
+    assert(maxVal - minVal > 0.1, `noise buffer first 100 samples have variation > 0.1 (range: ${(maxVal - minVal).toFixed(4)})`);
+});
+
+test('updateAmbiance called 100 times rapidly does not throw', () => {
+    let threw = false;
+    try {
+        for (let i = 0; i < 100; i++) {
+            mockCtx._time += 1 / 60;  // simulate 60 fps frame advance
+            gameSFX.updateAmbiance(
+                {
+                    dist:          300 + i * 3,
+                    pulseOverlap:  Math.sin(i * 0.1) * 0.5 + 0.5,
+                    scanSweepAlpha: Math.cos(i * 0.07) * 0.5 + 0.5
+                },
+                i % 6,   // infectionCount
+                10       // maxInfection
+            );
+        }
+    } catch (e) { threw = true; console.error('    threw: ' + e.message); }
+    assert(!threw, 'updateAmbiance survives 100 rapid calls without throwing');
+});
+
+test('stopAll is idempotent – safe to call twice', () => {
+    let threw = false;
+    try { gameSFX.stopAll(); gameSFX.stopAll(); } catch (e) { threw = true; }
+    assert(!threw, 'calling stopAll() twice does not throw');
+});
+
+test('setThrust: 20 rapid on/off cycles do not throw or accumulate nodes', () => {
+    let threw = false;
+    try {
+        for (let i = 0; i < 20; i++) {
+            gameSFX.setThrust(0, true,  i * 5, 50, 0);
+            gameSFX.setThrust(0, false, i * 5, 50, 0);
+        }
+    } catch (e) { threw = true; }
+    assert(!threw, '20 rapid on/off thrust cycles do not throw');
+    // After all off-calls, no live thrust nodes should be accumulating
+    // (nodes enter a "stopping" state and are cleaned up by timeout)
+    const nodeCount = Object.keys(gameSFX.thrustNodes).length;
+    assert(nodeCount <= 1, `thrustNodes has ≤ 1 entry after rapid cycling (found ${nodeCount})`);
+});
+
+test('setThrust: two-player split-screen does not throw', () => {
+    // Simulate two-player mode (spatialEnabled = false, two panning directions)
+    const origSpatial = gameSFX.spatialEnabled;
+    gameSFX.spatialEnabled = false;
+    let threw = false;
+    try {
+        gameSFX.setThrust(0, true,  0, 50, 0);
+        gameSFX.setThrust(1, true,  100, 50, 0);
+        gameSFX.setThrust(0, true,  10, 50, 0);   // position update
+        gameSFX.setThrust(1, true,  110, 50, 0);
+        gameSFX.setThrust(0, false, 10, 50, 0);
+        gameSFX.setThrust(1, false, 110, 50, 0);
+    } catch (e) { threw = true; }
+    gameSFX.spatialEnabled = origSpatial;
+    assert(!threw, 'two-player thrust (spatialEnabled=false) does not throw');
+});
+
+test('Level tune 6: tremolo uses intermediate gain stage, not direct masterGain.gain modulation', () => {
+    // Root cause of "clicking and scraping" at level transitions:
+    // tremoloGain (amplitude ±0.5) was connected directly to masterGain.gain.
+    // masterGain schedules values starting at 0.0, so the effective gain ranged
+    // from -0.5 to +0.8 — causing phase inversions at 6 Hz (= ~12 clicks/sec).
+    //
+    // Fix: route the LFO through a dedicated tremoloAmp GainNode whose base
+    // value is 1.0.  The LFO then modulates tremoloAmp.gain in [0.6, 1.4]
+    // (always positive), and the oscillator signal goes through tremoloAmp
+    // before the master envelope — never negative.
+
+    assert(
+        !sfxSrc.includes('tremoloGain.connect(masterGain.gain)'),
+        'tune 6: tremoloGain is NOT connected directly to masterGain.gain (prevents negative gain range)'
+    );
+    assert(
+        sfxSrc.includes('tremoloGain.connect(tremoloAmp.gain)'),
+        'tune 6: tremoloGain connects to tremoloAmp.gain (intermediate amplitude stage)'
+    );
+    // tremoloAmp must have a base gain of 1.0 so that LFO ±depth never produces a negative value
+    const ampBaseMatch = sfxSrc.match(/tremoloAmp\.gain\.value\s*=\s*([\d.]+)/);
+    assert(ampBaseMatch !== null, 'tune 6: tremoloAmp.gain.value is explicitly set');
+    if (ampBaseMatch) {
+        const base = parseFloat(ampBaseMatch[1]);
+        assert(base === 1.0, `tune 6: tremoloAmp.gain.value = ${base} (must be 1.0 so LFO keeps range positive)`);
+    }
+    // LFO depth must be ≤ base (1.0) to keep the range [1-depth, 1+depth] ≥ 0
+    const depthMatch = sfxSrc.match(/tremoloGain\.gain\.value\s*=\s*([\d.]+)/);
+    assert(depthMatch !== null, 'tune 6: tremoloGain.gain.value is explicitly set');
+    if (depthMatch) {
+        const depth = parseFloat(depthMatch[1]);
+        assert(depth <= 1.0, `tune 6: LFO depth ${depth} ≤ 1.0 (tremoloAmp.gain never negative)`);
+        assert(depth > 0,    `tune 6: LFO depth ${depth} > 0 (tremolo effect is audible)`);
+    }
+});
+
 
 console.log(`\n${'─'.repeat(60)}`);
 if (failed === 0) {

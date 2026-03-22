@@ -37,6 +37,9 @@ function bench(label, fn, iters = 1000) {
 const VIEW_FAR   = 50;  // outer tile radius
 const CHUNK_SIZE = 16;  // tiles per chunk edge
 const TILE       = 120; // world units per tile
+const SEA        = 200; // Y at/above which terrain is submerged (WEBGL Y-down)
+// aboveSea matches constants.js: y >= SEA-1 (threshold 199, not 200)
+const aboveSea   = y => y >= SEA - 1;
 // Max trees per chunk (desktop cap from getProceduralTreesForChunk)
 const MAX_TREES_PER_CHUNK = 13;
 
@@ -96,7 +99,7 @@ bench('NAIVE  – per-tree iteration (draw-call count only)', () => {
       const trees = treesByChunk.get(`${cx},${cz}`) || [];
       for (let i = 0; i < trees.length; i++) {
         const t = trees[i];
-        if (t.y >= 200) continue;                // aboveSea check
+        if (aboveSea(t.y)) continue;                // aboveSea check
         infectedKeys.has(t.k);                   // infection.has() lookup
         model(t);                                // one draw call per tree
       }
@@ -139,12 +142,12 @@ bench('BAKING – cold cache rebuild (iterate + Map.set)      ', () => {
       const trees = treesByChunk.get(key) || [];
       let hasRenderable = false;
       for (const t of trees) {
-        if (t.y < 200) { hasRenderable = true; break; }
+        if (!aboveSea(t.y)) { hasRenderable = true; break; }
       }
       if (!hasRenderable) { meshCache.set(key, null); continue; }
       // Simulate per-tree work inside _safeBuildGeometry
       for (const t of trees) {
-        if (t.y >= 200) continue;
+        if (aboveSea(t.y)) continue;
         infectedKeys.has(t.k);   // infection lookup
       }
       meshCache.set(key, { /* fake p5.Geometry */ });

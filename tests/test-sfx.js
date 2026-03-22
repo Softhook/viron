@@ -445,15 +445,24 @@ test('Persistent noise buffer has correct sample count and is filled', () => {
     );
 
     // Buffer must contain non-zero samples (random white noise was written)
-    const allZero = Array.from(data).every(v => v === 0);
+    let allZero = true;
+    for (let i = 0; i < data.length; i++) {
+        if (data[i] !== 0) { allZero = false; break; }
+    }
     assert(!allZero, 'noise buffer contains non-zero (white noise) samples');
 
     // Cross-fade: the first sample should have been blended from the tail.
     // After the blend loop, data[0] is replaced by data[len-blend+0], so the
     // very first sample is no longer the same as an un-touched middle sample.
     // We can verify the buffer is not a trivial all-zero or constant buffer.
-    const minVal = Math.min(...Array.from(data).slice(0, 100));
-    const maxVal = Math.max(...Array.from(data).slice(0, 100));
+    const sampleCount = Math.min(100, data.length);
+    let minVal = data[0];
+    let maxVal = data[0];
+    for (let i = 1; i < sampleCount; i++) {
+        const v = data[i];
+        if (v < minVal) { minVal = v; }
+        if (v > maxVal) { maxVal = v; }
+    }
     assert(maxVal - minVal > 0.1, `noise buffer first 100 samples have variation > 0.1 (range: ${(maxVal - minVal).toFixed(4)})`);
 });
 
@@ -526,11 +535,11 @@ test('Level tune 6: tremolo uses intermediate gain stage, not direct masterGain.
     // before the master envelope — never negative.
 
     assert(
-        !sfxSrc.includes('tremoloGain.connect(masterGain.gain)'),
+        !/tremoloGain\.connect\(\s*masterGain\.gain\s*\)/.test(sfxSrc),
         'tune 6: tremoloGain is NOT connected directly to masterGain.gain (prevents negative gain range)'
     );
     assert(
-        sfxSrc.includes('tremoloGain.connect(tremoloAmp.gain)'),
+        /tremoloGain\.connect\(\s*tremoloAmp\.gain\s*\)/.test(sfxSrc),
         'tune 6: tremoloGain connects to tremoloAmp.gain (intermediate amplitude stage)'
     );
     // tremoloAmp must have a base gain of 1.0 so that LFO ±depth never produces a negative value

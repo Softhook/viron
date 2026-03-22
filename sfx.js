@@ -728,7 +728,7 @@ class GameSFX {
         // Cap gains at ≤ 0.9 so the post-waveshaper signal stays below 0 dBFS
         // before the master compressor.  Values > 1.0 caused pre-compressor
         // clipping artifacts (scraping / distortion heard in the issue).
-        const initVol = isLarge ? (type === '' ? 0.9 : 0.9) : (isBomber || isColossus ? 0.9 : 0.75);
+        const initVol = isLarge ? 0.9 : (isBomber || isColossus ? 0.9 : 0.75);
         const noiseGain = this._makeGainEnv(ctx, t, initVol, 0.006, dur);
 
         const toClean = [distortion, noise, noiseFilter, noiseGain];

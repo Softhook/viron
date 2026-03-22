@@ -470,7 +470,10 @@ class GameSFX {
         const { ctx, targetNode, routingNodes } = s;
         const dur = 0.04;
 
-        const gainNode = this._makeGainEnv(ctx, t, 0.8, 0.006, dur);
+        // Single oscillator → bandpass filter → gainNode.  In single-player mode this
+        // fires while the thrust engine is running at ~0.32.  gainNode 0.45 keeps the
+        // combined sum below 0.77 (was 0.8 → 0.8 + 0.32 = 1.12 → hard clip).
+        const gainNode = this._makeGainEnv(ctx, t, 0.45, 0.006, dur);
         const filter = this._makeFilter(ctx, t, 'bandpass', 1000, 200, dur, 5);
         const osc = this._makeOsc(ctx, t, 'triangle', 150, 40, dur, filter);
 
@@ -532,11 +535,17 @@ class GameSFX {
         // inverse: standard 1/r distance law — smooth and predictable.
         // exponential model produces extreme gain discontinuities at range edges.
         panner.distanceModel = 'inverse';
-        // 600 units covers the typical camera-to-ship follow distance (~520 units,
-        // see _zoomOffset).  Any source within 600 units plays at full designed volume;
-        // only genuinely far-away sounds (off-screen explosions, distant enemies)
-        // fall off naturally.  Using 150 attenuated local player shots to ~29% and
-        // caused them to dip further when the ship changed Y (tilted).
+        // Geometric analysis of refDistance = 600:
+        //   Camera offset from ship: 300 units horizontal (behind) + ~120 units vertical.
+        //   Camera–ship distance = sqrt(300² + 120²) ≈ 323 units.
+        //   Any source within refDistance plays at full designed volume.
+        //   323 < 600  →  own-ship shots/effects always play at full volume. ✓
+        //   Distant enemies (800 units): listener distance ≈ sqrt(1100² + 120²) ≈ 1106
+        //                                gain = 600/1106 ≈ 0.54 → natural falloff. ✓
+        // Panning correctness (equalpower, up = (0,1,0)):
+        //   listener right = normalize(forward × (0,1,0))
+        //   This is identical to the right vector used by the visual camera()
+        //   call, so audio L/R matches visual L/R at every ship yaw angle. ✓
         panner.refDistance = 600;
         panner.maxDistance = 10000;
         panner.rolloffFactor = 1.0;
@@ -606,7 +615,11 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const dur = 1.8;
 
-        const gainNode = this._makeGainEnv(ctx, t, 0.8, 0.012, dur);
+        // WaveShaper saturates the combined noise+osc path to ≤0.349; gainNode is the
+        // final output scalar.  0.60 → effective peak ≈ 0.349 × 0.60 = 0.210.
+        // Previously 0.8 (→ 0.279); combined with a simultaneous large explosion
+        // (0.664) and thrust (0.32) that summed to 1.263, causing clipping.
+        const gainNode = this._makeGainEnv(ctx, t, 0.60, 0.012, dur);
         const filter = this._makeFilter(ctx, t, 'lowpass', 2000, 100, dur);
         const osc = this._makeOsc(ctx, t, 'sawtooth', 120, 40, dur, filter);
 
@@ -1444,7 +1457,11 @@ class GameSFX {
                 // 9 oscillators connect directly to targetNode without filtering.
                 // Worst-case peak = 9 × 0.10 = 0.90; typical incoherent sum ≈ 0.35.
                 gain.gain.linearRampToValueAtTime(0.10, t + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
+                // Ramp to 0.0001 (near-silence) so the oscillator is inaudible before
+                // its scheduled stop at t+1.3.  The previous value 0.01 (-40 dBFS)
+                // left 9 × 0.01 = 0.09 combined amplitude at the stop moment, causing
+                // an audible scratch/click when the waveforms were cut mid-cycle.
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
                 osc.connect(gain);
                 gain.connect(targetNode);
                 osc.start(t);

@@ -30,14 +30,13 @@ class GameSFX {
         if (typeof getAudioContext !== 'undefined') {
             this.ctx = getAudioContext();
 
-            // Master compressor to prevent clipping when multiple sounds (explosions, shots, engines)
-            // overlap, especially likely in two-player mode.
-            this.master = this.ctx.createDynamicsCompressor();
-            this.master.threshold.setValueAtTime(-18, this.ctx.currentTime);
-            this.master.knee.setValueAtTime(24, this.ctx.currentTime);
-            this.master.ratio.setValueAtTime(10, this.ctx.currentTime);
-            this.master.attack.setValueAtTime(0.003, this.ctx.currentTime);
-            this.master.release.setValueAtTime(0.25, this.ctx.currentTime);
+            // Simple master gain — no dynamics compressor.
+            // A DynamicsCompressor causes audible pumping/ducking on every transient
+            // (gun shot, explosion) and can introduce crackle.  1.0 passes all sounds
+            // at their individually tuned volumes; individual gains are kept well below
+            // 1.0 so simultaneous sounds stack without clipping.
+            this.master = this.ctx.createGain();
+            this.master.gain.value = 1.0;
             this.master.connect(this.ctx.destination);
 
             this.distCurve = this.createDistortionCurve(400);
@@ -262,7 +261,10 @@ class GameSFX {
         const dub = beatWindow(0.28, 0.08);
         const pulse = Math.min(1, lub + dub * 0.68);
 
-        const heartVol = this._heartIntensitySmoothed * 0.34;
+        // heartbeat is a direct sine wave (45 Hz through a lowpass) — amplitude is
+        // not attenuated by its filter, so heartVol maps 1:1 to output level.
+        // 0.25 leaves headroom for simultaneous action sounds.
+        const heartVol = this._heartIntensitySmoothed * 0.25;
         const heartFreq = 38 + this._heartIntensitySmoothed * 10 + pulse * 12;
         this._paramSetTarget(this.ambientNodes.heartbeat.osc.frequency, heartFreq, now, 0.06);
         this._paramSetTarget(this.ambientNodes.heartbeat.gain.gain, heartVol * pulse, now, 0.03);
@@ -322,8 +324,14 @@ class GameSFX {
         const targetProximity = proximityData.dist < 800 ? (1 - proximityData.dist / 800) : 0;
         this._infectionProximityAlpha = lerp(this._infectionProximityAlpha, targetProximity, 0.05);
 
-        // Steady Hum volume
-        const humVol = this._infectionProximityAlpha * 0.18;
+        // Steady Hum volume.
+        // The sawtooth (60 Hz) passes through a bandpass filter (Q=10, centre
+        // sweeping 200–600 Hz) that attenuates the signal to approximately 10–14%
+        // of the gain value — only the one or two harmonics that fall inside the
+        // narrow passband contribute.  humVol = 1.0 gives an effective output of
+        // ~0.10–0.14 at the targetNode, making the hum clearly audible.
+        // At 0.18 the effective output was ~0.018 — essentially inaudible.
+        const humVol = this._infectionProximityAlpha * 1.0;
         this._paramSetTarget(this.ambientNodes.proximityHum.gain.gain, humVol, now, 0.1);
         this._paramSetTarget(this.ambientNodes.proximityHum.filter.frequency, 200 + this._infectionProximityAlpha * 400, now, 0.1);
 
@@ -462,7 +470,10 @@ class GameSFX {
         const { ctx, targetNode, routingNodes } = s;
         const dur = 0.04;
 
-        const gainNode = this._makeGainEnv(ctx, t, 0.8, 0.006, dur);
+        // Single oscillator → bandpass filter → gainNode.  In single-player mode this
+        // fires while the thrust engine is running at ~0.32.  gainNode 0.45 keeps the
+        // combined sum below 0.77 (was 0.8 → 0.8 + 0.32 = 1.12 → hard clip).
+        const gainNode = this._makeGainEnv(ctx, t, 0.45, 0.006, dur);
         const filter = this._makeFilter(ctx, t, 'bandpass', 1000, 200, dur, 5);
         const osc = this._makeOsc(ctx, t, 'triangle', 150, 40, dur, filter);
 
@@ -518,9 +529,24 @@ class GameSFX {
         if (!this.ctx || x === undefined || y === undefined || z === undefined) return null;
         if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return null;
         let panner = this.ctx.createPanner();
-        panner.panningModel = 'HRTF';
-        panner.distanceModel = 'exponential';
-        panner.refDistance = 150;
+        // equalpower: simple stereo panning, no expensive HRTF convolution.
+        // HRTF can cause glitches/pops on rapid position updates.
+        panner.panningModel = 'equalpower';
+        // inverse: standard 1/r distance law — smooth and predictable.
+        // exponential model produces extreme gain discontinuities at range edges.
+        panner.distanceModel = 'inverse';
+        // Geometric analysis of refDistance = 600:
+        //   Camera offset from ship: 300 units horizontal (behind) + ~120 units vertical.
+        //   Camera–ship distance = sqrt(300² + 120²) ≈ 323 units.
+        //   Any source within refDistance plays at full designed volume.
+        //   323 < 600  →  own-ship shots/effects always play at full volume. ✓
+        //   Distant enemies (800 units): listener distance ≈ sqrt(1100² + 120²) ≈ 1106
+        //                                gain = 600/1106 ≈ 0.54 → natural falloff. ✓
+        // Panning correctness (equalpower, up = (0,1,0)):
+        //   listener right = normalize(forward × (0,1,0))
+        //   This is identical to the right vector used by the visual camera()
+        //   call, so audio L/R matches visual L/R at every ship yaw angle. ✓
+        panner.refDistance = 600;
         panner.maxDistance = 10000;
         panner.rolloffFactor = 1.0;
 
@@ -553,8 +579,12 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const dur = 0.18;
 
-        // Main volume envelope
-        const gainNode = this._makeGainEnv(ctx, t, 0.32, 0.005, dur);
+        // Main volume envelope.
+        // Three triangle oscillators share this gainNode via a common filter.
+        // With ±10-cent detune the beat period is ~790 ms (>> shot duration 0.18 s),
+        // so the three oscillators stay in-phase throughout and their amplitudes sum
+        // to ~3× at the filter node.  Peak = 3 × 0.10 = 0.30 — safe with headroom.
+        const gainNode = this._makeGainEnv(ctx, t, 0.10, 0.005, dur);
         // Low-pass filter to remove "annoying" high frequencies
         const filter = this._makeFilter(ctx, t, 'lowpass', 1800, 500, 0.15);
 
@@ -569,7 +599,7 @@ class GameSFX {
 
         // Sub-thrum for weight - with high-pass to avoid mud/scratchiness
         const subFilter = this._makeFilter(ctx, t, 'highpass', 40);
-        const subGain = this._makeGainEnv(ctx, t, 0.25, 0.005, 0.12);
+        const subGain = this._makeGainEnv(ctx, t, 0.14, 0.005, 0.12);
         // frequency sweep ends at 0.1 s; sub stops at 0.12 s
         const sub = this._makeOsc(ctx, t, 'sine', 80, 40, 0.1, subFilter, undefined, 0.12);
 
@@ -585,7 +615,11 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const dur = 1.8;
 
-        const gainNode = this._makeGainEnv(ctx, t, 0.8, 0.012, dur);
+        // WaveShaper saturates the combined noise+osc path to ≤0.349; gainNode is the
+        // final output scalar.  0.60 → effective peak ≈ 0.349 × 0.60 = 0.210.
+        // Previously 0.8 (→ 0.279); combined with a simultaneous large explosion
+        // (0.664) and thrust (0.32) that summed to 1.263, causing clipping.
+        const gainNode = this._makeGainEnv(ctx, t, 0.60, 0.012, dur);
         const filter = this._makeFilter(ctx, t, 'lowpass', 2000, 100, dur);
         const osc = this._makeOsc(ctx, t, 'sawtooth', 120, 40, dur, filter);
 
@@ -632,7 +666,10 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const dur = 0.6;
 
-        const gainNode = this._makeGainEnv(ctx, t, 0.5, 0.005, dur);
+        // Three square oscillators plus white noise all feed the same lowpass
+        // filter → gainNode.  Peak input to the gainNode can reach ~4× amplitude
+        // (3 correlated oscs + noise); gainNode 0.16 keeps peaks around 0.50–0.65.
+        const gainNode = this._makeGainEnv(ctx, t, 0.16, 0.005, dur);
         // Two-stage filter sweep: rise then fall
         const filter = this._makeFilter(ctx, t, 'lowpass', 400);
         filter.frequency.linearRampToValueAtTime(3500, t + 0.2);
@@ -662,8 +699,8 @@ class GameSFX {
 
         const gain = ctx.createGain();
         gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.linearRampToValueAtTime(isMega ? 0.6 : 0.3, t + 0.006);
-        gain.gain.linearRampToValueAtTime(isMega ? 0.8 : 0.4, t + dur * 0.5);
+        gain.gain.linearRampToValueAtTime(isMega ? 0.40 : 0.3, t + 0.006);
+        gain.gain.linearRampToValueAtTime(isMega ? 0.55 : 0.4, t + dur * 0.5);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
         const osc = ctx.createOscillator();
@@ -715,14 +752,20 @@ class GameSFX {
             noiseFilter.frequency.exponentialRampToValueAtTime(60, t + dur);
         }
 
-        const initVol = isLarge ? (type === '' ? 1.4 : 1.6) : (isBomber || isColossus ? 1.8 : 1.1);
+        // The distorted body (noise + oscs → WaveShaper) saturates at ~0.35; multiplied
+        // by noiseGain (0.9) the body contributes ~0.315 at targetNode.  The sub-rumble
+        // bypasses the WaveShaper and feeds targetNode directly, so subGain 0.35 gives
+        // a safe combined sum: 0.35 + 0.315 = 0.665.  The old 0.8 produced 1.115 → clip.
+        // noiseGain controls the output envelope of the entire WaveShaper path; its value
+        // barely affects peak amplitude since the WaveShaper already saturates to ≤0.35.
+        const initVol = isLarge ? 0.9 : (isBomber || isColossus ? 0.9 : 0.75);
         const noiseGain = this._makeGainEnv(ctx, t, initVol, 0.006, dur);
 
         const toClean = [distortion, noise, noiseFilter, noiseGain];
 
         // Sub-rumble for weight on large explosions
         if (isLarge || isBomber || isColossus) {
-            const subGain = this._makeGainEnv(ctx, t, 0.8, 0.006, dur * 0.6);
+            const subGain = this._makeGainEnv(ctx, t, 0.35, 0.006, dur * 0.6);
             const sub = this._makeOsc(ctx, t, 'sine', 60, 20, dur * 0.5, subGain, undefined, dur);
             subGain.connect(targetNode);
             toClean.push(sub, subGain);
@@ -779,7 +822,7 @@ class GameSFX {
                     filter.frequency.exponentialRampToValueAtTime(2000, noteT + 0.4);
                     filter.frequency.exponentialRampToValueAtTime(100, noteT + 1.2);
                     gain.gain.setValueAtTime(0, noteT);
-                    gain.gain.linearRampToValueAtTime(0.15, noteT + 0.1);
+                    gain.gain.linearRampToValueAtTime(0.28, noteT + 0.1);
                     gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.5);
                     osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                     osc.start(noteT); osc.stop(noteT + 1.5);
@@ -793,7 +836,7 @@ class GameSFX {
         (ctx, t, targetNode) => {
             const seq = [220, 277.18, 329.63, 415.30, 523.25, 415.30, 329.63, 220, 174.61, 220];
             const masterGain = ctx.createGain();
-            masterGain.gain.setValueAtTime(0.12, t);
+            masterGain.gain.setValueAtTime(0.28, t);
             masterGain.connect(targetNode);
             const nodes = [masterGain];
             seq.forEach((freq, i) => {
@@ -923,25 +966,33 @@ class GameSFX {
             const osc = ctx.createOscillator();
             const tremoloOsc = ctx.createOscillator();
             const tremoloGain = ctx.createGain();
+            const tremoloAmp = ctx.createGain();   // intermediate amplitude stage for the LFO
             const masterGain = ctx.createGain();
             const filter = ctx.createBiquadFilter();
 
             osc.type = 'sawtooth'; osc.frequency.value = 55; // A1
             tremoloOsc.type = 'sine'; tremoloOsc.frequency.value = 6; // 6Hz tremolo
-            tremoloGain.gain.value = 0.5;
+            // LFO depth 0.4 applied to tremoloAmp whose base is 1.0 → range [0.6, 1.4].
+            // Routing the LFO through an intermediate gain stage (tremoloAmp) rather
+            // than directly into masterGain.gain keeps the signal amplitude strictly
+            // positive throughout the fade envelope.  Connecting ±0.5 directly to a
+            // gain AudioParam that starts at 0.0 (masterGain) made the effective gain
+            // swing from -0.5 to +0.8, causing 6 Hz phase-inversion clicks.
+            tremoloGain.gain.value = 0.4;
+            tremoloAmp.gain.value  = 1.0;   // base = 1.0; LFO adds ±0.4 around this
             filter.type = 'lowpass'; filter.frequency.value = 300; filter.Q.value = 5;
 
             masterGain.gain.setValueAtTime(0, t);
-            masterGain.gain.linearRampToValueAtTime(0.3, t + 0.2);
-            masterGain.gain.setValueAtTime(0.3, t + 2.5);
+            masterGain.gain.linearRampToValueAtTime(0.5, t + 0.2);
+            masterGain.gain.setValueAtTime(0.5, t + 2.5);
             masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
 
             tremoloOsc.connect(tremoloGain);
-            tremoloGain.connect(masterGain.gain); // Tremolo modulates the master gain
-            osc.connect(filter); filter.connect(masterGain); masterGain.connect(targetNode);
+            tremoloGain.connect(tremoloAmp.gain); // Modulate tremoloAmp's gain: 1.0 ± 0.4 = [0.6, 1.4]
+            osc.connect(filter); filter.connect(tremoloAmp); tremoloAmp.connect(masterGain); masterGain.connect(targetNode);
             osc.start(t); osc.stop(t + 3.6);
             tremoloOsc.start(t); tremoloOsc.stop(t + 3.6);
-            this._cleanupNodes([osc, tremoloOsc, tremoloGain, masterGain, filter], 3.6);
+            this._cleanupNodes([osc, tremoloOsc, tremoloGain, tremoloAmp, masterGain, filter], 3.6);
         },
 
         // 7 — Alien morse code: irregular high-pitched digital beeps with feedback ring
@@ -1061,8 +1112,8 @@ class GameSFX {
                 osc.frequency.value = freq;
                 filter.type = 'lowpass'; filter.frequency.value = 400; filter.Q.value = 3;
                 gain.gain.setValueAtTime(0, t);
-                gain.gain.linearRampToValueAtTime(0.08, t + 0.5);
-                gain.gain.setValueAtTime(0.08, t + 2.5);
+                gain.gain.linearRampToValueAtTime(0.18, t + 0.5);
+                gain.gain.setValueAtTime(0.18, t + 2.5);
                 gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.8);
                 osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                 osc.start(t); osc.stop(t + 3.8);
@@ -1114,8 +1165,8 @@ class GameSFX {
             filter.type = 'lowpass'; filter.frequency.value = 800; filter.Q.value = 2;
 
             masterGain.gain.setValueAtTime(0, t);
-            masterGain.gain.linearRampToValueAtTime(0.2, t + 0.4);
-            masterGain.gain.setValueAtTime(0.2, t + 3.8);
+            masterGain.gain.linearRampToValueAtTime(0.38, t + 0.4);
+            masterGain.gain.setValueAtTime(0.38, t + 3.8);
             masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 4.8);
 
             osc.connect(filter); filter.connect(masterGain); masterGain.connect(targetNode);
@@ -1274,7 +1325,7 @@ class GameSFX {
         const { ctx, t, targetNode } = s;
         const nodes = [];
 
-        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 (C Major)
+        const notes = [261.63, 523.25, 659.25, 783.99, 1046.50]; // C4, C5, E5, G5, C6 – bass root added
         notes.forEach((freq, i) => {
             const noteT = t + i * 0.08;
             const osc = ctx.createOscillator();
@@ -1282,7 +1333,9 @@ class GameSFX {
             osc.type = 'square';
             osc.frequency.value = freq;
             gain.gain.setValueAtTime(0, noteT);
-            gain.gain.linearRampToValueAtTime(0.2, noteT + 0.01);
+            // Raised from 0.2: fanfare plays in isolation so headroom is generous.
+            // Fast exponential decay means successive notes barely overlap (<0.01 combined).
+            gain.gain.linearRampToValueAtTime(0.38, noteT + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 0.2);
             osc.connect(gain);
             gain.connect(targetNode);
@@ -1291,15 +1344,15 @@ class GameSFX {
             nodes.push(osc, gain);
         });
 
-        // Final lingering bright chord
-        [523.25, 1046.50].forEach(freq => {
+        // Final lingering chord – C4 root added for bass fullness; gains raised for audibility
+        [261.63, 523.25, 1046.50].forEach(freq => {
             const noteT = t + 0.4;
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.type = 'sawtooth';
             osc.frequency.value = freq;
             gain.gain.setValueAtTime(0, noteT);
-            gain.gain.linearRampToValueAtTime(0.1, noteT + 0.05);
+            gain.gain.linearRampToValueAtTime(0.25, noteT + 0.05);
             gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.3);
             osc.connect(gain);
             gain.connect(targetNode);
@@ -1394,7 +1447,7 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const nodes = [];
 
-        const freqs = [523.25, 659.25, 1046.50];
+        const freqs = [261.63, 523.25, 659.25];  // C4, C5, E5 – lower octave range for body
         freqs.forEach((freq) => {
             [-15, 0, 15].forEach(det => {
                 const osc = ctx.createOscillator();
@@ -1403,8 +1456,14 @@ class GameSFX {
                 osc.frequency.value = freq;
                 osc.detune.value = det;
                 gain.gain.setValueAtTime(0.0, t);
-                gain.gain.linearRampToValueAtTime(0.2, t + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.01, t + 1.2);
+                // 9 oscillators connect directly to targetNode without filtering.
+                // Worst-case peak = 9 × 0.10 = 0.90; typical incoherent sum ≈ 0.35.
+                gain.gain.linearRampToValueAtTime(0.10, t + 0.05);
+                // Ramp to 0.0001 (near-silence) so the oscillator is inaudible before
+                // its scheduled stop at t+1.3.  The previous value 0.01 (-40 dBFS)
+                // left 9 × 0.01 = 0.09 combined amplitude at the stop moment, causing
+                // an audible scratch/click when the waveforms were cut mid-cycle.
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
                 osc.connect(gain);
                 gain.connect(targetNode);
                 osc.start(t);
@@ -1414,7 +1473,7 @@ class GameSFX {
         });
 
         const noise = this._createNoise();
-        const filter = this._makeFilter(ctx, t, 'highpass', 4000);
+        const filter = this._makeFilter(ctx, t, 'highpass', 1200);  // was 4000 – reduced shrillness
         const noiseGain = this._makeGainEnv(ctx, t, 0.2, 0.006, 0.4);
 
         if (noise) {

@@ -338,14 +338,49 @@ vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout flo
   return baseColor * parity;
 }
 
-// Procedural roof-tile surface (mat 62-65).
-// 62 = warm earthy tiles (huts / village buildings), 63 = infected earthy.
+// Procedural roof surface (mat 62-65).
+// 62 = rough straw/thatch (huts / village buildings), 63 = infected straw.
 // 64 = blue glazed ceramic tiles (pagodas / wizard tower), 65 = infected blue.
 vec3 computeRoofTileColor(int mat, inout float specInt, inout float specShin) {
   bool infected = (mat == 63 || mat == 65);
   bool isBlue   = (mat == 64 || mat == 65);
 
-  // Map world-space coords onto a staggered tile grid.
+  if (!isBlue) {
+    // --- Rough straw / thatch surface (mat 62 healthy, 63 infected) ---
+    // Straw runs roughly along the slope (XZ diagonal) in tight fibrous strands.
+    float fiberScale = 0.28;
+    float along = (vWorldPos.x + vWorldPos.z) * fiberScale;
+    float across = (vWorldPos.x - vWorldPos.z) * fiberScale * 0.35
+                   + vWorldPos.y * 0.14;
+
+    // Fine high-frequency fiber lines.
+    float f1 = noise2D(vec2(along * 3.5,  across * 1.8 + 2.1));
+    float f2 = noise2D(vec2(along * 6.1 + 8.3, across * 2.9));
+    // Coarse clump / bundle variation across the thatch.
+    float c1 = noise2D(vec2(along * 0.9 + 17.4, across * 0.55));
+    float c2 = noise2D(vec2(along * 0.45,        across * 0.70 + 5.5));
+
+    float fiberPattern = f1 * 0.45 + f2 * 0.30 + c1 * 0.15 + c2 * 0.10;
+
+    // Dark shadow grooves between fibre bundles.
+    float groove = smoothstep(0.38, 0.52, fract(along * 1.8 + c1 * 0.6));
+    groove      *= smoothstep(0.36, 0.50, fract(along * 3.1 + c2 * 0.4));
+
+    vec3 strawLight = infected ? vec3(0.52, 0.14, 0.05) : vec3(0.72, 0.62, 0.28);
+    vec3 strawDark  = infected ? vec3(0.28, 0.06, 0.02) : vec3(0.38, 0.28, 0.10);
+    // Mix base palette by noise then darken grooves.
+    vec3 strawColor = mix(strawDark, strawLight, fiberPattern) * (0.78 + groove * 0.22);
+
+    // Occasional bright strand highlight — glinting dry straw.
+    float highlight = smoothstep(0.82, 0.96, fiberPattern);
+    if (!infected) strawColor += vec3(0.12, 0.10, 0.04) * highlight;
+
+    specInt  = 0.04;   // Very rough — almost no specular
+    specShin = 3.0;
+    return strawColor;
+  }
+
+  // --- Blue glazed ceramic tile surface (mat 64 healthy, 65 infected) ---
   float scale  = 0.16;
   float tileU  = vWorldPos.x * scale + vWorldPos.y * 0.05;
   float tileV  = vWorldPos.z * scale + vWorldPos.y * 0.05;
@@ -373,19 +408,16 @@ vec3 computeRoofTileColor(int mat, inout float specInt, inout float specShin) {
   if (infected) {
     tileBase   = vec3(0.50, 0.09, 0.04);
     groutColor = vec3(0.22, 0.04, 0.02);
-  } else if (isBlue) {
+  } else {
     tileBase   = vec3(0.20, 0.40, 0.72);  // Glazed blue ceramic
     groutColor = vec3(0.09, 0.18, 0.36);
-  } else {
-    tileBase   = vec3(0.44, 0.27, 0.14);  // Warm earthy terracotta
-    groutColor = vec3(0.20, 0.12, 0.06);
   }
 
   vec3 tileColor = mix(groutColor, tileBase + vec3(tileVar), onTile);
-  tileColor += vec3(edgeHL * onTile) * (isBlue ? 0.15 : 0.10);
+  tileColor += vec3(edgeHL * onTile) * 0.15;
 
-  specInt  = isBlue ? 0.40 : 0.10;
-  specShin = isBlue ? 28.0 :  5.0;
+  specInt  = 0.40;
+  specShin = 28.0;
   return tileColor;
 }
 

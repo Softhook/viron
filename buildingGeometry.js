@@ -65,7 +65,7 @@ function _bldgSafeR(r) {
 /**
  * Draws an Eastern Mystical Tower / Wizard Tower (building type 0).
  * A slender two-tiered tower with an octagonal body, jade-green walls,
- * blue-glazed ceramic tile eaves, gold trim rings, and a glowing jade orb at the apex.
+ * solid blue eaves, gold trim rings, and a glowing jade orb at the apex.
  * Inspired by East Asian incense towers and celestial observatory designs rather
  * than generic western wizard architecture.
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
@@ -74,10 +74,10 @@ function _bldgSafeR(r) {
 function buildType0Geometry(b, inf) {
   const bw = b.w, bh = b.h, bd = b.d;
 
-  // Color palette: jade-green walls, blue-ceramic eaves, gold trim.
+  // Color palette: jade-green walls, solid blue eaves, gold trim.
   // When infected the whole tower shows a corruption-red wash.
   const wallR = _bldgSafeR(inf ? 200 : 22),  wallG = inf ? 30 : 145, wallB = inf ? 30 : 85;
-  const eaveMatId = inf ? 65 : 64;  // blue ceramic tile shader (infected → red-tile variant)
+  const eaveR = _bldgSafeR(inf ? 170 : 50),  eaveG = inf ? 40 : 105, eaveB = inf ? 40 : 210;
   const goldR = _bldgSafeR(inf ? 178 : 195),  goldG = inf ? 20 : 168, goldB = inf ? 20 : 32;
   const orbR  = _bldgSafeR(inf ? 255 : 55),   orbG  = inf ? 80 : 210,  orbB  = inf ? 30 : 140;
 
@@ -96,16 +96,16 @@ function buildType0Geometry(b, inf) {
   fill(goldR, goldG, goldB);
   push(); translate(0, -bh * 0.54, 0); cylinder(bw * 0.47, bh * 0.025, 8, 1); pop();
 
-  // Lower eave — wide blue-ceramic swept roof
-  fill(eaveMatId, 0, 0);
+  // Lower eave — wide solid-blue swept roof
+  fill(eaveR, eaveG, eaveB);
   push(); translate(0, -bh * 0.62 - rh1 / 2, 0); rotateX(PI); cone(bw * 0.84, rh1, 8, 1); pop();
 
   // Upper tower body (narrower)
   fill(wallR, wallG, wallB);
   push(); translate(0, -bh * 0.77, 0); cylinder(bw * 0.27, bh * 0.22, 8, 1); pop();
 
-  // Upper eave — smaller blue-ceramic swept roof
-  fill(eaveMatId, 0, 0);
+  // Upper eave — smaller solid-blue swept roof
+  fill(eaveR, eaveG, eaveB);
   push(); translate(0, -bh * 0.88 - rh2 / 2, 0); rotateX(PI); cone(bw * 0.57, rh2, 8, 1); pop();
 
   // Finial spire (slender gold rod)

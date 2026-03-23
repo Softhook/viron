@@ -340,7 +340,7 @@ vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout flo
 
 // Procedural roof surface (mat 62-65).
 // 62 = rough straw/thatch (huts / village buildings), 63 = infected straw.
-// 64 = blue glazed ceramic tiles (pagodas / wizard tower), 65 = infected blue.
+// 64 = blue glazed ceramic tiles (pagodas only), 65 = infected blue ceramic.
 vec3 computeRoofTileColor(int mat, inout float specInt, inout float specShin) {
   bool infected = (mat == 63 || mat == 65);
   bool isBlue   = (mat == 64 || mat == 65);
@@ -353,18 +353,17 @@ vec3 computeRoofTileColor(int mat, inout float specInt, inout float specShin) {
     float across = (vWorldPos.x - vWorldPos.z) * fiberScale * 0.35
                    + vWorldPos.y * 0.14;
 
-    // Fine high-frequency fiber lines.
+    // Two noise passes only: f1 = fine high-freq fiber lines,
+    //                        f2 = coarser bundle/clump variation.
+    // Using 2 calls (was 4) halves the per-fragment shader cost for this branch.
     float f1 = noise2D(vec2(along * 3.5,  across * 1.8 + 2.1));
-    float f2 = noise2D(vec2(along * 6.1 + 8.3, across * 2.9));
-    // Coarse clump / bundle variation across the thatch.
-    float c1 = noise2D(vec2(along * 0.9 + 17.4, across * 0.55));
-    float c2 = noise2D(vec2(along * 0.45,        across * 0.70 + 5.5));
+    float f2 = noise2D(vec2(along * 1.1 + 8.3, across * 0.85));
 
-    float fiberPattern = f1 * 0.45 + f2 * 0.30 + c1 * 0.15 + c2 * 0.10;
+    float fiberPattern = f1 * 0.6 + f2 * 0.4;
 
-    // Dark shadow grooves between fibre bundles.
-    float groove = smoothstep(0.38, 0.52, fract(along * 1.8 + c1 * 0.6));
-    groove      *= smoothstep(0.36, 0.50, fract(along * 3.1 + c2 * 0.4));
+    // Dark shadow grooves between fibre bundles — reuse existing noise values.
+    float groove = smoothstep(0.38, 0.52, fract(along * 1.8 + f2 * 0.5));
+    groove      *= smoothstep(0.36, 0.50, fract(along * 3.1 + f1 * 0.4));
 
     vec3 strawLight = infected ? vec3(0.52, 0.14, 0.05) : vec3(0.72, 0.62, 0.28);
     vec3 strawDark  = infected ? vec3(0.28, 0.06, 0.02) : vec3(0.38, 0.28, 0.10);

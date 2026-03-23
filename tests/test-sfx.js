@@ -447,6 +447,64 @@ test('playLevelComplete does not throw', () => {
     assert(!threw, 'playLevelComplete executes without exception');
 });
 
+test('playLevelComplete arpeggio note gain is audibly loud (≥ 0.3)', () => {
+    // playLevelComplete plays in isolation (no concurrent sounds), so gains should be
+    // well above the action-sound floor.  Previously 0.2 → inaudible in game.
+    // The fanfare must be clearly noticeable to reward the player for completing a level.
+    const match = sfxSrc.match(/playLevelComplete[\s\S]{0,900}linearRampToValueAtTime\(([\d.]+),\s*noteT\s*\+\s*0\.01\)/);
+    assert(match !== null, 'playLevelComplete arpeggio peak ramp at noteT+0.01 found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak >= 0.3, `playLevelComplete arpeggio peak ${peak} ≥ 0.3 (audibly loud in isolation)`);
+    }
+});
+
+test('playLevelComplete lingering chord gain is audibly loud (≥ 0.2)', () => {
+    // The lingering sawtooth chord sustains for 1.3 s after the arpeggio.
+    // Previously 0.1 → this sustained tail was nearly inaudible.
+    const match = sfxSrc.match(/playLevelComplete[\s\S]{0,1600}linearRampToValueAtTime\(([\d.]+),\s*noteT\s*\+\s*0\.05\)/);
+    assert(match !== null, 'playLevelComplete lingering chord peak ramp at noteT+0.05 found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak >= 0.2, `playLevelComplete lingering chord peak ${peak} ≥ 0.2 (audibly loud)`);
+    }
+});
+
+test('playLevelComplete fanfare includes bass octave note (≤ 300 Hz)', () => {
+    // The arpeggio must contain at least one note at or below 300 Hz (bass octave).
+    // Previously the lowest note was C5 (523 Hz) → thin/treble-only fanfare.
+    const match = sfxSrc.match(/playLevelComplete[\s\S]{0,400}const notes\s*=\s*\[([^\]]+)\]/);
+    assert(match !== null, 'playLevelComplete notes array found');
+    if (match) {
+        const freqs = match[1].split(',').map(Number);
+        const hasLow = freqs.some(f => f <= 300);
+        assert(hasLow, `playLevelComplete notes include at least one ≤ 300 Hz (bass root present; found: [${freqs.join(', ')}])`);
+    }
+});
+
+test('playClearInfection noise filter passes mid-range (≤ 2000 Hz highpass cutoff)', () => {
+    // The clear-infection noise was highpass-filtered at 4000 Hz (air only, very shrill).
+    // Lowering to ≤ 2000 Hz adds mid-range presence and reduces harshness.
+    const match = sfxSrc.match(/playClearInfection[\s\S]{0,1800}_makeFilter\(ctx,\s*t,\s*'highpass',\s*([\d.]+)\)/);
+    assert(match !== null, 'playClearInfection highpass filter frequency found');
+    if (match) {
+        const cutoff = Number(match[1]);
+        assert(cutoff <= 2000, `playClearInfection highpass cutoff ${cutoff} Hz ≤ 2000 (less shrill than 4000)`);
+    }
+});
+
+test('playClearInfection oscillators include bass octave note (≤ 300 Hz)', () => {
+    // Previously [523, 659, 1046] Hz (C5–C6) → thin, high-pitched.
+    // Now should include C4 (261.63 Hz) for body.
+    const match = sfxSrc.match(/playClearInfection[\s\S]{0,200}const freqs\s*=\s*\[([^\]]+)\]/);
+    assert(match !== null, 'playClearInfection freqs array found');
+    if (match) {
+        const freqs = match[1].split(',').map(Number);
+        const hasLow = freqs.some(f => f <= 300);
+        assert(hasLow, `playClearInfection freqs include at least one ≤ 300 Hz (bass content present; found: [${freqs.join(', ')}])`);
+    }
+});
+
 test('playGameOver does not throw', () => {
     let threw = false;
     try { gameSFX.playGameOver(); } catch (e) { threw = true; }

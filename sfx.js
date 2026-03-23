@@ -822,7 +822,7 @@ class GameSFX {
                     filter.frequency.exponentialRampToValueAtTime(2000, noteT + 0.4);
                     filter.frequency.exponentialRampToValueAtTime(100, noteT + 1.2);
                     gain.gain.setValueAtTime(0, noteT);
-                    gain.gain.linearRampToValueAtTime(0.15, noteT + 0.1);
+                    gain.gain.linearRampToValueAtTime(0.28, noteT + 0.1);
                     gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.5);
                     osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                     osc.start(noteT); osc.stop(noteT + 1.5);
@@ -836,7 +836,7 @@ class GameSFX {
         (ctx, t, targetNode) => {
             const seq = [220, 277.18, 329.63, 415.30, 523.25, 415.30, 329.63, 220, 174.61, 220];
             const masterGain = ctx.createGain();
-            masterGain.gain.setValueAtTime(0.12, t);
+            masterGain.gain.setValueAtTime(0.28, t);
             masterGain.connect(targetNode);
             const nodes = [masterGain];
             seq.forEach((freq, i) => {
@@ -983,8 +983,8 @@ class GameSFX {
             filter.type = 'lowpass'; filter.frequency.value = 300; filter.Q.value = 5;
 
             masterGain.gain.setValueAtTime(0, t);
-            masterGain.gain.linearRampToValueAtTime(0.3, t + 0.2);
-            masterGain.gain.setValueAtTime(0.3, t + 2.5);
+            masterGain.gain.linearRampToValueAtTime(0.5, t + 0.2);
+            masterGain.gain.setValueAtTime(0.5, t + 2.5);
             masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
 
             tremoloOsc.connect(tremoloGain);
@@ -1112,8 +1112,8 @@ class GameSFX {
                 osc.frequency.value = freq;
                 filter.type = 'lowpass'; filter.frequency.value = 400; filter.Q.value = 3;
                 gain.gain.setValueAtTime(0, t);
-                gain.gain.linearRampToValueAtTime(0.08, t + 0.5);
-                gain.gain.setValueAtTime(0.08, t + 2.5);
+                gain.gain.linearRampToValueAtTime(0.18, t + 0.5);
+                gain.gain.setValueAtTime(0.18, t + 2.5);
                 gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.8);
                 osc.connect(filter); filter.connect(gain); gain.connect(targetNode);
                 osc.start(t); osc.stop(t + 3.8);
@@ -1165,8 +1165,8 @@ class GameSFX {
             filter.type = 'lowpass'; filter.frequency.value = 800; filter.Q.value = 2;
 
             masterGain.gain.setValueAtTime(0, t);
-            masterGain.gain.linearRampToValueAtTime(0.2, t + 0.4);
-            masterGain.gain.setValueAtTime(0.2, t + 3.8);
+            masterGain.gain.linearRampToValueAtTime(0.38, t + 0.4);
+            masterGain.gain.setValueAtTime(0.38, t + 3.8);
             masterGain.gain.exponentialRampToValueAtTime(0.0001, t + 4.8);
 
             osc.connect(filter); filter.connect(masterGain); masterGain.connect(targetNode);
@@ -1325,7 +1325,7 @@ class GameSFX {
         const { ctx, t, targetNode } = s;
         const nodes = [];
 
-        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6 (C Major)
+        const notes = [261.63, 523.25, 659.25, 783.99, 1046.50]; // C4, C5, E5, G5, C6 – bass root added
         notes.forEach((freq, i) => {
             const noteT = t + i * 0.08;
             const osc = ctx.createOscillator();
@@ -1333,7 +1333,9 @@ class GameSFX {
             osc.type = 'square';
             osc.frequency.value = freq;
             gain.gain.setValueAtTime(0, noteT);
-            gain.gain.linearRampToValueAtTime(0.2, noteT + 0.01);
+            // Raised from 0.2: fanfare plays in isolation so headroom is generous.
+            // Fast exponential decay means successive notes barely overlap (<0.01 combined).
+            gain.gain.linearRampToValueAtTime(0.38, noteT + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 0.2);
             osc.connect(gain);
             gain.connect(targetNode);
@@ -1342,15 +1344,15 @@ class GameSFX {
             nodes.push(osc, gain);
         });
 
-        // Final lingering bright chord
-        [523.25, 1046.50].forEach(freq => {
+        // Final lingering chord – C4 root added for bass fullness; gains raised for audibility
+        [261.63, 523.25, 1046.50].forEach(freq => {
             const noteT = t + 0.4;
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.type = 'sawtooth';
             osc.frequency.value = freq;
             gain.gain.setValueAtTime(0, noteT);
-            gain.gain.linearRampToValueAtTime(0.1, noteT + 0.05);
+            gain.gain.linearRampToValueAtTime(0.25, noteT + 0.05);
             gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 1.3);
             osc.connect(gain);
             gain.connect(targetNode);
@@ -1445,7 +1447,7 @@ class GameSFX {
         const { ctx, t, targetNode, routingNodes } = s;
         const nodes = [];
 
-        const freqs = [523.25, 659.25, 1046.50];
+        const freqs = [261.63, 523.25, 659.25];  // C4, C5, E5 – lower octave range for body
         freqs.forEach((freq) => {
             [-15, 0, 15].forEach(det => {
                 const osc = ctx.createOscillator();
@@ -1471,7 +1473,7 @@ class GameSFX {
         });
 
         const noise = this._createNoise();
-        const filter = this._makeFilter(ctx, t, 'highpass', 4000);
+        const filter = this._makeFilter(ctx, t, 'highpass', 1200);  // was 4000 – reduced shrillness
         const noiseGain = this._makeGainEnv(ctx, t, 0.2, 0.006, 0.4);
 
         if (noise) {

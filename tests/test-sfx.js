@@ -324,6 +324,47 @@ test('playClearInfection per-oscillator gain is safe for 9-osc sum', () => {
     }
 });
 
+test('playClearInfection decay endpoint is near-silence (no end-of-sound scratch)', () => {
+    // The 9 oscillators must decay to 0.0001 by t+1.2 so they are inaudible
+    // when they are stopped at t+1.3.  The previous value was 0.01 (-40 dBFS):
+    // at stop time 9 × 0.01 = 0.09 combined amplitude was abruptly cut mid-cycle,
+    // producing the audible scratch/click reported in the bug.
+    // Match the exponentialRamp inside playClearInfection that ends at t+1.2.
+    const match = sfxSrc.match(/playClearInfection[\s\S]{0,1200}exponentialRampToValueAtTime\(([\d.]+),\s*t\s*\+\s*1\.2\)/);
+    assert(match !== null, 'playClearInfection exponentialRamp to t+1.2 found');
+    if (match) {
+        const endpoint = Number(match[1]);
+        assert(endpoint <= 0.001, `playClearInfection decay endpoint ${endpoint} ≤ 0.001 (near-silence before stop at t+1.3)`);
+    }
+});
+
+test('playInfectionSpread gainNode safe when thrust is simultaneously active', () => {
+    // A single oscillator → bandpass filter → gainNode fires while the thrust
+    // engine runs at ~0.32.  gainNode peak + thrust must stay below 1.0, so
+    // gainNode peak must be ≤ 0.68.  Previously 0.8 → 0.8 + 0.32 = 1.12 clip.
+    const match = sfxSrc.match(/playInfectionSpread[\s\S]{0,800}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.006,\s*dur\)/);
+    assert(match !== null, 'playInfectionSpread _makeGainEnv(…,0.006,dur) found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak <= 0.68, `playInfectionSpread gainNode peak ${peak} ≤ 0.68 (safe with concurrent thrust ~0.32)`);
+    }
+});
+
+test('playInfectionPulse gainNode safe for WaveShaper-saturated path', () => {
+    // WaveShaper saturates the noise+osc path to ≤0.349; gainNode is the output
+    // scalar.  Combined with a simultaneous large explosion (0.664) and thrust
+    // (0.32), the total budget is 1.0, so gainNode × 0.349 ≤ 0.336, i.e. gainNode
+    // ≤ 0.963.  The more conservative hard cap ≤ 0.75 avoids any scenario where
+    // multiple infection pulses fire at once.  Previously 0.8, which combined with
+    // an explosion + thrust summed to 1.263.
+    const match = sfxSrc.match(/playInfectionPulse[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.012,\s*dur\)/);
+    assert(match !== null, 'playInfectionPulse _makeGainEnv(…,0.012,dur) found');
+    if (match) {
+        const peak = Number(match[1]);
+        assert(peak <= 0.75, `playInfectionPulse gainNode peak ${peak} ≤ 0.75 (WaveShaper-capped path; safe under simultaneous sounds)`);
+    }
+});
+
 test('playShot does not throw', () => {
     let threw = false;
     try { gameSFX.playShot(0, 0, 0); } catch (e) { threw = true; }

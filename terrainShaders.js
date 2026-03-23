@@ -401,7 +401,7 @@ vec3 computeRoofTileColor(int mat, inout float specInt, inout float specShin) {
   float tileVar = hash(vec2(col + row * 13.7, row)) * 0.14 - 0.07;
 
   // Subtle raised-overlap highlight at the top edge of each tile.
-  float edgeHL = smoothstep(0.07, 0.18, v) * smoothstep(0.55, 0.42, v);
+  float edgeHL = smoothstep(0.07, 0.18, v) * (1.0 - smoothstep(0.42, 0.55, v));
 
   vec3 tileBase, groutColor;
   if (infected) {

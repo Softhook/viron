@@ -32,8 +32,8 @@
  *   30    → computeSeaColor
  *   60    → computeWoodColor (normal)
  *   61    → computeWoodColor (infected)
- *   62    → computeRoofTileColor (warm earthy, normal)
- *   63    → computeRoofTileColor (warm earthy, infected)
+ *   62    → computeRoofTileColor (straw/thatch roof, normal)
+ *   63    → computeRoofTileColor (straw/thatch roof, infected)
  *   64    → computeRoofTileColor (blue ceramic, normal)
  *   65    → computeRoofTileColor (blue ceramic, infected)
  *   250   → launchpad blue
@@ -223,7 +223,7 @@ function buildType4Geometry(b, inf) {
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType5Geometry(b, inf) {
-  let roofMatId = inf ? 63 : 62;  // Warm earthy tile shader; infected → red-tile variant
+  let roofMatId = inf ? 63 : 62;  // Straw/thatch roof shader; infected → corrupted/thatch variant
   // Walls: wood-grain shader when healthy; direct red fill when infected (to show fully red).
   let wallR = inf ? _bldgSafeR(200) : 60, wallG = inf ? 25 : 0, wallB = inf ? 25 : 0;
 

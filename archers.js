@@ -26,14 +26,14 @@ const ARCHER_MAX_PER_TOWER     = 1;     // One archer per observatory
 const ARCHER_SPAWN_DELAY       = 150;   // Ticks before first spawn (~2.5 s at 60 Hz)
 const ARCHER_SPEED             = 0.9;   // World units per physics tick
 const ARCHER_SEARCH_RADIUS     = 1800;  // World-unit radius to scan for enemies
-const ARCHER_STANDOFF_DIST     = 380;   // Ideal attack distance from enemy (world units)
-const ARCHER_MIN_DIST          = 220;   // Retreat if closer than this to an enemy
-const ARCHER_MAX_ENGAGE_DIST   = 900;   // Ignore enemies beyond this distance
+const ARCHER_STANDOFF_DIST     = 550;   // Ideal attack distance from enemy (world units)
+const ARCHER_MIN_DIST          = 300;   // Retreat if closer than this to an enemy
+const ARCHER_MAX_ENGAGE_DIST   = 1400;  // Ignore enemies beyond this distance
 const ARCHER_CULL_DIST_SQ      = CULL_DIST * CULL_DIST;
 const ARCHER_MAX_HEALTH        = 80;    // Slightly more fragile than a villager (100)
 const ARCHER_INFECTION_DAM     = 1.5;   // Infection hurts archers a bit more
 const ARCHER_HEAL_RATE         = 0.4;
-const ARCHER_MAX_WANDER_DIST_SQ = 2000 * 2000; // 16-tile max wander radius²
+const ARCHER_MAX_WANDER_DIST_SQ = 3000 * 3000; // ~25-tile max wander radius²
 const ARCHER_DRAW_SCALE        = 2.0;   // Same size as a villager
 
 // Shooting animation phases (in ticks)
@@ -42,14 +42,21 @@ const ARCHER_AIM_DURATION      = 16;    // Ticks spent aiming before firing
 const ARCHER_COOLDOWN          = 100;   // Ticks between shots
 
 // Arrow projectile
-const ARCHER_ARROW_DURATION    = 38;    // Ticks for arrow to reach target
+const ARCHER_ARROW_DURATION    = 42;    // Ticks for arrow to reach target
 const ARCHER_HIT_PROB          = 0.35;  // Per-shot probability of hitting the target
+// Arc height (world units) at the midpoint of the arrow's parabolic flight path.
+const ARCHER_ARROW_ARC_HEIGHT  = 70;
+// Time-step used to numerically estimate the arrow's instantaneous velocity direction
+// for orientation rendering (tangent approximation dt along normalised progress [0,1]).
+const ARCHER_ARROW_TANGENT_DT  = 0.02;
 
 // Number of raise-animation frames baked
 const ARCHER_RAISE_FRAMES      = 16;
-// Local Y offset from archer origin to bow tip (used to position arrow start).
-// Derived from rendered geometry: left arm base -17 + arm pivot +3 + bow stave -11.5 = -25.5
-const ARCHER_BOW_TIP_Y_OFFSET  = 25.5;
+// Vertical offset (in geometry-local units, before scale) from archer feet-origin to
+// the bow grip height.  Bow grip sits roughly 10 units above the feet anchor in
+// geometry space → ARCHER_DRAW_SCALE * offset = world units above a.y.
+// Derived: arm shoulder at y=-12 (after translate(0,5)), bow centre ~y=-10 → offset≈10.
+const ARCHER_BOW_TIP_Y_OFFSET  = 10;
 
 class ArcherManager extends AgentManager {
   constructor() {
@@ -76,11 +83,24 @@ class ArcherManager extends AgentManager {
   /**
    * Pre-bakes archer animation frames into cached p5.Geometry objects.
    *
+   * Coordinate-system convention (critical for correct arm orientation):
+   *   • Model faces +Z (the archer's "front" is +Z in model space).
+   *   • Arms hang in the +Y direction from shoulder pivot.
+   *   • rotateX(+θ) on an arm → arm tip swings toward +Z  (FORWARD).
+   *   • rotateX(-θ) on an arm → arm tip swings toward -Z  (BACKWARD).
+   *
+   * Archery stance:
+   *   • Left arm (bow arm)   → rotateX(POSITIVE) so it extends toward target (+Z).
+   *   • Right arm (draw arm) → rotateX(NEGATIVE) to pull string back toward archer (-Z).
+   *
+   * The bow is rendered as a child of the left arm push/pop block so it is
+   * always visible in EVERY frame (idle, walk, raise, aim).
+   *
    * Frames baked:
-   *   _geoms[64]           — walk cycle (left/right leg swing)
-   *   _staticGeom          — standing idle (no bow held)
-   *   _raisingGeoms[16]    — bow-raise animation (arm sweeps up from rest to draw)
-   *   _aimingGeom          — bow fully drawn, ready to fire
+   *   _geoms[64]           — walk cycle: legs swing, bow arm steady, off-arm swings
+   *   _staticGeom          — standing idle: bow at low-ready angle
+   *   _raisingGeoms[16]    — bow arm sweeps from low-ready to full-draw angle
+   *   _aimingGeom          — bow fully raised, string arm pulled back
    * @private
    */
   _ensureGeoms() {
@@ -89,84 +109,105 @@ class ArcherManager extends AgentManager {
     ArcherManager._raisingGeoms = [];
 
     // Colour palette — ranger aesthetic
-    const skinR  = _bldgSafeR(220), skinG  = 185, skinB  = 150;
-    const tunicR = _bldgSafeR(55),  tunicG = 105, tunicB = 55;   // Forest green
-    const pantR  = _bldgSafeR(80),  pantG  = 55,  pantB  = 30;   // Brown leather
-    const bowR   = _bldgSafeR(85),  bowG   = 50,  bowB   = 25;   // Dark wood
+    const skinR   = _bldgSafeR(220), skinG   = 185, skinB   = 150;
+    const tunicR  = _bldgSafeR(55),  tunicG  = 105, tunicB  = 55;   // Forest green
+    const pantR   = _bldgSafeR(80),  pantG   = 55,  pantB   = 30;   // Brown leather
+    const bowR    = _bldgSafeR(85),  bowG    = 50,  bowB    = 25;   // Dark wood
+    const stringR = _bldgSafeR(210), stringG = 205, stringB = 185;  // Light bowstring
 
     /**
-     * Emits the archer body given leg swing and bow-arm angles.
-     * bowArmAngle: 0 = arm at side (idle), -PI*0.7 = fully raised for draw.
-     * drawPull: 0-1, how far back the string arm is pulled (0 = no pull).
+     * Builds one archer frame.
+     *
+     * @param {number} legSwing     rotateX for the left leg (right uses negation).
+     * @param {number} bowAngle     rotateX for the left (bow) arm.
+     *                              POSITIVE → arm/bow tip toward +Z (forward toward target).
+     *                              Rest ≈ PI*0.15, fully aimed ≈ PI*0.65.
+     * @param {number} drawAngle    rotateX for the right (draw) arm.
+     *                              NEGATIVE → string hand pulled toward -Z (behind archer).
+     *                              Relaxed ≈ -PI*0.05, full draw ≈ -PI*0.45.
+     * @param {number} offArmSwing  Additive walk-cycle swing applied on top of drawAngle.
      */
-    const buildArcher = (legSwing, bowArmAngle, drawPull) => {
+    const buildArcher = (legSwing, bowAngle, drawAngle, offArmSwing) => {
       return _safeBuildGeometry(() => {
         noStroke();
-        translate(0, 5, 0); // Anchor feet to Y=0
+        translate(0, 5, 0); // Anchor: feet at geometry y=0 (same pattern as villager)
 
         // Head
         fill(skinR, skinG, skinB);
         push(); translate(0, -22, 0); box(5, 5, 5); pop();
 
-        // Body / tunic
+        // Body
         fill(tunicR, tunicG, tunicB);
         push(); translate(0, -16, 0); box(6, 8, 4); pop();
 
-        // Legs
+        // Legs (same layout as villager for consistent proportions)
         fill(pantR, pantG, pantB);
-        push(); translate(-1.5, -10.5, 0); rotateX( legSwing); translate(0, 3.5, 0); box(2.5, 7, 2.5); pop();
-        push(); translate( 1.5, -10.5, 0); rotateX(-legSwing); translate(0, 3.5, 0); box(2.5, 7, 2.5); pop();
+        push(); translate(-1.5, -11, 0); rotateX( legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        push(); translate( 1.5, -11, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
 
-        // Left arm — holds the bow out in front when shooting
+        // ── LEFT ARM ── (bow arm)
+        // POSITIVE bowAngle tips the arm tip toward +Z (the archer's front / target direction).
         fill(skinR, skinG, skinB);
         push();
-        translate(-4.5, -17, 0);
-        rotateX(bowArmAngle);
-        translate(0, 3, 0);
-        box(2, 5, 2);
+          translate(-4.5, -17, 0);
+          rotateX(bowAngle);        // POSITIVE = forward (+Z)
+          translate(0, 3, 0);
+          box(2, 5, 2);             // upper arm
 
-        // Bow held in left hand (only drawn when arm is raised enough)
-        if (bowArmAngle < -0.3) {
+          // Bow — always drawn as a child of the left arm so it is visible in
+          // every animation frame regardless of bow raise angle.
           fill(bowR, bowG, bowB);
-          // Vertical bow stave along the arm axis
+          // Main stave: cylinder along the arm's local Y axis (14 units tall).
           push(); translate(0, -5, 0); cylinder(0.6, 14, 5, 1); pop();
-          // Bow tips curve away
-          push(); translate(0, -11.5, 0); sphere(1.0, 4, 3); pop();
-          push(); translate(0,  1.5, 0); sphere(1.0, 4, 3); pop();
-        }
-        pop(); // left arm
+          // Limb tips (slightly flared spheres at stave ends)
+          push(); translate(0, -12.5, 0); sphere(0.9, 4, 3); pop();
+          push(); translate(0,   2.5, 0); sphere(0.9, 4, 3); pop();
+          // Bowstring — thin cylinder slightly in front of the stave centre (+Z in arm local).
+          // When the bow arm is raised forward this creates a visible string silhouette.
+          fill(stringR, stringG, stringB);
+          push(); translate(0, -5, 0.8); cylinder(0.15, 14, 4, 1); pop();
+        pop(); // ── end left arm ──
 
-        // Right arm — string-draw arm, pulled back when shooting
-        const stringPull = drawPull * 0.7; // rotateX angle for pull-back
+        // ── RIGHT ARM ── (draw / string arm)
+        // NEGATIVE drawAngle pulls the string hand toward -Z (behind the archer).
+        // offArmSwing adds the natural walk-cycle counterbalance.
         fill(skinR, skinG, skinB);
         push();
-        translate(4.5, -17, 0);
-        rotateX(bowArmAngle * 0.6 - stringPull); // follows bow arm, plus pull
-        translate(0, 3, 0);
-        box(2, 5, 2);
+          translate(4.5, -17, 0);
+          rotateX(drawAngle + offArmSwing);   // NEGATIVE drawAngle = pulled back
+          translate(0, 3, 0);
+          box(2, 5, 2);
         pop();
       });
     };
 
-    // 64-frame walk cycle
+    // ── Walk cycle (64 frames) ──
+    // Bow arm stays mostly stable (constant low-ready angle) so the bow
+    // is visually steady while walking.  The off arm swings naturally.
     for (let f = 0; f < 64; f++) {
-      const phase    = (f / 64) * Math.PI * 2;
-      const legSwing = Math.sin(phase) * 0.6;
-      ArcherManager._geoms[f] = buildArcher(legSwing, 0, 0);
+      const phase       = (f / 64) * Math.PI * 2;
+      const legSwing    = Math.sin(phase) * 0.6;
+      // Off arm swings opposite to the right leg (natural walking gait)
+      const offArmSwing = -Math.sin(phase) * 0.35;
+      ArcherManager._geoms[f] = buildArcher(legSwing, Math.PI * 0.18, -Math.PI * 0.05, offArmSwing);
     }
 
-    // Standing idle
-    ArcherManager._staticGeom = buildArcher(0, 0, 0);
+    // ── Standing idle ──
+    ArcherManager._staticGeom = buildArcher(0, Math.PI * 0.18, -Math.PI * 0.05, 0);
 
-    // 16-frame raise animation: bow arm sweeps from 0 to -PI*0.7
+    // ── Raise animation (16 frames) ──
+    // Bow arm sweeps from low-ready (PI*0.18) to full-draw (PI*0.65).
+    // Draw arm begins pulling back partway through.
     for (let f = 0; f < ARCHER_RAISE_FRAMES; f++) {
-      const t = f / (ARCHER_RAISE_FRAMES - 1);
-      const bowAngle = -Math.PI * 0.7 * t;
-      ArcherManager._raisingGeoms[f] = buildArcher(0, bowAngle, 0);
+      const t        = f / (ARCHER_RAISE_FRAMES - 1);
+      const bowAngle = Math.PI * (0.18 + 0.47 * t);          // 0.18 → 0.65
+      const drawAngle = -Math.PI * 0.05 - Math.PI * 0.40 * t; // -0.05 → -0.45
+      ArcherManager._raisingGeoms[f] = buildArcher(0, bowAngle, drawAngle, 0);
     }
 
-    // Aiming — bow fully raised, string arm pulled back
-    ArcherManager._aimingGeom = buildArcher(0, -Math.PI * 0.7, 1);
+    // ── Aiming (fully drawn) ──
+    // Bow arm fully forward-up, draw arm pulled well back.
+    ArcherManager._aimingGeom = buildArcher(0, Math.PI * 0.65, -Math.PI * 0.45, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -430,31 +471,30 @@ class ArcherManager extends AgentManager {
   // ---------------------------------------------------------------------------
 
   /**
-   * Launches an arrow from the archer's bow tip toward the locked target position.
+   * Launches an arrow from near the archer's bow toward the locked target.
    * @private
    */
   _fireArrow(a) {
     if (a.targetX === null) return;
 
-    // Approximate bow-tip world position from the rendered geometry:
-    // left arm base: translate(-4.5, -17, 0) + arm segment + bow stave offset
-    // Net local Y = -17 + 3 - 11.5 = -25.5 → world offset = ARCHER_DRAW_SCALE * ARCHER_BOW_TIP_Y_OFFSET
-    const bowTipY  = a.y - ARCHER_DRAW_SCALE * ARCHER_BOW_TIP_Y_OFFSET;
-    const fa       = a.facingAngle;
-    // Bow is on the left side of the archer (negative X in local space)
-    const bowOffX  = Math.sin(fa - Math.PI * 0.5) * ARCHER_DRAW_SCALE * 4.5;
-    const bowOffZ  = Math.cos(fa - Math.PI * 0.5) * ARCHER_DRAW_SCALE * 4.5;
+    // Approximate bow-grip world Y.
+    // In geometry space (after translate(0,5)): shoulder at y=-12, bow centre
+    // at ~y=-10 accounting for arm raise.  After scale(ARCHER_DRAW_SCALE=2):
+    //   bowGripY = a.y  –  ARCHER_DRAW_SCALE * ARCHER_BOW_TIP_Y_OFFSET
+    const bowTipY = a.y - ARCHER_DRAW_SCALE * ARCHER_BOW_TIP_Y_OFFSET;
 
-    const startX = a.x + bowOffX;
-    const startZ = a.z + bowOffZ;
+    // Bow is on the LEFT side of the archer (–X in model space).
+    // Perpendicular offset in world space relative to facing direction:
+    const fa      = a.facingAngle;
+    const bowOffX = Math.sin(fa - Math.PI * 0.5) * ARCHER_DRAW_SCALE * 4.5;
+    const bowOffZ = Math.cos(fa - Math.PI * 0.5) * ARCHER_DRAW_SCALE * 4.5;
 
     a.arrows.push({
-      startX,
+      startX: a.x + bowOffX,
       startY: bowTipY,
-      startZ,
+      startZ: a.z + bowOffZ,
       targetX: a.targetX,
       targetZ: a.targetZ,
-      // Record enemy ID for hit detection — arrow resolves at arrival
       targetEnemyId: a.targetEnemyId,
       progress: 0
     });
@@ -485,8 +525,8 @@ class ArcherManager extends AgentManager {
   _resolveArrowHit(ar) {
     if (typeof enemyManager === 'undefined') return;
 
-    // Low hit probability per spec
-    if (random() > ARCHER_HIT_PROB) return;
+    // Low hit probability per spec — only proceed if the roll succeeds.
+    if (random() >= ARCHER_HIT_PROB) return;
 
     // Find the target enemy by id (if it's still alive)
     for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
@@ -614,8 +654,19 @@ class ArcherManager extends AgentManager {
 
   /**
    * Draws in-flight arrows for one archer.
-   * Each arrow is rendered as a thin cylinder oriented along its flight
-   * direction, following a parabolic arc from bow tip to target.
+   *
+   * Arrow orientation:
+   *   p5 cylinders extend along their local Y axis.  We want +Y to point along
+   *   the arrow's instantaneous velocity direction so the arrowhead (placed at
+   *   the +Y end) always leads and the fletching (at –Y) trails.
+   *
+   *   After rotateY(yaw) then rotateX(theta), the cylinder's +Y axis in world
+   *   space becomes:
+   *     (sin(yaw)·sin(theta), cos(theta), cos(yaw)·sin(theta))
+   *   Setting this equal to the normalised direction (dx,dy,dz)/L gives:
+   *     yaw   = atan2(dx, dz)
+   *     theta = acos(dy / L)      ← not ±asin !
+   *
    * @private
    */
   _drawArrows(a) {
@@ -624,48 +675,46 @@ class ArcherManager extends AgentManager {
 
       const targetWy = terrain.getAltitude(ar.targetX, ar.targetZ);
 
-      // Interpolate position along the arc
+      // Current position along parabolic arc
       const bx = ar.startX + (ar.targetX - ar.startX) * t;
       const bz = ar.startZ + (ar.targetZ - ar.startZ) * t;
+      const arcH = ARCHER_ARROW_ARC_HEIGHT * Math.sin(t * Math.PI);
+      const by   = ar.startY + (targetWy - ar.startY) * t - arcH;
 
-      // Parabolic vertical arc
-      const arcHeight = 55 * Math.sin(t * Math.PI);
-      const by        = ar.startY + (targetWy - ar.startY) * t - arcHeight;
+      // Velocity direction (tangent to arc at current t)
+      const t2   = Math.min(t + ARCHER_ARROW_TANGENT_DT, 1.0);
+      const bx2  = ar.startX + (ar.targetX - ar.startX) * t2;
+      const bz2  = ar.startZ + (ar.targetZ - ar.startZ) * t2;
+      const arcH2 = ARCHER_ARROW_ARC_HEIGHT * Math.sin(t2 * Math.PI);
+      const by2   = ar.startY + (targetWy - ar.startY) * t2 - arcH2;
 
-      // Velocity direction (tangent to arc) for arrow orientation
-      const dt        = 0.02;
-      const t2        = Math.min(t + dt, 1.0);
-      const bx2       = ar.startX + (ar.targetX - ar.startX) * t2;
-      const bz2       = ar.startZ + (ar.targetZ - ar.startZ) * t2;
-      const arcH2     = 55 * Math.sin(t2 * Math.PI);
-      const by2       = ar.startY + (targetWy - ar.startY) * t2 - arcH2;
-
-      const dirX = bx2 - bx, dirY = by2 - by, dirZ = bz2 - bz;
+      let dirX = bx2 - bx, dirY = by2 - by, dirZ = bz2 - bz;
       const dirLen = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ) || 1;
 
-      push();
-      translate(bx, by, bz);
-
-      // Rotate arrow cylinder to point along flight direction
-      // p5 cylinders are oriented along Y; we need to align Y-axis with dir.
-      // Use rotateX then rotateY approximation.
+      // Rotations to align cylinder +Y with the flight direction
       const yaw   = Math.atan2(dirX, dirZ);
-      const pitch = -Math.asin(dirY / dirLen);
-      rotateY(yaw);
-      rotateX(pitch);
+      // Clamp to avoid NaN from floating-point imprecision at acos edges
+      const theta = Math.acos(Math.max(-1, Math.min(1, dirY / dirLen)));
 
-      // Arrow shaft (light wood)
-      this._setColor(150, 120, 55);
-      cylinder(0.7, 14, 4, 1);
+      push();
+        translate(bx, by, bz);
+        rotateY(yaw);
+        rotateX(theta);
 
-      // Arrowhead (grey steel tip — translated along +Y which is now the flight axis)
-      this._setColor(160, 160, 170);
-      push(); translate(0, -8, 0); cone(1.5, 4, 4, 1); pop();
+        // Shaft
+        this._setColor(150, 120, 55);
+        cylinder(0.7, 16, 4, 1);  // –8 to +8 along Y
 
-      // Fletching (white feathers at tail)
-      this._setColor(230, 230, 220);
-      push(); translate(0, 7, 0); box(0.8, 3, 3.5); pop();
+        // Arrowhead — at the +Y end (the leading edge, direction of travel).
+        // cone() apex is at +Y/2, base at –Y/2 by default.
+        // Place base at +8 (shaft end), apex at +8+4 = +12.
+        this._setColor(160, 160, 170);
+        push(); translate(0, 10, 0); cone(1.5, 4, 4, 1); pop();
 
+        // Fletching — at the –Y end (trailing edge).
+        this._setColor(230, 225, 200);
+        push(); translate(0, -10, 0); box(0.6, 3, 4); pop();   // vertical vane
+        push(); translate(0, -10, 0); box(4, 3, 0.6); pop();   // horizontal vane
       pop();
 
       // Occasional trail particle

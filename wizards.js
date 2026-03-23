@@ -7,7 +7,7 @@
 // radius, cast spells that clear a 2×2 block of virus tiles in one go, and
 // are slightly taller in appearance.
 //
-// Eastern-magic aesthetic: each wizard wears deep-crimson robes with a gold
+// Eastern-magic aesthetic: each wizard wears deep-blue robes with a gold
 // sash, a wide bamboo conical hat, a flowing white beard, and carries a
 // bamboo staff topped with a jade ring ornament and glowing jade orb.
 //
@@ -128,15 +128,15 @@ class WizardManager extends AgentManager {
         push(); translate(0, -26.8, 0); cylinder(8.1, 0.6, 8, 1); pop();
 
         // Robe
-        fill(_bldgSafeR(175), 40, 50);
+        fill(_bldgSafeR(70), 100, 185);
         push(); translate(0, -16, 0); box(7, 8, 4); pop();
         fill(_bldgSafeR(220), 185, 50);
         push(); translate(0, -12.5, 0); box(8, 1.8, 5); pop();
-        fill(_bldgSafeR(175), 40, 50);
+        fill(_bldgSafeR(70), 100, 185);
         push(); translate(0, -9, 0); box(8, 5, 5); pop();
 
         // Legs
-        fill(_bldgSafeR(130), 30, 35);
+        fill(_bldgSafeR(48), 65, 140);
         let legSwing = 0;
         if (isSitting) {
           push(); translate(-1.5, -6.5, 0); rotateX(Math.PI * 0.4); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
@@ -148,7 +148,7 @@ class WizardManager extends AgentManager {
         }
 
         // Left Arm
-        fill(_bldgSafeR(175), 40, 50);
+        fill(_bldgSafeR(70), 100, 185);
         const leftArmSwing = isSitting ? 0.3 : (isCasting ? Math.sin(castPhase * 3) * 0.3 : Math.sin(phase + Math.PI) * 0.5);
         push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2.5, 5, 2.5); pop();
 
@@ -159,7 +159,7 @@ class WizardManager extends AgentManager {
             ? -Math.PI * 0.6 + Math.sin(castPhase) * 0.15
             : (legSwing !== 0 ? Math.sin(phase) * 0.5 : -0.15)); // Stand idle: -0.15
         
-        fill(_bldgSafeR(175), 40, 50);
+        fill(_bldgSafeR(70), 100, 185);
         push(); translate(4.5, -17, 0); rotateX(staffArm); translate(0, 3, 0); box(2.5, 5, 2.5);
         
         // Staff & Orb
@@ -386,7 +386,7 @@ class WizardManager extends AgentManager {
   /**
    * Draws all in-range wizards and their in-flight spell blobs.
    *
-   * Each wizard wears deep-crimson robes with a gold sash, a wide bamboo
+   * Each wizard wears deep-blue robes with a gold sash, a wide bamboo
    * conical hat, a flowing white beard, and carries a bamboo staff topped with
    * a jade ring and glowing jade orb.  Spell orbs travel as glowing amber
    * spheres along a parabolic arc.

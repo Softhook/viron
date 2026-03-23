@@ -32,12 +32,16 @@
  *   30    → computeSeaColor
  *   60    → computeWoodColor (normal)
  *   61    → computeWoodColor (infected)
+ *   62    → computeRoofTileColor (warm earthy, normal)
+ *   63    → computeRoofTileColor (warm earthy, infected)
+ *   64    → computeRoofTileColor (blue ceramic, normal)
+ *   65    → computeRoofTileColor (blue ceramic, infected)
  *   250   → launchpad blue
  * Building fill() calls must never use these values as a literal red colour
  * channel. The only exception is when intentionally selecting a terrain-shader
  * material ID (e.g. fill(60,0,0) to select computeWoodColor in the GLSL).
  */
-const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 60, 61, 250]);
+const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 60, 61, 62, 63, 64, 65, 250]);
 
 /**
  * Returns r incremented past any reserved terrain-shader palette index so
@@ -61,7 +65,7 @@ function _bldgSafeR(r) {
 /**
  * Draws an Eastern Mystical Tower / Wizard Tower (building type 0).
  * A slender two-tiered tower with an octagonal body, jade-green walls,
- * cinnabar-red swept eaves, gold trim rings, and a glowing jade orb at the apex.
+ * blue-glazed ceramic tile eaves, gold trim rings, and a glowing jade orb at the apex.
  * Inspired by East Asian incense towers and celestial observatory designs rather
  * than generic western wizard architecture.
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
@@ -70,10 +74,10 @@ function _bldgSafeR(r) {
 function buildType0Geometry(b, inf) {
   const bw = b.w, bh = b.h, bd = b.d;
 
-  // Color palette: jade-green walls, cinnabar-red eaves, gold trim.
+  // Color palette: jade-green walls, blue-ceramic eaves, gold trim.
   // When infected the whole tower shows a corruption-red wash.
   const wallR = _bldgSafeR(inf ? 200 : 22),  wallG = inf ? 30 : 145, wallB = inf ? 30 : 85;
-  const eaveR = _bldgSafeR(inf ? 220 : 178),  eaveG = inf ? 20 : 45,  eaveB = inf ? 20 : 30;
+  const eaveMatId = inf ? 65 : 64;  // blue ceramic tile shader (infected → red-tile variant)
   const goldR = _bldgSafeR(inf ? 178 : 195),  goldG = inf ? 20 : 168, goldB = inf ? 20 : 32;
   const orbR  = _bldgSafeR(inf ? 255 : 55),   orbG  = inf ? 80 : 210,  orbB  = inf ? 30 : 140;
 
@@ -92,16 +96,16 @@ function buildType0Geometry(b, inf) {
   fill(goldR, goldG, goldB);
   push(); translate(0, -bh * 0.54, 0); cylinder(bw * 0.47, bh * 0.025, 8, 1); pop();
 
-  // Lower eave — wide cinnabar-red swept roof
-  fill(eaveR, eaveG, eaveB);
+  // Lower eave — wide blue-ceramic swept roof
+  fill(eaveMatId, 0, 0);
   push(); translate(0, -bh * 0.62 - rh1 / 2, 0); rotateX(PI); cone(bw * 0.84, rh1, 8, 1); pop();
 
   // Upper tower body (narrower)
   fill(wallR, wallG, wallB);
   push(); translate(0, -bh * 0.77, 0); cylinder(bw * 0.27, bh * 0.22, 8, 1); pop();
 
-  // Upper eave — smaller swept roof
-  fill(eaveR, eaveG, eaveB);
+  // Upper eave — smaller blue-ceramic swept roof
+  fill(eaveMatId, 0, 0);
   push(); translate(0, -bh * 0.88 - rh2 / 2, 0); rotateX(PI); cone(bw * 0.57, rh2, 8, 1); pop();
 
   // Finial spire (slender gold rod)
@@ -131,7 +135,7 @@ function buildType1Geometry(b, inf) {
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType2Geometry(b, inf) {
-  let roofR = _bldgSafeR(inf ? 220 : 160), roofG = inf ? 20 : 40,  roofB = inf ? 20 : 35;  // Red
+  let roofMatId = inf ? 65 : 64;  // Blue ceramic tile shader; infected → red-tile variant
   let wallR = _bldgSafeR(inf ? 200 : 200), wallG = inf ? 30 : 180, wallB = inf ? 30 : 140; // Cream / infected red
   let beamR = _bldgSafeR(inf ? 180 : 80),  beamG = inf ? 20 : 50,  beamB = inf ? 20 : 40;  // Wood / infected red
 
@@ -150,7 +154,7 @@ function buildType2Geometry(b, inf) {
     push(); translate(0, ty - th / 2, 0); box(tw * 0.8, th, td * 0.8); pop();
 
     // Roof: rotateX(PI) flips it so point is UP in Y-up system
-    fill(roofR, roofG, roofB);
+    fill(roofMatId, 0, 0);
     push();
     translate(0, ty - th - rh / 2, 0);
     rotateX(PI);
@@ -160,7 +164,7 @@ function buildType2Geometry(b, inf) {
   }
   fill(beamR, beamG, beamB);
   push(); translate(0, -bh * 1.0, 0); cylinder(bw * 0.05, bh * 0.2, 6, 1); pop();
-  fill(roofR, roofG, roofB);
+  fill(roofMatId, 0, 0);
   push(); translate(0, -bh * 1.15, 0); sphere(bw * 0.1, 6, 4); pop();
 }
 
@@ -219,7 +223,7 @@ function buildType4Geometry(b, inf) {
  * @param {boolean} inf  Whether the tile is currently infected.
  */
 function buildType5Geometry(b, inf) {
-  let roofR = _bldgSafeR(inf ? 210 : 75), roofG = inf ? 20 : 58, roofB = inf ? 20 : 32;  // Dark thatch / infected red
+  let roofMatId = inf ? 63 : 62;  // Warm earthy tile shader; infected → red-tile variant
   // Walls: wood-grain shader when healthy; direct red fill when infected (to show fully red).
   let wallR = inf ? _bldgSafeR(200) : 60, wallG = inf ? 25 : 0, wallB = inf ? 25 : 0;
 
@@ -231,14 +235,14 @@ function buildType5Geometry(b, inf) {
     let rh = bh * 0.7;
     fill(wallR, wallG, wallB);
     push(); translate(0, -bh * 0.4, 0); box(bw, bh * 0.8, bd); pop();
-    fill(roofR, roofG, roofB);
+    fill(roofMatId, 0, 0);
     push(); translate(0, -bh * 0.8 - rh / 2, 0); rotateX(PI); rotateY(PI / 4); cone(bw * 1.5, rh, 4, 1); pop();
   } else {
     // Variant B: Long Hut
     let rh = bh * 0.6;
     fill(wallR, wallG, wallB);
     push(); translate(0, -bh * 0.3, 0); box(bw * 1.6, bh * 0.6, bd * 1.1); pop();
-    fill(roofR, roofG, roofB);
+    fill(roofMatId, 0, 0);
     push(); translate(0, -bh * 0.6 - rh / 2, 0); rotateX(PI); rotateY(PI / 2); cone(bw * 2.1, rh, 4, 1); pop();
   }
 }

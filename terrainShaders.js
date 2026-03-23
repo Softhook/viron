@@ -338,6 +338,57 @@ vec3 computeLandscapeColor(int mat, inout vec3 n, inout float specInt, inout flo
   return baseColor * parity;
 }
 
+// Procedural roof-tile surface (mat 62-65).
+// 62 = warm earthy tiles (huts / village buildings), 63 = infected earthy.
+// 64 = blue glazed ceramic tiles (pagodas / wizard tower), 65 = infected blue.
+vec3 computeRoofTileColor(int mat, inout float specInt, inout float specShin) {
+  bool infected = (mat == 63 || mat == 65);
+  bool isBlue   = (mat == 64 || mat == 65);
+
+  // Map world-space coords onto a staggered tile grid.
+  float scale  = 0.16;
+  float tileU  = vWorldPos.x * scale + vWorldPos.y * 0.05;
+  float tileV  = vWorldPos.z * scale + vWorldPos.y * 0.05;
+
+  float row = floor(tileV);
+  // Offset every other row by half a tile for a traditional staggered layout.
+  if (mod(row, 2.0) > 0.5) tileU += 0.5;
+
+  float col = floor(tileU);
+  float u   = fract(tileU);
+  float v   = fract(tileV);
+
+  // Thin grout lines between tiles.
+  float grout  = 0.07;
+  float onTile = step(grout, u) * step(grout, v) *
+                 step(u, 1.0 - grout) * step(v, 1.0 - grout);
+
+  // Per-tile random brightness variation — each tile is slightly unique.
+  float tileVar = hash(vec2(col + row * 13.7, row)) * 0.14 - 0.07;
+
+  // Subtle raised-overlap highlight at the top edge of each tile.
+  float edgeHL = smoothstep(0.07, 0.18, v) * smoothstep(0.55, 0.42, v);
+
+  vec3 tileBase, groutColor;
+  if (infected) {
+    tileBase   = vec3(0.50, 0.09, 0.04);
+    groutColor = vec3(0.22, 0.04, 0.02);
+  } else if (isBlue) {
+    tileBase   = vec3(0.20, 0.40, 0.72);  // Glazed blue ceramic
+    groutColor = vec3(0.09, 0.18, 0.36);
+  } else {
+    tileBase   = vec3(0.44, 0.27, 0.14);  // Warm earthy terracotta
+    groutColor = vec3(0.20, 0.12, 0.06);
+  }
+
+  vec3 tileColor = mix(groutColor, tileBase + vec3(tileVar), onTile);
+  tileColor += vec3(edgeHL * onTile) * (isBlue ? 0.15 : 0.10);
+
+  specInt  = isBlue ? 0.40 : 0.10;
+  specShin = isBlue ? 28.0 :  5.0;
+  return tileColor;
+}
+
 // Procedural wood-grain surface (mat 60 = normal, mat 61 = infected).
 // Simulates horizontal timber planks stacked up the wall.
 vec3 computeWoodColor(int mat, inout float specInt, inout float specShin) {
@@ -448,6 +499,7 @@ void main() {
   }
   else if (mat >= 1 && mat <= 2)    { baseColor = computeLandscapeColor(mat, n, specularIntensity, specularShininess); }
   else if (mat >= 60 && mat <= 61)  { baseColor = computeWoodColor(mat, specularIntensity, specularShininess); }
+  else if (mat >= 62 && mat <= 65)  { baseColor = computeRoofTileColor(mat, specularIntensity, specularShininess); }
 
   // ── Shockwave pulse rings ─────────────────────────────────────────────────
   ${_GLSL_PULSE_LOOP}

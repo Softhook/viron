@@ -2,6 +2,11 @@
 // agentManager.js — Base Class for Entity Managers (Villagers & Wizards)
 // =============================================================================
 
+// Ground-enemy body offset: approximate half-width of a ground enemy at
+// ENEMY_DRAW_SCALE=4 (crab body box(36,…) → 144 world units wide → half = 72).
+// Used to aim confronting agents at the near body surface rather than the centre.
+const ENEMY_CONFRONT_OFFSET = 72;
+
 class AgentManager {
   constructor(hubType, config = {}) {
     this.agents = [];

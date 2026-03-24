@@ -438,11 +438,12 @@ class WizardManager extends AgentManager {
     const dx = enemy.x - w.x;
     const dz = enemy.z - w.z;
     const distSq = dx * dx + dz * dz;
+    const dist = Math.sqrt(distSq);
     const rangeSq = WIZARD_FIGHT_RANGE * WIZARD_FIGHT_RANGE;
 
     if (distSq > rangeSq) {
-      // Move toward the enemy
-      const dist = Math.sqrt(distSq);
+      // Steer toward the near body edge (ENEMY_CONFRONT_OFFSET from centre),
+      // keeping the wizard at casting range from the body surface.
       w.vx = lerp(w.vx || 0, (dx / dist) * WIZARD_SPEED, 0.15);
       w.vz = lerp(w.vz || 0, (dz / dist) * WIZARD_SPEED, 0.15);
       w.isConfronting = true;

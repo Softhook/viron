@@ -291,7 +291,8 @@ class GameLoop {
           let ty = terrain.getAltitude(t.x, t.z);
           // Altitude shortcut: bullet must be within tree vertical range
           if (b.y <= ty - t.trunkH - 30 * t.canopyScale - 10 || b.y >= ty + 10) continue;
-          if ((b.x - t.x) ** 2 + (b.z - t.z) ** 2 >= 3600) continue;
+          let tdx = b.x - t.x, tdz = b.z - t.z;
+          if (tdx * tdx + tdz * tdz >= 3600) continue;
           if (!infection.has(tileKey(tx, tz))) continue;
           clearInfectionRadius(tx, tz);
           player.score += 200;
@@ -315,7 +316,8 @@ class GameLoop {
           if (!t) continue;
           let ty = terrain.getAltitude(t.x, t.z);
           if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
-          if ((ts.x - t.x) ** 2 + (ts.z - t.z) ** 2 >= 10000) continue;
+          let tsdx = ts.x - t.x, tsdz = ts.z - t.z;
+          if (tsdx * tsdx + tsdz * tsdz >= 10000) continue;
           if (!infection.has(tileKey(tx, tz))) continue;
           clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
           terrain.addPulse(ts.x, ts.z, 2.0);
@@ -337,7 +339,8 @@ class GameLoop {
   static _checkKrakenTentacles(s, e, kScale, shipRadSq) {
     const maxReach = 362 * kScale;
     let dx = s.x - e.x, dy = s.y - e.y, dz = s.z - e.z;
-    if (dx * dx + dy * dy + dz * dz > (maxReach + Math.sqrt(shipRadSq)) ** 2) return false;
+    let md = maxReach + Math.sqrt(shipRadSq);
+    if (dx * dx + dy * dy + dz * dz > md * md) return false;
 
     const fc = typeof frameCount !== 'undefined' ? frameCount : 0; 
     const phase = fc * 0.02 + (e.id || 0) * 0.15;
@@ -431,7 +434,8 @@ class GameLoop {
     // 1. Enemy bullets vs player
     for (let i = particleSystem.enemyBullets.length - 1; i >= 0; i--) {
       let eb = particleSystem.enemyBullets[i];
-      if ((eb.x - s.x) ** 2 + (eb.y - s.y) ** 2 + (eb.z - s.z) ** 2 < 4900) {
+      let dx = eb.x - s.x, dy = eb.y - s.y, dz = eb.z - s.z;
+      if (dx * dx + dy * dy + dz * dz < 4900) {
         killPlayer(player);
         swapRemove(particleSystem.enemyBullets, i);
         return;
@@ -469,7 +473,9 @@ class GameLoop {
           // Broad-phase: skip if too far (center-to-center)
           const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
           const broadRad = 500 * cScale;
-          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) > (broadRad + shipRad) ** 2) continue;
+          let bx = s.x - e.x, by = s.y - e.y, bz = s.z - e.z;
+          let brSum = broadRad + shipRad;
+          if (bx * bx + by * by + bz * bz > brSum * brSum) continue;
 
           // Multi-part collision for Colossus
           // Apply enemy yaw rotation to bone offsets
@@ -489,13 +495,14 @@ class GameLoop {
           for (let b of bones) {
             let lx = (b.x || 0) * cScale;
             let lz = 0; // Colossus is mostly flat in local Z
-            let bx = e.x + lx * cosY + lz * sinY;
-            let by = e.y + (b.y || 0) * cScale;
-            let bz = e.z + lz * cosY - lx * sinY;
+            let cx = e.x + lx * cosY + lz * sinY;
+            let cy = e.y + (b.y || 0) * cScale;
+            let cz = e.z + lz * cosY - lx * sinY;
             let br = b.r * cScale;
-            if (dist3dSq(s.x, s.y, s.z, bx, by, bz) < (br + shipRad) ** 2) {
+            let pdist = br + shipRad;
+            if (dist3dSq(s.x, s.y, s.z, cx, cy, cz) < pdist * pdist) {
               if (speedSq > 49.0) { killPlayer(player); return; } // Threshold raised from 4.2 (17.6) to 7.0 (49.0)
-              this._resolveSphereCollision(s, bx, by, bz, br, shipRad);
+              this._resolveSphereCollision(s, cx, cy, cz, br, shipRad);
               break; // One part is enough
             }
           }
@@ -504,8 +511,9 @@ class GameLoop {
           const kScale  = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
           const bodyRad = 74 * kScale;    // dome body sphere
           const dSq = dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z);
+          const bdSum = bodyRad + shipRad;
 
-          if (dSq < (bodyRad + shipRad) ** 2) {
+          if (dSq < bdSum * bdSum) {
             if (speedSq > 49.0) { killPlayer(player); return; }
             this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
           } else if (this._checkKrakenTentacles(s, e, kScale, shipRad * shipRad)) {
@@ -514,7 +522,8 @@ class GameLoop {
         } else {
           // Normal enemy check + resolution
           let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2); // Radius in world units
-          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < (bodyRad + shipRad) ** 2) {
+          const normSum = bodyRad + shipRad;
+          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < normSum * normSum) {
             // Hunters and Squids are lethal on contact regardless of speed
             const isLethalType = e.type === 'hunter' || e.type === 'squid';
             if (isLethalType || speedSq > 49.0) { killPlayer(player); return; }
@@ -531,9 +540,9 @@ class GameLoop {
         // Floating powerup vs player
         let floatY = b.y - b.h - 100 - sin(_simTick * 0.02 + b.x) * 50;
         let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
-        let radiusSq = (b.w + 15) ** 2;
+        let rSum = b.w + 15;
 
-        if (dx * dx + dy * dy + dz * dz < radiusSq) {
+        if (dx * dx + dy * dy + dz * dz < rSum * rSum) {
           // Cache the tile-key on the powerup building so the arithmetic is
           // only done once even if the player hovers in range for many frames.
           // Powerup positions are fixed at spawn; the building is removed on pickup.
@@ -575,21 +584,27 @@ class GameLoop {
     let proximityData = { dist: 10000 };
 
     if (p && !p.dead && p.ship) {
-      // Nearest infected tile within 8-tile radius
-      let px = toTile(p.ship.x), pz = toTile(p.ship.z);
-      let minDistSq = 1000000;
-      for (let dz = -8; dz <= 8; dz++) {
-        for (let dx = -8; dx <= 8; dx++) {
-          let tx = px + dx, tz = pz + dz;
-          if (infection.has(tileKey(tx, tz))) {
-            let wx = tx * TILE + 60, wz = tz * TILE + 60;
-            let wy = terrain.getAltitude(wx, wz);
-            let dSq = (p.ship.x - wx) ** 2 + (p.ship.y - wy) ** 2 + (p.ship.z - wz) ** 2;
-            if (dSq < minDistSq) minDistSq = dSq;
+      if (typeof _simTick !== 'undefined' && _simTick % 10 !== 0 && GameLoop._lastAmbDist !== undefined) {
+        proximityData.dist = GameLoop._lastAmbDist;
+      } else {
+        // Nearest infected tile within 8-tile radius
+        let px = toTile(p.ship.x), pz = toTile(p.ship.z);
+        let minDistSq = 1000000;
+        for (let dz = -8; dz <= 8; dz++) {
+          for (let dx = -8; dx <= 8; dx++) {
+            let tx = px + dx, tz = pz + dz;
+            if (infection.has(tileKey(tx, tz))) {
+              let wx = tx * TILE + 60, wz = tz * TILE + 60;
+              let wy = terrain.getAltitude(wx, wz);
+              let sdx = p.ship.x - wx, sdy = p.ship.y - wy, sdz = p.ship.z - wz;
+              let dSq = sdx * sdx + sdy * sdy + sdz * sdz;
+              if (dSq < minDistSq) minDistSq = dSq;
+            }
           }
         }
+        GameLoop._lastAmbDist = Math.sqrt(minDistSq);
+        proximityData.dist = GameLoop._lastAmbDist;
       }
-      proximityData.dist = Math.sqrt(minDistSq);
 
       // Pulse overlap detection
       let nowSec = millis() / 1000.0;
@@ -601,7 +616,8 @@ class GameLoop {
         let dist2D = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
         let groundY = terrain.getAltitude(p.ship.x, p.ship.z);
         let dy = p.ship.y - groundY;
-        let distToRing3D = Math.sqrt((dist2D - radius) ** 2 + dy ** 2);
+        let drD = dist2D - radius;
+        let distToRing3D = Math.sqrt(drD * drD + dy * dy);
         if (distToRing3D < 120) {
           let intensity = 1.0 - (distToRing3D / 120);
           if (intensity > maxScan) maxScan = intensity;

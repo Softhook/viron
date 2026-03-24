@@ -329,6 +329,89 @@ class GameLoop {
   }
 
   /**
+   * Evaluates exact Kraken tentacle geometry for collision detection.
+   * Tentacles wave slowly; evaluating their actual joint positions avoids
+   * massive crude sphere radius checks that kill the player unfairly.
+   * @private
+   */
+  static _checkKrakenTentacles(s, e, kScale, shipRadSq) {
+    const maxReach = 362 * kScale;
+    let dx = s.x - e.x, dy = s.y - e.y, dz = s.z - e.z;
+    if (dx * dx + dy * dy + dz * dz > (maxReach + Math.sqrt(shipRadSq)) ** 2) return false;
+
+    const fc = typeof frameCount !== 'undefined' ? frameCount : 0; 
+    const phase = fc * 0.02 + (e.id || 0) * 0.15;
+    
+    if (this._traceKrakenArms(6, 8, 28, 74, 5, 0.82, 0, phase, 1.0, e, s, kScale, shipRadSq)) return true;
+    if (this._traceKrakenArms(2, 10, 30, 62, 4, 1.08, Math.PI / 6, phase + 1.8, 1.1, e, s, kScale, shipRadSq)) return true;
+    return false;
+  }
+
+  static _traceKrakenArms(numArms, numSegs, segLen, tx, ty, rotX1, angleOffset, tPhaseBase, waveSpeed, e, s, kScale, shipRadSq) {
+    const shipRad = Math.sqrt(shipRadSq);
+    const PI2 = Math.PI * 2;
+    const isMain = numArms === 6;
+    const phaseStep = isMain ? (PI2 / 6) : Math.PI;
+    const waveAmpZ = isMain ? 0.22 : 0.20;
+    const waveAmpX = 0.08;
+    const waveOffX = isMain ? 0.07 : 0.06;
+    const segFreqZ = 0.5 * waveSpeed;
+    const segFreqX = isMain ? 0.4 : 0.38;
+    
+    const rotX1_c = Math.cos(rotX1), rotX1_s = Math.sin(rotX1);
+    const sx = s.x, sy = s.y, sz = s.z;
+    const ex = e.x, ey = e.y, ez = e.z;
+    const segLenScale = segLen * kScale;
+    const hitPad = segLenScale * 0.5 + shipRad;
+    const invSegs = 1 / (numSegs - 1);
+    const wBase = isMain ? 21 : 15;
+    const wTip = isMain ? 3 : 2;
+
+    for (let i = 0; i < numArms; i++) {
+      const a = (i / numArms) * PI2 + angleOffset;
+      const tPhase = tPhaseBase + i * phaseStep;
+      
+      const acos = Math.cos(a), asin = Math.sin(a);
+      
+      let px = acos * tx, py = ty, pz = -asin * tx;
+      
+      let ux = acos, uy = 0, uz = -asin;
+      let vx = asin * rotX1_s, vy = rotX1_c, vz = acos * rotX1_s;
+      let wx = asin * rotX1_c, wy = -rotX1_s, wz = acos * rotX1_c;
+
+      for (let seg = 0; seg < numSegs; seg++) {
+        const sw = Math.sin(tPhase + seg * segFreqZ) * waveAmpZ;
+        const rx2 = Math.sin(tPhase * 0.6 + seg * segFreqX) * waveAmpX - waveOffX;
+        
+        const cZ = Math.cos(sw), sZ = Math.sin(sw);
+        const cX = Math.cos(rx2), sX = Math.sin(rx2);
+
+        let nux = ux * cZ + vx * sZ, nuy = uy * cZ + vy * sZ, nuz = uz * cZ + vz * sZ;
+        let nvx = -ux * sZ + vx * cZ, nvy = -uy * sZ + vy * cZ, nvz = -uz * sZ + vz * cZ;
+        ux = nux; uy = nuy; uz = nuz;
+
+        let nvx2 = nvx * cX + wx * sX, nvy2 = nvy * cX + wy * sX, nvz2 = nvz * cX + wz * sX;
+        let nwx2 = -nvx * sX + wx * cX, nwy2 = -nvy * sX + wy * cX, nwz2 = -nvz * sX + wz * cX;
+        vx = nvx2; vy = nvy2; vz = nvz2;
+        wx = nwx2; wy = nwy2; wz = nwz2;
+        
+        px += wx * segLen; py += wy * segLen; pz += wz * segLen;
+        
+        const distX = sx - (ex + px * kScale);
+        const distY = sy - (ey + py * kScale);
+        const distZ = sz - (ez + pz * kScale);
+        
+        const t = seg * invSegs;
+        const width = wBase * (1 - t) + wTip * t;
+        const r = width * kScale + hitPad;
+        
+        if (distX * distX + distY * distY + distZ * distZ < r * r) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Runs all collision tests for one player each frame.
    *
    * Tests performed (priority order):
@@ -417,23 +500,15 @@ class GameLoop {
             }
           }
         } else if (e.type === 'kraken') {
-          // Kraken has two collision zones:
-          //   1. Dome body sphere — bounces or kills at speed.
-          //   2. Tentacle reach annulus — instantly lethal (tentacle contact).
-          //
-          // Radius math (world units):
-          //   kScale = krakenScale * ENEMY_DRAW_SCALE
-          //   body: sphere(74) local × kScale → ~296 world units
-          //   tentacles: max reach = start(62) + 10 segs × 30 = 362 local × kScale → ~1448 world units
+          // Kraken has precise body and tentacle collision zones.
           const kScale  = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
           const bodyRad = 74 * kScale;    // dome body sphere
-          const tentRad = 362 * kScale;   // max tentacle reach (long reach tentacles)
           const dSq = dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z);
+
           if (dSq < (bodyRad + shipRad) ** 2) {
             if (speedSq > 49.0) { killPlayer(player); return; }
             this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
-          } else if (dSq < (tentRad + shipRad) ** 2) {
-            // Inside tentacle reach — contact is lethal
+          } else if (this._checkKrakenTentacles(s, e, kScale, shipRad * shipRad)) {
             killPlayer(player); return;
           }
         } else {

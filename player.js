@@ -91,7 +91,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
  */
 function _calcForwardDir(pitch, yaw) {
   const cp = cos(pitch), sp = sin(pitch);
-  const cy = cos(yaw),   sy = sin(yaw);
+  const cy = cos(yaw), sy = sin(yaw);
   return { fx: -cp * sy, fy: sp, fz: -cp * cy, cp, sp, cy, sy };
 }
 
@@ -881,6 +881,33 @@ function _updateAircraft(p, d, isThrusting, isBraking) {
     s.vx *= br; s.vy *= br; s.vz *= br;
   }
 
+  // --- Strafing Run Mode (Dive Dampening) ---
+  // If the ship is pitched downward and moving toward the ground,
+  // apply a robust vertical air-cushion. The jet physically "bites" the air
+  // forcing a cinematic glide instead of a fatal dive.
+  let rawGroundY = terrain.getAltitude(s.x, s.z);
+  let surfaceY = Math.min(SEA, rawGroundY); // Account for water! (smaller Y is higher up)
+  let altitude = surfaceY - s.y;
+
+  if (s.pitch > 0.05 && s.vy > 0 && altitude > 0 && altitude < 1000) {
+    // Inverse square proximity: Air gets "thicker" rapidly as you get close to the ground
+    let proximityFactor = 1.0 - Math.pow(altitude / 1000, 2);
+
+    // VTOLs get less cushion (0.4), Jets get maximum cushion (1.0)
+    let normalizedAngle = (d.thrustAngle || 0) / (Math.PI / 2);
+    let thrustTypeFactor = 0.4 + (0.6 * normalizedAngle);
+
+    // Biting force dictates how aggressively the ship's vertical descent is arrested
+    let biteStrength = 0.85 * proximityFactor * thrustTypeFactor;
+
+    // Safe sink rate gets progressively slower the closer the ship is to the ground
+    let safeSinkRate = 0.4 + (altitude / 100);
+
+    if (s.vy > safeSinkRate) {
+      s.vy = s.vy * (1.0 - biteStrength) + safeSinkRate * biteStrength;
+    }
+  }
+
   s.vx *= currentDrag; s.vy *= currentDrag; s.vz *= currentDrag;
   s.x += s.vx; s.y += s.vy; s.z += s.vz;
 
@@ -891,7 +918,7 @@ function _updateAircraft(p, d, isThrusting, isBraking) {
   }
 
   // Terrain collision — soft bounce or kill on hard impact
-  let g = terrain.getAltitude(s.x, s.z);
+  let g = rawGroundY;
 
   // --- Ground Effect Cushion ---
   // Apply a slight upward force when descending near the ground.

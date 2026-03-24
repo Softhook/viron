@@ -29,6 +29,9 @@ const VILLAGER_TARGET_HYSTERESIS_SQ = 4; // ≈ 2 tiles
 // --- Idle planting constants ---
 const VILLAGER_PLANT_DURATION = 240;   // Ticks to animate planting at one spot (~4 s at 60 Hz)
 const VILLAGER_PLANT_RADIUS = 3;       // Base tile radius from pagoda when picking a crop plot (actual range ~0.5–2× this value)
+// --- Ground-enemy confrontation constants ---
+const VILLAGER_FIGHT_RADIUS = 8;       // Tile radius to detect nearby ground enemies
+const VILLAGER_PUNCH_GAP = 20;         // World units gap from enemy body edge where villager stops and punches
 
 class VillagerManager extends AgentManager {
   constructor() {
@@ -261,8 +264,11 @@ class VillagerManager extends AgentManager {
       this._steerTowardInfection(v, v.villageX, v.villageZ);
       if (inPlanting && v.targetTx === null) { v.vx = savedVx; v.vz = savedVz; }
 
-      // --- Idle planting when no infection is nearby ---
-      if (v.targetTx === null) {
+      // --- Confront nearby ground enemies (overrides infection steering when close) ---
+      this._confrontNearbyEnemy(v);
+
+      // --- Idle planting when no infection is nearby and not confronting ---
+      if (v.targetTx === null && !v.isConfronting) {
         this._updateIdlePlanting(v);
       }
 
@@ -387,6 +393,7 @@ class VillagerManager extends AgentManager {
         plantTimer: 0,             // Ticks spent at current plant spot
         plantTargetX: null,        // World X of chosen crop plot
         plantTargetZ: null,        // World Z of chosen crop plot
+        isConfronting: false,      // True when moving toward or punching a ground enemy
         facingAngle: angle,        // Start facing outward from spawn
         _retargetTimer: Math.floor(random(60)) // Stagger CPU spikes
       });
@@ -462,6 +469,51 @@ class VillagerManager extends AgentManager {
     }
   }
 
+  /**
+   * Checks for nearby ground enemies and steers the villager toward them.
+   * Villagers attempt to punch but never actually harm the enemy.
+   * Overrides infection-steering velocity when an enemy is within fight radius.
+   * Stops at the near edge of the enemy body (ENEMY_CONFRONT_OFFSET from centre
+   * plus a small punch gap), so the villager confronts at the body surface
+   * rather than trying to walk to the enemy's origin point.
+   * @private
+   */
+  _confrontNearbyEnemy(v) {
+    const enemy = this._findNearestGroundEnemy(v, VILLAGER_FIGHT_RADIUS);
+    if (!enemy) {
+      v.isConfronting = false;
+      return;
+    }
+
+    const dx = enemy.x - v.x;
+    const dz = enemy.z - v.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    // Stop once the villager has closed to within VILLAGER_PUNCH_GAP of the
+    // enemy's near body surface (ENEMY_CONFRONT_OFFSET from the centre).
+    const stopDist = ENEMY_CONFRONT_OFFSET + VILLAGER_PUNCH_GAP;
+
+    if (dist > stopDist) {
+      // Move toward enemy — direction toward body edge and centre are collinear,
+      // so (dx/dist, dz/dist) naturally leads to the body surface.
+      v.vx = lerp(v.vx || 0, (dx / dist) * VILLAGER_SPEED, 0.15);
+      v.vz = lerp(v.vz || 0, (dz / dist) * VILLAGER_SPEED, 0.15);
+      v.isConfronting = true;
+      v.isPlanting = false;
+      v.plantTargetX = null;
+      v.plantTargetZ = null;
+    } else {
+      // At body edge — stop and punch (never harms the enemy)
+      v.vx = 0;
+      v.vz = 0;
+      v.isConfronting = true;
+      v.isPlanting = false;
+      v.plantTargetX = null;
+      v.plantTargetZ = null;
+      v.targetAngle = Math.atan2(dx, dz);
+    }
+  }
+
   killVillagerAtIndex(idx) {
     const v = this.agents[idx];
     if (v) this.killAgent(v, idx);
@@ -518,7 +570,9 @@ class VillagerManager extends AgentManager {
       if (isWalking) {
         const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
         geom = VillagerManager._geoms[fIdx];
-      } else if (v.isCuring) {
+      } else if (v.isCuring || v.isConfronting) {
+        // Curing animation doubles as a punch attempt when confronting enemies
+        // (visual only — villagers never actually damage ground enemies)
         const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
         geom = VillagerManager._curingGeoms[fIdx];
       } else if (v.isPlanting) {

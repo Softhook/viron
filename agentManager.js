@@ -2,6 +2,11 @@
 // agentManager.js — Base Class for Entity Managers (Villagers & Wizards)
 // =============================================================================
 
+// Ground-enemy body offset: approximate half-width of a ground enemy at
+// ENEMY_DRAW_SCALE=4 (crab body box(36,…) → 144 world units wide → half = 72).
+// Used to aim confronting agents at the near body surface rather than the centre.
+const ENEMY_CONFRONT_OFFSET = 72;
+
 class AgentManager {
   constructor(hubType, config = {}) {
     this.agents = [];
@@ -86,9 +91,27 @@ class AgentManager {
     return true;
   }
 
+  _findNearestGroundEnemy(u, searchRadiusTiles) {
+    if (typeof enemyManager === 'undefined') return null;
+    const maxDistSq = (searchRadiusTiles * TILE) * (searchRadiusTiles * TILE);
+    let bestDistSq = maxDistSq;
+    let best = null;
+    for (const e of enemyManager.enemies) {
+      if (e.type !== 'crab' && e.type !== 'yellowCrab' &&
+          e.type !== 'scorpion' && e.type !== 'wolf') continue;
+      const dx = e.x - u.x, dz = e.z - u.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        best = e;
+      }
+    }
+    return best;
+  }
+
   _smoothRotation(u) {
     let targetAngle = u.facingAngle;
-    if ((u.isCasting || u.isCuring) && u.targetAngle !== undefined) {
+    if ((u.isCasting || u.isCuring || u.isConfronting) && u.targetAngle !== undefined) {
       targetAngle = u.targetAngle;
     } else if (u.vx * u.vx + u.vz * u.vz > 0.0025) {
       targetAngle = Math.atan2(u.vx, u.vz);

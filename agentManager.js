@@ -86,9 +86,27 @@ class AgentManager {
     return true;
   }
 
+  _findNearestGroundEnemy(u, searchRadiusTiles) {
+    if (typeof enemyManager === 'undefined') return null;
+    const maxDistSq = (searchRadiusTiles * TILE) * (searchRadiusTiles * TILE);
+    let bestDistSq = maxDistSq;
+    let best = null;
+    for (const e of enemyManager.enemies) {
+      if (e.type !== 'crab' && e.type !== 'yellowCrab' &&
+          e.type !== 'scorpion' && e.type !== 'wolf') continue;
+      const dx = e.x - u.x, dz = e.z - u.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        best = e;
+      }
+    }
+    return best;
+  }
+
   _smoothRotation(u) {
     let targetAngle = u.facingAngle;
-    if ((u.isCasting || u.isCuring) && u.targetAngle !== undefined) {
+    if ((u.isCasting || u.isCuring || u.isConfronting) && u.targetAngle !== undefined) {
       targetAngle = u.targetAngle;
     } else if (u.vx * u.vx + u.vz * u.vz > 0.0025) {
       targetAngle = Math.atan2(u.vx, u.vz);

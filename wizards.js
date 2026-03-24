@@ -40,6 +40,10 @@ const WIZARD_DRAW_SCALE      = 2.5;          // Slightly taller than a villager 
 // Retarget hysteresis: only switch to a new infection target if it is this many
 // tiles² closer than the current one (prevents oscillation between equal targets).
 const WIZARD_TARGET_HYSTERESIS_SQ = 4;       // ≈ 2 tiles
+// --- Ground-enemy confrontation constants ---
+const WIZARD_FIGHT_RADIUS = 8;               // Tile radius to detect nearby ground enemies
+const WIZARD_FIGHT_RANGE = 350;              // World units: cast range for ground enemy spells
+const WIZARD_GROUND_KILL_PROB = 0.05;        // Per-cast probability of killing a ground enemy
 
 class WizardManager extends AgentManager {
   constructor() {
@@ -220,10 +224,13 @@ class WizardManager extends AgentManager {
       // Steer toward nearest infection cluster.
       this._steerTowardInfection(w, w.towerX, w.towerZ);
 
+      // Confront nearby ground enemies when idle (no infection target).
+      this._confrontNearbyGroundEnemy(w);
+
       // Interpret idle state
-      // Only sit if we are not actively being leashed back home.
+      // Only sit if we are not actively being leashed back home or confronting an enemy.
       const distFromTowerSq = (w.x - w.towerX) * (w.x - w.towerX) + (w.z - w.towerZ) * (w.z - w.towerZ);
-      if (w.targetTx === null && distFromTowerSq <= WIZARD_MAX_WANDER_DIST_SQ) {
+      if (w.targetTx === null && !w.isConfronting && distFromTowerSq <= WIZARD_MAX_WANDER_DIST_SQ) {
         w.isSitting = true;
         w.vx = 0;
         w.vz = 0;
@@ -260,42 +267,67 @@ class WizardManager extends AgentManager {
       sp.progress += 1 / WIZARD_SPELL_DURATION;
 
       if (sp.progress >= 1.0) {
-        // Arrived — clear a 2×2 block of tiles (4 tiles) centred on the target.
-        const htx = sp.targetTx, htz = sp.targetTz;
-        let cleared = 0;
-        for (let ddx = 0; ddx < WIZARD_CLEAR_SIZE; ddx++) {
-          for (let ddz = 0; ddz < WIZARD_CLEAR_SIZE; ddz++) {
-            const ck = tileKey(htx + ddx, htz + ddz);
-            if (infection.remove(ck)) {
-              cleared++;
-              terrain.addPulse((htx + ddx) * TILE, (htz + ddz) * TILE, 1.0);
+        if (sp.isEnemySpell) {
+          // Arrived at ground enemy — attempt to kill with low probability.
+          const eIdx = sp.targetEnemy ? enemyManager.enemies.indexOf(sp.targetEnemy) : -1;
+          if (eIdx >= 0) {
+            const e = enemyManager.enemies[eIdx];
+            if (random() < WIZARD_GROUND_KILL_PROB) {
+              particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+              swapRemove(enemyManager.enemies, eIdx);
             }
           }
-        }
-
-        if (cleared > 0) {
-          // Amber/gold impact burst particles.
-          const ix = htx * TILE + TILE * 0.5;
-          const iz = htz * TILE + TILE * 0.5;
-          const iy = terrain.getAltitude(ix, iz);
-          for (let p = 0; p < 18; p++) {
+          // Impact burst regardless of kill (shows the spell tried)
+          const ix = sp.targetWx, iy = sp.targetWy, iz = sp.targetWz;
+          for (let p = 0; p < 12; p++) {
             particleSystem.particles.push({
               x: ix, y: iy - 8, z: iz,
-              vx: random(-3.5, 3.5), vy: random(-6, -1), vz: random(-3.5, 3.5),
-              life: 220, decay: 7, size: random(4, 10),
+              vx: random(-3.0, 3.0), vy: random(-5, -1), vz: random(-3.0, 3.0),
+              life: 180, decay: 8, size: random(3, 8),
               color: p % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
             });
           }
-          if (typeof gameSFX !== 'undefined') {
-            gameSFX.playVillagerCure(ix, iy, iz);
+          swapRemove(w.spells, i);
+          w.isCasting = false;
+          w.isConfronting = false;
+        } else {
+          // Arrived — clear a 2×2 block of tiles (4 tiles) centred on the target.
+          const htx = sp.targetTx, htz = sp.targetTz;
+          let cleared = 0;
+          for (let ddx = 0; ddx < WIZARD_CLEAR_SIZE; ddx++) {
+            for (let ddz = 0; ddz < WIZARD_CLEAR_SIZE; ddz++) {
+              const ck = tileKey(htx + ddx, htz + ddz);
+              if (infection.remove(ck)) {
+                cleared++;
+                terrain.addPulse((htx + ddx) * TILE, (htz + ddz) * TILE, 1.0);
+              }
+            }
           }
-        }
 
-        // Remove spent spell; let the wizard retarget.
-        swapRemove(w.spells, i);
-        w.isCasting  = false;
-        w.targetTx   = null;
-        w.targetTz   = null;
+          if (cleared > 0) {
+            // Amber/gold impact burst particles.
+            const ix = htx * TILE + TILE * 0.5;
+            const iz = htz * TILE + TILE * 0.5;
+            const iy = terrain.getAltitude(ix, iz);
+            for (let p = 0; p < 18; p++) {
+              particleSystem.particles.push({
+                x: ix, y: iy - 8, z: iz,
+                vx: random(-3.5, 3.5), vy: random(-6, -1), vz: random(-3.5, 3.5),
+                life: 220, decay: 7, size: random(4, 10),
+                color: p % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
+              });
+            }
+            if (typeof gameSFX !== 'undefined') {
+              gameSFX.playVillagerCure(ix, iy, iz);
+            }
+          }
+
+          // Remove spent spell; let the wizard retarget.
+          swapRemove(w.spells, i);
+          w.isCasting  = false;
+          w.targetTx   = null;
+          w.targetTz   = null;
+        }
       }
     }
   }
@@ -345,6 +377,7 @@ class WizardManager extends AgentManager {
         health: WIZARD_MAX_HEALTH,
         isCasting: false,
         isSitting: false,
+        isConfronting: false, // True when moving toward or casting at a ground enemy
         castPhase: 0,
         facingAngle: angle,
         spells: [],
@@ -376,6 +409,87 @@ class WizardManager extends AgentManager {
       targetTx: w.targetTx,
       targetTz: w.targetTz,
       progress: 0
+    });
+  }
+
+  /**
+   * Checks for nearby ground enemies and steers the wizard toward them.
+   * Runs only when the wizard has no infection to pursue, so infection-clearing
+   * remains the higher priority.  On arrival, casts a spell at the enemy with
+   * a very low chance of actually killing it.
+   * @private
+   */
+  _confrontNearbyGroundEnemy(w) {
+    // Don't interrupt active infection-clearing spells.
+    if (w.spells.some(sp => !sp.isEnemySpell)) return;
+
+    // Only confront when idle (no infection target).
+    if (w.targetTx !== null) {
+      w.isConfronting = false;
+      return;
+    }
+
+    const enemy = this._findNearestGroundEnemy(w, WIZARD_FIGHT_RADIUS);
+    if (!enemy) {
+      w.isConfronting = false;
+      return;
+    }
+
+    const dx = enemy.x - w.x;
+    const dz = enemy.z - w.z;
+    const distSq = dx * dx + dz * dz;
+    const rangeSq = WIZARD_FIGHT_RANGE * WIZARD_FIGHT_RANGE;
+
+    if (distSq > rangeSq) {
+      // Move toward the enemy
+      const dist = Math.sqrt(distSq);
+      w.vx = lerp(w.vx || 0, (dx / dist) * WIZARD_SPEED, 0.15);
+      w.vz = lerp(w.vz || 0, (dz / dist) * WIZARD_SPEED, 0.15);
+      w.isConfronting = true;
+      w.isCasting = false;
+      w.isSitting = false;
+    } else {
+      // In cast range: stop and attempt a spell
+      w.vx = 0;
+      w.vz = 0;
+      w.isConfronting = true;
+      w.isSitting = false;
+      w.targetAngle = Math.atan2(dx, dz);
+
+      // Only fire if no enemy spell already in flight
+      if (!w.spells.some(sp => sp.isEnemySpell) && random() < WIZARD_CAST_PROB) {
+        this._castSpellAtEnemy(w, enemy);
+      }
+    }
+  }
+
+  /**
+   * Launches a spell blob aimed at a ground enemy's current position.
+   * The spell travels identically to an infection spell but targets a
+   * world-space coordinate and optionally kills the enemy on arrival.
+   * @private
+   */
+  _castSpellAtEnemy(w, enemy) {
+    w.isCasting = true;
+    w.castPhase = 0;
+
+    const fa = w.facingAngle;
+    const staffOffX = Math.sin(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 4.5;
+    const staffOffZ = Math.cos(fa + Math.PI * 0.5) * WIZARD_DRAW_SCALE * 4.5;
+    const staffTipY = w.y - WIZARD_DRAW_SCALE * 39;
+
+    w.spells.push({
+      startX:      w.x + staffOffX,
+      startY:      staffTipY,
+      startZ:      w.z + staffOffZ,
+      targetTx:    null,  // Not targeting a tile
+      targetTz:    null,
+      targetWx:    enemy.x,
+      targetWy:    enemy.y - 10,  // Aim at enemy body centre
+      targetWz:    enemy.z,
+      targetEnemy: enemy,         // Reference to test for kill on arrival
+      isEnemySpell: true,
+      progress:    0
     });
   }
 
@@ -464,16 +578,26 @@ class WizardManager extends AgentManager {
   /**
    * Draws the spell blobs belonging to one wizard.
    * Called in world-space after the wizard's local push/pop has been closed.
+   * Handles both infection-clearing spells (targeting a tile) and ground-enemy
+   * spells (targeting a world-space position).
    * @private
    */
   _drawSpells(w) {
     for (const sp of w.spells) {
       const t = sp.progress;
 
-      // World-space position of the target tile centre.
-      const targetWx = sp.targetTx * TILE + TILE * 0.5;
-      const targetWz = sp.targetTz * TILE + TILE * 0.5;
-      const targetWy = terrain.getAltitude(targetWx, targetWz);
+      // Resolve world-space target: enemy spells use pre-stored coordinates;
+      // infection spells derive from the target tile index.
+      let targetWx, targetWz, targetWy;
+      if (sp.isEnemySpell) {
+        targetWx = sp.targetWx;
+        targetWz = sp.targetWz;
+        targetWy = sp.targetWy;
+      } else {
+        targetWx = sp.targetTx * TILE + TILE * 0.5;
+        targetWz = sp.targetTz * TILE + TILE * 0.5;
+        targetWy = terrain.getAltitude(targetWx, targetWz);
+      }
 
       // Lerp position along the path.
       const bx = sp.startX + (targetWx - sp.startX) * t;

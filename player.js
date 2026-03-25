@@ -891,17 +891,17 @@ function _updateAircraft(p, d, isThrusting, isBraking) {
 
   if (s.pitch > 0.05 && s.vy > 0 && altitude > 0 && altitude < 1000) {
     // Inverse square proximity: Air gets "thicker" rapidly as you get close to the ground
-    let proximityFactor = 1.0 - Math.pow(altitude / 1000, 2);
+    let proximityFactor = 1.0 - Math.pow(altitude / 1000, 3);
 
     // VTOLs get less cushion (0.4), Jets get maximum cushion (1.0)
     let normalizedAngle = (d.thrustAngle || 0) / (Math.PI / 2);
     let thrustTypeFactor = 0.4 + (0.6 * normalizedAngle);
 
     // Biting force dictates how aggressively the ship's vertical descent is arrested
-    let biteStrength = 0.85 * proximityFactor * thrustTypeFactor;
+    let biteStrength = 0.95 * proximityFactor * thrustTypeFactor;
 
     // Safe sink rate gets progressively slower the closer the ship is to the ground
-    let safeSinkRate = 0.4 + (altitude / 100);
+    let safeSinkRate = 0.1 + (altitude / 200);
 
     if (s.vy > safeSinkRate) {
       s.vy = s.vy * (1.0 - biteStrength) + safeSinkRate * biteStrength;

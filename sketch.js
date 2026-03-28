@@ -253,6 +253,7 @@ function draw() {
     enemyManager.update();
     if (typeof villagerManager !== 'undefined') villagerManager.update();
     if (typeof wizardManager !== 'undefined') wizardManager.update();
+    if (typeof archerManager !== 'undefined') archerManager.update();
     for (let p of gameState.players) GameLoop.checkCollisions(p);
     GameLoop.spreadInfection();
     particleSystem.updatePhysics();

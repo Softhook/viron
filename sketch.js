@@ -434,8 +434,7 @@ function touchStarted(event) {
     else if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; }
     return false;
   }
-  return handleTouchStarted?.();
-  return false;
+  return handleTouchStarted?.() ?? false;
 }
 
 /** Prevents default on touch end so scrolling doesn't resume. */

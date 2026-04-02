@@ -433,16 +433,7 @@ class GameLoop {
     if (player.dead) return;
     let s = player.ship;
 
-    // 1. Enemy bullets vs player
-    for (let i = particleSystem.enemyBullets.length - 1; i >= 0; i--) {
-      let eb = particleSystem.enemyBullets[i];
-      let dx = eb.x - s.x, dy = eb.y - s.y, dz = eb.z - s.z;
-      if (dx * dx + dy * dy + dz * dz < 4900) {
-        killPlayer(player);
-        swapRemove(particleSystem.enemyBullets, i);
-        return;
-      }
-    }
+    if (this._checkEnemyBulletsVsPlayer(player, s)) return;
 
     // 2, 3, 4. Enemy body and weapons vs player
     const enemyScaleSq = _ENEMY_HALF_SCALE_SQ;
@@ -450,11 +441,7 @@ class GameLoop {
       let e = enemyManager.enemies[j];
       let killed = false;
 
-      // Player bullets, missiles, and tank shells vs enemy — each weapon type is
-      // tested in priority order; stop as soon as the enemy is destroyed.
-      // Args: projectiles, player, e, j, enemyScaleSq,
-      //       normalRadSq, colossusRadSq, shakeAmt, normalScore,
-      //       colossusDmg, colossusFlash, colossusHitScore
+      // Player bullets, missiles, and tank shells vs enemy
       killed = this._checkProjectileArrayVsEnemy(
         player.bullets, player, e, j, enemyScaleSq,
         6400, 90000, 5, 100, 1, 12, 10);
@@ -469,85 +456,96 @@ class GameLoop {
 
       // --- Body-to-Body Collision & Resolution ---
       if (!killed) {
-        let shipRad = 15;
-        let speedSq = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
-        if (e.type === 'colossus') {
-          // Broad-phase: skip if too far (center-to-center)
-          const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
-          const broadRad = 500 * cScale;
-          let bx = s.x - e.x, by = s.y - e.y, bz = s.z - e.z;
-          let brSum = broadRad + shipRad;
-          if (bx * bx + by * by + bz * bz > brSum * brSum) continue;
-
-          // Multi-part collision for Colossus
-          // Apply enemy yaw rotation to bone offsets
-          let yaw = atan2(e.vx || 0, e.vz || 0);
-          let cosY = Math.cos(yaw), sinY = Math.sin(yaw);
-
-          // Approximate bones (Y is inverted: negative is UP)
-          const bones = [
-            { y: -160, r: 100 }, // Torso
-            { y: -320, r: 70 },  // Head
-            { y: -45, r: 80 },   // Hips
-            { x: -50, y: 20, r: 40 }, { x: 50, y: 20, r: 40 },   // Thighs
-            { x: -50, y: 140, r: 35 }, { x: 50, y: 140, r: 35 }, // Shins
-            { x: -105, y: -145, r: 40 }, { x: 105, y: -145, r: 40 }, // Upper Arms
-            { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }    // Lower Arms
-          ];
-          for (let b of bones) {
-            let lx = (b.x || 0) * cScale;
-            let lz = 0; // Colossus is mostly flat in local Z
-            let cx = e.x + lx * cosY + lz * sinY;
-            let cy = e.y + (b.y || 0) * cScale;
-            let cz = e.z + lz * cosY - lx * sinY;
-            let br = b.r * cScale;
-            let pdist = br + shipRad;
-            if (dist3dSq(s.x, s.y, s.z, cx, cy, cz) < pdist * pdist) {
-              if (speedSq > 49.0) { killPlayer(player); return; } // Threshold raised from 4.2 (17.6) to 7.0 (49.0)
-              this._resolveSphereCollision(s, cx, cy, cz, br, shipRad);
-              break; // One part is enough
-            }
-          }
-        } else if (e.type === 'kraken') {
-          // Kraken has precise body and tentacle collision zones.
-          const kScale  = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
-          const bodyRad = 74 * kScale;    // dome body sphere
-          const dSq = dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z);
-          const bdSum = bodyRad + shipRad;
-
-          if (dSq < bdSum * bdSum) {
-            if (speedSq > 49.0) { killPlayer(player); return; }
-            this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
-          } else if (this._checkKrakenTentacles(s, e, kScale, shipRad * shipRad)) {
-            killPlayer(player); return;
-          }
-        } else {
-          // Normal enemy check + resolution
-          let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2); // Radius in world units
-          const normSum = bodyRad + shipRad;
-          if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < normSum * normSum) {
-            // Hunters and Squids are lethal on contact regardless of speed
-            const isLethalType = e.type === 'hunter' || e.type === 'squid';
-            if (isLethalType || speedSq > 49.0) { killPlayer(player); return; }
-            this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
-          }
-        }
+        if (this._checkEnemyBodyVsPlayer(player, s, e)) return;
       }
     }
 
-    // 5. Floating powerups vs player
+    this._checkPowerupsVsPlayer(player, s);
+
+    // Projectiles vs infected procedural trees
+    this._checkProjectilesVsTrees(player);
+  }
+
+  static _checkEnemyBulletsVsPlayer(player, s) {
+    for (let i = particleSystem.enemyBullets.length - 1; i >= 0; i--) {
+      let eb = particleSystem.enemyBullets[i];
+      let dx = eb.x - s.x, dy = eb.y - s.y, dz = eb.z - s.z;
+      if (dx * dx + dy * dy + dz * dz < 4900) {
+        killPlayer(player);
+        swapRemove(particleSystem.enemyBullets, i);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static _checkEnemyBodyVsPlayer(player, s, e) {
+    let shipRad = 15;
+    let speedSq = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
+    if (e.type === 'colossus') {
+      const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
+      const broadRad = 500 * cScale;
+      let bx = s.x - e.x, by = s.y - e.y, bz = s.z - e.z;
+      let brSum = broadRad + shipRad;
+      if (bx * bx + by * by + bz * bz > brSum * brSum) return false;
+
+      let yaw = atan2(e.vx || 0, e.vz || 0);
+      let cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+
+      const bones = [
+        { y: -160, r: 100 }, { y: -320, r: 70 }, { y: -45, r: 80 },
+        { x: -50, y: 20, r: 40 }, { x: 50, y: 20, r: 40 },
+        { x: -50, y: 140, r: 35 }, { x: 50, y: 140, r: 35 },
+        { x: -105, y: -145, r: 40 }, { x: 105, y: -145, r: 40 },
+        { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }
+      ];
+      for (let b of bones) {
+        let lx = (b.x || 0) * cScale;
+        let lz = 0;
+        let cx = e.x + lx * cosY + lz * sinY;
+        let cy = e.y + (b.y || 0) * cScale;
+        let cz = e.z + lz * cosY - lx * sinY;
+        let br = b.r * cScale;
+        let pdist = br + shipRad;
+        if (dist3dSq(s.x, s.y, s.z, cx, cy, cz) < pdist * pdist) {
+          if (speedSq > 49.0) { killPlayer(player); return true; }
+          this._resolveSphereCollision(s, cx, cy, cz, br, shipRad);
+          break;
+        }
+      }
+    } else if (e.type === 'kraken') {
+      const kScale  = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
+      const bodyRad = 74 * kScale;
+      const dSq = dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z);
+      const bdSum = bodyRad + shipRad;
+
+      if (dSq < bdSum * bdSum) {
+        if (speedSq > 49.0) { killPlayer(player); return true; }
+        this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
+      } else if (this._checkKrakenTentacles(s, e, kScale, shipRad * shipRad)) {
+        killPlayer(player); return true;
+      }
+    } else {
+      let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2);
+      const normSum = bodyRad + shipRad;
+      if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < normSum * normSum) {
+        const isLethalType = e.type === 'hunter' || e.type === 'squid';
+        if (isLethalType || speedSq > 49.0) { killPlayer(player); return true; }
+        this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
+      }
+    }
+    return false;
+  }
+
+  static _checkPowerupsVsPlayer(player, s) {
     for (let i = gameState.buildings.length - 1; i >= 0; i--) {
       let b = gameState.buildings[i];
       if (b.type === 3) {
-        // Floating powerup vs player
         let floatY = b.y - b.h - 100 - sin(_simTick * 0.02 + b.x) * 50;
         let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
         let rSum = b.w + 15;
 
         if (dx * dx + dy * dy + dz * dz < rSum * rSum) {
-          // Cache the tile-key on the powerup building so the arithmetic is
-          // only done once even if the player hovers in range for many frames.
-          // Powerup positions are fixed at spawn; the building is removed on pickup.
           if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
           let inf = infection.has(b._tileKey);
           if (inf) {
@@ -569,9 +567,6 @@ class GameLoop {
         }
       }
     }
-
-    // Projectiles vs infected procedural trees
-    this._checkProjectilesVsTrees(player);
   }
 
   /**

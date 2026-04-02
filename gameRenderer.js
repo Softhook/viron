@@ -652,7 +652,7 @@ class GameRenderer {
    * @private
    */
   _drawEnemyBeams(s) {
-    if (typeof enemyManager === 'undefined' || !enemyManager.enemies) return;
+    if (!enemyManager?.enemies) return;
 
     // Skip on mobile: blendMode(ADD) with overlapping transparent geometry
     // causes severe tile-flush stalls on Apple Silicon tile-based GPUs.

@@ -7,6 +7,10 @@
 // Used to aim confronting agents at the near body surface rather than the centre.
 const ENEMY_CONFRONT_OFFSET = 72;
 
+// Velocity-blend factor used whenever an agent steers toward a target or wanders.
+// A value of 0.15 gives smooth acceleration while remaining responsive.
+const STEERING_LERP_FACTOR = 0.15;
+
 class AgentManager {
   constructor(hubType, config = {}) {
     this.agents = [];
@@ -55,7 +59,7 @@ class AgentManager {
 
   _updateActiveHubs(simDistSq) {
     this.activeHubs.length = 0;
-    if (!gameState.players || gameState.players.length === 0) return;
+    if (!gameState.players?.length) return;
 
     for (const b of this.hubs) {
       let isActive = false;
@@ -120,7 +124,7 @@ class AgentManager {
     const TWO_PI_MATH = Math.PI * 2;
     let diff = targetAngle - u.facingAngle;
     diff = ((diff + Math.PI) % TWO_PI_MATH + TWO_PI_MATH) % TWO_PI_MATH - Math.PI; 
-    u.facingAngle += diff * 0.15;
+    u.facingAngle += diff * STEERING_LERP_FACTOR;
   }
 
   _findNearestInfection(u, searchRadius, hystSq) {
@@ -180,8 +184,8 @@ class AgentManager {
       
       const d = Math.sqrt(distFromHomeSq);
       if (d > 0) {
-        u.vx = lerp(u.vx || 0, (-dxFromHome / d) * this.config.speed, 0.15);
-        u.vz = lerp(u.vz || 0, (-dzFromHome / d) * this.config.speed, 0.15);
+        u.vx = lerp(u.vx || 0, (-dxFromHome / d) * this.config.speed, STEERING_LERP_FACTOR);
+        u.vz = lerp(u.vz || 0, (-dzFromHome / d) * this.config.speed, STEERING_LERP_FACTOR);
       }
       return;
     }
@@ -205,8 +209,8 @@ class AgentManager {
       const d = Math.sqrt(dx * dx + dz * dz);
       
       if (d > this.config.stopDist) {
-        u.vx = lerp(u.vx || 0, (dx / d) * this.config.speed, 0.15);
-        u.vz = lerp(u.vz || 0, (dz / d) * this.config.speed, 0.15);
+        u.vx = lerp(u.vx || 0, (dx / d) * this.config.speed, STEERING_LERP_FACTOR);
+        u.vz = lerp(u.vz || 0, (dz / d) * this.config.speed, STEERING_LERP_FACTOR);
         if (this.onWalkToTarget) this.onWalkToTarget(u);
       } else {
         // Within range — stop and face target

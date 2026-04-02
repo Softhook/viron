@@ -163,7 +163,7 @@ class GameState {
     // to ensure ephemeral entities like powerups and buildings respawn correctly
     // for a fresh game start.  Terrain caching itself is preserved inside terrain.reset().
     this.resetWorld(this.worldSeed);
-    if (typeof initWorld === 'function') initWorld(this.worldSeed);
+    initWorld?.(this.worldSeed);
 
     this.startLevel(1);
     this.mode = 'mission';
@@ -191,7 +191,7 @@ class GameState {
    */
   startLevel(lvl) {
     gameSFX?.playNewLevel();
-    if (typeof updateTimeOfDay === 'function') updateTimeOfDay(lvl);
+    updateTimeOfDay?.(lvl);
 
     this.level = lvl;
     this.levelComplete = false;

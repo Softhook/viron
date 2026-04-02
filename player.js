@@ -1043,7 +1043,7 @@ function killPlayer(p) {
 
   // --- "Launch Pad Taken Over" detection ---
   // If the player dies on the launch pad while an enemy is also on the pad,
-  // we increment a special counter.  Two such deaths end the game.
+  // we increment a special counter.  Three such deaths end the game.
   if (isLaunchpad(p.ship.x, p.ship.z)) {
     let enemyOnPad = enemyManager.enemies.some(e => isLaunchpad(e.x, e.z));
     if (enemyOnPad) {

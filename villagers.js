@@ -51,8 +51,21 @@ class VillagerManager extends AgentManager {
     this.villages = this.hubs;
   }
 
-  onWanderExceeded(v) { v.isCuring = false; v.isPlanting = false; v.plantTargetX = null; v.plantTargetZ = null; }
-  onWalkToTarget(v) { v.isCuring = false; v.isPlanting = false; v.plantTargetX = null; v.plantTargetZ = null; }
+  /**
+   * Clears all transient planting state so the villager can pick a new activity.
+   * Called whenever the villager starts moving to a target, is leashed home, or
+   * confronts an enemy — any event that interrupts an in-progress planting cycle.
+   * @param {object} v Villager agent object.
+   * @private
+   */
+  _clearPlantingState(v) {
+    v.isPlanting = false;
+    v.plantTargetX = null;
+    v.plantTargetZ = null;
+  }
+
+  onWanderExceeded(v) { v.isCuring = false; this._clearPlantingState(v); }
+  onWalkToTarget(v) { v.isCuring = false; this._clearPlantingState(v); }
   onReachTarget(v) { v.isCuring = true; v.isPlanting = false; }
   onNoTarget(v) { v.isCuring = false; }
 
@@ -416,10 +429,8 @@ class VillagerManager extends AgentManager {
       v.vz = 0;
       v.plantTimer = (v.plantTimer || 0) + 1;
       if (v.plantTimer >= VILLAGER_PLANT_DURATION) {
-        v.isPlanting = false;
         v.plantTimer = 0;
-        v.plantTargetX = null;  // ensure clean state for next idle cycle
-        v.plantTargetZ = null;
+        this._clearPlantingState(v);
       }
       return;
     }
@@ -442,8 +453,8 @@ class VillagerManager extends AgentManager {
       } else {
         const d = Math.sqrt(distSq);
         const spd = VILLAGER_SPEED * 0.4;
-        v.vx = lerp(v.vx || 0, (dx / d) * spd, 0.15);
-        v.vz = lerp(v.vz || 0, (dz / d) * spd, 0.15);
+        v.vx = lerp(v.vx || 0, (dx / d) * spd, STEERING_LERP_FACTOR);
+        v.vz = lerp(v.vz || 0, (dz / d) * spd, STEERING_LERP_FACTOR);
       }
       return;
     }
@@ -492,20 +503,16 @@ class VillagerManager extends AgentManager {
     if (dist > stopDist) {
       // Move toward enemy — direction toward body edge and centre are collinear,
       // so (dx/dist, dz/dist) naturally leads to the body surface.
-      v.vx = lerp(v.vx || 0, (dx / dist) * VILLAGER_SPEED, 0.15);
-      v.vz = lerp(v.vz || 0, (dz / dist) * VILLAGER_SPEED, 0.15);
+      v.vx = lerp(v.vx || 0, (dx / dist) * VILLAGER_SPEED, STEERING_LERP_FACTOR);
+      v.vz = lerp(v.vz || 0, (dz / dist) * VILLAGER_SPEED, STEERING_LERP_FACTOR);
       v.isConfronting = true;
-      v.isPlanting = false;
-      v.plantTargetX = null;
-      v.plantTargetZ = null;
+      this._clearPlantingState(v);
     } else {
       // At body edge — stop and punch (never harms the enemy)
       v.vx = 0;
       v.vz = 0;
       v.isConfronting = true;
-      v.isPlanting = false;
-      v.plantTargetX = null;
-      v.plantTargetZ = null;
+      this._clearPlantingState(v);
       v.targetAngle = Math.atan2(dx, dz);
     }
   }

@@ -192,7 +192,7 @@ class MobileController {
         let yawMult = 2.2;
         let pitchMult = 3.2;
 
-        if (typeof gameState !== 'undefined' && gameState.firstPersonView) {
+        if (gameState?.firstPersonView) {
             yawMult = 1.5;
             pitchMult = -1.5; // Inverted for flight-sim feel
         }
@@ -681,7 +681,7 @@ class MobileController {
                 if (k === 'switchSides') {
                     this.isSwapped = !this.isSwapped;
                 } else if (k === 'cockpit') {
-                    if (typeof gameState !== 'undefined') {
+                    if (gameState) {
                         gameState.firstPersonView = !gameState.firstPersonView;
                     }
                 } else if (k === 'continue') {

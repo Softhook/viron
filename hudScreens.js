@@ -54,7 +54,7 @@ function _drawContinuePrompt(hideOnMobile = true) {
  * @private
  */
 function _drawMobileController() {
-  if (!gameState.isMobile || typeof mobileController === 'undefined') return;
+  if (!gameState.isMobile || !mobileController) return;
   mobileController.update(touches, width, height);
   mobileController.draw(width, height);
 }

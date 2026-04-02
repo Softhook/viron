@@ -12,6 +12,10 @@
 // enemies.js loads before gameLoop.js (see index.html script order).
 const _ENEMY_HALF_SCALE_SQ = (ENEMY_DRAW_SCALE / 2) * (ENEMY_DRAW_SCALE / 2);
 
+// Velocity damping applied along the collision normal to simulate inelastic impact.
+// Values above 1.0 add a small bounce (1.8 ≈ slightly springy but stable).
+const COLLISION_DAMPING = 1.8;
+
 class GameLoop {
   /** @private Returns squared size multiplier used for Colossus radius checks. */
   static _colossusScaleSq(e) {
@@ -41,9 +45,9 @@ class GameLoop {
       // Dampen velocity along normal
       let dot = s.vx * nx + s.vy * ny + s.vz * nz;
       if (dot < 0) {
-        s.vx -= nx * dot * 1.8;
-        s.vy -= ny * dot * 1.8;
-        s.vz -= nz * dot * 1.8;
+        s.vx -= nx * dot * COLLISION_DAMPING;
+        s.vy -= ny * dot * COLLISION_DAMPING;
+        s.vz -= nz * dot * COLLISION_DAMPING;
       }
       return true;
     }
@@ -76,7 +80,7 @@ class GameLoop {
         let nx = distVecX / d, ny = distVecY / d, nz = distVecZ / d;
         s.x += nx * overlap; s.y += ny * overlap; s.z += nz * overlap;
         let dot = s.vx * nx + s.vy * ny + s.vz * nz;
-        if (dot < 0) { s.vx -= nx * dot * 1.8; s.vy -= ny * dot * 1.8; s.vz -= nz * dot * 1.8; }
+        if (dot < 0) { s.vx -= nx * dot * COLLISION_DAMPING; s.vy -= ny * dot * COLLISION_DAMPING; s.vz -= nz * dot * COLLISION_DAMPING; }
       }
       return true;
     }

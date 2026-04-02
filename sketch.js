@@ -434,7 +434,7 @@ function touchStarted(event) {
     else if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; }
     return false;
   }
-  if (typeof handleTouchStarted === 'function') return handleTouchStarted();
+  return handleTouchStarted?.();
   return false;
 }
 
@@ -459,7 +459,7 @@ function touchMoved(event) {
 function mousePressed() {
   if (!isMobile) {
     if (gameState.mode === 'menu' && !gameState.hasClickedOnce) {
-      if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
+      if (shouldRequestFullscreen?.()) {
         fullscreen(true);
       }
       gameState.hasClickedOnce = true;

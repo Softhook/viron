@@ -440,8 +440,8 @@ class WizardManager extends AgentManager {
     if (distSq > rangeSq) {
       // Steer toward the near body edge (ENEMY_CONFRONT_OFFSET from centre),
       // keeping the wizard at casting range from the body surface.
-      w.vx = lerp(w.vx || 0, (dx / dist) * WIZARD_SPEED, 0.15);
-      w.vz = lerp(w.vz || 0, (dz / dist) * WIZARD_SPEED, 0.15);
+      w.vx = lerp(w.vx || 0, (dx / dist) * WIZARD_SPEED, STEERING_LERP_FACTOR);
+      w.vz = lerp(w.vz || 0, (dz / dist) * WIZARD_SPEED, STEERING_LERP_FACTOR);
       w.isConfronting = true;
       w.isCasting = false;
       w.isSitting = false;

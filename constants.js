@@ -456,7 +456,7 @@ class TileManager {
    * @returns {object|null} the newly added tile object, or null if it already existed.
    */
   add(k, type = 'normal') {
-    if (this === infection && typeof gameState !== 'undefined' && gameState.barrierTiles.has(k)) return null;
+    if (this === infection && gameState?.barrierTiles.has(k)) return null;
     if (this.tiles.has(k)) return null;
     const tx = Math.floor(k / 20001) - 10000;
     const tz = (k % 20001) - 10000;

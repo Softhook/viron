@@ -1153,7 +1153,7 @@ function updateProjectilePhysics(p) {
   // --- Homing missiles ---
   for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
     let m = p.homingMissiles[i];
-    const maxSpd = 10;
+    const maxSpd = 30;
     let target = p.aimTarget || findNearest(enemyManager.enemies, m.x, m.y, m.z);
 
     if (target) {

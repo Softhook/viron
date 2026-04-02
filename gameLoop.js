@@ -340,7 +340,7 @@ class GameLoop {
     let md = maxReach + Math.sqrt(shipRadSq);
     if (dx * dx + dy * dy + dz * dz > md * md) return false;
 
-    const fc = (typeof frameCount !== 'undefined') ? frameCount : 0;
+    const fc = frameCount ?? 0;
     const phase = fc * 0.02 + (e.id || 0) * 0.15;
     
     if (this._traceKrakenArms(6, 8, 28, 74, 5, 0.82, 0, phase, 1.0, e, s, kScale, shipRadSq)) return true;

@@ -42,14 +42,6 @@ class GameState {
     this.lastAlarmTime = 0;
     this.menuCam = { x: 1500, z: 1500, yaw: 0 };
 
-    // --- Input State ---
-    this.mouseReleasedSinceStart = true;
-    this.leftMouseDown = false;
-    this.rightMouseDown = false;
-    this.hasClickedOnce = false;
-    this.smoothedMX = 0;
-    this.smoothedMY = 0;
-
     // --- Platform Detection ---
     this.isMobile = false;
     this.isAndroid = false;
@@ -111,34 +103,29 @@ class GameState {
     this._seedInitialInfection();
   }
 
-  /**
-   * Initializes platform detection (mobile/desktop, Android/iOS).
-   * Called once during setup().
-   */
   detectPlatform() {
+    if (typeof inputManager !== 'undefined' && inputManager) {
+      if (typeof inputManager.detectPlatform === 'function') {
+        inputManager.detectPlatform();
+      }
+      this.isMobile = !!inputManager.isMobile;
+      this.isAndroid = !!inputManager.isAndroid;
+      return;
+    }
+
     const ua = navigator.userAgent;
     this.isAndroid = /Android/i.test(ua);
-
-    // Explicit UA check
     this.isMobile = this.isAndroid || /iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-
-    // Modern iPads with MacBook-like UA but touch-enabled
     if (!this.isMobile && /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) {
       this.isMobile = true;
     }
-
-    // Generic mobile/tablet indicators in Desktop View
     if (!this.isMobile && /Mobile|Tablet/i.test(ua)) {
       this.isMobile = true;
     }
-
-    // Fallback: any touch device that doesn't look like desktop OS
     if (!this.isMobile && 'ontouchstart' in window) {
       const isDesktopOS = /Windows NT|Macintosh|Linux/i.test(ua);
       if (!isDesktopOS) this.isMobile = true;
     }
-
-    console.log(`[Viron] Device: ${this.isMobile ? 'MOBILE' : 'DESKTOP'} (UA: ${ua.slice(0, 50)}..., touch: ${navigator.maxTouchPoints})`);
   }
 
   /**
@@ -151,7 +138,9 @@ class GameState {
     this.gameStartTime = millis();
     this.colossusSpawnCount = 0;
     this.krakenSpawnCount = 0;
-    this.mouseReleasedSinceStart = !this.leftMouseDown;
+    if (typeof inputManager !== 'undefined' && inputManager) {
+      inputManager.mouseReleasedSinceStart = !inputManager.mouse.left;
+    }
 
     this.players = this._createPlayers(np);
 
@@ -327,6 +316,7 @@ class GameState {
       this.shouldCapture = true; // Signal for sketch.js to capture the frame
       this.clearInputs();
       gameSFX?.stopAll();
+      physicsEngine.setPaused(true);
     }
   }
 
@@ -337,8 +327,8 @@ class GameState {
     if (this.mode === 'paused') {
       this.mode = this.previousMode;
       this.pauseSnapshot = null; // Free memory
-      // Reset physics accumulator to prevent jumps
-      _physAccum = 0;
+      physicsEngine.setPaused(false);
+      physicsEngine.reset();
     }
   }
 
@@ -346,8 +336,11 @@ class GameState {
    * Resets all input states to prevent "stuck" keys on focus loss.
    */
   clearInputs() {
-    this.leftMouseDown = false;
-    this.rightMouseDown = false;
+    if (typeof inputManager !== 'undefined' && inputManager?.clearInputs) {
+      inputManager.clearInputs();
+      return;
+    }
+
     for (let p of this.players) {
       if (p.input) {
         p.input.thrust = false;

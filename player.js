@@ -30,12 +30,65 @@ function getSpawnX(p) {
 }
 
 /**
- * Resets a player's ship state to the launchpad at the given X offset.
- * Called on game start and on respawn.
- * @param {object} p        Player object (ship state is written to p.ship).
- * @param {number} offsetX  World-space X of the spawn position.
+ * Player - Encapsulates player metadata, weapon state, and their active Vehicle.
  */
+class Player {
+  constructor(id, keys, offsetX, labelColor) {
+    this.id = id;
+    this.keys = keys;
+    this.labelColor = labelColor;
+    this.score = 0;
+    this.dead = false;
+    this.respawnTimer = 0;
+    this.bullets = [];
+    this.homingMissiles = [];
+    this.tankShells = [];
+    this.missilesRemaining = 1;
+    this.normalShotMode = 'single';
+    this.weaponMode = 0;
+    this.shootHeld = false;
+    this.aimTarget = null;
+    this.mobileMissilePressed = false;
+    this.lpDeaths = 0;
+    this.designIndex = 0;
+    this.ready = false;
+
+    this.ship = new Vehicle(offsetX, LAUNCH_ALT, 420, this.designIndex);
+  }
+
+  /**
+   * Resets player state for a fresh game or respawn.
+   */
+  reset(offsetX) {
+    this.ship.reset(offsetX, LAUNCH_ALT, 420);
+    const d = SHIP_DESIGNS[this.designIndex] || DEFAULT_SHIP_DESIGN;
+    this.missilesRemaining = d.startingMissiles ?? d.missileCapacity ?? 1;
+    this.normalShotMode = 'single';
+    this.weaponMode = 0;
+    this.dead = false;
+    this.respawnTimer = 0;
+  }
+
+  /**
+   * Fires a missile toward its current aimTarget.
+   */
+  fireMissile() {
+    fireMissile(this);
+  }
+}
+
+/** Legacy factory for backward compatibility during transition. */
+function createPlayer(id, keys, offsetX, labelColor) {
+  return new Player(id, keys, offsetX, labelColor);
+}
+
+/** Legacy resetShip for backward compatibility. */
 function resetShip(p, offsetX) {
+  if (typeof p.reset === 'function') {
+    p.reset(offsetX);
+    return;
+  }
+
   p.ship = { x: offsetX, y: LAUNCH_ALT, z: 420, vx: 0, vy: 0, vz: 0, pitch: 0, yaw: 0 };
   let d = SHIP_DESIGNS[p.designIndex || 0];
   if (d) {
@@ -44,38 +97,7 @@ function resetShip(p, offsetX) {
     p.missilesRemaining = 1;
   }
   p.normalShotMode = 'single';
-  p.weaponMode = 0; // Reset to NORMAL weapon mode
-}
-
-/**
- * Constructs a new player object with default state and an initial ship.
- * @param {number}   id          Player index (0 or 1).
- * @param {object}   keys        Key-binding object from constants.js (P1_KEYS or P2_KEYS).
- * @param {number}   offsetX     World-space X spawn offset.
- * @param {number[]} labelColor  RGB colour used for HUD text and bullet colour.
- * @returns {object}  Fully initialised player state object.
- */
-function createPlayer(id, keys, offsetX, labelColor) {
-  let p = {
-    id, keys, labelColor,
-    score: 0,
-    dead: false,
-    respawnTimer: 0,
-    bullets: [],
-    homingMissiles: [],
-    tankShells: [],
-    missilesRemaining: 1,
-    normalShotMode: 'single',     // single|double|triple|spread (from powerup upgrades)
-    weaponMode: 0,                // 0=NORMAL, 1=MISSILE, 2=BARRIER (index into WEAPON_MODES)
-    shootHeld: false,             // Edge-detect for shoot key (prevents missile/barrier auto-repeat)
-    aimTarget: null,              // Per-player locked ENEMY target for missile homing (never a virus tile)
-    mobileMissilePressed: false,  // Tracks the mobile missile button edge so it fires once per tap
-    lpDeaths: 0,                  // Tracks consecutive deaths on an occupied launchpad
-    designIndex: 0,               // Current ship visual design index
-    ready: false                  // Selection status for ship-select screen
-  };
-  resetShip(p, offsetX);
-  return p;
+  p.weaponMode = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -503,10 +525,7 @@ function shipDisplay(s, tintColor) {
 
   let isPushing = false;
   if (p) {
-    isPushing = keyIsDown(p.keys.thrust) || (p.id === 0 && !gameState.isMobile && gameState.rightMouseDown);
-    if (gameState.isMobile && p.id === 0 && mobileController) {
-      isPushing = isPushing || mobileController.getInputs(s, [], 0, 0).thrust;
-    }
+    isPushing = inputManager.getActionActive(p, 'thrust');
   }
 
   let flamePoints = [], thrustAngle = 0;
@@ -592,140 +611,7 @@ function shipDisplay(s, tintColor) {
   drawShipShadow(s.x, gy, s.z, s.yaw, s.y, designIdx);
 }
 
-// ---------------------------------------------------------------------------
-// Input and physics update — helper functions
-// ---------------------------------------------------------------------------
-
-/**
- * Applies mouse-look steering and aim assist for player 1 (pointer-lock path).
- * Mutates p.ship.yaw, p.ship.pitch and p.aimTarget.
- * @param {object} p  Player state.
- */
-function _applyMouseSteering(p) {
-  if (p.id !== 0 || gameState.isMobile || !document.pointerLockElement) return;
-
-  gameState.smoothedMX = lerp(gameState.smoothedMX, movedX, MOUSE_SMOOTHING);
-  gameState.smoothedMY = lerp(gameState.smoothedMY, movedY, MOUSE_SMOOTHING);
-
-  let newYaw = p.ship.yaw - gameState.smoothedMX * MOUSE_SENSITIVITY;
-  // Pitch polarity: behind-ship → mouse-down = nose up; first-person → nose down.
-  let pitchSign = gameState.firstPersonView ? 1 : -1;
-  let newPitch = p.ship.pitch + pitchSign * gameState.smoothedMY * MOUSE_SENSITIVITY;
-
-  if (aimAssist.enabled) {
-    let assist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
-    newYaw += assist.yawDelta;
-    newPitch += assist.pitchDelta;
-    // Only an enemy lock sets aimTarget — virus-tile assist steers the nose only
-    p.aimTarget = aimAssist.lastTracking.target;
-  }
-  p.ship.yaw = newYaw;
-  p.ship.pitch = constrain(newPitch, -PI / 2.2, PI / 2.2);
-}
-
-/**
- * Merges mobile joystick / button state into the running isThrusting / isShooting
- * flags, fires one-shot weapons (missiles, barrier), and applies aim-assist deltas
- * from the mobile path.
- * @param {object}  p           Player state.
- * @param {boolean} isThrusting Current thrust state from keyboard/mouse.
- * @param {boolean} isShooting  Current shoot state from keyboard/mouse.
- * @returns {{isThrusting: boolean, isShooting: boolean}}  Updated flags.
- */
-function _applyMobileInputs(p, isThrusting, isShooting) {
-  if (!gameState.isMobile || p.id !== 0 || !mobileController) {
-    return { isThrusting, isShooting };
-  }
-
-  let inputs = mobileController.getInputs(p.ship, enemyManager.enemies, YAW_RATE, PITCH_RATE);
-  isThrusting = isThrusting || inputs.thrust;
-  isShooting = isShooting || inputs.shoot;
-
-  // Edge-detect missile button (fires once per tap)
-  if (inputs.missile && !p.mobileMissilePressed) {
-    fireMissile(p);
-    p.mobileMissilePressed = true;
-  } else if (!inputs.missile) {
-    p.mobileMissilePressed = false;
-  }
-
-  // Barrier fires continuously while held (same 8-tick cadence as normal bullets)
-  if (inputs.barrier && _simTick % 8 === 0) fireBarrier(p);
-
-  p.ship.yaw += inputs.yawDelta + inputs.assistYaw;
-  p.ship.pitch = constrain(p.ship.pitch + inputs.pitchDelta + inputs.assistPitch, -PI / 2.2, PI / 2.2);
-  p.aimTarget = aimAssist.lastTracking.target;
-
-  return { isThrusting, isShooting };
-}
-
-/**
- * Applies keyboard turn / pitch inputs and aim assist for non-mouse players.
- * Mutates p.ship.yaw, p.ship.pitch and p.aimTarget.
- * @param {object} p  Player state.
- * @param {object} d  Ship design object (provides turnRate, pitchRate, mass).
- */
-function _applyKeyboardSteering(p, d) {
-  let m = d.mass || 1.0;
-  let currentYawRate = (d.turnRate || YAW_RATE) / m;
-  let currentPitchRate = (d.pitchRate || PITCH_RATE) / m;
-  let k = p.keys;
-
-  if (keyIsDown(k.left)) p.ship.yaw += currentYawRate;
-  if (keyIsDown(k.right)) p.ship.yaw -= currentYawRate;
-  // Keyboard pitch: pitchUp always adds, pitchDown always subtracts (camera-independent).
-  if (keyIsDown(k.pitchUp)) p.ship.pitch = constrain(p.ship.pitch + currentPitchRate, -PI / 2.2, PI / 2.2);
-  if (keyIsDown(k.pitchDown)) p.ship.pitch = constrain(p.ship.pitch - currentPitchRate, -PI / 2.2, PI / 2.2);
-
-  // Aim assist for keyboard players (P2 always; P1 when not using mouse pointer-lock).
-  const isKeyboardPlayer = !(p.id === 0 && document.pointerLockElement);
-  if (!gameState.isMobile && aimAssist.enabled && isKeyboardPlayer) {
-    let kAssist = aimAssist.getAssistDeltas(p.ship, enemyManager.enemies, false);
-    p.ship.yaw += kAssist.yawDelta;
-    p.ship.pitch = constrain(p.ship.pitch + kAssist.pitchDelta, -PI / 2.2, PI / 2.2);
-    p.aimTarget = aimAssist.lastTracking.target;
-  }
-}
-
-
-
-/**
- * Fires the player's currently selected weapon based on the shoot input state.
- * Handles rate-limiting, edge-detection, and mode-specific weapon logic.
- * @param {object}  p          Player state.
- * @param {boolean} isShooting Whether the shoot input is active this frame.
- */
-function _handleWeaponFire(p, isShooting) {
-  let s = p.ship;
-  // Safety cooldown: ignore shooting inputs for 500ms after entering PLAYING mode
-  // to avoid "bleeding" touch events from the confirm button.
-  if (gameState.mode === 'playing') {
-    if (millis() - gameState.playingStartTime < 500) return;
-  }
-
-  if (p.weaponMode === 0) {
-    // NORMAL: rate-limited burst fire; tank shells slower than standard bullets
-    if (isShooting) {
-      let des = SHIP_DESIGNS[p.designIndex];
-      let isTank = (des && des.shotType === 'tank_shell');
-      let rate = isTank ? 15 : 8;
-      if (_simTick % rate === 0) {
-        if (isTank) fireTankShell(p);
-        else fireNormalPattern(p, s);
-      }
-    }
-    p.shootHeld = isShooting;
-  } else if (p.weaponMode === 1) {
-    // MISSILE: edge-detect — fires once per press
-    if (isShooting && !p.shootHeld) fireMissile(p);
-    p.shootHeld = isShooting;
-  } else if (p.weaponMode === 2) {
-    // BARRIER: auto-repeat at the same 8-tick cadence as normal bullets
-    if (isShooting && _simTick % 8 === 0) fireBarrier(p);
-    // Track shootHeld so switching modes resets missile edge-detection
-    p.shootHeld = isShooting;
-  }
-}
+// Weapons are now part of the Player class or handled via fireNormalPattern/fireBarrier.
 
 // ---------------------------------------------------------------------------
 // Input and physics update
@@ -751,35 +637,70 @@ function _handleWeaponFire(p, isShooting) {
 function updateShipInput(p) {
   if (p.dead || gameState.mode === 'gameover') return;
 
-  // Reset each frame so stale enemy references never persist across frames.
   p.aimTarget = null;
-
   const d = SHIP_DESIGNS[p.designIndex] || DEFAULT_SHIP_DESIGN;
 
-  _applyMouseSteering(p);
+  // Delegate physics and orientation to the Vehicle instance
+  const inputs = {
+    thrust: inputManager.getActionActive(p, 'thrust'),
+    brake: inputManager.getActionActive(p, 'brake')
+  };
+  const deltas = inputManager.getSteeringDeltas(p, d);
+  // getSteeringDeltas may have updated aimTarget (it uses side effects for aim tracking)
+  
+  const status = p.ship.update(d, inputs, deltas);
 
-  let k = p.keys;
-  // Track mouse release so clicking to enter pointer-lock doesn't accidentally fire.
-  if (!gameState.leftMouseDown) gameState.mouseReleasedSinceStart = true;
+  if (status === 'killed') {
+    killPlayer(p);
+    return;
+  }
+  if (status === 'stopped') return;
 
-  let isThrusting = keyIsDown(k.thrust) || (p.id === 0 && !gameState.isMobile && gameState.rightMouseDown);
-  let isBraking = keyIsDown(k.brake);
-  let isShooting = keyIsDown(k.shoot) || (p.id === 0 && !gameState.isMobile && gameState.leftMouseDown && gameState.mouseReleasedSinceStart);
+  // --- Weapon Fire Logic ---
+  const isShooting = inputManager.getActionActive(p, 'shoot');
+  _handleWeaponFiring(p, isShooting);
 
-  ({ isThrusting, isShooting } = _applyMobileInputs(p, isThrusting, isShooting));
-  _applyKeyboardSteering(p, d);
-
-  // Physics: ground vehicles and aircraft use separate models
-  if (d.isGroundVehicle) {
-    if (_updateGroundVehicle(p, d, isThrusting, isBraking)) return;
-  } else {
-    if (_updateAircraft(p, d, isThrusting, isBraking)) return;
+  // Mobile-specific edge detect for missile
+  if (gameState.isMobile && p.id === 0 && mobileController) {
+    const mInputs = mobileController.getInputs(p.ship, enemyManager.enemies, 0, 0);
+    if (mInputs.missile && !p.mobileMissilePressed) {
+      p.fireMissile();
+      p.mobileMissilePressed = true;
+    } else if (!mInputs.missile) {
+      p.mobileMissilePressed = false;
+    }
   }
 
-  // Sustained thrust sound (runs every frame for both vehicle types)
-  gameSFX?.setThrust(p.id, isThrusting, p.ship.x, p.ship.y, p.ship.z);
+  // Sustained thrust sound
+  gameSFX?.setThrust(p.id, inputs.thrust, p.ship.x, p.ship.y, p.ship.z);
+}
 
-  _handleWeaponFire(p, isShooting);
+function _handleWeaponFiring(p, isShooting) {
+  // Safety cooldown: ignore shooting inputs for 500ms after entering PLAYING mode
+  if (gameState.mode === 'playing') {
+    if (millis() - gameState.playingStartTime < 500) return;
+  }
+
+  if (p.weaponMode === 0) { // NORMAL
+    if (isShooting) {
+      const des = SHIP_DESIGNS[p.designIndex];
+      const isTank = (des && des.shotType === 'tank_shell');
+      const rate = isTank ? 15 : 8;
+      if (physicsEngine.tickCount % rate === 0) {
+        if (isTank) fireTankShell(p);
+        else fireNormalPattern(p, p.ship);
+      }
+    }
+    p.shootHeld = isShooting;
+  } else if (p.weaponMode === 1) { // MISSILE
+    if (isShooting && !p.shootHeld) {
+      p.fireMissile();
+    }
+    p.shootHeld = isShooting;
+  } else if (p.weaponMode === 2) { // BARRIER
+    if (isShooting && physicsEngine.tickCount % 8 === 0) fireBarrier(p);
+    p.shootHeld = isShooting;
+  }
 }
 
 /**

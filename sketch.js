@@ -11,28 +11,9 @@
 // Game logic is layered across specialized modules for testability and clarity.
 // =============================================================================
 
-// Forward declarations for global access (populated after module load)
-let isMobile = false;
-let isAndroid = false;
-
 // ---------------------------------------------------------------------------
-// Fixed-timestep physics
-//
-// Game logic (bullets, enemies, infection) runs at a fixed 60 Hz tick rate
-// regardless of the display refresh rate.  The accumulator collects elapsed
-// wall-clock time each draw() call; whole ticks are drained from it before
-// the frame is rendered.  This keeps gameplay identical on 60, 75, 144 Hz
-// and throttled-mobile screens.
-//
-//   _SIM_DT   — physics step duration in ms (1000 / 60 ≈ 16.667 ms)
-//   _physAccum — leftover ms not yet consumed by a completed physics tick
-//   _simTick  — monotonically incrementing tick counter (replaces frameCount
-//               inside every physics function so timing is Hz-independent)
+// Orchestration Layers
 // ---------------------------------------------------------------------------
-const _SIM_DT = 1000 / 60;     // ~16.667 ms per physics step
-const _MAX_PHYSICS_STEP_MS = 100; // deltaTime cap — prevents spiral-of-death on tab-switch / GC pauses
-let _physAccum = 0;
-let _simTick = 0;
 
 // ---------------------------------------------------------------------------
 // p5 lifecycle — preload / setup
@@ -48,9 +29,7 @@ function preload() {
  * Mobile devices receive reduced object counts and draw distances.
  */
 function setup() {
-  gameState.detectPlatform();
-  isMobile = gameState.isMobile;
-  isAndroid = gameState.isAndroid;
+  inputManager.initialize();
 
   if (gameState.isMobile) {
     VIEW_NEAR = MOBILE_VIEW_LIMITS.near;
@@ -68,19 +47,6 @@ function setup() {
 
   gameRenderer.sceneFBO = null;
   gameRenderer.initialize(gameState.isMobile);
-
-  // Suppress context menu on right-click
-  document.addEventListener('contextmenu', event => event.preventDefault());
-
-  // Track mouse button state via DOM events
-  document.addEventListener('mousedown', e => {
-    if (e.button === 0) gameState.leftMouseDown = true;
-    if (e.button === 2) gameState.rightMouseDown = true;
-  });
-  document.addEventListener('mouseup', e => {
-    if (e.button === 0) gameState.leftMouseDown = false;
-    if (e.button === 2) gameState.rightMouseDown = false;
-  });
 
   // Handle backgrounding/pause
   document.addEventListener('visibilitychange', () => {
@@ -119,8 +85,8 @@ function setup() {
  * of extra ticks on the first gameplay frame.
  */
 function startGame(np) {
-  _physAccum = 0;
-  _simTick = 0;
+  physicsEngine.setPaused(false);
+  physicsEngine.reset(true);
   gameState.startNewGame(np);
 }
 
@@ -155,6 +121,7 @@ function draw() {
     return; 
   }
   if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
+  if (gameState.mode === 'gameover') { drawGameOver(); return; }
 
   
   if (gameState.mode === 'paused' && !gameState.shouldCapture) {
@@ -177,22 +144,12 @@ function draw() {
   const profiler = getVironProfiler();
   const frameStart = profiler ? performance.now() : 0;
 
+  inputManager.update();
   gameRenderer.updatePerformanceScaling();
   terrain.clearCaches();
 
-  if (gameState.isMobile && gameState.numPlayers === 1 && mobileController) {
-    mobileController.update(touches, width, height);
-  }
-
-  // Fixed-timestep physics accumulator.
-  // Cap raw delta to _MAX_PHYSICS_STEP_MS to avoid a spiral-of-death after
-  // tab switches, debugger pauses, or severe thermal throttle spikes.
-  const rawDt = Math.min(deltaTime, _MAX_PHYSICS_STEP_MS);
-  _physAccum += rawDt;
-  while (_physAccum >= _SIM_DT) {
-    _physAccum -= _SIM_DT;
-    _simTick++;
-
+  // Fixed-timestep physics update
+  physicsEngine.update(deltaTime, (tick) => {
     // Physics update pipeline (runs at a steady 60 Hz equivalent)
     for (let p of gameState.players) updateShipInput(p);
     enemyManager.update();
@@ -204,7 +161,7 @@ function draw() {
     for (let p of gameState.players) updateProjectilePhysics(p);
     updateBarrierPhysics();
     GameLoop.updateLevelAndRespawn();
-  }
+  });
 
   // Rendering — executes once per display frame regardless of Hz
   gameRenderer.updateSentinelGlows();
@@ -232,38 +189,10 @@ function draw() {
  * p5 keyPressed — handles game-start key presses on the menu, and weapon
  * cycling during gameplay for both players.
  */
-function keyPressed() {
-  if (gameState.mode === 'menu') {
-    if (key === '1') startGame(1);
-    else if (key === '2') startGame(2);
-    return;
-  }
-
-  // Toggle pause with Esc
-  if (keyCode === 27) {
-    if (gameState.mode === 'playing') {
-      gameState.pauseGame();
-    } else if (gameState.mode === 'paused') {
-      gameState.resumeGame();
-      if (!isMobile) requestPointerLock();
-    }
-    return;
-  }
+function keyPressed(event) {
+  if (inputManager.handleTransition('key', event)) return;
 
   if (gameState.mode === 'paused') return; // Ignore other keys while paused
-
-  if (gameState.mode === 'mission') {
-    gameState.mode = 'instructions';
-    return;
-  }
-
-  if (gameState.mode === 'instructions') {
-    // Any relevant key on desktop moves past instructions to ship selection
-    if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
-      gameState.mode = 'shipselect';
-    }
-    return;
-  }
 
   if (gameState.mode === 'shipselect') {
     for (let p of gameState.players) {
@@ -282,18 +211,9 @@ function keyPressed() {
       }
     }
 
-    // Check if all players are ready -> move to view selection
+    // Check if all players are ready -> move to cockpit selection
     if (gameState.players.every(p => p.ready)) {
       gameState.mode = 'cockpitSelection';
-    }
-    return;
-  }
-
-  if (gameState.mode === 'cockpitSelection') {
-    if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
-      gameState.activatePlayingMode();
-    } else if (key === 'o' || key === 'O') {
-      gameState.firstPersonView = !gameState.firstPersonView;
     }
     return;
   }
@@ -341,27 +261,8 @@ function keyPressed() {
  */
 function touchStarted(event) {
   if (event.target.tagName !== 'CANVAS') return true;
+  if (inputManager.handleTransition('touch', event)) return false;
 
-  if (gameState.mode === 'menu' || gameState.mode === 'instructions') {
-    if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
-      fullscreen(true);
-    }
-  }
-
-  if (gameState.mode === 'menu') { startGame(1); return false; }
-  if (gameState.mode === 'mission') {
-    gameState.mode = 'instructions';
-    return false;
-  }
-  if (gameState.mode === 'instructions') {
-    if (mobileController) {
-      let hit = mobileController.checkSettingsHit(mouseX, mouseY);
-      if (hit === 'continue') {
-        gameState.mode = 'shipselect';
-      }
-    }
-    return false;
-  }
   if (gameState.mode === 'shipselect') {
     _shipSelectHit(mouseX, mouseY, true);
     return false;
@@ -373,12 +274,6 @@ function touchStarted(event) {
         gameState.activatePlayingMode();
       }
     }
-    return false;
-  }
-  if (gameState.mode === 'paused') {
-    const action = _handlePauseScreenHit(mouseX, mouseY);
-    if (action === 'resume') gameState.resumeGame();
-    else if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; }
     return false;
   }
   return handleTouchStarted?.() ?? false;
@@ -402,58 +297,23 @@ function touchMoved(event) {
  * • Middle-click during gameplay fires the active weapon for P1.
  * • Any click during gameplay requests pointer-lock for mouse-look.
  */
-function mousePressed() {
-  if (!isMobile) {
-    if (gameState.mode === 'menu' && !gameState.hasClickedOnce) {
-      if (shouldRequestFullscreen?.()) {
-        fullscreen(true);
-      }
-      gameState.hasClickedOnce = true;
-      return; // Do not advance game on first click
-    }
+function mousePressed(event) {
+  if (inputManager.handleTransition('mouse', event)) return;
 
-    if (gameState.mode === 'menu') {
-      startGame(1);
-    } else if (gameState.mode === 'mission') {
-      gameState.mode = 'instructions';
-    } else if (gameState.mode === 'instructions') {
-      if (mobileController) {
-        let hit = mobileController.checkSettingsHit(mouseX, mouseY);
-        if (hit === 'continue') {
-          gameState.mode = 'shipselect';
-          return;
-        }
-        if (hit) return;
-      }
-      // On desktop, clicking anywhere else advances to ship selection
-      gameState.mode = 'shipselect';
-    } else if (gameState.mode === 'shipselect') {
-      _shipSelectHit(mouseX, mouseY, false);
-    } else if (gameState.mode === 'cockpitSelection') {
-      if (mobileController) {
-        let hit = mobileController.checkSettingsHit(mouseX, mouseY);
-        if (hit === 'continue') {
-          gameState.activatePlayingMode();
-          return;
-        }
-        if (hit) return;
-      }
-      // On desktop, clicking anywhere else advances to playing
-      if (!gameState.isMobile) {
+  if (gameState.mode === 'shipselect') {
+    _shipSelectHit(mouseX, mouseY, false);
+  } else if (gameState.mode === 'cockpitSelection') {
+    if (mobileController) {
+      let hit = mobileController.checkSettingsHit(mouseX, mouseY);
+      if (hit === 'continue') {
         gameState.activatePlayingMode();
+        return;
       }
-      return;
-    } else if (gameState.mode === 'paused') {
-      const action = _handlePauseScreenHit(mouseX, mouseY);
-      if (action === 'resume') { gameState.resumeGame(); requestPointerLock(); }
-      else if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; }
-    } else if (gameState.mode === 'playing') {
-      if (mouseButton === CENTER) {
-        if (gameState.players.length > 0 && !gameState.players[0].dead) {
-          gameState.players[0].weaponMode = (gameState.players[0].weaponMode + 1) % WEAPON_MODES.length;
-        }
-      }
-      requestPointerLock();
+      if (hit) return;
+    }
+    // On desktop, clicking anywhere else advances to playing
+    if (!gameState.isMobile) {
+      gameState.activatePlayingMode();
     }
   }
 }

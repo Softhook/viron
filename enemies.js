@@ -420,7 +420,7 @@ class EnemyManager {
    * @param {object} refShip  Reference ship position used for boundary checks.
    */
   updateBomber(e, refShip) {
-    e.y += sin(_simTick * 0.02 + e.id);  // Gentle vertical oscillation
+    e.y += sin(physicsEngine.tickCount * 0.02 + e.id);  // Gentle vertical oscillation
 
     // Terrain avoidance: push up to maintain clearance over mountains
     this._applyTerrainAvoidance(e, 200, 0.4);
@@ -575,7 +575,7 @@ class EnemyManager {
    * @param {object} refShip  Boundary reference ship.
    */
   updateSeeder(e, refShip) {
-    e.y += sin(_simTick * 0.05 + e.id) * 2;  // Gentle vertical oscillation
+    e.y += sin(physicsEngine.tickCount * 0.05 + e.id) * 2;  // Gentle vertical oscillation
 
     // Terrain avoidance: maintain flight level over mountains
     this._applyTerrainAvoidance(e, 250, 0.3);
@@ -618,7 +618,7 @@ class EnemyManager {
       // can be retried after its barrier is removed.
       if (!e._skipSentinels) e._skipSentinels = new Map();
       for (const [s, expiry] of e._skipSentinels) {
-        if (_simTick >= expiry) e._skipSentinels.delete(s);
+        if (physicsEngine.tickCount >= expiry) e._skipSentinels.delete(s);
       }
 
       // --- Mode 1: Hunt nearest healthy, reachable (unbarriered) sentinel ---
@@ -658,7 +658,7 @@ class EnemyManager {
         }
         e._scorpionPrevDistSq = curDistSq;
         if (e._scorpionStuckTicks > SCORPION_STUCK_THRESHOLD_TICKS) {
-          e._skipSentinels.set(chosen, _simTick + SCORPION_SKIP_DURATION_TICKS);
+          e._skipSentinels.set(chosen, physicsEngine.tickCount + SCORPION_SKIP_DURATION_TICKS);
           e._scorpionTarget = null;
           e._scorpionStuckTicks = 0;
           e._scorpionPrevDistSq = Infinity;

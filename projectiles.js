@@ -39,7 +39,7 @@ function updateProjectilePhysics(p) {
             }
           }
         }
-        if (!bestTarget && _simTick % 2 === 0) {
+        if (!bestTarget && physicsEngine.tickCount % 2 === 0) {
           let bTx = Math.floor(b.x / 120), bTz = Math.floor(b.z / 120);
           for (let tz = bTz - 2; tz <= bTz + 2; tz++) {
             for (let tx = bTx - 2; tx <= bTx + 2; tx++) {
@@ -113,7 +113,7 @@ function updateProjectilePhysics(p) {
     m.x += m.vx; m.y += m.vy; m.z += m.vz;
     m.life--;
 
-    if (_simTick % 2 === 0) {
+    if (physicsEngine.tickCount % 2 === 0) {
       particleSystem.particles.push({
         x: m.x, y: m.y, z: m.z,
         vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),

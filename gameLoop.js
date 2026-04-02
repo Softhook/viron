@@ -42,7 +42,6 @@ class GameLoop {
       let overlap = minD - d;
       let nx = dx / d, ny = dy / d, nz = dz / d;
       s.x += nx * overlap; s.y += ny * overlap; s.z += nz * overlap;
-      // Dampen velocity along normal
       let dot = s.vx * nx + s.vy * ny + s.vz * nz;
       if (dot < 0) {
         s.vx -= nx * dot * COLLISION_DAMPING;
@@ -70,7 +69,6 @@ class GameLoop {
     if (distSq < sr * sr) {
       let d = Math.sqrt(distSq);
       if (d === 0) {
-        // Center of sphere is inside box; push out along the shallowest axis
         let absX = hw - Math.abs(dx), absY = hh - Math.abs(dy), absZ = hd - Math.abs(dz);
         if (absX < absY && absX < absZ) { s.x += (dx > 0 ? absX + sr : -absX - sr); s.vx = 0; }
         else if (absY < absX && absY < absZ) { s.y += (dy > 0 ? absY + sr : -absY - sr); s.vy = 0; }
@@ -98,19 +96,15 @@ class GameLoop {
     const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
     const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
     const isGameOver = gameState.mode === 'gameover';
-    const shouldRun = isGameOver || (_simTick % 5 === 0);
+    const shouldRun = isGameOver || (physicsEngine.tickCount % 5 === 0);
 
     if (!shouldRun || (gameState.levelComplete && !isGameOver)) return;
     const spreadStart = profiler ? performance.now() : 0;
 
-    // A. Check: Too much infection?
     if (infection.count >= maxInf) {
       gameState.setGameOver('INFECTION REACHED CRITICAL MASS');
     }
 
-    // B. Check: Launchpad fully overrun?
-    // infection.launchpadCount is maintained incrementally by TileManager.add()
-    // and remove(), so this is O(1) instead of the previous O(LAUNCHPAD_TILE_SIZE²).
     if (infection.launchpadCount >= LAUNCHPAD_TILE_SIZE * LAUNCHPAD_TILE_SIZE) {
       gameState.setGameOver('LAUNCH PAD INFECTED');
     }
@@ -120,17 +114,15 @@ class GameLoop {
       return;
     }
 
-    // C. Viral spread rates (probability per tile per frame)
     const rate = isGameOver ? RAPID_INF_RATE : INF_RATE;
     const yellowRate = isGameOver ? Math.min(1.0, RAPID_INF_RATE * 1.2) : YELLOW_INF_RATE;
 
-    // 1. Standard spread: iterate "active" tiles that are likely to have empty neighbors.
     const active = infection.activeList;
     let soundCount = 0;
     for (let i = active.length - 1; i >= 0; i--) {
       let t = active[i];
       let currentRate = (t.type === 'yellow') ? yellowRate : rate;
-      
+
       if (random() > currentRate) continue;
 
       let d = ORTHO_DIRS[floor(random(4))];
@@ -148,28 +140,25 @@ class GameLoop {
           }
           if (isLaunchpad(wx, wz)) maybePlayLaunchpadAlarm();
         }
-      } else {
-        // Optimize: if spread fails, check if this tile is now completely surrounded.
-        if (random() < 0.05) {
-          let blocked = true;
-          for (const dd of ORTHO_DIRS) {
-            let nkk = tileKey(t.tx + dd[0], t.tz + dd[1]);
-            if (!infection.has(nkk) && !gameState.barrierTiles.has(nkk)) {
-              blocked = false; break;
-            }
+      } else if (random() < 0.05) {
+        let blocked = true;
+        for (const dd of ORTHO_DIRS) {
+          let nkk = tileKey(t.tx + dd[0], t.tz + dd[1]);
+          if (!infection.has(nkk) && !gameState.barrierTiles.has(nkk)) {
+            blocked = false;
+            break;
           }
-          if (blocked) {
-            const last = active[active.length - 1];
-            active[i] = last;
-            last._activeIdx = i;
-            active.pop();
-            t._activeIdx = undefined;
-          }
+        }
+        if (blocked) {
+          const last = active[active.length - 1];
+          active[i] = last;
+          last._activeIdx = i;
+          active.pop();
+          t._activeIdx = undefined;
         }
       }
     }
 
-    // 2. Accelerated spread from infected sentinels
     if (gameState.sentinelBuildings) {
       for (let b of gameState.sentinelBuildings) {
         let stx = toTile(b.x), stz = toTile(b.z);
@@ -205,19 +194,6 @@ class GameLoop {
    * Returns true when the enemy was destroyed; returns false when a boss was
    * hit but survived (so other weapon types are still tested this frame).
    * @private
-   * @param {object[]} projectiles   Player's projectile array (mutated on hit).
-   * @param {object}   player        Player state.
-   * @param {object}   e             Enemy to test.
-   * @param {number}   j             Index of `e` in enemyManager.enemies.
-   * @param {number}   enemyScaleSq  Precomputed (ENEMY_DRAW_SCALE/2)^2.
-   * @param {number}   normalRadSq   Hit-radius² for standard enemies.
-   * @param {number}   colossusRadSq Hit-radius² for Colossus (multiplied by its scale²).
-   * @param {number}   shakeAmt      Camera shake strength on a normal-enemy kill.
-   * @param {number}   normalScore   Score awarded for a normal-enemy kill.
-   * @param {number}   colossusDmg   HP damage applied to boss on hit.
-   * @param {number}   colossusFlash Flash duration (frames) for boss hit feedback.
-   * @param {number}   colossusHitScore Score awarded per boss hit.
-   * @returns {boolean}
    */
   static _checkProjectileArrayVsEnemy(
     projectiles, player, e, j, enemyScaleSq,
@@ -244,12 +220,13 @@ class GameLoop {
         if (isBoss) {
           swapRemove(projectiles, i);
           return this._damageBoss(player, j, colossusDmg, colossusFlash, colossusHitScore, 2000);
-        } else {
-          particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-          gameRenderer?.setShake(shakeAmt);
-          swapRemove(enemyManager.enemies, j); swapRemove(projectiles, i);
-          player.score += normalScore; return true;
         }
+        particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
+        gameRenderer?.setShake(shakeAmt);
+        swapRemove(enemyManager.enemies, j);
+        swapRemove(projectiles, i);
+        player.score += normalScore;
+        return true;
       }
     }
     return false;
@@ -277,16 +254,9 @@ class GameLoop {
 
   /**
    * Shared helper: tests `projectiles` against infected procedural trees in the
-   * tile grid.  For each projectile, searches a `searchR`-tile square around the
+   * tile grid. For each projectile, searches a `searchR`-tile square around the
    * projectile's tile; removes and calls `onHit(proj, tx, tz)` on the first match.
-   *
    * @private
-   * @param {object[]} projectiles  Projectile array (mutated on hit via swapRemove).
-   * @param {number}   searchR      Tile search radius (1 = 3×3, 2 = 5×5).
-   * @param {number}   hitRadSq     Horizontal squared-distance threshold for a hit.
-   * @param {number}   yTolHi       Vertical tolerance above ground for hit detection.
-   * @param {number}   yTolLo       Vertical tolerance below tree base for hit detection.
-   * @param {Function} onHit        Called as onHit(proj, tx, tz) when a hit occurs.
    */
   static _checkProjectilesVsTreeType(projectiles, searchR, hitRadSq, yTolHi, yTolLo, onHit) {
     for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -294,7 +264,6 @@ class GameLoop {
       if (proj.y < -300) continue;
 
       const tx0 = toTile(proj.x), tz0 = toTile(proj.z);
-      let hit = false;
       outer: for (let tz = tz0 - searchR; tz <= tz0 + searchR; tz++) {
         for (let tx = tx0 - searchR; tx <= tx0 + searchR; tx++) {
           const t = terrain.tryGetProceduralTree(tx, tz);
@@ -306,7 +275,6 @@ class GameLoop {
           if (!infection.has(tileKey(tx, tz))) continue;
           onHit(proj, tx, tz);
           swapRemove(projectiles, i);
-          hit = true;
           break outer;
         }
       }
@@ -318,24 +286,20 @@ class GameLoop {
    * @private
    */
   static _checkProjectilesVsTrees(player) {
-    // Bullets vs infected trees (1-tile search radius = 3×3)
-    this._checkProjectilesVsTreeType(player.bullets, 1, 3600, 10, 10, (b, tx, tz) => {
+    this._checkProjectilesVsTreeType(player.bullets, 1, 3600, 10, 10, (_bullet, tx, tz) => {
       clearInfectionRadius(tx, tz);
       player.score += 200;
     });
 
-    // Tank shells vs infected trees (2-tile search radius = 5×5)
-    this._checkProjectilesVsTreeType(player.tankShells, 2, 10000, 20, 20, (ts, tx, tz) => {
+    this._checkProjectilesVsTreeType(player.tankShells, 2, 10000, 20, 20, (shell, tx, tz) => {
       clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
-      terrain.addPulse(ts.x, ts.z, 2.0);
-      particleSystem.addExplosion(ts.x, ts.y, ts.z);
+      terrain.addPulse(shell.x, shell.z, 2.0);
+      particleSystem.addExplosion(shell.x, shell.y, shell.z);
     });
   }
 
   /**
    * Evaluates exact Kraken tentacle geometry for collision detection.
-   * Tentacles wave slowly; evaluating their actual joint positions avoids
-   * massive crude sphere radius checks that kill the player unfairly.
    * @private
    */
   static _checkKrakenTentacles(s, e, kScale, shipRadSq) {
@@ -344,9 +308,8 @@ class GameLoop {
     let md = maxReach + Math.sqrt(shipRadSq);
     if (dx * dx + dy * dy + dz * dz > md * md) return false;
 
-    const fc = frameCount ?? 0;
-    const phase = fc * 0.02 + (e.id || 0) * 0.15;
-    
+    const phase = physicsEngine.tickCount * 0.02 + (e.id || 0) * 0.15;
+
     if (this._traceKrakenArms(6, 8, 28, 74, 5, 0.82, 0, phase, 1.0, e, s, kScale, shipRadSq)) return true;
     if (this._traceKrakenArms(2, 10, 30, 62, 4, 1.08, Math.PI / 6, phase + 1.8, 1.1, e, s, kScale, shipRadSq)) return true;
     return false;
@@ -362,7 +325,7 @@ class GameLoop {
     const waveOffX = isMain ? 0.07 : 0.06;
     const segFreqZ = 0.5 * waveSpeed;
     const segFreqX = isMain ? 0.4 : 0.38;
-    
+
     const rotX1_c = Math.cos(rotX1), rotX1_s = Math.sin(rotX1);
     const sx = s.x, sy = s.y, sz = s.z;
     const ex = e.x, ey = e.y, ez = e.z;
@@ -375,11 +338,9 @@ class GameLoop {
     for (let i = 0; i < numArms; i++) {
       const a = (i / numArms) * PI2 + angleOffset;
       const tPhase = tPhaseBase + i * phaseStep;
-      
       const acos = Math.cos(a), asin = Math.sin(a);
-      
+
       let px = acos * tx, py = ty, pz = -asin * tx;
-      
       let ux = acos, uy = 0, uz = -asin;
       let vx = asin * rotX1_s, vy = rotX1_c, vz = acos * rotX1_s;
       let wx = asin * rotX1_c, wy = -rotX1_s, wz = acos * rotX1_c;
@@ -387,29 +348,37 @@ class GameLoop {
       for (let seg = 0; seg < numSegs; seg++) {
         const sw = Math.sin(tPhase + seg * segFreqZ) * waveAmpZ;
         const rx2 = Math.sin(tPhase * 0.6 + seg * segFreqX) * waveAmpX - waveOffX;
-        
+
         const cZ = Math.cos(sw), sZ = Math.sin(sw);
         const cX = Math.cos(rx2), sX = Math.sin(rx2);
 
         let nux = ux * cZ + vx * sZ, nuy = uy * cZ + vy * sZ, nuz = uz * cZ + vz * sZ;
         let nvx = -ux * sZ + vx * cZ, nvy = -uy * sZ + vy * cZ, nvz = -uz * sZ + vz * cZ;
-        ux = nux; uy = nuy; uz = nuz;
+        ux = nux;
+        uy = nuy;
+        uz = nuz;
 
         let nvx2 = nvx * cX + wx * sX, nvy2 = nvy * cX + wy * sX, nvz2 = nvz * cX + wz * sX;
         let nwx2 = -nvx * sX + wx * cX, nwy2 = -nvy * sX + wy * cX, nwz2 = -nvz * sX + wz * cX;
-        vx = nvx2; vy = nvy2; vz = nvz2;
-        wx = nwx2; wy = nwy2; wz = nwz2;
-        
-        px += wx * segLen; py += wy * segLen; pz += wz * segLen;
-        
+        vx = nvx2;
+        vy = nvy2;
+        vz = nvz2;
+        wx = nwx2;
+        wy = nwy2;
+        wz = nwz2;
+
+        px += wx * segLen;
+        py += wy * segLen;
+        pz += wz * segLen;
+
         const distX = sx - (ex + px * kScale);
         const distY = sy - (ey + py * kScale);
         const distZ = sz - (ez + pz * kScale);
-        
+
         const t = seg * invSegs;
         const width = wBase * (1 - t) + wTip * t;
         const r = width * kScale + hitPad;
-        
+
         if (distX * distX + distY * distY + distZ * distZ < r * r) return true;
       }
     }
@@ -418,15 +387,6 @@ class GameLoop {
 
   /**
    * Runs all collision tests for one player each frame.
-   *
-   * Tests performed (priority order):
-   *   1. Enemy bullets vs player ship
-   *   2. Player bullets vs each enemy
-   *   3. Player missiles vs each enemy
-   *   4. Enemy body vs player ship body
-   *   5. Floating powerup vs player ship
-   *   6. Player projectiles vs infected trees
-   *
    * @public
    */
   static checkCollisions(player) {
@@ -435,34 +395,29 @@ class GameLoop {
 
     if (this._checkEnemyBulletsVsPlayer(player, s)) return;
 
-    // 2, 3, 4. Enemy body and weapons vs player
     const enemyScaleSq = _ENEMY_HALF_SCALE_SQ;
     for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
       let e = enemyManager.enemies[j];
       let killed = false;
 
-      // Player bullets, missiles, and tank shells vs enemy
       killed = this._checkProjectileArrayVsEnemy(
         player.bullets, player, e, j, enemyScaleSq,
         6400, 90000, 5, 100, 1, 12, 10);
-      if (!killed)
+      if (!killed) {
         killed = this._checkProjectileArrayVsEnemy(
           player.homingMissiles, player, e, j, enemyScaleSq,
           10000, 160000, 8, 250, 5, 20, 50);
-      if (!killed)
+      }
+      if (!killed) {
         killed = this._checkProjectileArrayVsEnemy(
           player.tankShells, player, e, j, enemyScaleSq,
           22500, 250000, 10, 300, 15, 30, 100);
-
-      // --- Body-to-Body Collision & Resolution ---
-      if (!killed) {
-        if (this._checkEnemyBodyVsPlayer(player, s, e)) return;
       }
+
+      if (!killed && this._checkEnemyBodyVsPlayer(player, s, e)) return;
     }
 
     this._checkPowerupsVsPlayer(player, s);
-
-    // Projectiles vs infected procedural trees
     this._checkProjectilesVsTrees(player);
   }
 
@@ -514,7 +469,7 @@ class GameLoop {
         }
       }
     } else if (e.type === 'kraken') {
-      const kScale  = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
+      const kScale = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
       const bodyRad = 74 * kScale;
       const dSq = dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z);
       const bdSum = bodyRad + shipRad;
@@ -523,7 +478,8 @@ class GameLoop {
         if (speedSq > 49.0) { killPlayer(player); return true; }
         this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
       } else if (this._checkKrakenTentacles(s, e, kScale, shipRad * shipRad)) {
-        killPlayer(player); return true;
+        killPlayer(player);
+        return true;
       }
     } else {
       let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2);
@@ -540,30 +496,32 @@ class GameLoop {
   static _checkPowerupsVsPlayer(player, s) {
     for (let i = gameState.buildings.length - 1; i >= 0; i--) {
       let b = gameState.buildings[i];
-      if (b.type === 3) {
-        let floatY = b.y - b.h - 100 - sin(_simTick * 0.02 + b.x) * 50;
-        let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
-        let rSum = b.w + 15;
+      if (b.type !== 3) continue;
 
-        if (dx * dx + dy * dy + dz * dz < rSum * rSum) {
-          if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
-          let inf = infection.has(b._tileKey);
-          if (inf) {
-            if (player.missilesRemaining > 0) player.missilesRemaining--;
-            gameSFX?.playPowerup(false, b.x, floatY, b.z);
-          } else {
-            if (random() < 0.5) player.missilesRemaining++;
-            else player.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
-            player.score += 500;
-            gameSFX?.playPowerup(true, b.x, floatY, b.z);
-          }
-          swapRemove(gameState.buildings, i);
-          for (let j = 0; j < 20; j++) {
-            particleSystem.particles.push({
-              x: b.x, y: floatY, z: b.z, vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
-              life: 255, decay: 12, size: random(4, 9), color: inf ? [200, 50, 50] : [60, 180, 240]
-            });
-          }
+      let floatY = b.y - b.h - 100 - sin(physicsEngine.tickCount * 0.02 + b.x) * 50;
+      let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
+      let rSum = b.w + 15;
+
+      if (dx * dx + dy * dy + dz * dz < rSum * rSum) {
+        if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
+        let inf = infection.has(b._tileKey);
+        if (inf) {
+          if (player.missilesRemaining > 0) player.missilesRemaining--;
+          gameSFX?.playPowerup(false, b.x, floatY, b.z);
+        } else {
+          if (random() < 0.5) player.missilesRemaining++;
+          else player.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
+          player.score += 500;
+          gameSFX?.playPowerup(true, b.x, floatY, b.z);
+        }
+        swapRemove(gameState.buildings, i);
+        for (let j = 0; j < 20; j++) {
+          particleSystem.particles.push({
+            x: b.x, y: floatY, z: b.z,
+            vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
+            life: 255, decay: 12, size: random(4, 9),
+            color: inf ? [200, 50, 50] : [60, 180, 240]
+          });
         }
       }
     }
@@ -571,7 +529,6 @@ class GameLoop {
 
   /**
    * Computes infection proximity, pulse overlap, and scan-sweep for ambiance audio.
-   * Called once per frame to update audio mix based on primary player position.
    * @public
    */
   static updateAmbianceAudio() {
@@ -581,10 +538,9 @@ class GameLoop {
     let proximityData = { dist: 10000 };
 
     if (p && !p.dead && p.ship) {
-      if (_simTick % 10 !== 0 && GameLoop._lastAmbDist !== undefined) {
+      if (physicsEngine.tickCount % 10 !== 0 && GameLoop._lastAmbDist !== undefined) {
         proximityData.dist = GameLoop._lastAmbDist;
       } else {
-        // Nearest infected tile within 8-tile radius
         let px = toTile(p.ship.x), pz = toTile(p.ship.z);
         let minDistSq = 1000000;
         for (let dz = -8; dz <= 8; dz++) {
@@ -603,7 +559,6 @@ class GameLoop {
         proximityData.dist = GameLoop._lastAmbDist;
       }
 
-      // Pulse overlap detection
       let nowSec = millis() / 1000.0;
       let maxScan = 0;
       for (let pulse of terrain.activePulses) {
@@ -622,7 +577,6 @@ class GameLoop {
       }
       proximityData.pulseOverlap = maxScan;
 
-      // Scan-sweep sync with terrain shader
       let xP = p.ship.x / TILE, zP = p.ship.z / TILE;
       let scanPos = nowSec / 10.0;
       let val = 1.0 - Math.abs(((xP * 0.02 + zP * 0.01 - scanPos) % 1.0 + 1.0) % 1.0 - 0.5) * 2.0;

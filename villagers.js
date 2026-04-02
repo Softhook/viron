@@ -68,9 +68,7 @@ class VillagerManager extends AgentManager {
     }
 
     // Audio
-    if (typeof gameSFX !== 'undefined') {
-      gameSFX.playVillagerDeath(v.x, v.y, v.z);
-    }
+    gameSFX?.playVillagerDeath(v.x, v.y, v.z);
 
     // Release budget slot
     if (v.villageRef) {
@@ -289,9 +287,7 @@ class VillagerManager extends AgentManager {
               infection.remove(cureKey);
               // Visual + audio feedback
               terrain.addPulse(v.targetTx * TILE, v.targetTz * TILE, 3.0);
-              if (typeof gameSFX !== 'undefined') {
-                gameSFX.playVillagerCure(v.x, v.y, v.z);
-              }
+              gameSFX?.playVillagerCure(v.x, v.y, v.z);
               // Small particle burst
               for (let p = 0; p < 8; p++) {
                 particleSystem.particles.push({

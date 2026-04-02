@@ -19,8 +19,8 @@ const HUD_DIM_SPEED = 0.15; // Lerp speed for transitions
 const HUD_STATS = [
   { label: 'SCORE', color: [255, 255, 255], size: 20, py: 8, getVal: p => p.score },
   { label: 'ALT', color: [0, 255, 0], size: 16, py: 32, getVal: (p, s) => Math.max(0, Math.floor(SEA - s.y)) },
-  { label: 'VIRON', color: [255, 60, 60], size: 14, py: 54, getVal: () => (typeof infection !== 'undefined' ? infection.count : 0) },
-  { label: 'ENEMIES', color: [255, 100, 100], size: 14, py: 72, getVal: () => (typeof enemyManager !== 'undefined' ? enemyManager.enemies.length : 0) },
+  { label: 'VIRON', color: [255, 60, 60], size: 14, py: 54, getVal: () => infection?.count ?? 0 },
+  { label: 'ENEMIES', color: [255, 100, 100], size: 14, py: 72, getVal: () => enemyManager?.enemies.length ?? 0 },
   { label: 'MISSILES', color: [0, 200, 255], size: 14, py: 90, getVal: p => p.missilesRemaining },
   { label: 'SHOT', color: [220, 220, 220], size: 14, py: 108, getVal: p => (NORMAL_SHOT_MODE_LABELS[p.normalShotMode] || 'SINGLE') }
 ];

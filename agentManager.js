@@ -44,7 +44,7 @@ class AgentManager {
   }
 
   clear() {
-    if (typeof gameState !== 'undefined' && gameState.level === 1) {
+    if (gameState.level === 1) {
       this.agents.length = 0;
     }
     this.hubs = gameState.buildings.filter(b => b.type === this.hubType);
@@ -92,7 +92,7 @@ class AgentManager {
   }
 
   _findNearestGroundEnemy(u, searchRadiusTiles) {
-    if (typeof enemyManager === 'undefined') return null;
+    if (!enemyManager) return null;
     const maxDistSq = (searchRadiusTiles * TILE) * (searchRadiusTiles * TILE);
     let bestDistSq = maxDistSq;
     let best = null;
@@ -220,8 +220,8 @@ class AgentManager {
       if (this.onNoTarget) this.onNoTarget(u);
       
       // Use Math.random since random is global p5
-      if (typeof random !== 'undefined' ? random() < 0.02 : Math.random() < 0.02) {
-        const angle = typeof random !== 'undefined' ? random(Math.PI * 2) : Math.random() * Math.PI * 2;
+      if (random() < 0.02) {
+        const angle = random(Math.PI * 2);
         u.vx = Math.cos(angle) * this.config.speed * this.config.wanderSpeedMult;
         u.vz = Math.sin(angle) * this.config.speed * this.config.wanderSpeedMult;
       }

@@ -57,7 +57,7 @@ const ALARM_COOLDOWN_MS = 1000;
 function maybePlayLaunchpadAlarm() {
   const now = millis();
   if (now - gameState.lastAlarmTime <= ALARM_COOLDOWN_MS) return false;
-  if (typeof gameSFX !== 'undefined') gameSFX.playAlarm();
+  gameSFX?.playAlarm();
   gameState.lastAlarmTime = now;
   return true;
 }
@@ -83,7 +83,7 @@ function clearInfectionAt(wx, wz, p) {
   if (!infection.has(tileKey(tx, tz))) return false;
   clearInfectionRadius(tx, tz);
   if (p) p.score += 100;
-  if (typeof gameSFX !== 'undefined') gameSFX.playClearInfection(wx, terrain.getAltitude(wx, wz), wz);
+  gameSFX?.playClearInfection(wx, terrain.getAltitude(wx, wz), wz);
   return true;
 }
 
@@ -146,7 +146,7 @@ function setup() {
   terrain.init();
   textFont(gameState.gameFont);
 
-  if (typeof aimAssist !== 'undefined') {
+  if (aimAssist) {
     aimAssist.enabled = gameState.isMobile;
   }
 
@@ -198,15 +198,13 @@ function startLevel(lvl) {
  * Rendering always executes once per display frame.
  */
 function draw() {
-  if (typeof HUD_Manager !== 'undefined') HUD_Manager.update();
+  HUD_Manager?.update();
 
   if (gameState.mode === 'menu') { drawMenu(); return; }
   if (gameState.mode === 'mission') { drawMission(); return; }
   if (gameState.mode === 'instructions') { drawInstructions(); return; }
   if (gameState.mode === 'cockpitSelection') { 
-    if (typeof HUD_Screens !== 'undefined' && HUD_Screens.drawCockpitSelection) {
-      HUD_Screens.drawCockpitSelection(); 
-    }
+    HUD_Screens?.drawCockpitSelection();
     return; 
   }
   if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
@@ -235,7 +233,7 @@ function draw() {
   gameRenderer.updatePerformanceScaling();
   terrain.clearCaches();
 
-  if (gameState.isMobile && gameState.numPlayers === 1 && typeof mobileController !== 'undefined') {
+  if (gameState.isMobile && gameState.numPlayers === 1 && mobileController) {
     mobileController.update(touches, width, height);
   }
 
@@ -251,8 +249,8 @@ function draw() {
     // Physics update pipeline (runs at a steady 60 Hz equivalent)
     for (let p of gameState.players) updateShipInput(p);
     enemyManager.update();
-    if (typeof villagerManager !== 'undefined') villagerManager.update();
-    if (typeof wizardManager !== 'undefined') wizardManager.update();
+    villagerManager?.update();
+    wizardManager?.update();
     for (let p of gameState.players) GameLoop.checkCollisions(p);
     GameLoop.spreadInfection();
     particleSystem.updatePhysics();
@@ -373,24 +371,18 @@ function keyPressed() {
   // Toggle ship design (L key)
   if (key === 'l' || key === 'L') {
     for (let p of gameState.players) {
-      if (typeof SHIP_DESIGNS !== 'undefined') {
-        p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
-      }
+      p.designIndex = (p.designIndex + 1) % SHIP_DESIGNS.length;
     }
   }
 
   // Debug step through Day/Night Cycle (N / M keys)
   if (key === 'n' || key === 'N') {
-    if (typeof updateTimeOfDay === 'function' && typeof currentTimeStep !== 'undefined') {
-      updateTimeOfDay(currentTimeStep - 1);
-    }
+    updateTimeOfDay(currentTimeStep - 1);
   }
   if (key === 'm' || key === 'M') {
-    if (typeof updateTimeOfDay === 'function' && typeof currentTimeStep !== 'undefined') {
-      updateTimeOfDay(currentTimeStep + 1);
-    }
+    updateTimeOfDay(currentTimeStep + 1);
     // Debug convenience: also jump to the next level in the same key press.
-    if (gameState.mode === 'playing' && typeof startLevel === 'function' && typeof gameState !== 'undefined') {
+    if (gameState.mode === 'playing') {
       startLevel(gameState.level + 1);
     }
   }
@@ -415,7 +407,7 @@ function touchStarted(event) {
     return false;
   }
   if (gameState.mode === 'instructions') {
-    if (typeof mobileController !== 'undefined') {
+    if (mobileController) {
       let hit = mobileController.checkSettingsHit(mouseX, mouseY);
       if (hit === 'continue') {
         gameState.mode = 'shipselect';
@@ -428,7 +420,7 @@ function touchStarted(event) {
     return false;
   }
   if (gameState.mode === 'cockpitSelection') {
-    if (typeof mobileController !== 'undefined') {
+    if (mobileController) {
       let hit = mobileController.checkSettingsHit(mouseX, mouseY);
       if (hit === 'continue') {
         gameState.activatePlayingMode();
@@ -479,7 +471,7 @@ function mousePressed() {
     } else if (gameState.mode === 'mission') {
       gameState.mode = 'instructions';
     } else if (gameState.mode === 'instructions') {
-      if (typeof mobileController !== 'undefined') {
+      if (mobileController) {
         let hit = mobileController.checkSettingsHit(mouseX, mouseY);
         if (hit === 'continue') {
           gameState.mode = 'shipselect';
@@ -492,7 +484,7 @@ function mousePressed() {
     } else if (gameState.mode === 'shipselect') {
       _shipSelectHit(mouseX, mouseY, false);
     } else if (gameState.mode === 'cockpitSelection') {
-      if (typeof mobileController !== 'undefined') {
+      if (mobileController) {
         let hit = mobileController.checkSettingsHit(mouseX, mouseY);
         if (hit === 'continue') {
           gameState.activatePlayingMode();
@@ -658,7 +650,7 @@ function randomizeMountainPeaks() {
   }
 
   // Clear terrain cache so altitude changes take effect
-  if (typeof terrain !== 'undefined' && terrain.reset) {
+  if (terrain?.reset) {
     terrain.reset();
   }
 

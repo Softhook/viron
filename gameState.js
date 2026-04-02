@@ -168,7 +168,7 @@ class GameState {
     this.startLevel(1);
     this.mode = 'mission';
 
-    if (typeof gameSFX !== 'undefined') {
+    if (gameSFX) {
       gameSFX.spatialEnabled = (np === 1);
     }
   }
@@ -190,7 +190,7 @@ class GameState {
    * @param {number} lvl  The level number to start (1-indexed).
    */
   startLevel(lvl) {
-    if (typeof gameSFX !== 'undefined') gameSFX.playNewLevel();
+    gameSFX?.playNewLevel();
     if (typeof updateTimeOfDay === 'function') updateTimeOfDay(lvl);
 
     this.level = lvl;
@@ -207,8 +207,8 @@ class GameState {
 
     enemyManager.clear();
     particleSystem.clear();
-    if (typeof villagerManager !== 'undefined') villagerManager.clear();
-    if (typeof wizardManager !== 'undefined') wizardManager.clear();
+    villagerManager?.clear();
+    wizardManager?.clear();
     terrain.activePulses = [];
 
     this._spawnLevelWave(lvl);
@@ -251,7 +251,7 @@ class GameState {
     this.mode = 'gameover';
     this.gameOverReason = reason;
     this.levelEndTime = millis();
-    if (typeof gameSFX !== 'undefined') {
+    if (gameSFX) {
       gameSFX.stopAll();
       gameSFX.playGameOver();
     }
@@ -264,7 +264,7 @@ class GameState {
     if (!this.levelComplete) {
       this.levelComplete = true;
       this.levelEndTime = millis();
-      if (typeof gameSFX !== 'undefined') gameSFX.playLevelComplete();
+      gameSFX?.playLevelComplete();
     }
   }
 
@@ -326,7 +326,7 @@ class GameState {
       this.mode = 'paused';
       this.shouldCapture = true; // Signal for sketch.js to capture the frame
       this.clearInputs();
-      if (typeof gameSFX !== 'undefined') gameSFX.stopAll();
+      gameSFX?.stopAll();
     }
   }
 
@@ -338,9 +338,7 @@ class GameState {
       this.mode = this.previousMode;
       this.pauseSnapshot = null; // Free memory
       // Reset physics accumulator to prevent jumps
-      if (typeof _physAccum !== 'undefined') {
-        _physAccum = 0;
-      }
+      _physAccum = 0;
     }
   }
 
@@ -364,7 +362,7 @@ class GameState {
         p.input.pitchDown = false;
       }
     }
-    if (typeof mobileController !== 'undefined') {
+    if (mobileController) {
       mobileController.thrustActive = false;
       mobileController.shootActive = false;
       mobileController.barrierActive = false;
@@ -377,7 +375,7 @@ class GameState {
     this.buildings = [];
     this.sentinelBuildings = [];
     this.trees = []; 
-    if (typeof terrain !== 'undefined' && terrain.reset) {
+    if (terrain?.reset) {
       terrain.reset(seed);
     }
   }

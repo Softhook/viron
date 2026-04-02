@@ -185,7 +185,7 @@ function fireNormalPattern(p, s) {
     p.bullets.push(spawnProjectile(ship, power, life));
   }
 
-  if (typeof gameSFX !== 'undefined') gameSFX.playShot(ship.x, ship.y, ship.z);
+  gameSFX?.playShot(ship.x, ship.y, ship.z);
 }
 
 /**
@@ -212,10 +212,8 @@ function fireTankShell(p) {
     life
   });
 
-  if (typeof gameSFX !== 'undefined') {
-    gameSFX.playShot(s.x, s.y, s.z);
-    gameSFX.playMissileFire(s.x, s.y, s.z);
-  }
+  gameSFX?.playShot(s.x, s.y, s.z);
+  gameSFX?.playMissileFire(s.x, s.y, s.z);
 }
 
 /**
@@ -228,7 +226,7 @@ function fireMissile(p) {
   if (p.missilesRemaining > 0 && !p.dead) {
     p.missilesRemaining--;
     p.homingMissiles.push(spawnProjectile(p.ship, 8, 500));
-    if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
+    gameSFX?.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
   }
 }
 
@@ -241,7 +239,7 @@ function fireMissile(p) {
 function fireBarrier(p) {
   if (p.dead) return;
   gameState.inFlightBarriers.push(spawnProjectile(p.ship, 14, 300));
-  if (typeof gameSFX !== 'undefined') gameSFX.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
+  gameSFX?.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
 }
 
 /**
@@ -281,12 +279,10 @@ function fireActiveWeapon(p) {
  */
 function shipUpDir(s, designIdx) {
   let p = s.pitch, y = s.yaw;
-  let alpha = 0;
-  if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[designIdx]) {
-    alpha = SHIP_DESIGNS[designIdx].thrustAngle || 0;
-  }
+  const design = SHIP_DESIGNS?.[designIdx];
+  const alpha = design?.thrustAngle || 0;
 
-  if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].isGroundVehicle) {
+  if (design?.isGroundVehicle) {
     return {
       x: -Math.sin(y),
       y: 0,
@@ -437,7 +433,7 @@ function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
     { x: 13, z: 13 },
     { x: 0, z: -23 }
   ];
-  if (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].footprint) {
+  if (SHIP_DESIGNS?.[designIdx]?.footprint) {
     shipFootprint = SHIP_DESIGNS[designIdx].footprint;
   }
 
@@ -535,7 +531,7 @@ function shipDisplay(s, tintColor) {
   let isPushing = false;
   if (p) {
     isPushing = keyIsDown(p.keys.thrust) || (p.id === 0 && !gameState.isMobile && gameState.rightMouseDown);
-    if (gameState.isMobile && p.id === 0 && typeof mobileController !== 'undefined') {
+    if (gameState.isMobile && p.id === 0 && mobileController) {
       isPushing = isPushing || mobileController.getInputs(s, [], 0, 0).thrust;
     }
   }
@@ -664,7 +660,7 @@ function _applyMouseSteering(p) {
  * @returns {{isThrusting: boolean, isShooting: boolean}}  Updated flags.
  */
 function _applyMobileInputs(p, isThrusting, isShooting) {
-  if (!gameState.isMobile || p.id !== 0 || typeof mobileController === 'undefined') {
+  if (!gameState.isMobile || p.id !== 0 || !mobileController) {
     return { isThrusting, isShooting };
   }
 
@@ -848,17 +844,15 @@ function _updateAircraft(p, d, isThrusting, isBraking) {
         let z2 = -x * sy + z1 * cy;
         return { x: x2 + s.x, y: y1 + s.y, z: z2 + s.z };
       };
-      let alpha = (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex])
-        ? (SHIP_DESIGNS[p.designIndex].thrustAngle || 0) : 0;
+      let alpha = SHIP_DESIGNS?.[p.designIndex]?.thrustAngle ?? 0;
       const pa = s.pitch + alpha;
       let exDir = {
         x: Math.sin(pa) * Math.sin(s.yaw),
         y: Math.cos(pa),
         z: Math.sin(pa) * Math.cos(s.yaw)
       };
-      let engPos = (typeof SHIP_DESIGNS !== 'undefined' && SHIP_DESIGNS[p.designIndex])
-        ? SHIP_DESIGNS[p.designIndex].draw(null)
-        : [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
+      let engPos = SHIP_DESIGNS?.[p.designIndex]?.draw(null)
+        ?? [{ x: -13, y: 5, z: 20 }, { x: 13, y: 5, z: 20 }];
       const emitChance = totalParticles > 700 ? 0.28 : (totalParticles > 500 ? 0.42 : 0.65);
       engPos.forEach(pos => {
         if (random() > emitChance) return;
@@ -946,7 +940,7 @@ function _handleWeaponFire(p, isShooting) {
   let s = p.ship;
   // Safety cooldown: ignore shooting inputs for 500ms after entering PLAYING mode
   // to avoid "bleeding" touch events from the confirm button.
-  if (typeof gameState !== 'undefined' && gameState.mode === 'playing') {
+  if (gameState.mode === 'playing') {
     if (millis() - gameState.playingStartTime < 500) return;
   }
 
@@ -996,7 +990,7 @@ function _handleWeaponFire(p, isShooting) {
  * @param {object} p  Player state object (mutated in place).
  */
 function updateShipInput(p) {
-  if (p.dead || (typeof gameState !== 'undefined' && gameState.mode === 'gameover')) return;
+  if (p.dead || gameState.mode === 'gameover') return;
 
   // Reset each frame so stale enemy references never persist across frames.
   p.aimTarget = null;
@@ -1024,9 +1018,7 @@ function updateShipInput(p) {
   }
 
   // Sustained thrust sound (runs every frame for both vehicle types)
-  if (typeof gameSFX !== 'undefined') {
-    gameSFX.setThrust(p.id, isThrusting, p.ship.x, p.ship.y, p.ship.z);
-  }
+  gameSFX?.setThrust(p.id, isThrusting, p.ship.x, p.ship.y, p.ship.z);
 
   _handleWeaponFire(p, isShooting);
 }
@@ -1038,10 +1030,10 @@ function updateShipInput(p) {
  * @param {object} p  Player state object.
  */
 function killPlayer(p) {
-  if (typeof gameSFX !== 'undefined') gameSFX.setThrust(p.id, false);
+  gameSFX?.setThrust(p.id, false);
   particleSystem.addExplosion(p.ship.x, p.ship.y, p.ship.z);
   terrain.addPulse(p.ship.x, p.ship.z, 2.0);  // Yellow ship-explosion ring (type 2)
-  if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(30);
+  gameRenderer?.setShake(30);
   p.dead = true;
   p.respawnTimer = 120;  // 120 physics ticks = 2 s (physics always runs at 60 Hz)
   p.bullets = [];
@@ -1057,9 +1049,7 @@ function killPlayer(p) {
     if (enemyOnPad) {
       p.lpDeaths = (p.lpDeaths || 0) + 1;
       if (p.lpDeaths >= 3) {
-        if (typeof gameState !== 'undefined') {
-          gameState.setGameOver('LAUNCH PAD TAKEN OVER');
-        }
+        gameState.setGameOver('LAUNCH PAD TAKEN OVER');
       }
     } else {
       p.lpDeaths = 0; // Enemy cleared the pad, reset counter
@@ -1228,11 +1218,9 @@ function updateProjectilePhysics(p) {
         p.score += cleared * 50;
       }
       terrain.addPulse(s.x, s.z, 2.0);
-      if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(15);
-      if (typeof gameSFX !== 'undefined') {
-        gameSFX.setThrust(p.id, false);
-        gameSFX.playClearInfection(s.x, g, s.z);
-      }
+      gameRenderer?.setShake(15);
+      gameSFX?.setThrust(p.id, false);
+      gameSFX?.playClearInfection(s.x, g, s.z);
       swapRemove(p.tankShells, i);
     }
   }

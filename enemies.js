@@ -189,7 +189,7 @@ class EnemyManager {
   /** Common upward projectile used by crab/scorpion families. */
   _fireUpwardShot(e, shotType = 'crab', vy = -12) {
     particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy, vz: 0, life: 1000 });
-    if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot(shotType, e.x, e.y - 10, e.z);
+    gameSFX?.playEnemyShot(shotType, e.x, e.y - 10, e.z);
   }
 
   /** Shared 2D pursuit steering with velocity smoothing. */
@@ -256,7 +256,7 @@ class EnemyManager {
     const bomb = { x: e.x, y: e.y, z: e.z, k };
     if (type !== 'normal') bomb.type = type;
     particleSystem.bombs.push(bomb);
-    if (typeof gameSFX !== 'undefined') gameSFX.playBombDrop(type, e.x, e.y, e.z);
+    gameSFX?.playBombDrop(type, e.x, e.y, e.z);
     return true;
   }
 
@@ -554,7 +554,7 @@ class EnemyManager {
         // use long lifetime for better reach
         life: 1000
       });
-      if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y, e.z);
+      gameSFX?.playEnemyShot('fighter', e.x, e.y, e.z);
     }
 
     // While wandering, occasionally drop an infection bomb (less frequent than seeder)
@@ -760,7 +760,7 @@ class EnemyManager {
             // colossus bullets now persist longer
             life: 1000
           });
-          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - muzzleYOffset, e.z);
+          gameSFX?.playEnemyShot('fighter', e.x, e.y - muzzleYOffset, e.z);
         }
       }
     }
@@ -787,7 +787,7 @@ class EnemyManager {
     let bestDistSq = Infinity;
 
     // Priority 1: seek the nearest villager
-    if (typeof villagerManager !== 'undefined') {
+    if (villagerManager) {
       for (let v of villagerManager.villagers) {
         const d2 = (v.x - e.x) ** 2 + (v.z - e.z) ** 2;
         if (d2 < bestDistSq) {
@@ -800,7 +800,7 @@ class EnemyManager {
 
     // If within striking range of a villager, kill it
     if (targetX !== null && bestDistSq < 3600) {   // ~60 units
-      if (typeof villagerManager !== 'undefined') {
+      if (villagerManager) {
         for (let i = villagerManager.villagers.length - 1; i >= 0; i--) {
           const v = villagerManager.villagers[i];
           if ((v.x - e.x) ** 2 + (v.z - e.z) ** 2 < 3600) {
@@ -931,7 +931,7 @@ class EnemyManager {
             vz: (bdz / bd) * 12 + random(-spread, spread) * 12,
             life: 1200
           });
-          if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y - muzzleYOffset, e.z);
+          gameSFX?.playEnemyShot('fighter', e.x, e.y - muzzleYOffset, e.z);
         }
       }
     }
@@ -961,7 +961,7 @@ class EnemyManager {
           life: 900
         });
       }
-      if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, lashY, e.z);
+      gameSFX?.playEnemyShot('fighter', e.x, lashY, e.z);
     }
   }
 

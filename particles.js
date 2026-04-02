@@ -274,13 +274,13 @@ class ParticleSystem {
    * @param {string|null}   type       Enemy type string used for sound selection.
    */
   addExplosion(x, y, z, baseColor, type) {
-    if (typeof gameSFX !== 'undefined') {
+    if (gameSFX) {
       if (type) gameSFX.playExplosion(x, y, z, type === 'bomber' || type === 'mega', type);
       else gameSFX.playExplosion(x, y, z, baseColor === undefined || baseColor === null, '');
     }
 
     let isCustom = baseColor !== undefined && baseColor !== null;
-    let count = (typeof gameState !== 'undefined' && gameState.isMobile) ? 220 : 400;
+    let count = gameState.isMobile ? 220 : 400;
 
     for (let i = 0; i < count; i++) {
       let speed = random(5.0, 45.0);
@@ -385,7 +385,7 @@ class ParticleSystem {
           }
         }
         terrain.addPulse(b.x, b.z, 0.0);  // Trigger red ground ring
-        if (typeof gameSFX !== 'undefined') gameSFX.playExplosion(b.x, b.y, b.z, b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal');
+        gameSFX?.playExplosion(b.x, b.y, b.z, b.type === 'mega', b.type === 'mega' ? 'bomber' : 'normal');
         // Swap-and-pop for O(1) removal (order doesn't matter for bombs)
         let lastBomb = this.bombs.pop();
         if (i < this.bombs.length) this.bombs[i] = lastBomb;
@@ -449,7 +449,7 @@ class ParticleSystem {
       // On mobile (TBDR GPU), gl.disable(DEPTH_TEST) triggers a tile-flush
       // barrier that stalls the pipeline for 4–16 ms.  Fall back to plain
       // sphere rendering instead to keep the depth state unchanged.
-      const isMobile = (typeof gameState !== 'undefined' && gameState.isMobile);
+      const isMobile = gameState.isMobile;
       const useBillowSprites = (!!_cloudTex && !useDepthSoftShader && !isMobile);
       const disableDepthForSoft = useDepthSoftShader || useBillowSprites;
       if (disableDepthForSoft) {

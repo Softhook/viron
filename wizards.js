@@ -86,9 +86,7 @@ class WizardManager extends AgentManager {
       });
     }
 
-    if (typeof gameSFX !== 'undefined') {
-      gameSFX.playVillagerDeath(w.x, w.y, w.z);
-    }
+    gameSFX?.playVillagerDeath(w.x, w.y, w.z);
 
     // Allow the home tower to spawn a replacement wizard.
     if (w.towerRef) w.towerRef._wizardSpawned = false;
@@ -317,9 +315,7 @@ class WizardManager extends AgentManager {
                 color: p % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
               });
             }
-            if (typeof gameSFX !== 'undefined') {
-              gameSFX.playVillagerCure(ix, iy, iz);
-            }
+            gameSFX?.playVillagerCure(ix, iy, iz);
           }
 
           // Remove spent spell; let the wizard retarget.

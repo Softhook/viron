@@ -93,7 +93,7 @@ class GameLoop {
     const profilerConfig = profiler ? profiler.config : (typeof window !== 'undefined' ? window.VIRON_PROFILE : null);
     const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
     const freezeSpread = !!(profilerConfig && profilerConfig.freezeSpread);
-    const isGameOver = typeof gameState !== 'undefined' && gameState.mode === 'gameover';
+    const isGameOver = gameState.mode === 'gameover';
     const shouldRun = isGameOver || (_simTick % 5 === 0);
 
     if (!shouldRun || (gameState.levelComplete && !isGameOver)) return;
@@ -138,7 +138,7 @@ class GameLoop {
 
         let nObj = infection.add(nk, t.type);
         if (nObj) {
-          if (typeof gameSFX !== 'undefined' && soundCount < 3 && random() < 0.1) {
+          if (gameSFX && soundCount < 3 && random() < 0.1) {
             gameSFX.playInfectionSpread(wx, terrain.getAltitude(wx, wz), wz);
             soundCount++;
           }
@@ -242,7 +242,7 @@ class GameLoop {
           return this._damageBoss(player, j, colossusDmg, colossusFlash, colossusHitScore, 2000);
         } else {
           particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-          if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(shakeAmt);
+          gameRenderer?.setShake(shakeAmt);
           swapRemove(enemyManager.enemies, j); swapRemove(projectiles, i);
           player.score += normalScore; return true;
         }
@@ -263,7 +263,7 @@ class GameLoop {
     player.score += hitScore;
     if (e.hp <= 0) {
       particleSystem.addExplosion(e.x, e.y - 100, e.z, enemyManager.getColor(e.type), e.type);
-      if (typeof gameRenderer !== 'undefined') gameRenderer.setShake(60);
+      gameRenderer?.setShake(60);
       swapRemove(enemyManager.enemies, enemyIdx);
       player.score += killBonus;
       return true;
@@ -272,62 +272,60 @@ class GameLoop {
   }
 
   /**
+   * Shared helper: tests `projectiles` against infected procedural trees in the
+   * tile grid.  For each projectile, searches a `searchR`-tile square around the
+   * projectile's tile; removes and calls `onHit(proj, tx, tz)` on the first match.
+   *
+   * @private
+   * @param {object[]} projectiles  Projectile array (mutated on hit via swapRemove).
+   * @param {number}   searchR      Tile search radius (1 = 3×3, 2 = 5×5).
+   * @param {number}   hitRadSq     Horizontal squared-distance threshold for a hit.
+   * @param {number}   yTolHi       Vertical tolerance above ground for hit detection.
+   * @param {number}   yTolLo       Vertical tolerance below tree base for hit detection.
+   * @param {Function} onHit        Called as onHit(proj, tx, tz) when a hit occurs.
+   */
+  static _checkProjectilesVsTreeType(projectiles, searchR, hitRadSq, yTolHi, yTolLo, onHit) {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+      const proj = projectiles[i];
+      if (proj.y < -300) continue;
+
+      const tx0 = toTile(proj.x), tz0 = toTile(proj.z);
+      let hit = false;
+      outer: for (let tz = tz0 - searchR; tz <= tz0 + searchR; tz++) {
+        for (let tx = tx0 - searchR; tx <= tx0 + searchR; tx++) {
+          const t = terrain.tryGetProceduralTree(tx, tz);
+          if (!t) continue;
+          const ty = terrain.getAltitude(t.x, t.z);
+          if (proj.y <= ty - t.trunkH - 30 * t.canopyScale - yTolLo || proj.y >= ty + yTolHi) continue;
+          const tdx = proj.x - t.x, tdz = proj.z - t.z;
+          if (tdx * tdx + tdz * tdz >= hitRadSq) continue;
+          if (!infection.has(tileKey(tx, tz))) continue;
+          onHit(proj, tx, tz);
+          swapRemove(projectiles, i);
+          hit = true;
+          break outer;
+        }
+      }
+    }
+  }
+
+  /**
    * Tests projectiles against procedural infected trees.
    * @private
    */
   static _checkProjectilesVsTrees(player) {
-    // Bullets vs infected trees (1-tile search radius = 3x3)
-    for (let i = player.bullets.length - 1; i >= 0; i--) {
-      let b = player.bullets[i];
-      // Shortcut: skip check if bullet is too high (most trees are < 100 units tall)
-      if (b.y < -300) continue; 
+    // Bullets vs infected trees (1-tile search radius = 3×3)
+    this._checkProjectilesVsTreeType(player.bullets, 1, 3600, 10, 10, (b, tx, tz) => {
+      clearInfectionRadius(tx, tz);
+      player.score += 200;
+    });
 
-      let tx0 = toTile(b.x), tz0 = toTile(b.z);
-      let hit = false;
-      for (let tz = tz0 - 1; tz <= tz0 + 1 && !hit; tz++) {
-        for (let tx = tx0 - 1; tx <= tx0 + 1; tx++) {
-          let t = terrain.tryGetProceduralTree(tx, tz);
-          if (!t) continue;
-          let ty = terrain.getAltitude(t.x, t.z);
-          // Altitude shortcut: bullet must be within tree vertical range
-          if (b.y <= ty - t.trunkH - 30 * t.canopyScale - 10 || b.y >= ty + 10) continue;
-          let tdx = b.x - t.x, tdz = b.z - t.z;
-          if (tdx * tdx + tdz * tdz >= 3600) continue;
-          if (!infection.has(tileKey(tx, tz))) continue;
-          clearInfectionRadius(tx, tz);
-          player.score += 200;
-          swapRemove(player.bullets, i);
-          hit = true;
-          break;
-        }
-      }
-    }
-
-    // Tank shells vs infected trees (2-tile search radius = 5x5)
-    for (let j = player.tankShells.length - 1; j >= 0; j--) {
-      let ts = player.tankShells[j];
-      if (ts.y < -300) continue;
-
-      let tx0 = toTile(ts.x), tz0 = toTile(ts.z);
-      let hitTree = false;
-      for (let tz = tz0 - 2; tz <= tz0 + 2 && !hitTree; tz++) {
-        for (let tx = tx0 - 2; tx <= tx0 + 2; tx++) {
-          let t = terrain.tryGetProceduralTree(tx, tz);
-          if (!t) continue;
-          let ty = terrain.getAltitude(t.x, t.z);
-          if (ts.y <= ty - t.trunkH - 30 * t.canopyScale - 20 || ts.y >= ty + 20) continue;
-          let tsdx = ts.x - t.x, tsdz = ts.z - t.z;
-          if (tsdx * tsdx + tsdz * tsdz >= 10000) continue;
-          if (!infection.has(tileKey(tx, tz))) continue;
-          clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
-          terrain.addPulse(ts.x, ts.z, 2.0);
-          particleSystem.addExplosion(ts.x, ts.y, ts.z);
-          swapRemove(player.tankShells, j);
-          hitTree = true;
-          break;
-        }
-      }
-    }
+    // Tank shells vs infected trees (2-tile search radius = 5×5)
+    this._checkProjectilesVsTreeType(player.tankShells, 2, 10000, 20, 20, (ts, tx, tz) => {
+      clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
+      terrain.addPulse(ts.x, ts.z, 2.0);
+      particleSystem.addExplosion(ts.x, ts.y, ts.z);
+    });
   }
 
   /**
@@ -342,7 +340,7 @@ class GameLoop {
     let md = maxReach + Math.sqrt(shipRadSq);
     if (dx * dx + dy * dy + dz * dz > md * md) return false;
 
-    const fc = typeof frameCount !== 'undefined' ? frameCount : 0; 
+    const fc = frameCount ?? 0;
     const phase = fc * 0.02 + (e.id || 0) * 0.15;
     
     if (this._traceKrakenArms(6, 8, 28, 74, 5, 0.82, 0, phase, 1.0, e, s, kScale, shipRadSq)) return true;
@@ -550,12 +548,12 @@ class GameLoop {
           let inf = infection.has(b._tileKey);
           if (inf) {
             if (player.missilesRemaining > 0) player.missilesRemaining--;
-            if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(false, b.x, floatY, b.z);
+            gameSFX?.playPowerup(false, b.x, floatY, b.z);
           } else {
             if (random() < 0.5) player.missilesRemaining++;
             else player.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
             player.score += 500;
-            if (typeof gameSFX !== 'undefined') gameSFX.playPowerup(true, b.x, floatY, b.z);
+            gameSFX?.playPowerup(true, b.x, floatY, b.z);
           }
           swapRemove(gameState.buildings, i);
           for (let j = 0; j < 20; j++) {
@@ -578,13 +576,13 @@ class GameLoop {
    * @public
    */
   static updateAmbianceAudio() {
-    if (typeof gameSFX === 'undefined') return;
+    if (!gameSFX) return;
 
     let p = gameState.players[0];
     let proximityData = { dist: 10000 };
 
     if (p && !p.dead && p.ship) {
-      if (typeof _simTick !== 'undefined' && _simTick % 10 !== 0 && GameLoop._lastAmbDist !== undefined) {
+      if (_simTick % 10 !== 0 && GameLoop._lastAmbDist !== undefined) {
         proximityData.dist = GameLoop._lastAmbDist;
       } else {
         // Nearest infected tile within 8-tile radius

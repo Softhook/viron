@@ -216,15 +216,15 @@ class GameRenderer {
     terrain.drawTrees(s);
     terrain.drawBuildings(s);
     enemyManager.draw(s);
-    if (typeof villagerManager !== 'undefined') villagerManager.draw(s);
-    if (typeof wizardManager !== 'undefined') wizardManager.draw(s);
+    villagerManager?.draw(s);
+    wizardManager?.draw(s);
     this._drawEnemyBeams(s);
     for (let p of gameState.players) {
       if (!p.dead && (p !== player || !gameState.firstPersonView)) shipDisplay(p.ship, p.labelColor);
       renderProjectiles(p, s.x, s.z);
     }
     renderInFlightBarriers(s.x, s.z);
-    if (drawAimAssist && typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
+    if (drawAimAssist && aimAssist) aimAssist.drawDebug3D(s);
   }
 
   /**
@@ -245,9 +245,7 @@ class GameRenderer {
     let { camNear, camFar, cx, cy, cz, lx, ly, lz } = this._computeCamera(s);
 
     // Update spatial audio listener once per viewport
-    if (typeof gameSFX !== 'undefined') {
-      gameSFX.updateListener(cx, cy, cz, lx, ly, lz, 0, 1, 0);
-    }
+    gameSFX?.updateListener(cx, cy, cz, lx, ly, lz, 0, 1, 0);
 
     if (this.sceneFBO) {
       this._renderWithFBO(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
@@ -257,7 +255,7 @@ class GameRenderer {
     // HUD overlay (2D)
     gl.clear(gl.DEPTH_BUFFER_BIT);
     drawPlayerHUD(player, playerIdx, viewW, viewH);
-    if ((gameState.isMobile || (typeof mobileController !== 'undefined' && mobileController.debug)) && gameState.numPlayers === 1 && typeof mobileController !== 'undefined') {
+    if ((gameState.isMobile || mobileController?.debug) && gameState.numPlayers === 1 && mobileController) {
       mobileController.draw(width, height);
     }
     gl.disable(gl.SCISSOR_TEST);
@@ -326,7 +324,7 @@ class GameRenderer {
     const pStart = profiler ? performance.now() : 0;
     particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
     if (profiler) profiler.record('particles', performance.now() - pStart);
-    if (typeof aimAssist !== 'undefined') aimAssist.drawDebug3D(s);
+    if (aimAssist) aimAssist.drawDebug3D(s);
     pop();
   }
 
@@ -341,7 +339,7 @@ class GameRenderer {
     this.setup2DViewport();
     
     // Smooth transitions for gameplay dimming (e.g. resuming from pause)
-    if (typeof HUD_Manager !== 'undefined') HUD_Manager.drawDimOverlay();
+    HUD_Manager?.drawDimOverlay();
 
     if (gameState.numPlayers === 2) {
 
@@ -580,7 +578,7 @@ class GameRenderer {
     building._lastPulseMs = millis();
     terrain.addPulse(building.x, building.z, 1.0);
 
-    if (typeof gameSFX === 'undefined') return;
+    if (!gameSFX) return;
     if (this._canAnyPlayerHearPulse(building.x, building.y, building.z, 2000)) {
       gameSFX.playInfectionPulse(building.x, building.y, building.z);
     }

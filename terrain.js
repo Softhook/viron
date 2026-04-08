@@ -250,7 +250,23 @@ class Terrain {
     for (let i = 0; i < trees.length; i++) {
         if (trees[i].k === k) { treeHit = true; break; }
     }
-    if (treeHit) this._treeBakeState.delete(bk);
+    if (treeHit) {
+      const state = this._treeBakeState.get(bk);
+      if (state && state !== null) {
+        state.dirty = true;
+        // CRITICAL: Only backup staleBatches on first invalidation.
+        // Secondary invalidations during rebake must NOT overwrite the original fallback
+        // with incomplete geometry, or we lose the coherent state to display.
+        if (!state.staleBatches) {
+          state.staleBatches = state.batches.slice();
+        }
+        state.nextIdx = 0;
+        state.batches = [];
+        // Invalidate shadow cache so shadows regenerate in sync with new geometry
+        // when rebake completes (prevents shadow/model mismatch during fallback).
+        this._treeShadowChunkCache.delete(bk);
+      }
+    }
 
     let bldgHit = false;
     const bldgs = this._getBuildingsForChunk(cx, cz);
@@ -1829,14 +1845,28 @@ class Terrain {
         visibleChunks.push({ cx, cz });
         const treeState = this._advanceChunkTreeBatch(cx, cz);
         if (treeState) {
-          // Draw all completed batches (fast single model() per batch).
-          for (const geom of treeState.batches) model(geom);
-          // Draw remaining un-baked trees individually this frame.
-          for (let i = treeState.nextIdx; i < treeState.trees.length; i++) {
-            const t = treeState.trees[i];
-            push(); translate(t.x, t.y, t.z);
-            this._drawTreeImmediate(t, infection.has(t.k));
-            pop();
+          // If this bake is dirty (invalidated mid-rebuild), render stale batches for
+          // the tail of trees while rebaking proceeds progressively.
+          if (treeState.dirty && treeState.staleBatches && treeState.nextIdx < treeState.trees.length) {
+            // Draw stale batches for the not-yet-rebaked tail.
+            for (const geom of treeState.staleBatches) model(geom);
+          } else {
+            // Normal case: draw all completed new batches.
+            for (const geom of treeState.batches) model(geom);
+            // Draw remaining un-baked trees individually this frame.
+            for (let i = treeState.nextIdx; i < treeState.trees.length; i++) {
+              const t = treeState.trees[i];
+              push(); translate(t.x, t.y, t.z);
+              this._drawTreeImmediate(t, infection.has(t.k));
+              pop();
+            }
+          }
+          // Once rebaking completes (nextIdx >= trees.length), atomically flip to new batches.
+          // Clear dirty flag and stale fallback to release geometry references.
+          if (treeState.dirty && treeState.nextIdx >= treeState.trees.length) {
+            treeState.dirty = false;
+            treeState.staleBatches = undefined;
+            // Shadow cache was invalidated at start of rebake; allow regeneration now.
           }
         }
         // null means no renderable trees — nothing to draw.

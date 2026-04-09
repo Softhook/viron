@@ -681,6 +681,30 @@ function _handleWeaponFiring(p, isShooting) {
     if (millis() - gameState.playingStartTime < 500) return;
   }
 
+  // Mobile action mapping is direct (no cycle dependency):
+  // - Shoot zone fires the primary weapon.
+  // - Barrier zone fires barrier placement.
+  if (gameState.isMobile && p.id === 0) {
+    const isBarrier = inputManager.getActionActive(p, 'barrier');
+
+    if (isShooting) {
+      const des = SHIP_DESIGNS[p.designIndex];
+      const isTank = (des && des.shotType === 'tank_shell');
+      const rate = isTank ? 15 : 8;
+      if (physicsEngine.tickCount % rate === 0) {
+        if (isTank) fireTankShell(p);
+        else fireNormalPattern(p, p.ship);
+      }
+    }
+
+    if (isBarrier && physicsEngine.tickCount % 8 === 0) {
+      fireBarrier(p);
+    }
+
+    p.shootHeld = isShooting;
+    return;
+  }
+
   if (p.weaponMode === 0) { // NORMAL
     if (isShooting) {
       const des = SHIP_DESIGNS[p.designIndex];

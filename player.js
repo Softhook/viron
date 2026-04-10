@@ -251,30 +251,6 @@ function fireBarrier(p) {
   gameSFX?.playMissileFire(p.ship.x, p.ship.y, p.ship.z);
 }
 
-/**
- * Fires the player's currently selected weapon:
- *   NORMAL (0) — fires a single bullet burst
- *   MISSILE (1) — launches a homing missile
- *   BARRIER (2) — places a barrier projectile
- * @param {object} p  Player state object.
- */
-function fireActiveWeapon(p) {
-  if (p.dead) return;
-  let mode = p.weaponMode;
-  if (mode === 1) fireMissile(p);
-  else if (mode === 2) fireBarrier(p);
-  else {
-    // NORMAL: fires based on the currently active upgrade shot pattern
-    // or the ship's specific weapon type.
-    let d = SHIP_DESIGNS[p.designIndex];
-    if (d && d.shotType === 'tank_shell') {
-      fireTankShell(p);
-    } else {
-      fireNormalPattern(p, p.ship);
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Ship geometry helpers
 // ---------------------------------------------------------------------------
@@ -648,12 +624,12 @@ function updateShipInput(p) {
   _handleWeaponFiring(p, isShooting);
 
   // Mobile-specific edge detect for missile
-  if (gameState.isMobile && p.id === 0 && mobileController) {
-    const mInputs = mobileController.getInputs(p.ship, enemyManager.enemies, 0, 0);
-    if (mInputs.missile && !p.mobileMissilePressed) {
+  if (gameState.isMobile && p.id === 0 && mobileController && mobileController.btns && mobileController.btns.missile) {
+    const isMissilePressed = mobileController.btns.missile.active;
+    if (isMissilePressed && !p.mobileMissilePressed) {
       p.fireMissile();
       p.mobileMissilePressed = true;
-    } else if (!mInputs.missile) {
+    } else if (!isMissilePressed) {
       p.mobileMissilePressed = false;
     }
   }

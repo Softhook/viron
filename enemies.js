@@ -34,6 +34,12 @@ const ENEMY_CRAB_BULLET_LIFE = 1000;  // Crab / scorpion upward shots
 const BOSS_BULLET_LIFE       = 1200;  // Kraken burst projectiles (longer range)
 const KRAKEN_TENTACLE_LIFE   = 900;   // Kraken tentacle lash projectiles
 
+// Enemy Behavior Constants
+const BOMBER_BOUNDARY_LIMIT      = 4000;
+const BOMBER_DROP_INTERVAL_TICKS = 600;
+const SEEDER_BOUNDARY_LIMIT      = 5000;
+const FIGHTER_STATE_TOGGLE_TICKS = 120;
+
 // =============================================================================
 // Enemy Type Registry — single source of truth for per-type configuration.
 //
@@ -579,10 +585,10 @@ class EnemyManager {
     this._updateFlyingMovement(e, 0.92, 1.5);
 
     // Reflect velocity when too far from the reference ship
-    this._reflectWithinRefBounds(e, refShip, 4000);
+    this._reflectWithinRefBounds(e, refShip, BOMBER_BOUNDARY_LIMIT);
 
     e.bombTimer++;
-    if (e.bombTimer > 600) {
+    if (e.bombTimer > BOMBER_DROP_INTERVAL_TICKS) {
       e.bombTimer = 0;
       this._tryDropBomb(e, 'mega', false);
     }
@@ -665,9 +671,9 @@ class EnemyManager {
   updateFighter(e, alivePlayers, refShip) {
     let tShip = this._getTargetShip(e, alivePlayers, refShip);
 
-    // State machine: toggle aggressive/wandering every 120 frames
+    // State machine: toggle aggressive/wandering
     e.stateTimer = (e.stateTimer || 0) + 1;
-    if (e.stateTimer > 120) {
+    if (e.stateTimer > FIGHTER_STATE_TOGGLE_TICKS) {
       e.stateTimer = 0;
       e.aggressive = random() > 0.5;
       if (!e.aggressive) {
@@ -729,7 +735,7 @@ class EnemyManager {
     // Integrate vertical physics with 0.92 damping
     this._updateFlyingMovement(e, 0.92);
 
-    this._reflectWithinRefBounds(e, refShip, 5000);
+    this._reflectWithinRefBounds(e, refShip, SEEDER_BOUNDARY_LIMIT);
 
     if (random() < 0.008) {
       this._tryDropBomb(e, 'normal', true);

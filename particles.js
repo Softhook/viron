@@ -7,6 +7,11 @@
 //   • enemyBullets  — straight-line projectiles fired by fighters and crabs
 // =============================================================================
 
+// --- Bomb Physics & Infection Constants ---
+const BOMB_FALL_SPEED = 8;
+const MEGA_BOMB_TILE_RAD = 4;
+const MEGA_BOMB_TILE_RAD_SQ = 16;
+
 // -----------------------------------------------------------------------------
 // Soft-particle GLSL — adapted from SoftDiffuseColoredShader
 //
@@ -356,16 +361,16 @@ class ParticleSystem {
     // --- Bombs ---
     for (let i = this.bombs.length - 1; i >= 0; i--) {
       let b = this.bombs[i];
-      b.y += 8;  // Bombs fall upward visually (world Y axis is inverted)
+      b.y += BOMB_FALL_SPEED;  // Bombs fall upward visually (world Y axis is inverted)
       let gy = terrain.getAltitude(b.x, b.z);
       if (b.y > gy) {
         if (b.type === 'mega') {
           // Mega bomb: infect a circular patch of radius 4 tiles
           let tx = toTile(b.x), tz = toTile(b.z);
           let hitLP = false;
-          for (let r = -4; r <= 4; r++) {
-            for (let c = -4; c <= 4; c++) {
-              if (r * r + c * c <= 16) {
+          for (let r = -MEGA_BOMB_TILE_RAD; r <= MEGA_BOMB_TILE_RAD; r++) {
+            for (let c = -MEGA_BOMB_TILE_RAD; c <= MEGA_BOMB_TILE_RAD; c++) {
+              if (r * r + c * c <= MEGA_BOMB_TILE_RAD_SQ) {
                 let nx = tx + r, nz = tz + c;
                 if (aboveSea(terrain.getAltitude(nx * TILE, nz * TILE))) continue;
                 let nk = tileKey(nx, nz);

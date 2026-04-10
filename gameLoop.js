@@ -385,6 +385,19 @@ class GameLoop {
     return false;
   }
 
+  // Per-weapon collision config — replaces raw magic-number arguments in
+  // checkCollisions() with named, self-documenting objects.
+  // normalRadSq:      squared hit radius for normal enemies
+  // colossusRadSq:    squared hit radius for boss enemies (Colossus/Kraken)
+  // shakeAmt:         camera shake frames on kill
+  // normalScore:      score awarded for killing a normal enemy
+  // colossusDmg:      HP damage dealt to boss per hit
+  // colossusFlash:    hit-flash duration (frames)
+  // colossusHitScore: score per boss hit (not kill)
+  static _BULLET_CFG  = { normalRadSq: 6400,  colossusRadSq: 90000,  shakeAmt: 5,  normalScore: 100, colossusDmg: 1,  colossusFlash: 12, colossusHitScore: 10  };
+  static _MISSILE_CFG = { normalRadSq: 10000, colossusRadSq: 160000, shakeAmt: 8,  normalScore: 250, colossusDmg: 5,  colossusFlash: 20, colossusHitScore: 50  };
+  static _TANK_CFG    = { normalRadSq: 22500, colossusRadSq: 250000, shakeAmt: 10, normalScore: 300, colossusDmg: 15, colossusFlash: 30, colossusHitScore: 100 };
+
   /**
    * Runs all collision tests for one player each frame.
    * @public
@@ -400,18 +413,24 @@ class GameLoop {
       let e = enemyManager.enemies[j];
       let killed = false;
 
+      const B = this._BULLET_CFG;
       killed = this._checkProjectileArrayVsEnemy(
         player.bullets, player, e, j, enemyScaleSq,
-        6400, 90000, 5, 100, 1, 12, 10);
+        B.normalRadSq, B.colossusRadSq, B.shakeAmt, B.normalScore,
+        B.colossusDmg, B.colossusFlash, B.colossusHitScore);
       if (!killed) {
+        const M = this._MISSILE_CFG;
         killed = this._checkProjectileArrayVsEnemy(
           player.homingMissiles, player, e, j, enemyScaleSq,
-          10000, 160000, 8, 250, 5, 20, 50);
+          M.normalRadSq, M.colossusRadSq, M.shakeAmt, M.normalScore,
+          M.colossusDmg, M.colossusFlash, M.colossusHitScore);
       }
       if (!killed) {
+        const T = this._TANK_CFG;
         killed = this._checkProjectileArrayVsEnemy(
           player.tankShells, player, e, j, enemyScaleSq,
-          22500, 250000, 10, 300, 15, 30, 100);
+          T.normalRadSq, T.colossusRadSq, T.shakeAmt, T.normalScore,
+          T.colossusDmg, T.colossusFlash, T.colossusHitScore);
       }
 
       if (!killed && this._checkEnemyBodyVsPlayer(player, s, e)) return;

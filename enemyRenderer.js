@@ -34,6 +34,9 @@ class EnemyRenderer {
       hunter:  (e) => this._drawHunter(e),
       seeder:  (e) => this._drawSeeder(e)
     };
+    // Reusable visible-enemy list — reset with .length=0 each frame to avoid
+    // allocating a fresh array every draw() call (called at display refresh rate).
+    this._visibleEnemies = [];
   }
 
   // ---------------------------------------------------------------------------
@@ -652,7 +655,8 @@ class EnemyRenderer {
     const sx = s.x, sz = s.z;
 
     // Single culling pass — build list of enemies visible this frame.
-    const vis = [];
+    const vis = this._visibleEnemies;
+    vis.length = 0;
     const cam = terrain._cam;
     for (let i = 0; i < enemies.length; i++) {
       const e = enemies[i];

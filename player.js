@@ -84,20 +84,7 @@ function createPlayer(id, keys, offsetX, labelColor) {
 
 /** Legacy resetShip for backward compatibility. */
 function resetShip(p, offsetX) {
-  if (typeof p.reset === 'function') {
-    p.reset(offsetX);
-    return;
-  }
-
-  p.ship = { x: offsetX, y: LAUNCH_ALT, z: 420, vx: 0, vy: 0, vz: 0, pitch: 0, yaw: 0 };
-  let d = SHIP_DESIGNS[p.designIndex || 0];
-  if (d) {
-    p.missilesRemaining = d.startingMissiles ?? d.missileCapacity ?? 1;
-  } else {
-    p.missilesRemaining = 1;
-  }
-  p.normalShotMode = 'single';
-  p.weaponMode = 0;
+  p.reset(offsetX);
 }
 
 // ---------------------------------------------------------------------------
@@ -675,6 +662,21 @@ function updateShipInput(p) {
   gameSFX?.setThrust(p.id, inputs.thrust, p.ship.x, p.ship.y, p.ship.z);
 }
 
+/**
+ * Rate-limited primary weapon fire (normal shot pattern or tank shell).
+ * Shared by both mobile and desktop NORMAL weapon mode paths.
+ * @param {object} p  Player state object.
+ */
+function _fireRateLimitedPrimary(p) {
+  const des = SHIP_DESIGNS[p.designIndex];
+  const isTank = (des && des.shotType === 'tank_shell');
+  const rate = isTank ? 15 : 8;
+  if (physicsEngine.tickCount % rate === 0) {
+    if (isTank) fireTankShell(p);
+    else fireNormalPattern(p, p.ship);
+  }
+}
+
 function _handleWeaponFiring(p, isShooting) {
   // Safety cooldown: ignore shooting inputs for 500ms after entering PLAYING mode
   if (gameState.mode === 'playing') {
@@ -687,15 +689,7 @@ function _handleWeaponFiring(p, isShooting) {
   if (gameState.isMobile && p.id === 0) {
     const isBarrier = inputManager.getActionActive(p, 'barrier');
 
-    if (isShooting) {
-      const des = SHIP_DESIGNS[p.designIndex];
-      const isTank = (des && des.shotType === 'tank_shell');
-      const rate = isTank ? 15 : 8;
-      if (physicsEngine.tickCount % rate === 0) {
-        if (isTank) fireTankShell(p);
-        else fireNormalPattern(p, p.ship);
-      }
-    }
+    if (isShooting) _fireRateLimitedPrimary(p);
 
     if (isBarrier && physicsEngine.tickCount % 8 === 0) {
       fireBarrier(p);
@@ -706,15 +700,7 @@ function _handleWeaponFiring(p, isShooting) {
   }
 
   if (p.weaponMode === 0) { // NORMAL
-    if (isShooting) {
-      const des = SHIP_DESIGNS[p.designIndex];
-      const isTank = (des && des.shotType === 'tank_shell');
-      const rate = isTank ? 15 : 8;
-      if (physicsEngine.tickCount % rate === 0) {
-        if (isTank) fireTankShell(p);
-        else fireNormalPattern(p, p.ship);
-      }
-    }
+    if (isShooting) _fireRateLimitedPrimary(p);
     p.shootHeld = isShooting;
   } else if (p.weaponMode === 1) { // MISSILE
     if (isShooting && !p.shootHeld) {

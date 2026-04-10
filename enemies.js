@@ -26,6 +26,14 @@ const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
 // Uniform scale applied to every enemy mesh in both rendering passes.
 const ENEMY_DRAW_SCALE = 4;
 
+// Enemy projectile lifetime constants (frames).
+// Centralised here so all enemy types and boss burst-fire configs reference
+// the same source of truth instead of scattering raw numbers.
+const ENEMY_BULLET_LIFE      = 1000;  // Standard enemy bullets (fighter, colossus)
+const ENEMY_CRAB_BULLET_LIFE = 1000;  // Crab / scorpion upward shots
+const BOSS_BULLET_LIFE       = 1200;  // Kraken burst projectiles (longer range)
+const KRAKEN_TENTACLE_LIFE   = 900;   // Kraken tentacle lash projectiles
+
 // =============================================================================
 // Enemy Type Registry — single source of truth for per-type configuration.
 //
@@ -229,7 +237,7 @@ class EnemyManager {
 
   /** Common upward projectile used by crab/scorpion families. */
   _fireUpwardShot(e, shotType = 'crab', vy = -12) {
-    particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy, vz: 0, life: 1000 });
+    particleSystem.enemyBullets.push({ x: e.x, y: e.y - 10, z: e.z, vx: 0, vy, vz: 0, life: ENEMY_CRAB_BULLET_LIFE });
     gameSFX?.playEnemyShot(shotType, e.x, e.y - 10, e.z);
   }
 
@@ -690,7 +698,7 @@ class EnemyManager {
       particleSystem.enemyBullets.push({
         x: e.x, y: e.y, z: e.z,
         vx: (pvx / pd) * 10, vy: (pvy / pd) * 10, vz: (pvz / pd) * 10,
-        life: 1000
+        life: ENEMY_BULLET_LIFE
       });
       gameSFX?.playEnemyShot('fighter', e.x, e.y, e.z);
     }
@@ -867,7 +875,7 @@ class EnemyManager {
       spread: 0.12,
       scaleKey: 'colossusScale',
       muzzleYFactor: 240,
-      bulletLife: 1000
+      bulletLife: ENEMY_BULLET_LIFE
     });
 
     // --- Virus trail: infect tiles below the Colossus as it lumbers along ---
@@ -1017,7 +1025,7 @@ class EnemyManager {
       spread: 0.14,
       scaleKey: 'krakenScale',
       muzzleYFactor: 80,
-      bulletLife: 1200
+      bulletLife: BOSS_BULLET_LIFE
     });
 
     // --- Tentacle lash: 4 radial projectiles + 1 aimed at player every 220 frames ---
@@ -1032,7 +1040,7 @@ class EnemyManager {
         particleSystem.enemyBullets.push({
           x: e.x, y: lashY, z: e.z,
           vx: cos(a) * 8, vy: random(-1, 0), vz: sin(a) * 8,
-          life: 900
+          life: KRAKEN_TENTACLE_LIFE
         });
       }
       // One aimed tentacle strike at the player
@@ -1042,7 +1050,7 @@ class EnemyManager {
         particleSystem.enemyBullets.push({
           x: e.x, y: lashY, z: e.z,
           vx: (adx / ad) * 10, vy: -0.5, vz: (adz / ad) * 10,
-          life: 900
+          life: KRAKEN_TENTACLE_LIFE
         });
       }
       gameSFX?.playEnemyShot('fighter', e.x, lashY, e.z);

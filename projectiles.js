@@ -144,9 +144,11 @@ function updateProjectilePhysics(p) {
       let impactRad = TANK_SHELL_CLEAR_R * TILE;
       let impactRadSq = impactRad * impactRad;
 
-      // Kill nearby enemies
+      // Kill nearby enemies (excluding bosses, which are handled by direct impact in gameLoop)
       for (let j = enemyManager.enemies.length - 1; j >= 0; j--) {
         let e = enemyManager.enemies[j];
+        if (e.type === 'colossus' || e.type === 'kraken') continue;
+
         let dx = e.x - s.x, dy = e.y - s.y, dz = e.z - s.z;
         if (dx * dx + dy * dy + dz * dz < impactRadSq) {
           particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);

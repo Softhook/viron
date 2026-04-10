@@ -23,6 +23,12 @@ const ENEMY_BULLET_KILL_RAD_SQ = 4900;
 // 49.0 = 7² world-units/tick (≈ high-speed impact threshold).
 const LETHAL_COLLISION_SPEED_SQ = 49.0;
 
+// Body physics radii
+const SHIP_COLLISION_RAD = 15;
+const SHIP_COLLISION_RAD_SQ = 225;
+const COLOSSUS_BROAD_PHASE_RAD = 500;
+const KRAKEN_BODY_RAD = 74;
+
 // Colossus skeleton bone positions (local-space, un-scaled).
 // Hoisted from _checkEnemyBodyVsPlayer so the 11-element array is not
 // re-allocated every frame for every Colossus on screen.
@@ -472,13 +478,12 @@ class GameLoop {
   }
 
   static _checkEnemyBodyVsPlayer(player, s, e) {
-    let shipRad = 15;
     let speedSq = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
     if (e.type === 'colossus') {
       const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
-      const broadRad = 500 * cScale;
+      const broadRad = COLOSSUS_BROAD_PHASE_RAD * cScale;
       let bx = s.x - e.x, by = s.y - e.y, bz = s.z - e.z;
-      let brSum = broadRad + shipRad;
+      let brSum = broadRad + SHIP_COLLISION_RAD;
       if (bx * bx + by * by + bz * bz > brSum * brSum) return false;
 
       let yaw = atan2(e.vx || 0, e.vz || 0);
@@ -492,29 +497,29 @@ class GameLoop {
         let cy = e.y + (b.y || 0) * cScale;
         let cz = e.z + lz * cosY - lx * sinY;
         let br = b.r * cScale;
-        let pdist = br + shipRad;
+        let pdist = br + SHIP_COLLISION_RAD;
         if (dist3dSq(s.x, s.y, s.z, cx, cy, cz) < pdist * pdist) {
           if (speedSq > LETHAL_COLLISION_SPEED_SQ) { killPlayer(player); return true; }
-          this._resolveSphereCollision(s, cx, cy, cz, br, shipRad);
+          this._resolveSphereCollision(s, cx, cy, cz, br, SHIP_COLLISION_RAD);
           break;
         }
       }
     } else if (e.type === 'kraken') {
       const kScale = (e.krakenScale || 1) * ENEMY_DRAW_SCALE;
-      const bodyRad = 74 * kScale;
+      const bodyRad = KRAKEN_BODY_RAD * kScale;
       const dSq = dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z);
-      const bdSum = bodyRad + shipRad;
+      const bdSum = bodyRad + SHIP_COLLISION_RAD;
 
       if (dSq < bdSum * bdSum) {
         if (speedSq > LETHAL_COLLISION_SPEED_SQ) { killPlayer(player); return true; }
-        this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
-      } else if (this._checkKrakenTentacles(s, e, kScale, shipRad * shipRad)) {
+        this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, SHIP_COLLISION_RAD);
+      } else if (this._checkKrakenTentacles(s, e, kScale, SHIP_COLLISION_RAD_SQ)) {
         killPlayer(player);
         return true;
       }
     } else {
       let bodyRad = 7 * (ENEMY_DRAW_SCALE / 2);
-      const normSum = bodyRad + shipRad;
+      const normSum = bodyRad + SHIP_COLLISION_RAD;
       if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < normSum * normSum) {
         const isLethalType = e.type === 'hunter' || e.type === 'squid';
         if (isLethalType || speedSq > LETHAL_COLLISION_SPEED_SQ) { killPlayer(player); return true; }

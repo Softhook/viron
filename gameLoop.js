@@ -16,6 +16,24 @@ const _ENEMY_HALF_SCALE_SQ = (ENEMY_DRAW_SCALE / 2) * (ENEMY_DRAW_SCALE / 2);
 // Values above 1.0 add a small bounce (1.8 ≈ slightly springy but stable).
 const COLLISION_DAMPING = 1.8;
 
+// Enemy bullet vs player kill radius squared (70² = 4900 world units).
+const ENEMY_BULLET_KILL_RAD_SQ = 4900;
+
+// Ship speed² above which a body collision is instant-kill instead of a push-back.
+// 49.0 = 7² world-units/tick (≈ high-speed impact threshold).
+const LETHAL_COLLISION_SPEED_SQ = 49.0;
+
+// Colossus skeleton bone positions (local-space, un-scaled).
+// Hoisted from _checkEnemyBodyVsPlayer so the 11-element array is not
+// re-allocated every frame for every Colossus on screen.
+const _COLOSSUS_BONES = [
+  { y: -160, r: 100 }, { y: -320, r: 70 }, { y: -45, r: 80 },
+  { x: -50, y: 20, r: 40 }, { x: 50, y: 20, r: 40 },
+  { x: -50, y: 140, r: 35 }, { x: 50, y: 140, r: 35 },
+  { x: -105, y: -145, r: 40 }, { x: 105, y: -145, r: 40 },
+  { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }
+];
+
 class GameLoop {
   /** @private Returns squared size multiplier used for Colossus radius checks. */
   static _colossusScaleSq(e) {
@@ -444,7 +462,7 @@ class GameLoop {
     for (let i = particleSystem.enemyBullets.length - 1; i >= 0; i--) {
       let eb = particleSystem.enemyBullets[i];
       let dx = eb.x - s.x, dy = eb.y - s.y, dz = eb.z - s.z;
-      if (dx * dx + dy * dy + dz * dz < 4900) {
+      if (dx * dx + dy * dy + dz * dz < ENEMY_BULLET_KILL_RAD_SQ) {
         killPlayer(player);
         swapRemove(particleSystem.enemyBullets, i);
         return true;
@@ -466,13 +484,7 @@ class GameLoop {
       let yaw = atan2(e.vx || 0, e.vz || 0);
       let cosY = Math.cos(yaw), sinY = Math.sin(yaw);
 
-      const bones = [
-        { y: -160, r: 100 }, { y: -320, r: 70 }, { y: -45, r: 80 },
-        { x: -50, y: 20, r: 40 }, { x: 50, y: 20, r: 40 },
-        { x: -50, y: 140, r: 35 }, { x: 50, y: 140, r: 35 },
-        { x: -105, y: -145, r: 40 }, { x: 105, y: -145, r: 40 },
-        { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }
-      ];
+      const bones = _COLOSSUS_BONES;
       for (let b of bones) {
         let lx = (b.x || 0) * cScale;
         let lz = 0;
@@ -482,7 +494,7 @@ class GameLoop {
         let br = b.r * cScale;
         let pdist = br + shipRad;
         if (dist3dSq(s.x, s.y, s.z, cx, cy, cz) < pdist * pdist) {
-          if (speedSq > 49.0) { killPlayer(player); return true; }
+          if (speedSq > LETHAL_COLLISION_SPEED_SQ) { killPlayer(player); return true; }
           this._resolveSphereCollision(s, cx, cy, cz, br, shipRad);
           break;
         }
@@ -494,7 +506,7 @@ class GameLoop {
       const bdSum = bodyRad + shipRad;
 
       if (dSq < bdSum * bdSum) {
-        if (speedSq > 49.0) { killPlayer(player); return true; }
+        if (speedSq > LETHAL_COLLISION_SPEED_SQ) { killPlayer(player); return true; }
         this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
       } else if (this._checkKrakenTentacles(s, e, kScale, shipRad * shipRad)) {
         killPlayer(player);
@@ -505,7 +517,7 @@ class GameLoop {
       const normSum = bodyRad + shipRad;
       if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < normSum * normSum) {
         const isLethalType = e.type === 'hunter' || e.type === 'squid';
-        if (isLethalType || speedSq > 49.0) { killPlayer(player); return true; }
+        if (isLethalType || speedSq > LETHAL_COLLISION_SPEED_SQ) { killPlayer(player); return true; }
         this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
       }
     }

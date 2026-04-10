@@ -2,6 +2,16 @@
  * Vehicle - Encapsulates 3D physics, movement models, and orientation for player ships.
  * Supports both ground-hugging and airborne movement modes.
  */
+
+// --- Vehicle physics constants ---
+// Ship hull offset from terrain surface (world-units of Y clearance).
+const SHIP_GROUND_CLEARANCE = 12;
+// Vertical velocity above which a ground contact is treated as a crash.
+const LANDING_CRASH_SPEED = 4.2;
+// Distance from terrain at which the ground-proximity air cushion begins.
+const CUSHION_RANGE = 40;
+// Lateral velocity multiplier applied on a non-lethal ground contact.
+const GROUND_LANDING_FRICTION = 0.8;
 class Vehicle {
   constructor(x, y, z, designIndex) {
     this.x = x;
@@ -56,7 +66,7 @@ class Vehicle {
     
     const alt = terrain.getAltitude(this.x, this.z);
     const surfaceY = d.canTravelOnWater ? Math.min(SEA, alt) : alt;
-    const groundY = surfaceY - 12;
+    const groundY = surfaceY - SHIP_GROUND_CLEARANCE;
 
     if (this.y > groundY) {
       const terrainPush = groundY - (this.y - this.vy);
@@ -161,21 +171,21 @@ class Vehicle {
     this.vx *= currentDrag; this.vy *= currentDrag; this.vz *= currentDrag;
     this.x += this.vx; this.y += this.vy; this.z += this.vz;
 
-    if (this.y > SEA - 12) return 'killed';
+    if (this.y > SEA - SHIP_GROUND_CLEARANCE) return 'killed';
 
     const distToGround = rawGroundY - this.y;
-    if (distToGround < 40 && this.vy > 0) {
-      const cushion = (1.0 - (distToGround / 40)) * 0.08;
+    if (distToGround < CUSHION_RANGE && this.vy > 0) {
+      const cushion = (1.0 - (distToGround / CUSHION_RANGE)) * 0.08;
       this.vy = Math.max(0, this.vy - cushion);
     }
 
-    if (this.y > rawGroundY - 12) {
-      if (this.vy > 4.2) return 'killed';
+    if (this.y > rawGroundY - SHIP_GROUND_CLEARANCE) {
+      if (this.vy > LANDING_CRASH_SPEED) return 'killed';
       else {
-        this.y = rawGroundY - 12;
+        this.y = rawGroundY - SHIP_GROUND_CLEARANCE;
         this.vy = 0;
-        this.vx *= 0.8;
-        this.vz *= 0.8;
+        this.vx *= GROUND_LANDING_FRICTION;
+        this.vz *= GROUND_LANDING_FRICTION;
       }
     }
     return 'ok';

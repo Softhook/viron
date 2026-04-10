@@ -303,10 +303,6 @@ class GameState {
   }
 
   /**
-   * Resets all ephemeral world objects (buildings, trees, etc.)
-   * to prepare for a fresh world generation pass.
-   */
-  /**
    * Transitions game to paused state.
    */
   pauseGame() {

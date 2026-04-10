@@ -38,6 +38,7 @@ const PRECACHE_ASSETS = [
   './terrain.js',
   './particles.js',
   './enemies.js',
+  './enemyRenderer.js',
   './player.js',
   './hudCore.js',
   './hudComponents.js',

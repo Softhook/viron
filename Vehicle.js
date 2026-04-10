@@ -142,12 +142,12 @@ class Vehicle {
       this.vx *= br; this.vy *= br; this.vz *= br;
     }
 
-    // Strafe Mode (Dive Dampening)
+    // Dive Dampening
     const rawGroundY = terrain.getAltitude(this.x, this.z);
     const surfaceY = Math.min(SEA, rawGroundY);
     const altitude = surfaceY - this.y;
 
-    if (this.pitch > 0.05 && this.vy > 0 && altitude > 0 && altitude < 1000) {
+    if (this.vy > 0 && altitude > 0 && altitude < 1000) {
       const proximityFactor = 1.0 - Math.pow(altitude / 1000, 3);
       const normalizedAngle = (d.thrustAngle || 0) / (Math.PI / 2);
       const thrustTypeFactor = 0.4 + (0.6 * normalizedAngle);

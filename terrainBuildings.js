@@ -1,20 +1,13 @@
 // =============================================================================
 // terrainBuildings.js — Building rendering and shadows
-// Extracted from terrain.js
+// Now as a stateless service to improve LLM-readability.
 // =============================================================================
 
-Object.assign(Terrain.prototype, {
+const TerrainBuildings = {
 
-
-
-
-  /**
-   * Draws all buildings using single coherent meshes and the terrain shader.
-   */
-
-  _getBuildingsForChunk(cx, cz) {
+  _getBuildingsForChunk(ctx, cx, cz) {
     if (typeof gameState === 'undefined' || !gameState.buildings) return [];
-    if (!this._buildingBuckets || this._buildingBucketsCount !== gameState.buildings.length) {
+    if (!ctx._buildingBuckets || ctx._buildingBucketsCount !== gameState.buildings.length) {
       const newBuckets = new Map();
       const newCount = gameState.buildings.length;
       for (const b of gameState.buildings) {
@@ -29,63 +22,51 @@ Object.assign(Terrain.prototype, {
         arr.push(b);
       }
 
-      if (this._buildingBucketsCount !== 0 && this._buildingBuckets) {
-        // Only invalidate chunks where the building arrangement actually changed
-        for (const [bk, oldArr] of this._buildingBuckets.entries()) {
+      if (ctx._buildingBucketsCount !== 0 && ctx._buildingBuckets) {
+        for (const [bk, oldArr] of ctx._buildingBuckets.entries()) {
            const newArr = newBuckets.get(bk) || [];
            if (oldArr.length !== newArr.length || oldArr.some((b, i) => b !== newArr[i])) {
-              this._buildingBakeState.delete(bk);
-              this._buildingShadowChunkCache.delete(bk);
+              ctx._buildingBakeState.delete(bk);
+              ctx._buildingShadowChunkCache.delete(bk);
            }
         }
         for (const bk of newBuckets.keys()) {
-           if (!this._buildingBuckets.has(bk)) {
-              this._buildingBakeState.delete(bk);
-              this._buildingShadowChunkCache.delete(bk);
+           if (!ctx._buildingBuckets.has(bk)) {
+              ctx._buildingBakeState.delete(bk);
+              ctx._buildingShadowChunkCache.delete(bk);
            }
         }
       } else {
-        // Initial setup or full reset
-        this._buildingBakeState.clear();
-        this._buildingShadowChunkCache.clear();
+        ctx._buildingBakeState.clear();
+        ctx._buildingShadowChunkCache.clear();
       }
 
-      this._buildingBuckets = newBuckets;
-      this._buildingBucketsCount = newCount;
+      ctx._buildingBuckets = newBuckets;
+      ctx._buildingBucketsCount = newCount;
     }
-    return this._buildingBuckets.get(`${cx},${cz}`) || [];
+    return ctx._buildingBuckets.get(`${cx},${cz}`) || [];
   },
 
-
-  /**
-   * Ensures the shadow geometry for a tree is baked and cached.
-   * Handles sun-change invalidation, hull initialisation, and geometry baking.
-   * Called once per shadow-queue entry before the batched render pass.
-   * @param {{}} t    Tree descriptor from getProceduralTreesForChunk.
-   * @param {{}} sun  Sun shadow basis from _getSunShadowBasis().
-   */
-  _drawBuildingShadow(b, groundY, sun) {
-    // Caller guarantees b.type === 3.
+  _drawBuildingShadow(ctx, b, groundY, sun) {
     const bw = b.w, bh = b.h;
     const floatY = groundY - bh - 100 - sin(millis() * 0.0012 + b.x) * 50;
-    const casterH = max(35, groundY - floatY);
-    this._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 70, sun, true);
+    const casterH = Math.max(35, groundY - floatY);
+    ctx._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 70, sun, true);
   },
 
-
-  drawBuildings(s) {
+  drawBuildings(ctx, s) {
     const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
-    if (this._bakeFrame !== currentFrame) {
-      this._bakeFrame = currentFrame;
-      this._chunksBakedThisFrame.clear();
-      this._bakeBudgetUsedMs = 0;
+    if (ctx._bakeFrame !== currentFrame) {
+      ctx._bakeFrame = currentFrame;
+      ctx._chunksBakedThisFrame.clear();
+      ctx._bakeBudgetUsedMs = 0;
     }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
-    let cam = this._cam || this.getCameraParams(s);
-    const sun = this._getSunShadowBasis();
+    let cam = ctx._cam || ctx.getCameraParams(s);
+    const sun = ctx._getSunShadowBasis();
     
     let gx = toTile(s.x), gz = toTile(s.z);
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
@@ -95,31 +76,28 @@ Object.assign(Terrain.prototype, {
 
     const chunkHalf = CHUNK_SIZE * TILE;
 
-    this.applyShader();
+    ctx.applyShader();
 
     const visibleBldgs = [];
     const visibleChunks = [];
 
     for (let cz = minCz; cz <= maxCz; cz++) {
       for (let cx = minCx; cx <= maxCx; cx++) {
-        if (!this._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
+        if (!ctx._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
         
         visibleChunks.push({ cx, cz });
-        const bldgState = this._advanceChunkBuildingBatch(cx, cz);
+        const bldgState = this._advanceChunkBuildingBatch(ctx, cx, cz);
         if (bldgState) {
-          // Draw completed batches.
           for (const geom of bldgState.batches) model(geom);
-          // Draw remaining un-baked buildings individually this frame.
           for (let i = bldgState.nextIdx; i < bldgState.buildings.length; i++) {
             const b = bldgState.buildings[i];
             push(); translate(b.x, b.y, b.z);
-            this._drawBuildingImmediate(b, infection.has(b._tileKey));
+            this._drawBuildingImmediate(ctx, b, infection.has(b._tileKey));
             pop();
           }
         }
-        // null means no static buildings — nothing to draw.
 
-        const bldgs = this._getBuildingsForChunk(cx, cz);
+        const bldgs = this._getBuildingsForChunk(ctx, cx, cz);
         for (const b of bldgs) {
            let dSq = (s.x - b.x) ** 2 + (s.z - b.z) ** 2;
            if (dSq >= cullSq) continue;
@@ -142,7 +120,7 @@ Object.assign(Terrain.prototype, {
         translate(0, floatY - y, 0);
         rotateY(millis() * 0.0006 + b.x);
         rotateZ(millis() * 0.0009 + b.z);
-        let geom = this._getPowerupGeom(b, inf);
+        let geom = this._getPowerupGeom(ctx, b, inf);
         if (geom) model(geom);
         pop();
       } else if (b.type === 4) {
@@ -160,32 +138,23 @@ Object.assign(Terrain.prototype, {
     setSceneLighting();
 
     noLights(); noStroke();
-    this.applyShadowShader();
+    ctx.applyShadowShader();
     _beginShadowStencil();
     
     for (const c of visibleChunks) {
-      const geom = this._getChunkBuildingShadow(c.cx, c.cz, sun);
+      const geom = this._getChunkBuildingShadow(ctx, c.cx, c.cz, sun);
       if (geom) {
         model(geom);
-      } else if (!this._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
-        // Fallback: draw individually if chunk building shadow timed out
+      } else if (!ctx._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         if (gameState.mode === 'menu') continue;
-        // This chunk already baked this frame (shadow will fire next available frame)
-        // or the frame budget is exhausted — skip individual draws for now.
-        if (this._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
-        const chunkBldgs = this._getBuildingsForChunk(c.cx, c.cz);
+        if (ctx._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
+        const chunkBldgs = this._getBuildingsForChunk(ctx, c.cx, c.cz);
         for (const b of chunkBldgs) {
           if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
-          if (!b._shadowHull) {
-            const { footprint, casterH } = getBuildingFootprint(b);
-            b._footprint = footprint;
-            b._shadowCasterH = casterH;
-            b._shadowHull = true;
-          }
+          this._ensureBuildingShadowHull(b);
           const casterH = b._shadowCasterH || b.h;
           const baseAlpha = (b.type === 4) ? 65 : (b.type === 0 ? 85 : 80);
-          // isBaking=true because the caller (drawBuildings) has already applied the shadow shader and stencil setup
-          this._drawProjectedFootprintShadow(b.x, b.z, b.y, casterH, b._footprint, baseAlpha, sun, false, true);
+          ctx._drawProjectedFootprintShadow(b.x, b.z, b.y, casterH, b._footprint, baseAlpha, sun, false, true);
         }
       }
     }
@@ -194,7 +163,7 @@ Object.assign(Terrain.prototype, {
     for (const v of visibleBldgs) {
       const b = v.b;
       if (b.type === 3 && v.dSq < 2250000 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
-        this._drawBuildingShadow(b, b.y, sun);
+        this._drawBuildingShadow(ctx, b, b.y, sun);
       }
     }
 
@@ -204,10 +173,15 @@ Object.assign(Terrain.prototype, {
     if (profiler) profiler.record('buildings', performance.now() - start);
   },
 
+  _ensureBuildingShadowHull(b) {
+    if (b._shadowHull) return;
+    const { footprint, casterH } = getBuildingFootprint(b);
+    b._footprint = footprint;
+    b._shadowCasterH = casterH;
+    b._shadowHull = true;
+  },
 
-
-
-  _drawBuildingImmediate(b, inf) {
+  _drawBuildingImmediate(ctx, b, inf) {
     if      (b.type === 0) buildType0Geometry(b, inf);
     else if (b.type === 1) buildType1Geometry(b, inf);
     else if (b.type === 2) buildType2Geometry(b, inf);
@@ -215,91 +189,71 @@ Object.assign(Terrain.prototype, {
     else if (b.type === 5) buildType5Geometry(b, inf);
   },
 
-
-  /**
-   * Returns the progressive bake state for a building chunk, advancing one
-   * batch (BUILDING_BATCH_SIZE static buildings) per call when budget allows.
-   *
-   * State shape: null (no static buildings) | { batches: p5.Geometry[],
-   *   nextIdx: number, buildings: Object[] }
-   * Buildings in indices nextIdx..buildings.length-1 must be drawn individually
-   * by the caller on the same frame.
-   */
-  _advanceChunkBuildingBatch(cx, cz) {
+  _advanceChunkBuildingBatch(ctx, cx, cz) {
     const key = `${cx},${cz}`;
-    const existing = this._buildingBakeState.get(key);
-
-    if (existing === null) return null; // Confirmed: no static buildings.
+    const existing = ctx._buildingBakeState.get(key);
+    if (existing === null) return null;
 
     let state = existing;
-
     if (state === undefined) {
-      const allBldgs = this._getBuildingsForChunk(cx, cz);
+      const allBldgs = this._getBuildingsForChunk(ctx, cx, cz);
       const buildings = allBldgs.filter(b => b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z));
-      // Pre-compute _tileKey for all buildings up front.  Trees already have
-      // t.k set by getProceduralTreesForChunk() via tileKey(); buildings are
-      // mutable world objects whose _tileKey is initialised lazily here instead.
       for (const b of buildings) {
         if (b._tileKey === undefined) b._tileKey = tileKey(toTile(b.x), toTile(b.z));
       }
       if (buildings.length === 0) {
-        this._buildingBakeState.set(key, null);
+        ctx._buildingBakeState.set(key, null);
         return null;
       }
       state = { batches: [], nextIdx: 0, buildings };
     }
 
     if (state.nextIdx >= state.buildings.length) {
-      if (existing === undefined) this._buildingBakeState.set(key, state);
+      if (existing === undefined) ctx._buildingBakeState.set(key, state);
       return state;
     }
 
-    // This chunk already baked something this frame, the global time budget is
-    // exhausted, or another bake is in progress — defer to the next frame.
-    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
-      if (existing === undefined) this._buildingBakeState.set(key, state);
+    if (ctx._chunksBakedThisFrame.has(key) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
+      if (existing === undefined) ctx._buildingBakeState.set(key, state);
       return state;
     }
 
     const end = Math.min(state.nextIdx + BUILDING_BATCH_SIZE, state.buildings.length);
-    this._isBuildingShadow = true;
+    ctx._isBuildingShadow = true;
     const t0 = performance.now();
     let geom = null;
     try {
-      geom = _safeBuildGeometry(() => {
+      geom = ctx._safeBuildGeometry(() => {
         for (let i = state.nextIdx; i < end; i++) {
           const b = state.buildings[i];
           push(); translate(b.x, b.y, b.z);
-          this._drawBuildingImmediate(b, infection.has(b._tileKey));
+          this._drawBuildingImmediate(ctx, b, infection.has(b._tileKey));
           pop();
         }
       });
-    } catch (err) { console.error('[Viron] Building batch bake failed:', err); } finally { this._isBuildingShadow = false; }
-    this._bakeBudgetUsedMs += performance.now() - t0;
-    this._chunksBakedThisFrame.add(key);
+    } catch (err) { console.error('[Viron] Building batch bake failed:', err); } finally { ctx._isBuildingShadow = false; }
+    ctx._bakeBudgetUsedMs += performance.now() - t0;
+    ctx._chunksBakedThisFrame.add(key);
 
     if (geom) state.batches.push(geom);
     state.nextIdx = end;
-    this._buildingBakeState.set(key, state);
+    ctx._buildingBakeState.set(key, state);
     return state;
   },
 
-
-  _getChunkBuildingShadow(cx, cz, sun) {
+  _getChunkBuildingShadow(ctx, cx, cz, sun) {
     const key = `${cx},${cz}`;
-    let cached = this._buildingShadowChunkCache.get(key);
+    let cached = ctx._buildingShadowChunkCache.get(key);
     if (cached && cached.sunX === sun.x && cached.sunY === sun.y && cached.sunZ === sun.z) {
       return cached.geom;
     }
 
-    if (this._chunksBakedThisFrame.has(key) || this._bakeBudgetUsedMs >= BAKE_BUDGET_MS || this._isBuildingShadow) {
-      // This chunk already baked, budget exhausted, or mutex busy; return stale
-      // geometry so shadows are never worse than one sun-step behind.
+    if (ctx._chunksBakedThisFrame.has(key) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
       if (cached && cached.geom) return cached.geom;
       return null;
     }
 
-    const bldgs = this._getBuildingsForChunk(cx, cz);
+    const bldgs = this._getBuildingsForChunk(ctx, cx, cz);
     let hasStatic = false;
     for (const b of bldgs) {
       if (b.type !== 3 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
@@ -308,67 +262,53 @@ Object.assign(Terrain.prototype, {
     }
 
     if (!hasStatic) {
-      this._buildingShadowChunkCache.set(key, { geom: null, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
+      ctx._buildingShadowChunkCache.set(key, { geom: null, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
       return null;
     }
 
-    if (this._isBuildingShadow) return null;
-    this._isBuildingShadow = true;
+    if (ctx._isBuildingShadow) return null;
+    ctx._isBuildingShadow = true;
     const t0 = performance.now();
     let geom = null;
     try {
-      geom = _safeBuildGeometry(() => {
+      geom = ctx._safeBuildGeometry(() => {
         for (const b of bldgs) {
           if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
-          
-          if (!b._shadowHull) {
-            const { footprint, casterH } = getBuildingFootprint(b);
-            b._footprint = footprint;
-            b._shadowCasterH = casterH;
-            b._shadowHull = true;
-          }
+          this._ensureBuildingShadowHull(b);
           const casterH = b._shadowCasterH || b.h;
           const baseAlpha = (b.type === 4) ? 65 : (b.type === 0 ? 85 : 80);
-          
-          this._drawProjectedFootprintShadow(b.x, b.z, b.y, casterH, b._footprint, baseAlpha, sun, false, true);
+          ctx._drawProjectedFootprintShadow(b.x, b.z, b.y, casterH, b._footprint, baseAlpha, sun, false, true);
         }
       });
-    } catch (err) { console.error(err); } finally { this._isBuildingShadow = false; }
-    this._bakeBudgetUsedMs += performance.now() - t0;
-    this._chunksBakedThisFrame.add(key);
+    } catch (err) { console.error(err); } finally { ctx._isBuildingShadow = false; }
+    ctx._bakeBudgetUsedMs += performance.now() - t0;
+    ctx._chunksBakedThisFrame.add(key);
     
-    this._buildingShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
+    ctx._buildingShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
     return geom;
   },
 
-
-  _getPowerupGeom(b, inf) {
-    // Cache both key variants on the powerup object so toFixed() is paid only once.
-    // b._geomKeyPair[0] = clean key, b._geomKeyPair[1] = infected key.
+  _getPowerupGeom(ctx, b, inf) {
     if (!b._geomKeyPair) {
       const base = `pu_${b.w.toFixed(1)}_${b.h.toFixed(1)}_`;
       b._geomKeyPair = [base + 'false', base + 'true'];
     }
     const key = b._geomKeyPair[inf ? 1 : 0];
-    if (!this._geoms) this._geoms = new Map();
-    if (this._geoms.has(key)) return this._geoms.get(key);
+    if (!ctx._geoms) ctx._geoms = new Map();
+    if (ctx._geoms.has(key)) return ctx._geoms.get(key);
 
-    if (this._isBuildingShadow) return null;
-    this._isBuildingShadow = true;
+    if (ctx._isBuildingShadow) return null;
+    ctx._isBuildingShadow = true;
     let geom = null;
     try {
-      geom = _safeBuildGeometry(() => buildPowerupGeometry(b, inf));
+      geom = ctx._safeBuildGeometry(() => buildPowerupGeometry(b, inf));
     } catch (err) {
       console.error("[Viron] Powerup geometry build failed:", err);
     } finally {
-      this._isBuildingShadow = false;
+      ctx._isBuildingShadow = false;
     }
 
-    this._geoms.set(key, geom);
+    ctx._geoms.set(key, geom);
     return geom;
   }
-
-});
-
-// Singleton instance used by all other modules
-const terrain = new Terrain();
+};

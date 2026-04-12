@@ -146,15 +146,17 @@ global.lerp             = (a, b, t) => a + (b - a) * t;
 global.constrain        = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 global.gameState        = { players: [] };
 
-// Read sfx.js once and reuse across all tests that inspect the source.
-const sfxSrc = fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8');
+// Read sfx.js and its neighbors
+const sfxAmbientSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxAmbient.js'), 'utf8');
+const sfxWeaponsSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxWeapons.js'), 'utf8');
+const sfxEnemiesSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxEnemies.js'), 'utf8');
+const sfxSrc        = fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8');
 
-// Load GameSFX into the global scope.
-// sfx.js uses `class` and `const` at the top level, which eval() does not
-// promote to the module scope.  We therefore patch those two declarations to
-// global assignments before evaluating.  eval() of a local trusted file in a
-// Node.js test runner is an established pattern when the file under test was
-// not written as an ES/CommonJS module (it targets a browser global environment).
+// Load modules into global scope
+eval(sfxAmbientSrc);
+eval(sfxWeaponsSrc);
+eval(sfxEnemiesSrc);
+
 {
     const patched = sfxSrc
         .replace(/^class GameSFX\b/m,  'global.GameSFX = class GameSFX')

@@ -116,7 +116,7 @@ class VillagerManager extends AgentManager {
       const legSwing = sin(phase) * 0.6;
       const armSwing = sin(phase + PI) * 0.5;
 
-      VillagerManager._geoms[f] = _safeBuildGeometry(() => {
+      VillagerManager._geoms[f] = terrain._safeBuildGeometry(() => {
         noStroke();
         translate(0, 5, 0); // Anchor feet precisely to Y=0
 
@@ -145,7 +145,7 @@ class VillagerManager extends AgentManager {
     }
 
     // Static frame for standing still
-    VillagerManager._staticGeom = _safeBuildGeometry(() => {
+    VillagerManager._staticGeom = terrain._safeBuildGeometry(() => {
       noStroke();
       translate(0, 5, 0); // Anchor feet precisely to Y=0
 
@@ -164,7 +164,7 @@ class VillagerManager extends AgentManager {
     for (let f = 0; f < 64; f++) {
       const phase = (f / 64) * TWO_PI;
       const wave = sin(phase * 3) * 0.8; // Match original procedural wave speed (phase * 3)
-      VillagerManager._curingGeoms[f] = _safeBuildGeometry(() => {
+      VillagerManager._curingGeoms[f] = terrain._safeBuildGeometry(() => {
         noStroke();
         translate(0, 5, 0); // Anchor feet precisely to Y=0
 
@@ -192,7 +192,7 @@ class VillagerManager extends AgentManager {
       const leftArmDip = 0.9 + sin(phase * 2) * 0.55;
       const rightArmDip = 0.9 + sin(phase * 2 + PI) * 0.55;
 
-      VillagerManager._plantingGeoms[f] = _safeBuildGeometry(() => {
+      VillagerManager._plantingGeoms[f] = terrain._safeBuildGeometry(() => {
         noStroke();
         translate(0, 5, 0); // feet at Y=0
 

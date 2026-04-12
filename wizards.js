@@ -107,7 +107,7 @@ class WizardManager extends AgentManager {
     WizardManager._castingGeoms = [];
 
     const buildWiz = (isCasting, phase, castPhase, isSitting = false) => {
-      return _safeBuildGeometry(() => {
+      return terrain._safeBuildGeometry(() => {
         noStroke();
         
         if (isSitting) {

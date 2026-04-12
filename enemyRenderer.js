@@ -553,7 +553,7 @@ class EnemyRenderer {
     rotateY(frameCount * 0.05);
     noStroke();
     if (!EnemyRenderer._bomberGeom) {
-      EnemyRenderer._bomberGeom = _safeBuildGeometry(() => {
+      EnemyRenderer._bomberGeom = terrain._safeBuildGeometry(() => {
         fill(180, 20, 180);
         beginShape(TRIANGLES);
         this._drawTri([0, -40, 0], [-40, 0, -40], [40, 0, -40]);
@@ -608,7 +608,7 @@ class EnemyRenderer {
   _drawSeeder(e) {
     rotateY(frameCount * 0.15); noStroke();
     if (!EnemyRenderer._seederGeom) {
-      EnemyRenderer._seederGeom = _safeBuildGeometry(() => {
+      EnemyRenderer._seederGeom = terrain._safeBuildGeometry(() => {
         for (let i = 0; i < SEEDER_LAYERS.length; i++) {
           const layer = SEEDER_LAYERS[i];
           const yOff = layer[0];

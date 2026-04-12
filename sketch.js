@@ -42,7 +42,7 @@ function setup() {
     CULL_DIST = DESKTOP_VIEW_LIMITS.cull;
   }
 
-  setAttributes('stencil', true);
+  setAttributes({ stencil: true });
   createCanvas(windowWidth, windowHeight, WEBGL);
 
   gameRenderer.sceneFBO = null;

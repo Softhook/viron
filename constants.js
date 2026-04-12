@@ -718,7 +718,22 @@ function getVironProfiler() {
   return window.__vironProfiler;
 }
 
+// --- Enemy behavior and projectile constants ---
+const ENEMY_BULLET_LIFE      = 1000;  // Standard enemy bullets
+const ENEMY_CRAB_BULLET_LIFE = 1000;  // Crab / scorpion upward shots
+const BOSS_BULLET_LIFE       = 1200;  // Kraken burst projectiles
+const KRAKEN_TENTACLE_LIFE   = 900;   // Kraken tentacle lash projectiles
+
+const BOMBER_BOUNDARY_LIMIT      = 4000;
+const BOMBER_DROP_INTERVAL_TICKS = 600;
+const SEEDER_BOUNDARY_LIMIT      = 5000;
+const FIGHTER_STATE_TOGGLE_TICKS = 120;
+
+const SCORPION_STUCK_THRESHOLD_TICKS = 300;
+const SCORPION_SKIP_DURATION_TICKS   = 1800;
+
 initVironProfiler();
+
 
 if (typeof window !== 'undefined') {
   window.initVironProfiler = initVironProfiler;

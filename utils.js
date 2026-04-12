@@ -1,5 +1,7 @@
 // =============================================================================
 // utils.js — Shared game utility functions
+//
+// @exports   findNearest()   — finds closest element in array by 3D distance
 // =============================================================================
 
 /**

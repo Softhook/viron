@@ -2,6 +2,9 @@
  * PhysicsEngine - Manages fixed-timestep simulation and tick accumulation.
  * Ensures game logic (bullets, enemies, infection) runs at a steady rate
  * regardless of the display refresh rate.
+ *
+ * @exports   PhysicsEngine   — class definition
+ * @exports   physicsEngine   — singleton (used by sketch.js, gameLoop.js, gameState.js)
  */
 class PhysicsEngine {
   constructor(tickRate = 60) {

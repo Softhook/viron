@@ -1,5 +1,7 @@
 // =============================================================================
 // sfxAmbient.js — Stateless functions for ambient audio and thrust rendering
+//
+// @exports   SfxAmbient   — namespace: updateAmbiance(), updateThrust()
 // =============================================================================
 
 const SfxAmbient = {

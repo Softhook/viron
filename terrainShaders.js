@@ -4,6 +4,9 @@
 // Extracted from terrain.js to keep each file focused on one concern.
 // Loaded before terrain.js in index.html so all constants are available
 // when the Terrain class is defined.
+//
+// @exports   TERRAIN_CONFIG   — palette, biome, and shader parameter config
+// @exports   (shader strings) — TERRAIN_VERT_SRC, TERRAIN_FRAG_SRC, etc.
 // =============================================================================
 
 // =============================================================================

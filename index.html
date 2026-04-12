@@ -237,49 +237,116 @@
       });
     }
   </script>
-  <script src="utils.js"></script>
-  <script src="constants.js"></script>
-  <script src="shipDesigns.js"></script>
-  <script src="sfxTunes.js"></script>
-  <script src="sfxAmbient.js"></script>
-  <script src="sfxWeapons.js"></script>
-  <script src="sfxEnemies.js"></script>
-  <script src="sfx.js"></script>
-  <script src="terrainShaders.js"></script>
-  <script src="terrainMath.js"></script>
-  <script src="terrainGeometry.js"></script>
-  <script src="terrainRender.js"></script>
-  <script src="terrainShadows.js"></script>
-  <script src="terrainTrees.js"></script>
-  <script src="terrainBuildings.js"></script>
-  <script src="buildingGeometry.js"></script>
-  <script src="terrain.js"></script>
-  <script src="particles.js"></script>
-  <script src="projectiles.js"></script>
-  <script src="enemyRenderer.js"></script>
-  <script src="enemyAirBehaviors.js"></script>
-  <script src="enemyGroundBehaviors.js"></script>
-  <script src="enemyBossBehaviors.js"></script>
-  <script src="enemies.js"></script>
-  <script src="agentManager.js"></script>
-  <script src="villagers.js"></script>
-  <script src="wizards.js"></script>
-  <script src="Vehicle.js"></script>
-  <script src="player.js"></script>
-  <script src="hudCore.js"></script>
-  <script src="hudComponents.js"></script>
-  <script src="hudScreens.js"></script>
+  <!--
+    ═══════════════════════════════════════════════════════════════════════════════
+    SCRIPT LOAD ORDER — this order IS the dependency contract.
+    Moving any <script> above its @requires target will cause a ReferenceError.
+    Each layer may only reference globals exported by layers above it.
+    See docs/ARCHITECTURE.md for the full dependency graph.
+    ═══════════════════════════════════════════════════════════════════════════════
+    -->
 
-  <script src="aimAssist.js"></script>
-  <script src="mobileControls.js"></script>
-  <script src="InputManager.js"></script>
-  <script src="PhysicsEngine.js"></script>
-  <!-- IMPORTANT: Load order matters - gameState must load before gameRenderer/gameLoop -->
-  <script src="worldGenerator.js"></script>
-  <script src="gameState.js"></script>
-  <script src="gameRenderer.js"></script>
-  <script src="gameLoop.js"></script>
-  <script src="sketch.js"></script>
+    <!-- ── LAYER 0: Third-party (p5 is loaded in <head>) ──────────────────────── -->
+
+    <!-- ── LAYER 1: Foundation — no game dependencies ────────────────────────── -->
+    <!-- exports: findNearest -->
+    <script src="utils.js"></script>
+    <!-- exports: all constants, TileManager, infection, updateTimeOfDay, helpers -->
+    <script src="constants.js"></script>
+
+    <!-- ── LAYER 2: Asset / data files ───────────────────────────────────────── -->
+    <!-- exports: SHIP_DESIGNS -->
+    <script src="shipDesigns.js"></script>
+
+    <!-- ── LAYER 3: Audio subsystem ───────────────────────────────────────────── -->
+    <!-- exports: SFX_LEVEL_TUNES -->
+    <script src="sfxTunes.js"></script>
+    <!-- exports: SfxAmbient, SfxWeapons, SfxEnemies namespaces -->
+    <script src="sfxAmbient.js"></script>
+    <script src="sfxWeapons.js"></script>
+    <script src="sfxEnemies.js"></script>
+    <!-- exports: GameSFX class, gameSFX singleton -->
+    <script src="sfx.js"></script>
+
+    <!-- ── LAYER 4: Terrain subsystem ─────────────────────────────────────────── -->
+    <!-- exports: TERRAIN_CONFIG, shader source strings -->
+    <script src="terrainShaders.js"></script>
+    <!-- exports: TerrainMath, TerrainGeometry, TerrainRender,
+                 TerrainShadows, TerrainTrees, TerrainBuildings namespaces -->
+    <script src="terrainMath.js"></script>
+    <script src="terrainGeometry.js"></script>
+    <script src="terrainRender.js"></script>
+    <script src="terrainShadows.js"></script>
+    <script src="terrainTrees.js"></script>
+    <script src="terrainBuildings.js"></script>
+    <!-- exports: building geometry helpers -->
+    <script src="buildingGeometry.js"></script>
+    <!-- exports: Terrain class, terrain singleton -->
+    <script src="terrain.js"></script>
+
+    <!-- ── LAYER 5: Particles & projectiles ───────────────────────────────────── -->
+    <!-- exports: ParticleSystem class, particleSystem singleton -->
+    <script src="particles.js"></script>
+    <!-- exports: updateProjectilePhysics(), updateBarrierPhysics() -->
+    <script src="projectiles.js"></script>
+
+    <!-- ── LAYER 6: Enemy subsystem ───────────────────────────────────────────── -->
+    <!-- exports: EnemyRenderer class -->
+    <script src="enemyRenderer.js"></script>
+    <!-- exports: EnemyAirAI, EnemyGroundAI, EnemyBossAI namespaces -->
+    <script src="enemyAirBehaviors.js"></script>
+    <script src="enemyGroundBehaviors.js"></script>
+    <script src="enemyBossBehaviors.js"></script>
+    <!-- exports: EnemyManager class, enemyManager singleton, ENEMY_DRAW_SCALE -->
+    <!-- NOTE: ENEMY_DRAW_SCALE must be loaded before gameLoop.js -->
+    <script src="enemies.js"></script>
+
+    <!-- ── LAYER 7: Agents (villagers & wizards) ──────────────────────────────── -->
+    <!-- exports: AgentManager base class, ENEMY_CONFRONT_OFFSET -->
+    <script src="agentManager.js"></script>
+    <!-- exports: VillagerManager class, villagerManager singleton -->
+    <script src="villagers.js"></script>
+    <!-- exports: WizardManager class, wizardManager singleton -->
+    <script src="wizards.js"></script>
+
+    <!-- ── LAYER 8: Player ────────────────────────────────────────────────────── -->
+    <!-- exports: Vehicle class -->
+    <script src="Vehicle.js"></script>
+    <!-- exports: Player class, createPlayer, killPlayer, updateShipInput, ... -->
+    <script src="player.js"></script>
+
+    <!-- ── LAYER 9: HUD ───────────────────────────────────────────────────────── -->
+    <!-- exports: HUD_Manager, RADAR_SCALE, HUD_WEAPON_LABELS, buffer caches -->
+    <script src="hudCore.js"></script>
+    <!-- exports: drawHUD, _projectToRadar -->
+    <script src="hudComponents.js"></script>
+    <!-- exports: drawMenu, drawGameOver, drawPauseScreen, HUD_Screens, ... -->
+    <script src="hudScreens.js"></script>
+
+    <!-- ── LAYER 10: Input & control ──────────────────────────────────────────── -->
+    <!-- exports: aimAssist singleton -->
+    <script src="aimAssist.js"></script>
+    <!-- exports: MobileController class, mobileController, handleTouchStarted -->
+    <script src="mobileControls.js"></script>
+    <!-- exports: InputManager class, inputManager singleton -->
+    <script src="InputManager.js"></script>
+    <!-- exports: PhysicsEngine class, physicsEngine singleton -->
+    <script src="PhysicsEngine.js"></script>
+
+    <!-- ── LAYER 11: World & core state ───────────────────────────────────────── -->
+    <!-- exports: initWorld(), randomizeMountainPeaks() -->
+    <script src="worldGenerator.js"></script>
+    <!-- exports: GameState class, gameState singleton -->
+    <script src="gameState.js"></script>
+    <!-- exports: GameRenderer class, gameRenderer singleton, compat shims -->
+    <script src="gameRenderer.js"></script>
+    <!-- exports: GameLoop namespace (checkCollisions, spreadInfection, ...) -->
+    <!-- NOTE: must load after enemies.js (reads ENEMY_DRAW_SCALE at parse time) -->
+    <script src="gameLoop.js"></script>
+
+    <!-- ── LAYER 12: Entry point ──────────────────────────────────────────────── -->
+    <!-- exports: p5 hooks (preload, setup, draw), startGame, startLevel -->
+    <script src="sketch.js"></script>
 </body>
 
 </html>

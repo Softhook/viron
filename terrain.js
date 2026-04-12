@@ -1,5 +1,8 @@
 // =============================================================================
 // terrain.js — Core terrain generation, rendering, and shader management
+//
+// @exports   Terrain             — class definition
+// @exports   terrain             — singleton
 // =============================================================================
 
 /**

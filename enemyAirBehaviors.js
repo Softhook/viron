@@ -1,8 +1,11 @@
 // =============================================================================
 // enemyAirBehaviors.js — Stateless functions for airborne enemy AI
-// 
+//
 // Methods accept the current enemy entity and the context (the EnemyManager)
 // to maintain explicit dependencies without relying on implicit 'this'.
+//
+// @exports   EnemyAirAI    — namespace: updateBomber(), updateSeeder(),
+//                            updateFighter(), updateHunter(), etc.
 // =============================================================================
 
 const EnemyAirAI = {

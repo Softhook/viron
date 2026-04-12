@@ -4,6 +4,11 @@
 // Consolidates all rendering logic: 3D scene composition per-viewport, lighting,
 // particle effects, overlay rendering, and performance-adaptive quality scaling.
 // Pure render-side logic with no physics or state mutations.
+//
+// @exports   GameRenderer     — class definition
+// @exports   gameRenderer     — singleton
+// @exports   setSceneLighting  — compat shim (delegates to gameRenderer)
+// @exports   setup2DViewport   — compat shim (delegates to gameRenderer)
 // =============================================================================
 
 const POST_VERT = `

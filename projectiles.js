@@ -1,5 +1,8 @@
 // =============================================================================
 // projectiles.js — Physics and rendering logic for player weapons and barriers
+//
+// @exports   updateProjectilePhysics()  — called per-tick by sketch.js draw()
+// @exports   updateBarrierPhysics()     — called per-tick by sketch.js draw()
 // =============================================================================
 
 /**

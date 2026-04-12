@@ -1,5 +1,13 @@
 // =============================================================================
 // hudScreens.js — Full-screen UI logic and game state screens
+//
+// @exports   drawMenu()           — main menu screen
+// @exports   drawMission()        — mission briefing screen
+// @exports   drawInstructions()   — instructions screen
+// @exports   drawShipSelect()     — ship selection screen
+// @exports   drawGameOver()       — game over screen
+// @exports   drawPauseScreen()    — pause overlay
+// @exports   HUD_Screens          — namespace: drawCockpitSelection()
 // =============================================================================
 
 /**

@@ -1,5 +1,8 @@
 // =============================================================================
 // sfxWeapons.js — Stateless functions for player/combat weapon audio
+//
+// @exports   SfxWeapons   — namespace: playShot(), playExplosion(),
+//                           playMissile(), playLaunchpadAlarm(), etc.
 // =============================================================================
 
 const SfxWeapons = {

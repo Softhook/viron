@@ -1,6 +1,6 @@
 /**
  * MobileController - Handles touch inputs and on-screen buttons.
- * 
+ *
  * "Trackpad Hybrid" Scheme:
  * Left Half (x < w/2):
  *   - Top-Left Quadrant (x < w/4, y < h/2): Shoot Area
@@ -8,7 +8,10 @@
  *   - Bottom Half (y > h/2): Thrust Area
  * Right Half (x > w/2):
  *   - Trackpad Aiming: Swipe to aim (relative movement).
- *   - Missile Button: Floating button for secondary weapon.
+ *
+ * @exports   MobileController  — class definition
+ * @exports   mobileController  — singleton
+ * @exports   handleTouchStarted() — called by sketch.js touchStarted()
  */
 class MobileController {
     constructor() {

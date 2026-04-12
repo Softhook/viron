@@ -1,3 +1,10 @@
+// =============================================================================
+// sfx.js — GameSFX class: Web Audio synthesis engine
+//
+// @exports   GameSFX        — class definition
+// @exports   gameSFX        — singleton (used by sketch.js, gameLoop.js,
+//                             gameState.js, player.js, enemies.js)
+// =============================================================================
 class GameSFX {
     constructor() {
         this.initialized = false;

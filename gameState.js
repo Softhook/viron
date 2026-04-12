@@ -1,9 +1,14 @@
+
+
 // =============================================================================
 // gameState.js — Centralized game state management & initialization
 //
 // Encapsulates all global game state into a single state object with clear
 // getter/setter patterns. This replaces 40+ scattered global variables and
 // provides a single source of truth for test fixtures and debugging.
+//
+// @exports   GameState         — class definition
+// @exports   gameState         — singleton (used by nearly every module)
 // =============================================================================
 
 class GameState {

@@ -1,5 +1,9 @@
 // =============================================================================
 // agentManager.js — Base Class for Entity Managers (Villagers & Wizards)
+//
+// @exports   AgentManager       — base class (extended by VillagerManager,
+//                                 WizardManager)
+// @exports   ENEMY_CONFRONT_OFFSET — module-level constant (72 world units)
 // =============================================================================
 
 // Ground-enemy body offset: approximate half-width of a ground enemy at

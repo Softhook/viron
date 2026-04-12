@@ -8,6 +8,9 @@
 // Separated from EnemyManager (enemies.js) so AI logic and rendering can
 // evolve independently.  The renderer reads only positional and animation
 // state from enemy objects — it never mutates them.
+//
+// @exports   EnemyRenderer — class definition (instantiated in enemies.js)
+// =============================================================================
 // =============================================================================
 
 // Pre-allocated edge vectors for _drawTri() — eliminates 2 array literal

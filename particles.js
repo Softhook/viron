@@ -5,6 +5,9 @@
 //   • particles     — generic VFX: thrust exhaust, missile smoke, explosions
 //   • bombs         — infection payloads dropped by enemy aircraft
 //   • enemyBullets  — straight-line projectiles fired by fighters and crabs
+//
+// @exports   ParticleSystem  — class definition
+// @exports   particleSystem  — singleton
 // =============================================================================
 
 // --- Bomb Physics & Infection Constants ---

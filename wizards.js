@@ -8,6 +8,10 @@
 // are slightly taller in appearance.
 //
 // Eastern-magic aesthetic: each wizard wears deep-blue robes with a gold
+//
+// @exports   WizardManager    — class definition
+// @exports   wizardManager    — singleton
+// =============================================================================
 // sash, a wide bamboo conical hat, a flowing white beard, and carries a
 // bamboo staff topped with a jade ring ornament and glowing jade orb.
 //

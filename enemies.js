@@ -4,6 +4,11 @@
 // Owns the active enemy list and all AI update logic.
 // Rendering has been extracted to enemyRenderer.js (EnemyRenderer class).
 //
+// @exports   EnemyManager       — class definition
+// @exports   enemyManager       — singleton
+// @exports   ENEMY_DRAW_SCALE   — constant (= 4); used by gameLoop.js collision radii
+// @exports   ENEMY_TYPES        — registry of all enemy type configs
+//
 // Ten enemy types are implemented:
 //   seeder   — slow drifter; randomly drops normal infection bombs below itself
 //   bomber   — fast drifter; drops large 'mega' bombs every 600 frames (~10 s)

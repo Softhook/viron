@@ -1,5 +1,9 @@
 // =============================================================================
 // worldGenerator.js — Procedural generation of terrain, buildings, and peaks
+//
+// @exports   initWorld()           — full world reset + generation (called by
+//                                    gameState.startNewGame and sketch.js setup)
+// @exports   randomizeMountainPeaks() — procedural peak randomisation
 // =============================================================================
 
 /**

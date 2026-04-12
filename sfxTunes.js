@@ -1,5 +1,7 @@
 // =============================================================================
 // sfxTunes.js — Level completion atmospheric tunes array
+//
+// @exports   SFX_LEVEL_TUNES  — array of tune factory functions
 // =============================================================================
 
 const SFX_LEVEL_TUNES = [

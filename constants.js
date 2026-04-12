@@ -1,5 +1,32 @@
 // =============================================================================
 // constants.js — Global constants, tuning values, key bindings and pure helpers
+//
+// IMPORTANT: this file contains BOTH true constants (const) AND mutable runtime
+// state (let).  The mutable section is marked below with [MUTABLE].
+// Do NOT assume an uppercase name means the value is fixed at parse time.
+//
+// True constants (const) — never change after parse:
+//   TILE, SEA, LAUNCH_*, GRAV, DRAG, LIFT_FACTOR, CHUNK_SIZE,
+//   DAY_CYCLE, TREE_VARIANTS, YAW_RATE, PITCH_RATE, MOUSE_*,
+//   WEAPON_MODES, NORMAL_SHOT_MODES, P1_KEYS, P2_KEYS,
+//   tileKey, chunkKey, toTile, isLaunchpad, isTileOnLaunchpad,
+//   aboveSea, mag2, mag3, dist3dSq, swapRemove,
+//   MAX_INF, INF_RATE, YELLOW_INF_RATE, RAPID_INF_RATE, CLEAR_R,
+//   TANK_SHELL_CLEAR_R, ORTHO_DIRS, SENTINEL_*, SUN_DIR_MIN_Y, SHADOW_*,
+//   ENEMY_BULLET_LIFE, BOMBER_BOUNDARY_LIMIT, SEEDER_BOUNDARY_LIMIT, ...
+// Mutable state (let) — modified at runtime by updateTimeOfDay() / setup():
+//   VIEW_NEAR, VIEW_FAR, CULL_DIST,
+//   SKY_R/G/B, AMBIENT_R/G/B, SUN_KEY_R/G/B,
+//   SUN_DIR_X/Y/Z/LEN/NX/NY/NZ,
+//   SHADER_SUN_R/G/B, SHADER_AMB_L_R/G/B, SHADER_AMB_H_R/G/B,
+//   currentTimeStep, MOUNTAIN_PEAKS
+//
+// @exports  (all of the above) — placed directly into the global namespace
+// @exports  TileManager         — class definition
+// @exports  infection           — singleton TileManager for virus tiles
+// @exports  updateTimeOfDay()   — mutates sky/sun/shader mutable state
+// @exports  initializeMountainPeaks() — precomputes Gaussian denominators
+// @exports  createVironProfiler / initVironProfiler / getVironProfiler
 // =============================================================================
 
 // --- World geometry ---
@@ -16,21 +43,25 @@ const LIFT_FACTOR = 0.008;     // Per-frame lift acceleration coefficient (scale
 const DRAG = 0.992;            // Global air resistance (higher = thinner air, more gliding)
 const INDUCED_DRAG = 0.002;    // Extra drag proportional to how much lift is being generated
 
-// --- Rendering distances (can be adjusted dynamically for performance) ---
+// --- Rendering distances [MUTABLE — changed by sketch.js setup() and gameRenderer.js updatePerformanceScaling()] ---
 const DESKTOP_VIEW_LIMITS = { far: 80, near: 60, cull: 10000 };
 const MOBILE_VIEW_LIMITS  = { far: 45, near: 30, cull: 4500 };
 
+// [MUTABLE] Active render distances — initialised from *_VIEW_LIMITS above,
+// then re-assigned whenever setup() (platform detection) or
+// updatePerformanceScaling() (FPS-adaptive quality) runs.
 let VIEW_NEAR = 35;            // Inner tile radius — always rendered, no frustum test
 let VIEW_FAR = 50;             // Outer tile radius — rendered with frustum culling
 let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
 
-// --- Sky / fog colour components (matched to gl.clearColor in renderPlayerView) ---
+// --- Sky / fog colour components [MUTABLE — changed by updateTimeOfDay()] ---
 let SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky (horizon/fog colour)
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
 let AMBIENT_R = 80, AMBIENT_G = 75, AMBIENT_B = 95; // Warmer ambient
 
-// --- Global sunrise light model (single source of truth) ---
+// --- Global sunrise light model [MUTABLE — changed by updateTimeOfDay()] ---
 // SUN_DIR is the direction light travels from the sun into the world.
+// [MUTABLE] SUN_DIR_* components — reassigned by updateTimeOfDay() each time-step change.
 let SUN_DIR_X = 0.96;
 let SUN_DIR_Y = 0.12;
 let SUN_DIR_Z = -0.34;
@@ -75,15 +106,15 @@ const shadowShift = (casterH, sun) => {
   const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
   return Math.min(casterH / sun.y, maxShift);
 };
-let SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180;
+let SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180; // [MUTABLE — updateTimeOfDay()]
 // Shader lighting defaults — match the Late Morning initial time step.
 // sSun values are kept ≤ 1.1 so that combined with sAmbH the total light
 // term stays below ~1.5 on the brightest channel, preventing blown-out whites.
-let SHADER_SUN_R = 1.05, SHADER_SUN_G = 0.88, SHADER_SUN_B = 0.72;
-let SHADER_AMB_L_R = 0.26, SHADER_AMB_L_G = 0.28, SHADER_AMB_L_B = 0.38;
-let SHADER_AMB_H_R = 0.40, SHADER_AMB_H_G = 0.50, SHADER_AMB_H_B = 0.62;
+let SHADER_SUN_R = 1.05, SHADER_SUN_G = 0.88, SHADER_SUN_B = 0.72; // [MUTABLE — updateTimeOfDay()]
+let SHADER_AMB_L_R = 0.26, SHADER_AMB_L_G = 0.28, SHADER_AMB_L_B = 0.38; // [MUTABLE — updateTimeOfDay()]
+let SHADER_AMB_H_R = 0.40, SHADER_AMB_H_G = 0.50, SHADER_AMB_H_B = 0.62; // [MUTABLE — updateTimeOfDay()]
 
-let currentTimeStep = 0;
+let currentTimeStep = 0; // [MUTABLE — updateTimeOfDay() / sketch.js keyPressed()]
 
 const DAY_CYCLE = [
   { // 0: Morning 1 (Gentle warm light from low angle)
@@ -240,6 +271,8 @@ const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached
   { x:  3000, z: -2600, strength: 420, sigma: 1100 },
   { x: -2800, z:  2000, strength: 390, sigma: 1100 }
 ]; */
+// [MUTABLE] Peak array — re-assigned by randomizeMountainPeaks() in worldGenerator.js.
+// Treated as an array of {x,z,strength,sigma,_s2,_skipDistSq} after initializeMountainPeaks().
 let MOUNTAIN_PEAKS = [
   { x: -2200, z: -1600, strength: 450, sigma: 1100 },
 ];

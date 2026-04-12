@@ -1,5 +1,7 @@
 // =============================================================================
 // enemyBossBehaviors.js — Stateless functions for Boss enemy AI
+//
+// @exports   EnemyBossAI   — namespace: updateColossus(), updateKraken()
 // =============================================================================
 
 const EnemyBossAI = {

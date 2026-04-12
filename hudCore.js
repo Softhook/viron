@@ -1,5 +1,13 @@
 // =============================================================================
 // hudCore.js — HUD core constants, state, and transition management
+//
+// @exports   HUD_Manager          — singleton (update(), drawHUD())
+// @exports   HUD_WEAPON_LABELS    — display labels for weapon modes
+// @exports   HUD_WEAPON_ACTIVE_COLS — colour per weapon mode
+// @exports   HUD_LABEL_CACHE      — static label graphics cache
+// @exports   HUD_RADAR_BUFFERS    — per-player radar graphics buffers
+// @exports   HUD_WEAPON_BUFFERS   — cached weapon-selector graphics
+// @exports   RADAR_SCALE          — world-to-radar-pixel scale factor
 // =============================================================================
 
 const HUD_WEAPON_LABELS = ['NORMAL', 'MISSILE', 'BARRIER'];

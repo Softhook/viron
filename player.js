@@ -9,6 +9,19 @@
 //   • killPlayer                   — death handling (explosion, pulse, respawn timer)
 //   • fireMissile                  — missile launch
 //   • renderProjectiles            — draws bullets and missiles for one player
+//
+// @exports   Player            — class definition
+// @exports   createPlayer()    — factory (wraps new Player for legacy callers)
+// @exports   resetShip()       — respawn helper
+// @exports   getSpawnX()       — launchpad spawn X by player id
+// @exports   killPlayer()      — death handler (called by gameLoop.js)
+// @exports   updateShipInput() — per-tick control integration (called by sketch.js)
+// @exports   updateProjectilePhysics() — bullet/missile physics (called by sketch.js)
+// @exports   shipDisplay()     — 3D ship render (called by gameRenderer.js)
+// @exports   drawShipShadow()  — shadow render (called by gameRenderer.js)
+// @exports   renderProjectiles() — bullet render (called by gameRenderer.js)
+// @exports   clearInfectionRadius() — tile-clear helper (called by gameLoop.js)
+// @exports   updateBarrierPhysics() — barrier tile physics (called by sketch.js)
 // =============================================================================
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,14 @@
+
+
 // =============================================================================
 // gameLoop.js — Physics update & collision detection
 //
 // Encapsulates all frame-time simulation: infection spread, collision detection,
 // respawn logic, and ambiance audio updates. Manages physics state and triggers
 // game-over conditions when physics constraints are violated.
+//
+// @exports   GameLoop         — namespace: checkCollisions(), spreadInfection(),
+//                               updateLevelAndRespawn(), updateAmbianceAudio()
 // =============================================================================
 
 // ENEMY_DRAW_SCALE is defined in enemies.js (= 4). Precompute the squared
@@ -40,24 +45,27 @@ const _COLOSSUS_BONES = [
   { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }
 ];
 
-class GameLoop {
+const GameLoop = {
+  // Cached proximity distance for ambiance audio (avoids re-scan every frame).
+  _lastAmbDist: undefined,
+
   /** @private Returns squared size multiplier used for Colossus radius checks. */
-  static _colossusScaleSq(e) {
+  _colossusScaleSq(e) {
     const s = e && e.colossusScale ? e.colossusScale : 1;
     return s * s;
-  }
+  },
 
   /** @private Returns squared size multiplier used for Kraken radius checks. */
-  static _krakenScaleSq(e) {
+  _krakenScaleSq(e) {
     const s = e && e.krakenScale ? e.krakenScale : 1;
     return s * s;
-  }
+  },
 
   /**
    * Resolves a sphere-to-sphere collision by pushing the ship out along the normal.
    * @private
    */
-  static _resolveSphereCollision(s, ox, oy, oz, or, sr) {
+  _resolveSphereCollision(s, ox, oy, oz, or, sr) {
     let dx = s.x - ox, dy = s.y - oy, dz = s.z - oz;
     let distSq = dx * dx + dy * dy + dz * dz;
     let minD = or + sr;
@@ -75,14 +83,14 @@ class GameLoop {
       return true;
     }
     return false;
-  }
+  },
 
   /**
    * Resolves an AABB-to-sphere collision by pushing the ship to the nearest face.
    * bX, bY, bZ is the BOX CENTER.
    * @private
    */
-  static _resolveAABBCollision(s, bx, by, bz, hw, hh, hd, sr) {
+  _resolveAABBCollision(s, bx, by, bz, hw, hh, hd, sr) {
     let dx = s.x - bx, dy = s.y - by, dz = s.z - bz;
     let closestX = constrain(dx, -hw, hw);
     let closestY = constrain(dy, -hh, hh);
@@ -107,14 +115,14 @@ class GameLoop {
       return true;
     }
     return false;
-  }
+  },
 
   /**
    * Spreads infection one step every 5 frames using 4-connected flood-fill.
    * Also checks game-over conditions.
    * @public
    */
-  static spreadInfection() {
+  spreadInfection() {
     const profiler = getVironProfiler();
     const profilerConfig = profiler ? profiler.config : (typeof window !== 'undefined' ? window.VIRON_PROFILE : null);
     const maxInf = (profilerConfig && profilerConfig.maxInfOverride) ? profilerConfig.maxInfOverride : MAX_INF;
@@ -210,7 +218,7 @@ class GameLoop {
     }
 
     if (profiler) profiler.recordSpread(performance.now() - (spreadStart || 0));
-  }
+  },
 
   /**
    * Checks whether any projectile in `projectiles` hits enemy `e` (at enemies[j]).
@@ -219,7 +227,7 @@ class GameLoop {
    * hit but survived (so other weapon types are still tested this frame).
    * @private
    */
-  static _checkProjectileArrayVsEnemy(
+  _checkProjectileArrayVsEnemy(
     projectiles, player, e, j, enemyScaleSq,
     normalRadSq, colossusRadSq,
     shakeAmt, normalScore,
@@ -254,14 +262,14 @@ class GameLoop {
       }
     }
     return false;
-  }
+  },
 
   /**
    * Applies damage to a boss enemy (Colossus or Kraken) from a weapon hit.
    * Removes enemy and awards kill bonus if HP drops to zero.
    * @private
    */
-  static _damageBoss(player, enemyIdx, dmg, flashDur, hitScore, killBonus) {
+  _damageBoss(player, enemyIdx, dmg, flashDur, hitScore, killBonus) {
     let e = enemyManager.enemies[enemyIdx];
     e.hp = (e.hp || 0) - dmg;
     e.hitFlash = flashDur;
@@ -274,7 +282,7 @@ class GameLoop {
       return true;
     }
     return false;
-  }
+  },
 
   /**
    * Shared helper: tests `projectiles` against infected procedural trees in the
@@ -282,7 +290,7 @@ class GameLoop {
    * projectile's tile; removes and calls `onHit(proj, tx, tz)` on the first match.
    * @private
    */
-  static _checkProjectilesVsTreeType(projectiles, searchR, hitRadSq, yTolHi, yTolLo, onHit) {
+  _checkProjectilesVsTreeType(projectiles, searchR, hitRadSq, yTolHi, yTolLo, onHit) {
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const proj = projectiles[i];
       if (proj.y < -300) continue;
@@ -303,13 +311,13 @@ class GameLoop {
         }
       }
     }
-  }
+  },
 
   /**
    * Tests projectiles against procedural infected trees.
    * @private
    */
-  static _checkProjectilesVsTrees(player) {
+  _checkProjectilesVsTrees(player) {
     this._checkProjectilesVsTreeType(player.bullets, 1, 3600, 10, 10, (_bullet, tx, tz) => {
       clearInfectionRadius(tx, tz);
       player.score += 200;
@@ -320,13 +328,13 @@ class GameLoop {
       terrain.addPulse(shell.x, shell.z, 2.0);
       particleSystem.addExplosion(shell.x, shell.y, shell.z);
     });
-  }
+  },
 
   /**
    * Evaluates exact Kraken tentacle geometry for collision detection.
    * @private
    */
-  static _checkKrakenTentacles(s, e, kScale, shipRadSq) {
+  _checkKrakenTentacles(s, e, kScale, shipRadSq) {
     const maxReach = 362 * kScale;
     let dx = s.x - e.x, dy = s.y - e.y, dz = s.z - e.z;
     let md = maxReach + Math.sqrt(shipRadSq);
@@ -337,9 +345,9 @@ class GameLoop {
     if (this._traceKrakenArms(6, 8, 28, 74, 5, 0.82, 0, phase, 1.0, e, s, kScale, shipRadSq)) return true;
     if (this._traceKrakenArms(2, 10, 30, 62, 4, 1.08, Math.PI / 6, phase + 1.8, 1.1, e, s, kScale, shipRadSq)) return true;
     return false;
-  }
+  },
 
-  static _traceKrakenArms(numArms, numSegs, segLen, tx, ty, rotX1, angleOffset, tPhaseBase, waveSpeed, e, s, kScale, shipRadSq) {
+  _traceKrakenArms(numArms, numSegs, segLen, tx, ty, rotX1, angleOffset, tPhaseBase, waveSpeed, e, s, kScale, shipRadSq) {
     const shipRad = Math.sqrt(shipRadSq);
     const PI2 = Math.PI * 2;
     const isMain = numArms === 6;
@@ -407,7 +415,7 @@ class GameLoop {
       }
     }
     return false;
-  }
+  },
 
   // Per-weapon collision config — replaces raw magic-number arguments in
   // checkCollisions() with named, self-documenting objects.
@@ -418,15 +426,15 @@ class GameLoop {
   // colossusDmg:      HP damage dealt to boss per hit
   // colossusFlash:    hit-flash duration (frames)
   // colossusHitScore: score per boss hit (not kill)
-  static _BULLET_CFG  = { normalRadSq: 6400,  colossusRadSq: 90000,  shakeAmt: 5,  normalScore: 100, colossusDmg: 1,  colossusFlash: 12, colossusHitScore: 10  };
-  static _MISSILE_CFG = { normalRadSq: 10000, colossusRadSq: 160000, shakeAmt: 8,  normalScore: 250, colossusDmg: 5,  colossusFlash: 20, colossusHitScore: 50  };
-  static _TANK_CFG    = { normalRadSq: 22500, colossusRadSq: 250000, shakeAmt: 10, normalScore: 300, colossusDmg: 15, colossusFlash: 30, colossusHitScore: 100 };
+  _BULLET_CFG:  { normalRadSq: 6400,  colossusRadSq: 90000,  shakeAmt: 5,  normalScore: 100, colossusDmg: 1,  colossusFlash: 12, colossusHitScore: 10  },
+  _MISSILE_CFG: { normalRadSq: 10000, colossusRadSq: 160000, shakeAmt: 8,  normalScore: 250, colossusDmg: 5,  colossusFlash: 20, colossusHitScore: 50  },
+  _TANK_CFG:    { normalRadSq: 22500, colossusRadSq: 250000, shakeAmt: 10, normalScore: 300, colossusDmg: 15, colossusFlash: 30, colossusHitScore: 100 },
 
   /**
    * Runs all collision tests for one player each frame.
    * @public
    */
-  static checkCollisions(player) {
+  checkCollisions(player) {
     if (player.dead) return;
     let s = player.ship;
 
@@ -462,9 +470,9 @@ class GameLoop {
 
     this._checkPowerupsVsPlayer(player, s);
     this._checkProjectilesVsTrees(player);
-  }
+  },
 
-  static _checkEnemyBulletsVsPlayer(player, s) {
+  _checkEnemyBulletsVsPlayer(player, s) {
     for (let i = particleSystem.enemyBullets.length - 1; i >= 0; i--) {
       let eb = particleSystem.enemyBullets[i];
       let dx = eb.x - s.x, dy = eb.y - s.y, dz = eb.z - s.z;
@@ -475,9 +483,9 @@ class GameLoop {
       }
     }
     return false;
-  }
+  },
 
-  static _checkEnemyBodyVsPlayer(player, s, e) {
+  _checkEnemyBodyVsPlayer(player, s, e) {
     let speedSq = s.vx * s.vx + s.vy * s.vy + s.vz * s.vz;
     if (e.type === 'colossus') {
       const cScale = (e.colossusScale || 1) * ENEMY_DRAW_SCALE;
@@ -523,13 +531,13 @@ class GameLoop {
       if (dist3dSq(s.x, s.y, s.z, e.x, e.y, e.z) < normSum * normSum) {
         const isLethalType = e.type === 'hunter' || e.type === 'squid';
         if (isLethalType || speedSq > LETHAL_COLLISION_SPEED_SQ) { killPlayer(player); return true; }
-        this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, shipRad);
+        this._resolveSphereCollision(s, e.x, e.y, e.z, bodyRad, SHIP_COLLISION_RAD);
       }
     }
     return false;
-  }
+  },
 
-  static _checkPowerupsVsPlayer(player, s) {
+  _checkPowerupsVsPlayer(player, s) {
     for (let i = gameState.buildings.length - 1; i >= 0; i--) {
       let b = gameState.buildings[i];
       if (b.type !== 3) continue;
@@ -561,13 +569,13 @@ class GameLoop {
         }
       }
     }
-  }
+  },
 
   /**
    * Computes infection proximity, pulse overlap, and scan-sweep for ambiance audio.
    * @public
    */
-  static updateAmbianceAudio() {
+  updateAmbianceAudio() {
     if (!gameSFX) return;
 
     let p = gameState.players[0];
@@ -620,13 +628,13 @@ class GameLoop {
     }
 
     gameSFX.updateAmbiance(proximityData, infection.count, MAX_INF);
-  }
+  },
 
   /**
    * Checks level-clear and respawn conditions each frame.
    * @public
    */
-  static updateLevelAndRespawn() {
+  updateLevelAndRespawn() {
     if (!gameState.levelComplete && gameState.isLevelClearable()) {
       gameState.completeLevelSequence();
     }
@@ -637,4 +645,4 @@ class GameLoop {
 
     gameState.updateRespawns();
   }
-}
+};

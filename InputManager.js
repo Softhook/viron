@@ -2,6 +2,9 @@
  * InputManager - Unified input handling for Viron.
  * Centralizes keyboard, mouse, and touch state and delegates mode-specific
  * input transitions to ensure consistent behavior across platforms.
+ *
+ * @exports   InputManager      — class definition
+ * @exports   inputManager      — singleton
  */
 class InputManager {
   constructor() {

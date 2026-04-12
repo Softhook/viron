@@ -5,6 +5,8 @@
 //   • name: Human-readable name
 //   • thrustAngle: Radians offset from straight-down (0 = Down, PI/4 = 45deg Back)
 //   • draw: Geometry function that returns engine flame attachment points
+//
+// @exports   SHIP_DESIGNS   — array of ship design configs
 // =============================================================================
 
 

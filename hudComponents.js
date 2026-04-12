@@ -1,5 +1,8 @@
 // =============================================================================
 // hudComponents.js — Reusable HUD elements and player-view components
+//
+// @exports   drawHUD()           — main per-player HUD overlay
+// @exports   _projectToRadar()   — world-to-radar coordinate helper
 // =============================================================================
 
 /**

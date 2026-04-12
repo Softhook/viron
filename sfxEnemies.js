@@ -1,5 +1,8 @@
 // =============================================================================
 // sfxEnemies.js — Stateless functions for enemy event audio
+//
+// @exports   SfxEnemies   — namespace: playInfectionSpread(), playBossRoar(),
+//                           playEnemyExplosion(), etc.
 // =============================================================================
 
 const SfxEnemies = {

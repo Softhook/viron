@@ -9,6 +9,21 @@
 //   • Handles user input and menu flow
 //
 // Game logic is layered across specialized modules for testability and clarity.
+//
+// Key globals consumed:
+//   gameState, gameRenderer, GameLoop, physicsEngine, inputManager
+//   enemyManager, terrain, mobileController, aimAssist
+//   particleSystem, villagerManager, wizardManager
+//   updateShipInput, updateProjectilePhysics, updateBarrierPhysics
+//   drawMenu, drawMission, drawInstructions, drawShipSelect,
+//   drawGameOver, drawPauseScreen, HUD_Screens, HUD_Manager
+//   initWorld, SHIP_DESIGNS, getVironProfiler
+//   VIEW_NEAR, VIEW_FAR, CULL_DIST, MOBILE_VIEW_LIMITS, DESKTOP_VIEW_LIMITS
+//   WEAPON_MODES, updateTimeOfDay, currentTimeStep
+//
+// @exports   startGame()       — begin a new game (called by HUD / menus)
+// @exports   startLevel()      — jump to a specific level
+// @exports   spawnYellowCrab() — debug console helper
 // =============================================================================
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,9 @@
 //   1. Enemies  — selection uses CAMERA forward vector.  Aerial enemies are
 //      naturally tracked through the screen centre, so camera-relative
 //      selection feels most intuitive.
+//
+// @exports   aimAssist     — singleton (used by player.js and sketch.js)
+// =============================================================================
 //   2. Virus tiles — selection uses SHIP NOSE forward vector.  For ground
 //      sweeping the physical ship orientation is a more reliable indicator
 //      of intent than the slightly tilted-up camera view.

@@ -1,6 +1,8 @@
 /**
  * Vehicle - Encapsulates 3D physics, movement models, and orientation for player ships.
  * Supports both ground-hugging and airborne movement modes.
+ *
+ * @exports   Vehicle       — class definition (used exclusively by player.js)
  */
 
 // --- Vehicle physics constants ---

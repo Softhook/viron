@@ -7,6 +7,9 @@
 //
 // Villages are identified by Pagoda buildings (type 2) from gameState.buildings.
 // Each pagoda tracks its own spawn budget and cooldown timer.
+//
+// @exports   VillagerManager  — class definition
+// @exports   villagerManager  — singleton
 // =============================================================================
 
 // --- Villager tuning constants ---

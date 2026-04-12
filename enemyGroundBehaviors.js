@@ -1,5 +1,8 @@
 // =============================================================================
 // enemyGroundBehaviors.js — Stateless functions for ground-based enemy AI
+//
+// @exports   EnemyGroundAI   — namespace: updateCrab(), updateScorpion(),
+//                              updateYellowCrab(), etc.
 // =============================================================================
 
 const EnemyGroundAI = {

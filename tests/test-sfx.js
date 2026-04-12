@@ -197,6 +197,18 @@ function test(name, fn) {
     }
 }
 
+function assertNoThrow(msg, fn) {
+    let threw = false;
+    try { fn(); } catch (e) { threw = true; }
+    assert(!threw, msg);
+}
+
+function assertRegexFound(src, regex, msg) {
+    const match = src.match(regex);
+    assert(match !== null, msg);
+    return match;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,8 +243,7 @@ test('Spatializer refDistance covers camera-ship follow distance', () => {
     // volume even when the ship tilts (changes Y) within the follow range.
     // At refDistance 150 local shots were attenuated to ~29% and dipped further
     // on ship orientation changes.
-    const match = sfxAllSrc.match(/panner\.refDistance\s*=\s*(\d+)/);
-    assert(match !== null, 'panner.refDistance assignment found in createSpatializer');
+    const match = assertRegexFound(sfxAllSrc, /panner\.refDistance\s*=\s*(\d+)/, 'panner.refDistance assignment found in createSpatializer');
     if (match) {
         const rd = Number(match[1]);
         assert(rd >= 520, `refDistance ${rd} covers camera-ship follow distance (≥ 520)`);
@@ -243,8 +254,7 @@ test('Explosion noiseGain peak ≤ 1.0 – no clipping before master gain', () =
     // initVol values above 1.0 send the post-distortion signal above 0 dBFS
     // into the master gain stage, causing hard clipping artifacts
     // (the "scraping and distortion" described in the issue).
-    const match = sfxAllSrc.match(/const initVol\s*=\s*([^\n;]+)[;\n]/);
-    assert(match !== null, 'initVol assignment found in playExplosion');
+    const match = assertRegexFound(sfxAllSrc, /const initVol\s*=\s*([^\n;]+)[;\n]/, 'initVol assignment found in playExplosion');
     if (match) {
         const expr   = match[1];
         const numLit = (expr.match(/\d+(?:\.\d+)?/g) || []).map(Number);
@@ -262,8 +272,7 @@ test('playShot gainNode safe for 3 in-phase oscillator summation', () => {
     // 0.18 s shot, so the three waveforms stay in-phase and their amplitudes
     // ADD to ~3× at the filter output.  gainNode must be ≤ 1.0/3 ≈ 0.333 so
     // the combined output stays below 1.0 dBFS (was 0.32 → 3×0.32 = 0.96 + sub = 1.21 clip).
-    const match = sfxAllSrc.match(/playShot[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.005,\s*dur\)/);
-    assert(match !== null, 'playShot main _makeGainEnv(…,0.005,dur) found');
+    const match = assertRegexFound(sfxAllSrc, /playShot[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.005,\s*dur\)/, 'playShot main _makeGainEnv(…,0.005,dur) found');
     if (match) {
         const peak = Number(match[1]);
         assert(peak <= 0.333, `playShot gainNode peak ${peak} ≤ 0.333 (safe for 3-osc sum)`);
@@ -274,8 +283,7 @@ test('playMissileFire gainNode safe for 3-oscillator + noise summation', () => {
     // Three square oscillators plus white noise all feed the same lowpass filter
     // → gainNode.  Peak input reaches ~4× amplitude; gainNode must be ≤ 0.25
     // to keep the combined output below 1.0 (was 0.5 → peak ~2.0 clip).
-    const match = sfxAllSrc.match(/playMissileFire[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
-    assert(match !== null, 'playMissileFire _makeGainEnv found');
+    const match = assertRegexFound(sfxAllSrc, /playMissileFire[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+)/, 'playMissileFire _makeGainEnv found');
     if (match) {
         const peak = Number(match[1]);
         assert(peak <= 0.25, `playMissileFire gainNode peak ${peak} ≤ 0.25 (safe for 3-osc+noise sum)`);
@@ -287,8 +295,7 @@ test('playExplosion subGain leaves headroom for distorted body', () => {
     // by noiseGain ≈ 0.9 the body contributes ~0.315 at targetNode.  The sub-rumble
     // bypasses the WaveShaper entirely → subGain must be ≤ 0.685 so the combined
     // sum stays below 1.0 (was 0.8 → 0.8+0.315 = 1.115 clip).
-    const match = sfxAllSrc.match(/subGain\s*=\s*(?:this|sfxCore)\._makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
-    assert(match !== null, 'explosion subGain _makeGainEnv found');
+    const match = assertRegexFound(sfxAllSrc, /subGain\s*=\s*(?:this|sfxCore)\._makeGainEnv\(ctx,\s*t,\s*([\d.]+)/, 'explosion subGain _makeGainEnv found');
     if (match) {
         const peak = Number(match[1]);
         assert(peak <= 0.685, `explosion subGain peak ${peak} ≤ 0.685 (leaves room for distorted body ~0.315)`);
@@ -301,8 +308,7 @@ test('proximityHum gain compensates for bandpass filter attenuation', () => {
     // passband pass; the dominant harmonic amplitude after filtering is ~10–14% of
     // the gain value.  humVol must be ≥ 0.5 so the effective output is audible
     // (was 0.18 → effective ~0.018, inaudible).
-    const match = sfxAllSrc.match(/humVol\s*=\s*(?:this|sfxCore)\._infectionProximityAlpha\s*\*\s*([\d.]+)/);
-    assert(match !== null, 'humVol formula found in updateAmbiance');
+    const match = assertRegexFound(sfxAllSrc, /humVol\s*=\s*(?:this|sfxCore)\._infectionProximityAlpha\s*\*\s*([\d.]+)/, 'humVol formula found in updateAmbiance');
     if (match) {
         const coeff = Number(match[1]);
         assert(coeff >= 0.5, `humVol coefficient ${coeff} ≥ 0.5 (compensates bandpass Q=10 attenuation; effective output ~0.10–0.14)`);
@@ -374,16 +380,12 @@ test('playInfectionPulse gainNode safe for WaveShaper-saturated path', () => {
 });
 
 test('playShot does not throw', () => {
-    let threw = false;
-    try { gameSFX.playShot(0, 0, 0); } catch (e) { threw = true; }
-    assert(!threw, 'playShot(x,y,z) executes without exception');
+    assertNoThrow('playShot(x,y,z) executes without exception', () => gameSFX.playShot(0, 0, 0));
 });
 
 test('playEnemyShot does not throw for all enemy types', () => {
     for (const type of ['fighter', 'crab']) {
-        let threw = false;
-        try { gameSFX.playEnemyShot(type, 0, 0, 0); } catch (e) { threw = true; }
-        assert(!threw, `playEnemyShot('${type}') executes without exception`);
+        assertNoThrow(`playEnemyShot('${type}') executes without exception`, () => gameSFX.playEnemyShot(type, 0, 0, 0));
     }
 });
 
@@ -397,62 +399,44 @@ test('playExplosion does not throw for all explosion types', () => {
         [0, 0, 0, true,  'colossus'],
     ];
     for (const args of cases) {
-        let threw = false;
-        try { gameSFX.playExplosion(...args); } catch (e) { threw = true; }
-        assert(!threw, `playExplosion(${args}) executes without exception`);
+        assertNoThrow(`playExplosion(${args}) executes without exception`, () => gameSFX.playExplosion(...args));
     }
 });
 
 test('playMissileFire does not throw', () => {
-    let threw = false;
-    try { gameSFX.playMissileFire(0, 0, 0); } catch (e) { threw = true; }
-    assert(!threw, 'playMissileFire executes without exception');
+    assertNoThrow('playMissileFire executes without exception', () => gameSFX.playMissileFire(0, 0, 0));
 });
 
 test('playBombDrop does not throw for both types', () => {
     for (const type of ['normal', 'mega']) {
-        let threw = false;
-        try { gameSFX.playBombDrop(type, 0, 0, 0); } catch (e) { threw = true; }
-        assert(!threw, `playBombDrop('${type}') executes without exception`);
+        assertNoThrow(`playBombDrop('${type}') executes without exception`, () => gameSFX.playBombDrop(type, 0, 0, 0));
     }
 });
 
 test('playInfectionPulse does not throw', () => {
-    let threw = false;
-    try { gameSFX.playInfectionPulse(0, 0, 0); } catch (e) { threw = true; }
-    assert(!threw, 'playInfectionPulse executes without exception');
+    assertNoThrow('playInfectionPulse executes without exception', () => gameSFX.playInfectionPulse(0, 0, 0));
 });
 
 test('playInfectionSpread does not throw', () => {
-    let threw = false;
-    try { gameSFX.playInfectionSpread(0, 0, 0); } catch (e) { threw = true; }
-    assert(!threw, 'playInfectionSpread executes without exception');
+    assertNoThrow('playInfectionSpread executes without exception', () => gameSFX.playInfectionSpread(0, 0, 0));
 });
 
 test('playPowerup does not throw for good and bad variants', () => {
     for (const isGood of [true, false]) {
-        let threw = false;
-        try { gameSFX.playPowerup(isGood, 0, 0, 0); } catch (e) { threw = true; }
-        assert(!threw, `playPowerup(${isGood}) executes without exception`);
+        assertNoThrow(`playPowerup(${isGood}) executes without exception`, () => gameSFX.playPowerup(isGood, 0, 0, 0));
     }
 });
 
 test('playClearInfection does not throw', () => {
-    let threw = false;
-    try { gameSFX.playClearInfection(0, 0, 0); } catch (e) { threw = true; }
-    assert(!threw, 'playClearInfection executes without exception');
+    assertNoThrow('playClearInfection executes without exception', () => gameSFX.playClearInfection(0, 0, 0));
 });
 
 test('playNewLevel does not throw', () => {
-    let threw = false;
-    try { gameSFX.playNewLevel(); } catch (e) { threw = true; }
-    assert(!threw, 'playNewLevel executes without exception');
+    assertNoThrow('playNewLevel executes without exception', () => gameSFX.playNewLevel());
 });
 
 test('playLevelComplete does not throw', () => {
-    let threw = false;
-    try { gameSFX.playLevelComplete(); } catch (e) { threw = true; }
-    assert(!threw, 'playLevelComplete executes without exception');
+    assertNoThrow('playLevelComplete executes without exception', () => gameSFX.playLevelComplete());
 });
 
 test('playLevelComplete arpeggio note gain is audibly loud (≥ 0.3)', () => {

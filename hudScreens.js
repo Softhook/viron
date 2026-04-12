@@ -434,12 +434,10 @@ function drawBackgroundLandscape() {
   if (!gameState.isMobile && !gameRenderer.masterFBO) {
     gameRenderer.masterFBO = createFramebuffer();
     gameRenderer.postShader = createShader(POST_VERT, POST_FRAG);
-    gameRenderer._postShaderReady = false;
     // Call shader() once to trigger GLSL compilation now instead of on the
-    // first gameplay frame.  No geometry is drawn so no uniform validation occurs.
+    // first gameplay frame.
     shader(gameRenderer.postShader);
-    gameRenderer.postShader.setUniform('uIsMobile', gameState.isMobile);
-    gameRenderer._postShaderReady = true;
+    gameRenderer.postShader.setUniform('uTex', gameRenderer.masterFBO);
     resetShader();
   }
 

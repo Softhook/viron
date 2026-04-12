@@ -24,34 +24,10 @@ const POST_FRAG = `
 precision highp float;
 varying vec2 vTexCoord;
 uniform sampler2D uTex;
-uniform bool uIsMobile;
-
-// ACES tonemapping
-vec3 ACESFilm(vec3 x) {
-    float a = 2.51;
-    float b = 0.03;
-    float c = 2.43;
-    float d = 0.59;
-    float e = 0.14;
-    return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
-}
-
 void main() {
-  vec2 uv = vTexCoord;
-  if (uIsMobile) {
-      uv.y = 1.0 - uv.y;
-  }
-
-  // 1. Read Base Texture
-  vec3 col = texture2D(uTex, uv).rgb;
-
-  // 5. Mild contrast boost to prevent bleaching
-  col = mix(col, col * col * (3.0 - 2.0 * clamp(col, 0.0, 1.0)), 0.2);
-
-  // 6. ACES Filmic Tone Mapping (lower exposure to recover highlights)
-  col = ACESFilm(col * 0.95);
-
-  gl_FragColor = vec4(col, 1.0);
+  // Final desktop resolve pass: copy the composed masterFBO to screen.
+  // Tonemapping is intentionally not applied in this shader.
+  gl_FragColor = texture2D(uTex, vTexCoord);
 }
 `;
 
@@ -370,8 +346,7 @@ class GameRenderer {
       // Mobile: render directly to the canvas without an intermediate masterFBO.
       // Bypassing the FBO eliminates the expensive tile-flush stall that
       // Apple Silicon tile-based GPUs incur on every FBO begin()/end() pair, and
-      // saves the full-screen post-processing resolve pass.  ACES tonemapping and
-      // the contrast boost are cosmetic extras; correctness is not affected.
+      // skips the desktop full-screen resolve shader pass.
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
@@ -388,11 +363,10 @@ class GameRenderer {
       return;
     }
 
-    // Desktop: full masterFBO + post-processing (ACES tonemapping, contrast boost).
+    // Desktop: render into masterFBO, then run one full-screen resolve pass.
     if (!this.masterFBO) {
       this.masterFBO = createFramebuffer();
       this.postShader = createShader(POST_VERT, POST_FRAG);
-      this._postShaderReady = false;
     }
     if (this.masterFBO.width !== width || this.masterFBO.height !== h) {
       this.masterFBO.resize(width, h);
@@ -411,22 +385,15 @@ class GameRenderer {
       }
     }
 
-    // Shared 2D overlay — drawn into masterFBO so it receives the same
-    // ACES tonemapping and contrast post-processing as the 3D scene.
+    // Shared 2D overlay — drawn into masterFBO so scene + overlay are resolved
+    // together in the same final pass.
     this._drawShared2DOverlay();
     this.masterFBO.end();
 
-    // Post-processing pass to screen — only uTex changes each frame.
-    // uIsMobile is false on desktop and never changes; set it once after the
-    // shader is first bound (shader() triggers lazy compilation in p5).
+    // Final full-screen resolve pass to screen.
     this.setup2DViewport();
     gl.disable(gl.DEPTH_TEST);
     shader(this.postShader);
-    if (!this._postShaderReady) {
-      // Desktop-only path; no y-flip needed — set once after shader compiles.
-      this.postShader.setUniform('uIsMobile', false);
-      this._postShaderReady = true;
-    }
     this.postShader.setUniform('uTex', this.masterFBO);
 
     noStroke();

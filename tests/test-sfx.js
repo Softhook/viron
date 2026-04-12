@@ -147,12 +147,18 @@ global.constrain        = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 global.gameState        = { players: [] };
 
 // Read sfx.js and its neighbors
+const sfxTunesSrc   = fs.readFileSync(path.join(__dirname, '..', 'sfxTunes.js'), 'utf8');
 const sfxAmbientSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxAmbient.js'), 'utf8');
 const sfxWeaponsSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxWeapons.js'), 'utf8');
 const sfxEnemiesSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxEnemies.js'), 'utf8');
 const sfxSrc        = fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8');
+const sfxAllSrc     = [sfxSrc, sfxAmbientSrc, sfxWeaponsSrc, sfxEnemiesSrc, sfxTunesSrc].join('\n');
 
 // Load modules into global scope
+{
+    const patchedTunes = sfxTunesSrc.replace(/^const SFX_LEVEL_TUNES\s*=\s*/m, 'global.SFX_LEVEL_TUNES = ');
+    eval(patchedTunes); // eslint-disable-line no-eval
+}
 eval(sfxAmbientSrc);
 eval(sfxWeaponsSrc);
 eval(sfxEnemiesSrc);
@@ -225,7 +231,7 @@ test('Spatializer refDistance covers camera-ship follow distance', () => {
     // volume even when the ship tilts (changes Y) within the follow range.
     // At refDistance 150 local shots were attenuated to ~29% and dipped further
     // on ship orientation changes.
-    const match = sfxSrc.match(/panner\.refDistance\s*=\s*(\d+)/);
+    const match = sfxAllSrc.match(/panner\.refDistance\s*=\s*(\d+)/);
     assert(match !== null, 'panner.refDistance assignment found in createSpatializer');
     if (match) {
         const rd = Number(match[1]);
@@ -237,7 +243,7 @@ test('Explosion noiseGain peak ≤ 1.0 – no clipping before master gain', () =
     // initVol values above 1.0 send the post-distortion signal above 0 dBFS
     // into the master gain stage, causing hard clipping artifacts
     // (the "scraping and distortion" described in the issue).
-    const match = sfxSrc.match(/const initVol\s*=\s*([^\n;]+)[;\n]/);
+    const match = sfxAllSrc.match(/const initVol\s*=\s*([^\n;]+)[;\n]/);
     assert(match !== null, 'initVol assignment found in playExplosion');
     if (match) {
         const expr   = match[1];
@@ -256,7 +262,7 @@ test('playShot gainNode safe for 3 in-phase oscillator summation', () => {
     // 0.18 s shot, so the three waveforms stay in-phase and their amplitudes
     // ADD to ~3× at the filter output.  gainNode must be ≤ 1.0/3 ≈ 0.333 so
     // the combined output stays below 1.0 dBFS (was 0.32 → 3×0.32 = 0.96 + sub = 1.21 clip).
-    const match = sfxSrc.match(/playShot[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.005,\s*dur\)/);
+    const match = sfxAllSrc.match(/playShot[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.005,\s*dur\)/);
     assert(match !== null, 'playShot main _makeGainEnv(…,0.005,dur) found');
     if (match) {
         const peak = Number(match[1]);
@@ -268,7 +274,7 @@ test('playMissileFire gainNode safe for 3-oscillator + noise summation', () => {
     // Three square oscillators plus white noise all feed the same lowpass filter
     // → gainNode.  Peak input reaches ~4× amplitude; gainNode must be ≤ 0.25
     // to keep the combined output below 1.0 (was 0.5 → peak ~2.0 clip).
-    const match = sfxSrc.match(/playMissileFire[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
+    const match = sfxAllSrc.match(/playMissileFire[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
     assert(match !== null, 'playMissileFire _makeGainEnv found');
     if (match) {
         const peak = Number(match[1]);
@@ -281,7 +287,7 @@ test('playExplosion subGain leaves headroom for distorted body', () => {
     // by noiseGain ≈ 0.9 the body contributes ~0.315 at targetNode.  The sub-rumble
     // bypasses the WaveShaper entirely → subGain must be ≤ 0.685 so the combined
     // sum stays below 1.0 (was 0.8 → 0.8+0.315 = 1.115 clip).
-    const match = sfxSrc.match(/subGain\s*=\s*this\._makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
+    const match = sfxAllSrc.match(/subGain\s*=\s*(?:this|sfxCore)\._makeGainEnv\(ctx,\s*t,\s*([\d.]+)/);
     assert(match !== null, 'explosion subGain _makeGainEnv found');
     if (match) {
         const peak = Number(match[1]);
@@ -295,7 +301,7 @@ test('proximityHum gain compensates for bandpass filter attenuation', () => {
     // passband pass; the dominant harmonic amplitude after filtering is ~10–14% of
     // the gain value.  humVol must be ≥ 0.5 so the effective output is audible
     // (was 0.18 → effective ~0.018, inaudible).
-    const match = sfxSrc.match(/humVol\s*=\s*this\._infectionProximityAlpha\s*\*\s*([\d.]+)/);
+    const match = sfxAllSrc.match(/humVol\s*=\s*(?:this|sfxCore)\._infectionProximityAlpha\s*\*\s*([\d.]+)/);
     assert(match !== null, 'humVol formula found in updateAmbiance');
     if (match) {
         const coeff = Number(match[1]);
@@ -307,7 +313,7 @@ test('playBombDrop mega peak safe when thrust is simultaneously active', () => {
     // Mega bomb drop is a single oscillator → gain → targetNode.  Thrust engine
     // runs concurrently at ~0.32; mega bomb peak + thrust must stay below 1.0,
     // so mega bomb peak ≤ 0.68.  The normal bomb peak ≤ 0.4 is already safe.
-    const match = sfxSrc.match(/isMega \? ([\d.]+) : 0\.4, t \+ dur \* 0\.5/);
+    const match = sfxAllSrc.match(/isMega \? ([\d.]+) : 0\.4, t \+ dur \* 0\.5/);
     assert(match !== null, 'playBombDrop mega peak assignment found');
     if (match) {
         const megaPeak = Number(match[1]);
@@ -318,7 +324,7 @@ test('playBombDrop mega peak safe when thrust is simultaneously active', () => {
 test('playClearInfection per-oscillator gain is safe for 9-osc sum', () => {
     // 9 sine oscillators connect directly to targetNode.  Worst-case peak amplitude
     // = 9 × gain.  Must be ≤ 0.111 so 9 × gain ≤ 1.0 (was 0.2 → worst case 1.8 clip).
-    const match = sfxSrc.match(/playClearInfection[\s\S]{0,900}linearRampToValueAtTime\(([\d.]+),\s*t\s*\+\s*0\.05\)/);
+    const match = sfxAllSrc.match(/playClearInfection[\s\S]{0,900}linearRampToValueAtTime\(([\d.]+),\s*t\s*\+\s*0\.05\)/);
     assert(match !== null, 'playClearInfection per-osc gain ramp found');
     if (match) {
         const peak = Number(match[1]);
@@ -332,7 +338,7 @@ test('playClearInfection decay endpoint is near-silence (no end-of-sound scratch
     // at stop time 9 × 0.01 = 0.09 combined amplitude was abruptly cut mid-cycle,
     // producing the audible scratch/click reported in the bug.
     // Match the exponentialRamp inside playClearInfection that ends at t+1.2.
-    const match = sfxSrc.match(/playClearInfection[\s\S]{0,1200}exponentialRampToValueAtTime\(([\d.]+),\s*t\s*\+\s*1\.2\)/);
+    const match = sfxAllSrc.match(/playClearInfection[\s\S]{0,1200}exponentialRampToValueAtTime\(([\d.]+),\s*t\s*\+\s*1\.2\)/);
     assert(match !== null, 'playClearInfection exponentialRamp to t+1.2 found');
     if (match) {
         const endpoint = Number(match[1]);
@@ -344,7 +350,7 @@ test('playInfectionSpread gainNode safe when thrust is simultaneously active', (
     // A single oscillator → bandpass filter → gainNode fires while the thrust
     // engine runs at ~0.32.  gainNode peak + thrust must stay below 1.0, so
     // gainNode peak must be ≤ 0.68.  Previously 0.8 → 0.8 + 0.32 = 1.12 clip.
-    const match = sfxSrc.match(/playInfectionSpread[\s\S]{0,800}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.006,\s*dur\)/);
+    const match = sfxAllSrc.match(/playInfectionSpread[\s\S]{0,800}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.006,\s*dur\)/);
     assert(match !== null, 'playInfectionSpread _makeGainEnv(…,0.006,dur) found');
     if (match) {
         const peak = Number(match[1]);
@@ -359,7 +365,7 @@ test('playInfectionPulse gainNode safe for WaveShaper-saturated path', () => {
     // ≤ 0.963.  The more conservative hard cap ≤ 0.75 avoids any scenario where
     // multiple infection pulses fire at once.  Previously 0.8, which combined with
     // an explosion + thrust summed to 1.263.
-    const match = sfxSrc.match(/playInfectionPulse[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.012,\s*dur\)/);
+    const match = sfxAllSrc.match(/playInfectionPulse[\s\S]{0,600}_makeGainEnv\(ctx,\s*t,\s*([\d.]+),\s*0\.012,\s*dur\)/);
     assert(match !== null, 'playInfectionPulse _makeGainEnv(…,0.012,dur) found');
     if (match) {
         const peak = Number(match[1]);
@@ -453,7 +459,7 @@ test('playLevelComplete arpeggio note gain is audibly loud (≥ 0.3)', () => {
     // playLevelComplete plays in isolation (no concurrent sounds), so gains should be
     // well above the action-sound floor.  Previously 0.2 → inaudible in game.
     // The fanfare must be clearly noticeable to reward the player for completing a level.
-    const match = sfxSrc.match(/playLevelComplete[\s\S]{0,900}linearRampToValueAtTime\(([\d.]+),\s*noteT\s*\+\s*0\.01\)/);
+    const match = sfxAllSrc.match(/playLevelComplete[\s\S]{0,900}linearRampToValueAtTime\(([\d.]+),\s*noteT\s*\+\s*0\.01\)/);
     assert(match !== null, 'playLevelComplete arpeggio peak ramp at noteT+0.01 found');
     if (match) {
         const peak = Number(match[1]);
@@ -464,7 +470,7 @@ test('playLevelComplete arpeggio note gain is audibly loud (≥ 0.3)', () => {
 test('playLevelComplete lingering chord gain is audibly loud (≥ 0.2)', () => {
     // The lingering sawtooth chord sustains for 1.3 s after the arpeggio.
     // Previously 0.1 → this sustained tail was nearly inaudible.
-    const match = sfxSrc.match(/playLevelComplete[\s\S]{0,1600}linearRampToValueAtTime\(([\d.]+),\s*noteT\s*\+\s*0\.05\)/);
+    const match = sfxAllSrc.match(/playLevelComplete[\s\S]{0,1600}linearRampToValueAtTime\(([\d.]+),\s*noteT\s*\+\s*0\.05\)/);
     assert(match !== null, 'playLevelComplete lingering chord peak ramp at noteT+0.05 found');
     if (match) {
         const peak = Number(match[1]);
@@ -475,7 +481,7 @@ test('playLevelComplete lingering chord gain is audibly loud (≥ 0.2)', () => {
 test('playLevelComplete fanfare includes bass octave note (≤ 300 Hz)', () => {
     // The arpeggio must contain at least one note at or below 300 Hz (bass octave).
     // Previously the lowest note was C5 (523 Hz) → thin/treble-only fanfare.
-    const match = sfxSrc.match(/playLevelComplete[\s\S]{0,400}const notes\s*=\s*\[([^\]]+)\]/);
+    const match = sfxAllSrc.match(/playLevelComplete[\s\S]{0,400}const notes\s*=\s*\[([^\]]+)\]/);
     assert(match !== null, 'playLevelComplete notes array found');
     if (match) {
         const freqs = match[1].split(',').map(Number);
@@ -487,7 +493,7 @@ test('playLevelComplete fanfare includes bass octave note (≤ 300 Hz)', () => {
 test('playClearInfection noise filter passes mid-range (≤ 2000 Hz highpass cutoff)', () => {
     // The clear-infection noise was highpass-filtered at 4000 Hz (air only, very shrill).
     // Lowering to ≤ 2000 Hz adds mid-range presence and reduces harshness.
-    const match = sfxSrc.match(/playClearInfection[\s\S]{0,1800}_makeFilter\(ctx,\s*t,\s*'highpass',\s*([\d.]+)\)/);
+    const match = sfxAllSrc.match(/playClearInfection[\s\S]{0,1800}_makeFilter\(ctx,\s*t,\s*'highpass',\s*([\d.]+)\)/);
     assert(match !== null, 'playClearInfection highpass filter frequency found');
     if (match) {
         const cutoff = Number(match[1]);
@@ -498,7 +504,7 @@ test('playClearInfection noise filter passes mid-range (≤ 2000 Hz highpass cut
 test('playClearInfection oscillators include bass octave note (≤ 300 Hz)', () => {
     // Previously [523, 659, 1046] Hz (C5–C6) → thin, high-pitched.
     // Now should include C4 (261.63 Hz) for body.
-    const match = sfxSrc.match(/playClearInfection[\s\S]{0,200}const freqs\s*=\s*\[([^\]]+)\]/);
+    const match = sfxAllSrc.match(/playClearInfection[\s\S]{0,200}const freqs\s*=\s*\[([^\]]+)\]/);
     assert(match !== null, 'playClearInfection freqs array found');
     if (match) {
         const freqs = match[1].split(',').map(Number);
@@ -571,20 +577,21 @@ test('stopAll does not throw', () => {
 // Rigorous oscillator, modulation and graph-structure tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('All 18 _levelTunes entries execute without exception', () => {
+test('All 18 level tune entries execute without exception', () => {
+    const tuneList = gameSFX._levelTunes || global.SFX_LEVEL_TUNES || [];
     assert(
-        gameSFX._levelTunes.length === 18,
-        `_levelTunes array has exactly 18 entries (found ${gameSFX._levelTunes.length})`
+        tuneList.length === 18,
+        `level tune array has exactly 18 entries (found ${tuneList.length})`
     );
-    for (let i = 0; i < gameSFX._levelTunes.length; i++) {
+    for (let i = 0; i < tuneList.length; i++) {
         let threw = false;
         try {
-            gameSFX._levelTunes[i](mockCtx, mockCtx.currentTime, mockCtx.destination);
+            tuneList[i].call(gameSFX, mockCtx, mockCtx.currentTime, mockCtx.destination);
         } catch (e) {
             threw = true;
             console.error(`    tune[${i}] threw: ${e.message}`);
         }
-        assert(!threw, `_levelTunes[${i}] executes without exception`);
+        assert(!threw, `level tune[${i}] executes without exception`);
     }
 });
 
@@ -707,22 +714,22 @@ test('Level tune 6: tremolo uses intermediate gain stage, not direct masterGain.
     // before the master envelope — never negative.
 
     assert(
-        !/tremoloGain\.connect\(\s*masterGain\.gain\s*\)/.test(sfxSrc),
+        !/tremoloGain\.connect\(\s*masterGain\.gain\s*\)/.test(sfxAllSrc),
         'tune 6: tremoloGain is NOT connected directly to masterGain.gain (prevents negative gain range)'
     );
     assert(
-        /tremoloGain\.connect\(\s*tremoloAmp\.gain\s*\)/.test(sfxSrc),
+        /tremoloGain\.connect\(\s*tremoloAmp\.gain\s*\)/.test(sfxAllSrc),
         'tune 6: tremoloGain connects to tremoloAmp.gain (intermediate amplitude stage)'
     );
     // tremoloAmp must have a base gain of 1.0 so that LFO ±depth never produces a negative value
-    const ampBaseMatch = sfxSrc.match(/tremoloAmp\.gain\.value\s*=\s*([\d.]+)/);
+    const ampBaseMatch = sfxAllSrc.match(/tremoloAmp\.gain\.value\s*=\s*([\d.]+)/);
     assert(ampBaseMatch !== null, 'tune 6: tremoloAmp.gain.value is explicitly set');
     if (ampBaseMatch) {
         const base = parseFloat(ampBaseMatch[1]);
         assert(base === 1.0, `tune 6: tremoloAmp.gain.value = ${base} (must be 1.0 so LFO keeps range positive)`);
     }
     // LFO depth must be ≤ base (1.0) to keep the range [1-depth, 1+depth] ≥ 0
-    const depthMatch = sfxSrc.match(/tremoloGain\.gain\.value\s*=\s*([\d.]+)/);
+    const depthMatch = sfxAllSrc.match(/tremoloGain\.gain\.value\s*=\s*([\d.]+)/);
     assert(depthMatch !== null, 'tune 6: tremoloGain.gain.value is explicitly set');
     if (depthMatch) {
         const depth = parseFloat(depthMatch[1]);

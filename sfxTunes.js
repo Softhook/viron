@@ -25,7 +25,7 @@ const SFX_LEVEL_TUNES = [
                     nodes.push(osc, filter, gain);
                 });
             });
-            this._cleanupNodes(nodes, 3 * 0.8 + 1.5);
+            this._cleanupNodes(nodes, 3 * 0.8 + 1.8);
         },
 
         // 1 — Rapid chiptune arpeggio: tight 8-bit style bleeps racing up and down
@@ -47,7 +47,7 @@ const SFX_LEVEL_TUNES = [
                 osc.start(noteT); osc.stop(noteT + 0.1);
                 nodes.push(osc, env);
             });
-            this._cleanupNodes(nodes, 9 * 0.1 + 0.1);
+            this._cleanupNodes(nodes, 9 * 0.1 + 0.4);
         },
 
         // 2 — FM-style clang: carrier + modulator for metallic bell-like tones
@@ -78,7 +78,7 @@ const SFX_LEVEL_TUNES = [
                 modulator.start(noteT); modulator.stop(noteT + 1.7);
                 nodes.push(carrier, modulator, modGain, outGain);
             });
-            this._cleanupNodes(nodes, 2 * 0.7 + 1.7);
+            this._cleanupNodes(nodes, 2 * 0.7 + 2.0);
         },
 
         // 3 — Theremin-like glide: one continuous pitch sliding eerily through wide interval
@@ -129,7 +129,7 @@ const SFX_LEVEL_TUNES = [
                 osc.start(noteT); osc.stop(noteT + 0.16);
                 nodes.push(osc, filter, gain);
             });
-            this._cleanupNodes(nodes, 1.3 + 0.16);
+            this._cleanupNodes(nodes, 1.3 + 0.4);
         },
 
         // 5 — Laser ping sweep: sci-fi rising "pew" with trailing decay
@@ -154,7 +154,7 @@ const SFX_LEVEL_TUNES = [
                 osc.start(noteT); osc.stop(noteT + 0.65);
                 nodes.push(osc, filter, gain);
             });
-            this._cleanupNodes(nodes, 0.8 + 0.65);
+            this._cleanupNodes(nodes, 0.8 + 0.9);
         },
 
         // 6 — Deep bass pulse with tremolo: sub-bass heartbeat that throbs and fades
@@ -218,7 +218,7 @@ const SFX_LEVEL_TUNES = [
                 osc.start(noteT); osc.stop(noteT + dur + 0.01);
                 nodes.push(osc, gain);
             });
-            this._cleanupNodes(nodes, 0.95 + 0.12 + 0.01);
+            this._cleanupNodes(nodes, 0.95 + 0.4);
         },
 
         // 8 — Granular shimmer: rapid micro-grains of pitched sine creating a shimmering cloud
@@ -233,13 +233,15 @@ const SFX_LEVEL_TUNES = [
                 osc.frequency.value = freq;
                 const dur = 0.06 + Math.random() * 0.06;
                 gain.gain.setValueAtTime(0, noteT);
-                gain.gain.linearRampToValueAtTime(0.08 + Math.random() * 0.06, noteT + 0.005);
+                // Normalised: max peak sum of 24 grains approx 0.85
+                gain.gain.linearRampToValueAtTime((0.08 + Math.random() * 0.06) * 0.25, noteT + 0.005);
                 gain.gain.exponentialRampToValueAtTime(0.0001, noteT + dur);
                 osc.connect(gain); gain.connect(targetNode);
                 osc.start(noteT); osc.stop(noteT + dur + 0.01);
                 nodes.push(osc, gain);
             }
-            this._cleanupNodes(nodes, 23 * 0.08 + 0.15);
+            // Buffer raised to 0.4 to accommodate random jitters in grain scheduling.
+            this._cleanupNodes(nodes, 23 * 0.08 + 0.4);
         },
 
         // 9 — Distorted power chord: heavy overdriven fifths rumbling in
@@ -265,8 +267,11 @@ const SFX_LEVEL_TUNES = [
                         const osc = ctx.createOscillator(), gain = ctx.createGain();
                         osc.type = 'sawtooth'; osc.frequency.value = freq; osc.detune.value = det;
                         gain.gain.setValueAtTime(0, noteT);
-                        gain.gain.linearRampToValueAtTime(0.12, noteT + 0.02);
-                        gain.gain.setValueAtTime(0.12, noteT + 0.35);
+                        // Normalised: 6 oscillators hit the shaper. 
+                        // Reduced from 0.12 to 0.08 to allow for cleaner saturation without 
+                        // harsh digital "flat-lining".
+                        gain.gain.linearRampToValueAtTime(0.08, noteT + 0.02);
+                        gain.gain.setValueAtTime(0.08, noteT + 0.35);
                         gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 0.55);
                         osc.connect(gain); gain.connect(distortion);
                         osc.start(noteT); osc.stop(noteT + 0.6);
@@ -274,7 +279,9 @@ const SFX_LEVEL_TUNES = [
                     });
                 });
             });
-            this._cleanupNodes(nodes, 2 * 0.6 + 0.6);
+            // Extended from 1.8s to 2.1s (+300ms) to ensure the heavy distorted 
+            // tail has fully settled before disconnection.
+            this._cleanupNodes(nodes, 2.1);
         },
 
         // 10 — Pentatonic wind chimes: randomly timed delicate high-pitched tones
@@ -288,13 +295,16 @@ const SFX_LEVEL_TUNES = [
                 osc.type = 'triangle';
                 osc.frequency.value = freq;
                 gain.gain.setValueAtTime(0, noteT);
-                gain.gain.linearRampToValueAtTime(0.1 + Math.random() * 0.08, noteT + 0.003);
+                // Normalised: multi-voice chimes capped to prevent clipping
+                gain.gain.linearRampToValueAtTime((0.1 + Math.random() * 0.08) * 0.4, noteT + 0.003);
                 gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 0.7);
                 osc.connect(gain); gain.connect(targetNode);
                 osc.start(noteT); osc.stop(noteT + 0.75);
                 nodes.push(osc, gain);
             }
-            this._cleanupNodes(nodes, 13 * 0.15 + 0.8);
+            // Buffer raised to 1.2 to ensure the long decays (0.7s) of the final chimes 
+            // are fully audible before disconnection.
+            this._cleanupNodes(nodes, 13 * 0.15 + 1.2);
         },
 
         // 11 — Resonant drone cluster: thick layered sustained tones beating against each other
@@ -335,7 +345,7 @@ const SFX_LEVEL_TUNES = [
                 osc.start(noteT); osc.stop(noteT + 0.06);
                 nodes.push(osc, gain);
             });
-            this._cleanupNodes(nodes, 11 * 0.065 + 0.06);
+            this._cleanupNodes(nodes, 11 * 0.065 + 0.3);
         },
 
         // 13 — Whale song: slow portamento sine bends with vibrato, deep and haunting
@@ -396,7 +406,7 @@ const SFX_LEVEL_TUNES = [
                 const osc = ctx.createOscillator(), gain = ctx.createGain();
                 osc.type = 'sawtooth'; osc.frequency.value = freq;
                 gain.gain.setValueAtTime(0, noteT);
-                gain.gain.linearRampToValueAtTime(0.14, noteT + 0.01);
+                gain.gain.linearRampToValueAtTime(0.14 * 0.6, noteT + 0.01);
                 gain.gain.exponentialRampToValueAtTime(0.0001, noteT + 0.28);
                 osc.connect(gain);
                 gain.connect(dryGain);
@@ -404,7 +414,7 @@ const SFX_LEVEL_TUNES = [
                 osc.start(noteT); osc.stop(noteT + 0.3);
                 nodes.push(osc, gain);
             });
-            this._cleanupNodes(nodes, 7 * 0.3 + 0.3);
+            this._cleanupNodes(nodes, 7 * 0.3 + 0.6);
         },
 
         // 15 — Bitcrushed march: lo-fi military-style stepping pattern
@@ -443,7 +453,7 @@ const SFX_LEVEL_TUNES = [
                 osc.start(noteT); osc.stop(noteT + dur + 0.05);
                 nodes.push(osc, gain);
             });
-            this._cleanupNodes(nodes, 1.55 + 0.3 + 0.05);
+            this._cleanupNodes(nodes, 1.55 + 0.3 + 0.3);
         },
 
         // 16 — Spectral whisper harmonics: breathy high overtones fading in and out
@@ -468,8 +478,9 @@ const SFX_LEVEL_TUNES = [
                 osc.start(t); osc.stop(t + fadeOut + 0.05);
                 nodes.push(osc, filter, gain);
             });
-            const maxFade = 0.3 + 5 * 0.15 + 0.4 + 0.6 + 5 * 0.1;
-            this._cleanupNodes(nodes, maxFade + 0.1);
+            // maxFade = 2.55s.  Extended to 2.8s to provide ample headroom for the 
+            // final harmonic tails.
+            this._cleanupNodes(nodes, 2.8);
         },
 
         // 17 — Cosmic radio burst: chaotic broadband sweep condensing into a tone

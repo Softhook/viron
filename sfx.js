@@ -70,6 +70,10 @@ class GameSFX {
     // Prevents stale nodes from accumulating in the audio graph over the lifetime
     // of a game session, which would cause growing CPU and memory overhead.
     _cleanupNodes(nodes, delaySec) {
+        // Increased from 0.05 to 0.2: Web Audio scheduled events are precise, but
+        // setTimeout is not. A 200ms buffer ensures that even during high CPU load
+        // or frame drops, the nodes are never disconnected before their scheduled
+        // stop/fade-out times have fully passed, preventing audible clicks.
         setTimeout(() => {
             for (const node of nodes) {
                 if (!node) continue;
@@ -77,7 +81,7 @@ class GameSFX {
                 // Noise gain-proxy wraps a hidden BufferSource — disconnect that too.
                 if (node._src) try { node._src.disconnect(); } catch (e) {}
             }
-        }, (delaySec + 0.05) * 1000);
+        }, (delaySec + 0.2) * 1000);
     }
 
     // Cancel any pending AudioParam automation at time t, hold the current
@@ -476,7 +480,9 @@ class GameSFX {
             nodes.push(osc, gain);
         });
 
-        this._cleanupNodes(nodes, 0.4 + 1.3);
+        // Raised from 1.7 to 1.9 (+200ms) to ensure the 1.3s decay on the final chord 
+        // has strictly finished before disconnection.
+        this._cleanupNodes(nodes, 0.4 + 1.5);
     }
 
     playGameOver() {

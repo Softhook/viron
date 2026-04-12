@@ -168,13 +168,15 @@ const SfxAmbient = {
                     n.stopSeq = (n.stopSeq || 0) + 1;
                     const stopSeq = n.stopSeq;
                     sfxCore._paramSetTarget(n.gain.gain, 0, t, 0.04);
+                    // Increased from 160ms to 250ms (~6*tau) to ensure the 40ms exponential 
+                    // fade-out is truly silent before destroying the nodes. 
                     n.stopTimer = setTimeout(() => {
                         n.stopTimer = null;
                         if (sfxCore.thrustNodes[id] === n && n.stopping && n.stopSeq === stopSeq) {
                             sfxCore._stopThrustNode(n);
                             delete sfxCore.thrustNodes[id];
                         }
-                    }, 160);
+                    }, 250);
                 }
             }
             return;

@@ -11,6 +11,7 @@ import { SfxWeapons } from './sfxWeapons.js';
 import { SfxEnemies } from './sfxEnemies.js';
 import { SFX_LEVEL_TUNES } from './sfxTunes.js';
 import { gameState } from './gameState.js';
+import { p } from './p5Context.js';
 
 export class GameSFX {
     constructor() {
@@ -40,25 +41,26 @@ export class GameSFX {
 
     init() {
         if (this.initialized) return;
-        try { window.userStartAudio?.(); } catch (e) { }
-        if (typeof window.getAudioContext !== 'undefined') {
-            this.ctx = window.getAudioContext?.();
-
-            // Simple master gain — no dynamics compressor.
-            // A DynamicsCompressor causes audible pumping/ducking on every transient
-            // (gun shot, explosion) and can introduce crackle.  1.0 passes all sounds
-            // at their individually tuned volumes; individual gains are kept well below
-            // 1.0 so simultaneous sounds stack without clipping.
-            this.master = this.ctx.createGain();
-            this.master.gain.value = 1.0;
-            this.master.connect(this.ctx.destination);
-
-            this.distCurve = this.createDistortionCurve(400);
-            this.distCurveGameOver = this.createDistortionCurve(60);
-
-            // Pre-calculate one seamless looping noise buffer and reuse it across all
-            // synthesised sounds. Eliminates per-sound buffer allocation work.
-            this.persistentNoise = this._buildNoiseBuffer(3.0);
+        try { p.userStartAudio?.(); } catch (e) { }
+        try {
+            this.ctx = p.getAudioContext?.();
+            if (!this.ctx) {
+                this.initialized = true;
+                return;
+            }
+            try {
+                this.master = this.ctx.createGain();
+                this.master.gain.value = 1.0;
+                this.master.connect(this.ctx.destination);
+                this.distCurve = this.createDistortionCurve(400);
+                this.distCurveGameOver = this.createDistortionCurve(60);
+                // Defer noise buffer creation to avoid blocking render frame
+                // It will be created lazily on first use in _createNoise()
+            } catch (e) {
+                console.warn('[SFX] Audio initialization failed:', e.message);
+            }
+        } catch (e) {
+            console.warn('[SFX] Could not get audio context:', e.message);
         }
         this.initialized = true;
     }
@@ -167,7 +169,14 @@ export class GameSFX {
     // mul != 1 inserts a gain stage; the returned node exposes a .stop() proxy
     // and a ._src reference so _cleanupNodes can reach the inner BufferSource.
     _createNoise(mul = 1) {
-        if (!this.ctx || !this.persistentNoise) return null;
+        if (!this.ctx) return null;
+        
+        // Lazy-load persistent noise buffer on first use to avoid blocking render frame
+        if (!this.persistentNoise) {
+            this.persistentNoise = this._buildNoiseBuffer(3.0);
+        }
+        if (!this.persistentNoise) return null;
+        
         const src = this.ctx.createBufferSource();
         src.buffer = this.persistentNoise;
         src.loop = true;
@@ -228,7 +237,7 @@ export class GameSFX {
      * Updates persistent ambient sounds based on player position and infection state.
      */
     updateAmbiance(proximityData, infectionCount, maxInfection) {
-        if (typeof SfxAmbient !== 'undefined') SfxAmbient.updateAmbiance(this, proximityData, infectionCount, maxInfection);
+        SfxAmbient.updateAmbiance(this, proximityData, infectionCount, maxInfection);
     }
 
     // Set up audio routing for a one-shot event.
@@ -414,27 +423,27 @@ export class GameSFX {
     }
 
     playShot(x, y, z) {
-        if (typeof SfxWeapons !== 'undefined') SfxWeapons.playShot(this, x, y, z);
+        SfxWeapons.playShot(this, x, y, z);
     }
 
     playInfectionPulse(x, y, z) {
-        if (typeof SfxEnemies !== 'undefined') SfxEnemies.playInfectionPulse(this, x, y, z);
+        SfxEnemies.playInfectionPulse(this, x, y, z);
     }
 
     playEnemyShot(type = 'fighter', x, y, z) {
-        if (typeof SfxEnemies !== 'undefined') SfxEnemies.playEnemyShot(this, type, x, y, z);
+        SfxEnemies.playEnemyShot(this, type, x, y, z);
     }
 
     playMissileFire(x, y, z) {
-        if (typeof SfxWeapons !== 'undefined') SfxWeapons.playMissileFire(this, x, y, z);
+        SfxWeapons.playMissileFire(this, x, y, z);
     }
 
     playBombDrop(type = 'normal', x, y, z) {
-        if (typeof SfxWeapons !== 'undefined') SfxWeapons.playBombDrop(this, type, x, y, z);
+        SfxWeapons.playBombDrop(this, type, x, y, z);
     }
 
     playExplosion(x, y, z, isLarge = false, type = '') {
-        if (typeof SfxWeapons !== 'undefined') SfxWeapons.playExplosion(this, x, y, z, isLarge, type);
+        SfxWeapons.playExplosion(this, x, y, z, isLarge, type);
     }
 
     playNewLevel() {

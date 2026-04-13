@@ -30,6 +30,7 @@ import {
 import { HUD_Manager } from './hudCore.js';
 import { initWorld } from './worldGenerator.js';
 import { getVironProfiler } from './constants.js';
+import { gameSFX } from './sfx.js';
 
 export function startGame(np) {
   physicsEngine.setPaused(false);
@@ -119,6 +120,9 @@ const sketch = (inst) => {
 
     terrain.init();
     inst.textFont(gameState.gameFont);
+
+    // Initialize audio system after p5.sound is loaded
+    gameSFX.init();
 
     if (aimAssist) {
       aimAssist.enabled = gameState.isMobile;

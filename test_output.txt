@@ -1,0 +1,5 @@
+
+> viron@1.0.0 test
+> node tests/test.js
+
+PASS – game ran for 6000 ms without WebGL errors or JS exceptions.

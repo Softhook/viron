@@ -7,46 +7,16 @@
 // and uses it as: p.push(), p.fill(255), p.noise(x, z), etc.
 //
 // @exports  initP5(pInst)    — called once by sketch.js after instance creation
-// @exports  p                — Proxy that delegates every property/method to the live instance
+// @exports  p                — direct reference to the live instance (no Proxy)
 // =============================================================================
 
-let _inst = null;
+/** Live p5 instance reference set by initP5(); null until sketch setup starts. */
+export let p = null;
 
 /**
  * Register the live p5 instance.  Must be called before any rendering begins.
  * @param {object} pInst  The p5 instance created by `new p5(sketchFn)`.
  */
 export function initP5(pInst) {
-  _inst = pInst;
+  p = pInst;
 }
-
-/**
- * Proxy that transparently forwards all property accesses and method calls
- * to the registered p5 instance.  Functions are auto-bound to the instance
- * so they work correctly as standalone calls: `p.push()` rather than `_inst.push()`.
- *
- * Throws a clear error at the call site if the instance has not been registered
- * yet, which makes initialization-order bugs easy to diagnose.
- */
-export const p = new Proxy(
-  {},
-  {
-    get(_, key) {
-      if (_inst === null) {
-        throw new Error(
-          `p5Context: p5 instance not initialized. ` +
-          `Accessed "${String(key)}" before initP5() was called.`
-        );
-      }
-      const val = _inst[key];
-      return typeof val === 'function' ? val.bind(_inst) : val;
-    },
-    set(_, key, value) {
-      if (_inst === null) {
-        throw new Error(`p5Context: cannot set "${String(key)}" — p5 instance not initialized.`);
-      }
-      _inst[key] = value;
-      return true;
-    },
-  }
-);

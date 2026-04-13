@@ -87,10 +87,10 @@ function findChrome() {
         timeout: 15000
       });
 
-      const stats = await page.evaluate((iterations) => {
-        // Ensure helpers are present
+      const stats = await page.evaluate(async (iterations) => {
+        const { mag2, mag3 } = await import('/constants.js');
         if (typeof mag2 !== 'function' || typeof mag3 !== 'function') {
-          return { error: 'mag2/mag3 not defined' };
+          return { error: 'mag2/mag3 export not defined' };
         }
         const rand = Math.random;
         let acc = 0;

@@ -1,81 +1,104 @@
-const { performance } = require('perf_hooks');
+'use strict';
 
-// Mocks
-global.gameState = { 
-    buildings: [],
-    players: [{ dead: false, ship: { x: 0, z: 0 } }]
-};
-global.infection = { has: () => false, count: 1000, remove: () => {} };
-global.terrain = { getAltitude: () => 10, addPulse: () => {} };
-global.particleSystem = { particles: [] };
-global.aboveSea = (y) => y > 0;
-global.random = (a=1, b=0) => Math.random() * (b === 0 ? a : b - a) + (b === 0 ? 0 : a);
-global.tileKey = (x, z) => `${x},${z}`;
-global.toTile = (v) => Math.floor(v / 120);
-global.TWO_PI = Math.PI * 2;
-global.PI = Math.PI;
-global.sin = Math.sin;
-global.cos = Math.cos;
-global.atan2 = Math.atan2;
-
-// Load villagerManager code
+const puppeteer = require('puppeteer');
+const express = require('express');
+const path = require('path');
 const fs = require('fs');
-const code = fs.readFileSync('./villagers.js', 'utf8');
 
-// We need to provide the global consts
-const TILE = 120;
-const CULL_DIST = 5000;
-const swapRemove = (arr, i) => {
-    arr[i] = arr[arr.length - 1];
-    arr.pop();
-};
+const PORT = process.env.VIRON_PORT ? Number(process.env.VIRON_PORT) : 0;
 
-global.TILE = TILE;
-global.CULL_DIST = CULL_DIST;
-global.swapRemove = swapRemove;
-global.fill = () => {};
-global.push = () => {};
-global.pop = () => {};
-global.translate = () => {};
-global.rotateY = () => {};
-global.rotateX = () => {};
-global.scale = () => {};
-global.box = () => {};
-global.noStroke = () => {};
-global.resetShader = () => {};
-global.setSceneLighting = () => {};
+const BENCHMARK_CONFIGS = [
+  { name: 'Villagers: Baseline', config: {} },
+  { name: 'Villagers: Culling OFF', config: { disableVillagerCulling: true } },
+  { name: 'Villagers: Disabled', config: { disableVillagers: true } }
+];
 
-// Eval the code to instantiate villagerManager
-eval(code + '; global.villagerManager = villagerManager;');
+function findChrome() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/opt/google/chrome/chrome',
+  ].filter(Boolean);
 
-// Prepare mock data
-const NUM_BUILDINGS = 50;
-for (let i = 0; i < NUM_BUILDINGS; i++) {
-    gameState.buildings.push({
-        type: i % 5 === 0 ? 2 : 1, // Every 5th building is a pagoda (type 2)
-        x: (Math.random() - 0.5) * 50000,
-        z: (Math.random() - 0.5) * 50000
-    });
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return undefined;
 }
 
-villagerManager.clear();
+async function runBenchmark(url, config) {
+  const launchOpts = {
+    headless: 'new',
+    args: ['--no-sandbox']
+  };
+  const chromePath = findChrome();
+  if (chromePath) launchOpts.executablePath = chromePath;
 
-const ITERATIONS = 1000;
+  const browser = await puppeteer.launch(launchOpts);
+  const page = await browser.newPage();
 
-const run = () => {
-    const start = performance.now();
-    for (let i = 0; i < ITERATIONS; i++) {
-        // Mock global ship pos for culling if needed, though update() doesn't use it directly
-        global.ship = { x: 0, z: 0 }; 
-        villagerManager.update();
+  let drawMs = null;
+  const resultPromise = new Promise((resolve) => {
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (text.startsWith('BENCHMARK_DONE:')) {
+        drawMs = Number(text.split(':')[1]);
+        resolve();
+      }
+    });
+  });
+
+  await page.evaluateOnNewDocument((benchmarkCfg) => {
+    window.BENCHMARK = {
+      active: true,
+      setup: true,
+      ...benchmarkCfg
+    };
+  }, config);
+
+  await page.goto(url, { waitUntil: 'load', timeout: 20000 });
+
+  await Promise.race([
+    resultPromise,
+    new Promise((r) => setTimeout(r, 15000))
+  ]);
+
+  await browser.close();
+  return drawMs;
+}
+
+async function start() {
+  const app = express();
+  app.use(express.static(path.join(__dirname, '..')));
+
+  const server = app.listen(PORT, async () => {
+    const baseUrl = `http://localhost:${server.address().port}/index.html`;
+
+    console.log('Villager Benchmark Suite');
+    console.log('----------------------------------------------');
+    console.log(String('Configuration').padEnd(28) + ' | Avg draw() ms');
+    console.log('----------------------------------------------');
+
+    for (const bcfg of BENCHMARK_CONFIGS) {
+      try {
+        const drawMs = await runBenchmark(baseUrl, bcfg.config);
+        if (drawMs !== null && Number.isFinite(drawMs)) {
+          console.log(String(bcfg.name).padEnd(28) + ` | ${drawMs.toFixed(2)} ms`);
+        } else {
+          console.log(String(bcfg.name).padEnd(28) + ' | TIMEOUT');
+        }
+      } catch (err) {
+        console.log(String(bcfg.name).padEnd(28) + ` | ERROR (${err.message})`);
+      }
     }
-    const end = performance.now();
-    return end - start;
-};
 
-// Warmup
-run();
+    console.log('----------------------------------------------');
+    server.close();
+    process.exit(0);
+  });
+}
 
-const duration = run();
-console.log(`VillagerManager update() took ${duration.toFixed(2)} ms for ${ITERATIONS} iterations with ${NUM_BUILDINGS} buildings.`);
-console.log(`Average ms per frame: ${(duration / ITERATIONS).toFixed(3)} ms`);
+start();

@@ -171,9 +171,17 @@ const sketch = (inst) => {
     const profiler = getVironProfiler();
     const frameStart = profiler ? performance.now() : 0;
 
+    const inputStart = profiler ? performance.now() : 0;
     inputManager.update();
+    if (profiler) profiler.record('input', performance.now() - inputStart);
+
+    const perfScaleStart = profiler ? performance.now() : 0;
     gameRenderer.updatePerformanceScaling();
+    if (profiler) profiler.record('perfScale', performance.now() - perfScaleStart);
+
+    const cacheStart = profiler ? performance.now() : 0;
     terrain.clearCaches();
+    if (profiler) profiler.record('cacheGc', performance.now() - cacheStart);
 
     physicsEngine.update(inst.deltaTime, () => {
       for (const player of gameState.players) updateShipInput(player);
@@ -188,8 +196,13 @@ const sketch = (inst) => {
       GameLoop.updateLevelAndRespawn();
     });
 
+    const sentinelStart = profiler ? performance.now() : 0;
     gameRenderer.updateSentinelGlows();
+    if (profiler) profiler.record('sentinel', performance.now() - sentinelStart);
+
+    const ambianceStart = profiler ? performance.now() : 0;
     GameLoop.updateAmbianceAudio();
+    if (profiler) profiler.record('ambiance', performance.now() - ambianceStart);
     gameRenderer.renderAllPlayers(inst.drawingContext);
 
     if (gameState.shouldCapture) {

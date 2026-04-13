@@ -20,6 +20,11 @@ const LOAD_TIMEOUT = Number(process.env.RUNTIME_LOAD_TIMEOUT || 15000);
 const SAMPLE_MS = Number(process.env.RUNTIME_SAMPLE_MS || 7000);
 const PORT = process.env.RUNTIME_PORT ? Number(process.env.RUNTIME_PORT) : 0;
 const FREEZE_ADAPTIVE_SCALING = process.env.RUNTIME_FREEZE_ADAPTIVE === '1';
+const STRICT_SCENARIOS = process.env.RUNTIME_STRICT === '1';
+const SCENARIO_RETRIES = Number(process.env.RUNTIME_RETRIES || 1);
+const SCENARIO_FILTER = process.env.RUNTIME_SCENARIOS
+  ? new Set(process.env.RUNTIME_SCENARIOS.split(',').map(s => s.trim()).filter(Boolean))
+  : null;
 
 const SCENARIOS = [
   { id: 'baseline', title: 'Baseline (default game loop)' },
@@ -63,252 +68,310 @@ async function createServer() {
 
 async function setupPlayableState(page, scenarioId) {
   await page.waitForFunction(
-    'typeof startGame === "function" && typeof gameState !== "undefined" && typeof draw !== "undefined"',
+    'typeof window.startGame === "function" && typeof window.gameState !== "undefined"',
     { timeout: LOAD_TIMEOUT }
   );
 
-  const res = await page.evaluate((id, freezeAdaptiveScaling) => {
-    // Start game and force immediate entry into gameplay state.
-    startGame(1);
-    for (const p of gameState.players) p.ready = true;
-    gameState.mode = 'playing';
-    startLevel(1);
+  await page.evaluate((id, freezeAdaptiveScaling) => {
+    window.__runtimeBench = null;
+    window.__runtimeBenchSetup = { state: 'pending', error: null, result: null, scenarioId: id };
 
-    // By default we use runtime adaptive scaling behavior from the game.
-    // Set RUNTIME_FREEZE_ADAPTIVE=1 to lock scaling for strictly comparable deltas.
-    if (freezeAdaptiveScaling) {
-      window._perf = {
-        buf: new Float32Array(60),
-        idx: 0,
-        full: false,
-        budgetMs: 1000 / 60,
-        budgetSet: true,
-        nextEval: Number.POSITIVE_INFINITY,
-        cooldown: Number.POSITIVE_INFINITY,
-        overBudgetEvals: 0,
-        underBudgetEvals: 0,
-      };
-    }
-
-    // Build a deterministic, representative workload so each scenario starts
-    // from the same state and deltas are meaningful.
-    infection.reset();
-    gameState.barrierTiles.reset();
-    particleSystem.clear();
-    enemyManager.clear();
-
-    // Seed infection/barrier tiles in a fixed square away from launchpad.
-    let seeded = 0;
-    for (let tz = -20; tz < 40 && seeded < 1400; tz++) {
-      for (let tx = -20; tx < 40 && seeded < 1400; tx++) {
-        if (tx >= 0 && tx < 7 && tz >= 0 && tz < 7) continue;
-        infection.add(tileKey(tx, tz));
-        gameState.barrierTiles.add(tileKey(tx + 8, tz));
-        seeded++;
-      }
-    }
-
-    // Deterministic enemy wave.
-    randomSeed(1234);
-    for (let i = 0; i < 10; i++) enemyManager.spawn(false, false);
-
-    // Deterministic particle load: mixed thrust/fog-like particles.
-    for (let i = 0; i < 220; i++) {
-      const x = 420 + (i % 22) * 35 - 350;
-      const z = 420 + Math.floor(i / 22) * 30 - 150;
-      const y = -180 - (i % 8) * 10;
-      particleSystem.particles.push({
-        x, y, z,
-        vx: ((i % 7) - 3) * 0.12,
-        vy: -0.2 - (i % 3) * 0.04,
-        vz: ((i % 5) - 2) * 0.10,
-        life: 10000,
-        decay: 0,
-        size: 6 + (i % 4),
-        seed: (i % 100) / 100,
-        isThrust: (i % 2) === 0,
-        isFog: (i % 9) === 0,
-        isInkBurst: false,
-        color: [130 + (i % 30), 130 + (i % 30), 130 + (i % 30)]
-      });
-    }
-
-    // Apply scenario toggles.
-    if (id === 'no-particles') {
-      particleSystem.clear();
-      particleSystem.updatePhysics = function () { };
-      particleSystem.render = function () { };
-      particleSystem.renderHardParticles = function () { };
-    } else if (id === 'no-hud') {
-      window.drawPlayerHUD = function () { };
-    } else if (id === 'no-radar') {
-      window.drawRadarForPlayer = function () { };
-    } else if (id === 'no-trees') {
-      terrain.drawTrees = function () { };
-    } else if (id === 'no-enemies') {
-      enemyManager.enemies = [];
-      enemyManager.update = function () { };
-      enemyManager.draw = function () { };
-    } else if (id === 'no-infection') {
-      infection.reset();
-      gameState.barrierTiles.reset();
-      GameLoop.spreadInfection = function () { };
-    } else if (id === 'no-scenery') {
-      terrain.drawTrees = function () { };
-      terrain.drawBuildings = function () { };
-    } else if (id === 'low-view') {
-      VIEW_NEAR = 20;
-      VIEW_FAR = 30;
-      CULL_DIST = 3500;
-    } else if (id === 'no-lighting') {
-      // Stub out the p5 ambient+directional light setup calls entirely.
-      gameRenderer.setSceneLighting = function () { };
-    } else if (id === 'no-shadows') {
-      // Stub stencil helpers so no shadow polygons are drawn (trees + buildings).
-      window._beginShadowStencil = function () { };
-      window._endShadowStencil = function () { };
-    } else if (id === 'cockpit-mode') {
-      gameState.firstPersonView = true;
-    } else if (id === 'no-sound') {
-      if (typeof gameSFX !== 'undefined') {
-        gameSFX.updateAmbiance = function () { };
-        gameSFX.updateListener = function () { };
-        gameSFX.playShot = function () { };
-        gameSFX.playExplosion = function () { };
-        gameSFX.playInfectionSpread = function () { };
-        gameSFX.playInfectionPulse = function () { };
-        gameSFX.setThrust = function () { };
-      }
-    } else if (id === 'no-villagers') {
-      if (typeof villagerManager !== 'undefined') {
-        villagerManager.villagers = [];
-        villagerManager.update = function () { };
-        villagerManager.draw = function () { };
-      }
-    }
-
-    // Function-level instrumentation.
-    const stats = Object.create(null);
-    const counts = Object.create(null);
-    let wrappedDrawMs = 0;
-    let wrappedDrawFrames = 0;
-
-    function record(label, dt) {
-      stats[label] = (stats[label] || 0) + dt;
-      counts[label] = (counts[label] || 0) + 1;
-    }
-
-    function wrapFunction(target, key, label) {
-      if (!target) return;
-      const original = target[key];
-      if (typeof original !== 'function') return;
-      target[key] = function (...args) {
-        const t0 = performance.now();
-        try {
-          return original.apply(this, args);
-        } finally {
-          record(label, performance.now() - t0);
-        }
-      };
-    }
-
-    // Update-phase wrappers.
-    wrapFunction(window, 'updateShipInput', 'updateShipInput');
-    wrapFunction(enemyManager, 'update', 'enemyManager.update');
-    wrapFunction(GameLoop, 'checkCollisions', 'checkCollisions');
-    wrapFunction(GameLoop, 'spreadInfection', 'spreadInfection');
-    wrapFunction(particleSystem, 'updatePhysics', 'particleSystem.updatePhysics');
-    wrapFunction(window, 'updateProjectilePhysics', 'updateProjectilePhysics');
-    wrapFunction(window, 'updateBarrierPhysics', 'updateBarrierPhysics');
-    if (typeof villagerManager !== 'undefined') {
-      wrapFunction(villagerManager, 'update', 'villagerManager.update');
-    }
-
-    // Render-phase wrappers.
-    wrapFunction(gameRenderer, 'renderPlayerView', 'renderPlayerView');
-    wrapFunction(terrain, 'drawLandscape', 'terrain.drawLandscape');
-    wrapFunction(terrain, 'drawTrees', 'terrain.drawTrees');
-    wrapFunction(terrain, 'drawBuildings', 'terrain.drawBuildings');
-    wrapFunction(enemyManager, 'draw', 'enemyManager.draw');
-    if (typeof villagerManager !== 'undefined') {
-      wrapFunction(villagerManager, 'draw', 'villagerManager.draw');
-    }
-    wrapFunction(particleSystem, 'render', 'particleSystem.render');
-    wrapFunction(particleSystem, 'renderHardParticles', 'particleSystem.renderHardParticles');
-    wrapFunction(gameRenderer, 'setSceneLighting', 'setSceneLighting');
-    wrapFunction(window, 'renderProjectiles', 'renderProjectiles');
-    wrapFunction(window, 'renderInFlightBarriers', 'renderInFlightBarriers');
-    wrapFunction(window, 'drawPlayerHUD', 'drawPlayerHUD');
-    wrapFunction(window, 'drawRadarForPlayer', 'drawRadarForPlayer');
-    wrapFunction(window, 'shipDisplay', 'shipDisplay');
-
-    // SFX wrappers.
-    if (typeof gameSFX !== 'undefined') {
-      wrapFunction(gameSFX, 'updateAmbiance', 'gameSFX.updateAmbiance');
-      wrapFunction(gameSFX, 'updateListener', 'gameSFX.updateListener');
-      wrapFunction(gameSFX, 'playShot', 'gameSFX.playShot');
-      wrapFunction(gameSFX, 'playExplosion', 'gameSFX.playExplosion');
-      wrapFunction(gameSFX, 'playInfectionSpread', 'gameSFX.playInfectionSpread');
-      wrapFunction(gameSFX, 'playInfectionPulse', 'gameSFX.playInfectionPulse');
-      wrapFunction(gameSFX, 'setThrust', 'gameSFX.setThrust');
-    }
-
-    // Wrap draw itself to estimate total JS frame cost attributable to draw().
-    const originalDraw = window.draw;
-    window.draw = function (...args) {
-      const t0 = performance.now();
+    (async () => {
       try {
-        return originalDraw.apply(this, args);
-      } finally {
-        wrappedDrawMs += (performance.now() - t0);
-        wrappedDrawFrames++;
-      }
-    };
+        const constantsMod = await import('/constants.js');
+        const gameStateMod = await import('/gameState.js');
+        const enemyMod = await import('/enemies.js');
+        const particlesMod = await import('/particles.js');
+        const gameLoopMod = await import('/gameLoop.js');
+        const terrainMod = await import('/terrain.js');
+        const rendererMod = await import('/gameRenderer.js');
+        const villagersMod = await import('/villagers.js');
+        const sfxMod = await import('/sfx.js');
+        const p5ContextMod = await import('/p5Context.js');
 
-    window.VIRON_PROFILE = { enabled: true, sampleFrames: 120, label: 'bench' };
-    initVironProfiler();
+        const gameState = gameStateMod.gameState;
+        const infection = constantsMod.infection;
+        const tileKey = constantsMod.tileKey;
+        const setViewDistances = constantsMod.setViewDistances;
+        const enemyManager = enemyMod.enemyManager;
+        const particleSystem = particlesMod.particleSystem;
+        const GameLoop = gameLoopMod.GameLoop;
+        const terrain = terrainMod.terrain;
+        const gameRenderer = rendererMod.gameRenderer;
+        const villagerManager = villagersMod.villagerManager;
+        const gameSFX = sfxMod.gameSFX;
+        const p = p5ContextMod.p;
+        const initVironProfiler = constantsMod.initVironProfiler;
 
-    window.__runtimeBench = {
-      scenarioId: id,
-      startedAt: performance.now(),
-      startedFrame: frameCount,
-      getSummary: function () {
-        const elapsed = performance.now() - this.startedAt;
-        const producedFrames = frameCount - this.startedFrame;
-        const fps = producedFrames > 0 && elapsed > 0 ? (producedFrames * 1000 / elapsed) : 0;
-        const profilerSummary = window.__profilingSummary || null;
-        return {
-          scenarioId: this.scenarioId,
-          elapsedMs: elapsed,
-          producedFrames,
-          fps,
-          wrappedDrawMs,
-          wrappedDrawFrames,
-          stats,
-          counts,
+        if (!gameState || !infection || !enemyManager || !particleSystem || !GameLoop || !terrain || !gameRenderer) {
+          throw new Error('benchmark setup: missing required module exports');
+        }
+
+        window.startGame(1);
+        for (const player of gameState.players) player.ready = true;
+        gameState.mode = 'playing';
+        window.startLevel(1);
+        if (typeof gameState.activatePlayingMode === 'function') gameState.activatePlayingMode();
+        else gameState.mode = 'playing';
+
+        if (freezeAdaptiveScaling) {
+          window._perf = {
+            buf: new Float32Array(60),
+            idx: 0,
+            full: false,
+            budgetMs: 1000 / 60,
+            budgetSet: true,
+            nextEval: Number.POSITIVE_INFINITY,
+            cooldown: Number.POSITIVE_INFINITY,
+            overBudgetEvals: 0,
+            underBudgetEvals: 0,
+          };
+        }
+
+        if (typeof infection.reset === 'function') infection.reset();
+        if (gameState.barrierTiles && typeof gameState.barrierTiles.reset === 'function') gameState.barrierTiles.reset();
+        particleSystem.clear();
+        enemyManager.clear();
+
+        let seeded = 0;
+        for (let tz = -20; tz < 40 && seeded < 1400; tz++) {
+          for (let tx = -20; tx < 40 && seeded < 1400; tx++) {
+            if (tx >= 0 && tx < 7 && tz >= 0 && tz < 7) continue;
+            infection.add(tileKey(tx, tz));
+            if (gameState.barrierTiles && typeof gameState.barrierTiles.add === 'function') {
+              gameState.barrierTiles.add(tileKey(tx + 8, tz));
+            }
+            seeded++;
+          }
+        }
+
+        if (p && typeof p.randomSeed === 'function') p.randomSeed(1234);
+        else if (typeof window.randomSeed === 'function') window.randomSeed(1234);
+        for (let i = 0; i < 10; i++) enemyManager.spawn(false, false);
+
+        for (let i = 0; i < 220; i++) {
+          const x = 420 + (i % 22) * 35 - 350;
+          const z = 420 + Math.floor(i / 22) * 30 - 150;
+          const y = -180 - (i % 8) * 10;
+          particleSystem.particles.push({
+            x, y, z,
+            vx: ((i % 7) - 3) * 0.12,
+            vy: -0.2 - (i % 3) * 0.04,
+            vz: ((i % 5) - 2) * 0.10,
+            life: 10000,
+            decay: 0,
+            size: 6 + (i % 4),
+            seed: (i % 100) / 100,
+            isThrust: (i % 2) === 0,
+            isFog: (i % 9) === 0,
+            isInkBurst: false,
+            color: [130 + (i % 30), 130 + (i % 30), 130 + (i % 30)]
+          });
+        }
+
+        if (id === 'no-particles') {
+          particleSystem.clear();
+          particleSystem.updatePhysics = function () { };
+          particleSystem.render = function () { };
+          particleSystem.renderHardParticles = function () { };
+        } else if (id === 'no-hud') {
+          window.drawPlayerHUD = function () { };
+        } else if (id === 'no-radar') {
+          window.drawRadarForPlayer = function () { };
+        } else if (id === 'no-trees') {
+          terrain.drawTrees = function () { };
+        } else if (id === 'no-enemies') {
+          enemyManager.enemies = [];
+          enemyManager.update = function () { };
+          enemyManager.draw = function () { };
+        } else if (id === 'no-infection') {
+          if (typeof infection.reset === 'function') infection.reset();
+          if (gameState.barrierTiles && typeof gameState.barrierTiles.reset === 'function') gameState.barrierTiles.reset();
+          GameLoop.spreadInfection = function () { };
+        } else if (id === 'no-scenery') {
+          terrain.drawTrees = function () { };
+          terrain.drawBuildings = function () { };
+        } else if (id === 'low-view') {
+          setViewDistances(20, 30, 3500);
+        } else if (id === 'no-lighting') {
+          gameRenderer.setSceneLighting = function () { };
+        } else if (id === 'no-shadows') {
+          window._beginShadowStencil = function () { };
+          window._endShadowStencil = function () { };
+        } else if (id === 'cockpit-mode') {
+          gameState.firstPersonView = true;
+        } else if (id === 'no-sound') {
+          if (typeof gameSFX !== 'undefined') {
+            gameSFX.updateAmbiance = function () { };
+            gameSFX.updateListener = function () { };
+            gameSFX.playShot = function () { };
+            gameSFX.playExplosion = function () { };
+            gameSFX.playInfectionSpread = function () { };
+            gameSFX.playInfectionPulse = function () { };
+            gameSFX.setThrust = function () { };
+          }
+        } else if (id === 'no-villagers') {
+          if (typeof villagerManager !== 'undefined') {
+            villagerManager.villagers = [];
+            villagerManager.update = function () { };
+            villagerManager.draw = function () { };
+          }
+        }
+
+        const stats = Object.create(null);
+        const counts = Object.create(null);
+        let benchFrameCount = 0;
+        let wrappedDrawMs = 0;
+        let wrappedDrawFrames = 0;
+
+        function record(label, dt) {
+          stats[label] = (stats[label] || 0) + dt;
+          counts[label] = (counts[label] || 0) + 1;
+        }
+
+        function wrapFunction(target, key, label) {
+          if (!target) return;
+          const original = target[key];
+          if (typeof original !== 'function') return;
+          target[key] = function (...args) {
+            const t0 = performance.now();
+            try {
+              return original.apply(this, args);
+            } finally {
+              record(label, performance.now() - t0);
+            }
+          };
+        }
+
+        wrapFunction(window, 'updateShipInput', 'updateShipInput');
+        wrapFunction(enemyManager, 'update', 'enemyManager.update');
+        wrapFunction(GameLoop, 'checkCollisions', 'checkCollisions');
+        wrapFunction(GameLoop, 'spreadInfection', 'spreadInfection');
+        wrapFunction(particleSystem, 'updatePhysics', 'particleSystem.updatePhysics');
+        wrapFunction(window, 'updateProjectilePhysics', 'updateProjectilePhysics');
+        wrapFunction(window, 'updateBarrierPhysics', 'updateBarrierPhysics');
+        if (typeof villagerManager !== 'undefined') wrapFunction(villagerManager, 'update', 'villagerManager.update');
+
+        wrapFunction(gameRenderer, 'renderAllPlayers', 'gameRenderer.renderAllPlayers');
+        wrapFunction(gameRenderer, 'renderPlayerView', 'renderPlayerView');
+        wrapFunction(terrain, 'drawLandscape', 'terrain.drawLandscape');
+        wrapFunction(terrain, 'drawTrees', 'terrain.drawTrees');
+        wrapFunction(terrain, 'drawBuildings', 'terrain.drawBuildings');
+        wrapFunction(enemyManager, 'draw', 'enemyManager.draw');
+        if (typeof villagerManager !== 'undefined') wrapFunction(villagerManager, 'draw', 'villagerManager.draw');
+        wrapFunction(particleSystem, 'render', 'particleSystem.render');
+        wrapFunction(particleSystem, 'renderHardParticles', 'particleSystem.renderHardParticles');
+        wrapFunction(gameRenderer, 'setSceneLighting', 'setSceneLighting');
+        wrapFunction(window, 'renderProjectiles', 'renderProjectiles');
+        wrapFunction(window, 'renderInFlightBarriers', 'renderInFlightBarriers');
+        wrapFunction(window, 'drawPlayerHUD', 'drawPlayerHUD');
+        wrapFunction(window, 'drawRadarForPlayer', 'drawRadarForPlayer');
+        wrapFunction(window, 'shipDisplay', 'shipDisplay');
+
+        if (typeof gameSFX !== 'undefined') {
+          wrapFunction(gameSFX, 'updateAmbiance', 'gameSFX.updateAmbiance');
+          wrapFunction(gameSFX, 'updateListener', 'gameSFX.updateListener');
+          wrapFunction(gameSFX, 'playShot', 'gameSFX.playShot');
+          wrapFunction(gameSFX, 'playExplosion', 'gameSFX.playExplosion');
+          wrapFunction(gameSFX, 'playInfectionSpread', 'gameSFX.playInfectionSpread');
+          wrapFunction(gameSFX, 'playInfectionPulse', 'gameSFX.playInfectionPulse');
+          wrapFunction(gameSFX, 'setThrust', 'gameSFX.setThrust');
+        }
+
+        if (typeof window.draw === 'function') {
+          const originalDraw = window.draw;
+          window.draw = function (...args) {
+            const t0 = performance.now();
+            try {
+              return originalDraw.apply(this, args);
+            } finally {
+              wrappedDrawMs += (performance.now() - t0);
+              wrappedDrawFrames++;
+            }
+          };
+        }
+
+        if (typeof gameRenderer.renderAllPlayers === 'function') {
+          const originalRenderAllPlayers = gameRenderer.renderAllPlayers;
+          gameRenderer.renderAllPlayers = function (...args) {
+            benchFrameCount++;
+            return originalRenderAllPlayers.apply(this, args);
+          };
+        }
+
+        window.VIRON_PROFILE = { enabled: true, sampleFrames: 120, label: 'bench' };
+        initVironProfiler();
+
+        window.__runtimeBench = {
+          scenarioId: id,
+          startedAt: performance.now(),
+          startedFrame: (p && typeof p.frameCount === 'number') ? p.frameCount : 0,
+          getSummary: function (forceFlush = false) {
+            if (forceFlush && window.__vironProfiler && typeof window.__vironProfiler.flush === 'function') {
+              try { window.__vironProfiler.flush(); } catch (_ignored) { }
+            }
+            const elapsed = performance.now() - this.startedAt;
+            const p5Frames = (p && typeof p.frameCount === 'number') ? (p.frameCount - this.startedFrame) : 0;
+            const producedFrames = Math.max(benchFrameCount, p5Frames);
+            const fps = producedFrames > 0 && elapsed > 0 ? (producedFrames * 1000 / elapsed) : 0;
+            const profilerSummary = window.__profilingSummary || null;
+            const profilerFrameMs = profilerSummary ? Number(profilerSummary.frameMs || 0) : 0;
+            const fallbackDrawMs = profilerFrameMs > 0 ? (profilerFrameMs * producedFrames) : 0;
+            const effectiveDrawMs = wrappedDrawMs > 0 ? wrappedDrawMs : fallbackDrawMs;
+            const effectiveDrawFrames = wrappedDrawFrames > 0 ? wrappedDrawFrames : producedFrames;
+            return {
+              scenarioId: this.scenarioId,
+              elapsedMs: elapsed,
+              producedFrames,
+              fps,
+              wrappedDrawMs: effectiveDrawMs,
+              wrappedDrawFrames: effectiveDrawFrames,
+              stats,
+              counts,
+              infectionTiles: infection.count,
+              enemies: enemyManager.enemies.length,
+              particles: particleSystem.particles.length,
+              viewNear: constantsMod.VIEW_NEAR,
+              viewFar: constantsMod.VIEW_FAR,
+              cullDist: constantsMod.CULL_DIST,
+              budgetMs: (window._perf && window._perf.budgetMs) || 0,
+              profiler: profilerSummary
+            };
+          }
+        };
+
+        window.__runtimeBenchSetup.state = 'ready';
+        window.__runtimeBenchSetup.result = {
+          gameMode: gameState.mode,
+          scenarioId: id,
+          level: gameState.level,
+          players: gameState.players.length,
           infectionTiles: infection.count,
           enemies: enemyManager.enemies.length,
-          particles: particleSystem.particles.length,
-          viewNear: VIEW_NEAR,
-          viewFar: VIEW_FAR,
-          cullDist: CULL_DIST,
-          budgetMs: (window._perf && window._perf.budgetMs) || 0,
-          profiler: profilerSummary
         };
+      } catch (err) {
+        window.__runtimeBenchSetup.state = 'error';
+        window.__runtimeBenchSetup.error = err && err.message ? err.message : String(err);
       }
-    };
-
-    return {
-      gameMode: gameState.mode,
-      scenarioId: id,
-      level: gameState.level,
-      players: gameState.players.length,
-      infectionTiles: infection.count,
-      enemies: enemyManager.enemies.length,
-    };
+    })();
   }, scenarioId, FREEZE_ADAPTIVE_SCALING);
 
-  return res;
+  await page.waitForFunction(
+    'window.__runtimeBenchSetup && (window.__runtimeBenchSetup.state === "ready" || window.__runtimeBenchSetup.state === "error")',
+    { timeout: LOAD_TIMEOUT }
+  );
+
+  const setupState = await page.evaluate(() => window.__runtimeBenchSetup);
+  if (!setupState || setupState.state !== 'ready') {
+    throw new Error((setupState && setupState.error) || 'benchmark setup failed');
+  }
+
+  // Let the browser advance a couple of frames before timed sampling begins.
+  await page.evaluate(() => new Promise(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+
+  return setupState.result;
 }
 
 function formatTop(summary) {
@@ -391,7 +454,7 @@ async function runScenario(url, launchOpts, scenario) {
     await new Promise(r => setTimeout(r, SAMPLE_MS));
 
     const summary = await page.evaluate(() => {
-      return window.__runtimeBench ? window.__runtimeBench.getSummary() : null;
+      return window.__runtimeBench ? window.__runtimeBench.getSummary(true) : null;
     });
 
     if (!summary) throw new Error('Missing runtime summary from page context');
@@ -409,6 +472,21 @@ async function runScenario(url, launchOpts, scenario) {
     await browser.close();
     throw err;
   }
+}
+
+async function runScenarioWithRetries(url, launchOpts, scenario) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= SCENARIO_RETRIES; attempt++) {
+    try {
+      return await runScenario(url, launchOpts, scenario);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < SCENARIO_RETRIES) {
+        console.warn(`  retrying ${scenario.id} (attempt ${attempt + 2}/${SCENARIO_RETRIES + 1}) after: ${err.message}`);
+      }
+    }
+  }
+  throw lastErr;
 }
 
 function printScenarioResult(r) {
@@ -446,16 +524,30 @@ async function main() {
   const port = server.address().port;
   const url = `http://localhost:${port}/index.html`;
 
-  const launchOpts = { headless: 'new', args: ['--no-sandbox'] };
+  const launchOpts = {
+    headless: 'new',
+    args: ['--no-sandbox'],
+    protocolTimeout: Math.max(120000, LOAD_TIMEOUT * 3)
+  };
   const chromePath = findChrome();
   if (chromePath) launchOpts.executablePath = chromePath;
 
+  const activeScenarios = SCENARIO_FILTER
+    ? SCENARIOS.filter(s => SCENARIO_FILTER.has(s.id))
+    : SCENARIOS;
   const results = [];
+  const failures = [];
   try {
-    for (const scenario of SCENARIOS) {
-      const result = await runScenario(url, launchOpts, scenario);
-      results.push(result);
-      printScenarioResult(result);
+    for (const scenario of activeScenarios) {
+      try {
+        const result = await runScenarioWithRetries(url, launchOpts, scenario);
+        results.push(result);
+        printScenarioResult(result);
+      } catch (err) {
+        failures.push({ scenario: scenario.id, error: err.message });
+        console.error(`\n━━ ${scenario.title} (FAILED) ━━`);
+        console.error(`  reason: ${err.message}`);
+      }
     }
 
     const baseline = results.find(r => r.scenario.id === 'baseline');
@@ -467,8 +559,16 @@ async function main() {
       }
     }
 
+    if (failures.length > 0) {
+      console.log('\n━━ Scenario Failures ━━');
+      for (const f of failures) {
+        console.log(`  ${f.scenario}: ${f.error}`);
+      }
+    }
+
     console.log('\nRuntime breakdown benchmark complete.');
     server.close();
+    if (STRICT_SCENARIOS && failures.length > 0) process.exit(1);
     process.exit(0);
   } catch (err) {
     console.error('Runtime breakdown benchmark failed:', err.message);

@@ -86,9 +86,12 @@ export class Terrain {
     this._bakedShadowSun = { x: 0, y: 1, z: 0 };
     this._buildingBucketsCount = 0;
     this._isBuildingShadow = false;
-    this._bakeFrame = -1;
-    this._chunksBakedThisFrame = new Set();
-    this._bakeBudgetUsedMs = 0;
+    this._treeBakeFrame = -1;
+    this._treeChunksBakedThisFrame = new Set();
+    this._treeBakeBudgetUsedMs = 0;
+    this._buildingBakeFrame = -1;
+    this._buildingChunksBakedThisFrame = new Set();
+    this._buildingBakeBudgetUsedMs = 0;
 
     infection.onInvalidate = (tx, tz) => {
       this._invalidateOverlay(0, tx, tz);
@@ -201,9 +204,12 @@ export class Terrain {
     this._treeShadowChunkCache.clear();
     this._buildingBakeState.clear();
     this._buildingShadowChunkCache.clear();
-    this._bakeFrame = -1;
-    this._chunksBakedThisFrame.clear();
-    this._bakeBudgetUsedMs = 0;
+    this._treeBakeFrame = -1;
+    this._treeChunksBakedThisFrame.clear();
+    this._treeBakeBudgetUsedMs = 0;
+    this._buildingBakeFrame = -1;
+    this._buildingChunksBakedThisFrame.clear();
+    this._buildingBakeBudgetUsedMs = 0;
     this._buildingBucketsCount = 0;
     if (this._buildingBuckets) this._buildingBuckets.clear();
     if (this._geoms) this._geoms.clear();

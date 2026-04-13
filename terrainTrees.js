@@ -116,10 +116,10 @@ export const TerrainTrees = {
 
   drawTrees(ctx, s) {
     const currentFrame = (typeof p.frameCount === 'number') ? p.frameCount : 0;
-    if (ctx._bakeFrame !== currentFrame) {
-      ctx._bakeFrame = currentFrame;
-      ctx._chunksBakedThisFrame.clear();
-      ctx._bakeBudgetUsedMs = 0;
+    if (ctx._treeBakeFrame !== currentFrame) {
+      ctx._treeBakeFrame = currentFrame;
+      ctx._treeChunksBakedThisFrame.clear();
+      ctx._treeBakeBudgetUsedMs = 0;
     }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
@@ -172,7 +172,7 @@ export const TerrainTrees = {
         p.model(shadowMesh);
       } else if (!ctx._treeShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         if (gameState.mode === 'menu') continue;
-        if (ctx._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
+        if (ctx._treeChunksBakedThisFrame.has(`${c.cx},${c.cz}`) || ctx._treeBakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
         
         const trees = this.getProceduralTreesForChunk(ctx, c.cx, c.cz);
         for (const t of trees) {
@@ -256,7 +256,7 @@ export const TerrainTrees = {
       return state;
     }
 
-    if (ctx._chunksBakedThisFrame.has(key) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
+    if (ctx._treeChunksBakedThisFrame.has(key) || ctx._treeBakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
       if (existing === undefined) ctx._treeBakeState.set(key, state);
       return state;
     }
@@ -279,8 +279,8 @@ export const TerrainTrees = {
     } finally {
       ctx._isBuildingShadow = false;
     }
-    ctx._bakeBudgetUsedMs += performance.now() - t0;
-    ctx._chunksBakedThisFrame.add(key);
+    ctx._treeBakeBudgetUsedMs += performance.now() - t0;
+    ctx._treeChunksBakedThisFrame.add(key);
 
     if (geom) state.batches.push(geom);
     state.nextIdx = end;
@@ -295,7 +295,7 @@ export const TerrainTrees = {
       return cached.geom;
     }
 
-    if (ctx._chunksBakedThisFrame.has(key) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
+    if (ctx._treeChunksBakedThisFrame.has(key) || ctx._treeBakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
       if (cached && cached.geom) return cached.geom;
       return null;
     }
@@ -331,8 +331,8 @@ export const TerrainTrees = {
     } finally {
       ctx._isBuildingShadow = false;
     }
-    ctx._bakeBudgetUsedMs += performance.now() - t0;
-    ctx._chunksBakedThisFrame.add(key);
+    ctx._treeBakeBudgetUsedMs += performance.now() - t0;
+    ctx._treeChunksBakedThisFrame.add(key);
 
     ctx._treeShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
     return geom;

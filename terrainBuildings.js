@@ -72,10 +72,10 @@ export const TerrainBuildings = {
 
   drawBuildings(ctx, s) {
     const currentFrame = (typeof p.frameCount === 'number') ? p.frameCount : 0;
-    if (ctx._bakeFrame !== currentFrame) {
-      ctx._bakeFrame = currentFrame;
-      ctx._chunksBakedThisFrame.clear();
-      ctx._bakeBudgetUsedMs = 0;
+    if (ctx._buildingBakeFrame !== currentFrame) {
+      ctx._buildingBakeFrame = currentFrame;
+      ctx._buildingChunksBakedThisFrame.clear();
+      ctx._buildingBakeBudgetUsedMs = 0;
     }
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
@@ -163,7 +163,7 @@ export const TerrainBuildings = {
         p.model(geom);
       } else if (!ctx._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         if (gameState.mode === 'menu') continue;
-        if (ctx._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
+        if (ctx._buildingChunksBakedThisFrame.has(`${c.cx},${c.cz}`) || ctx._buildingBakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
         const chunkBldgs = this._getBuildingsForChunk(ctx, c.cx, c.cz);
         for (const b of chunkBldgs) {
           if (b.type === 3 || aboveSea(b.y) || isLaunchpad(b.x, b.z)) continue;
@@ -229,7 +229,7 @@ export const TerrainBuildings = {
       return state;
     }
 
-    if (ctx._chunksBakedThisFrame.has(key) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
+    if (ctx._buildingChunksBakedThisFrame.has(key) || ctx._buildingBakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
       if (existing === undefined) ctx._buildingBakeState.set(key, state);
       return state;
     }
@@ -248,8 +248,8 @@ export const TerrainBuildings = {
         }
       });
     } catch (err) { console.error('[Viron] Building batch bake failed:', err); } finally { ctx._isBuildingShadow = false; }
-    ctx._bakeBudgetUsedMs += performance.now() - t0;
-    ctx._chunksBakedThisFrame.add(key);
+    ctx._buildingBakeBudgetUsedMs += performance.now() - t0;
+    ctx._buildingChunksBakedThisFrame.add(key);
 
     if (geom) state.batches.push(geom);
     state.nextIdx = end;
@@ -264,7 +264,7 @@ export const TerrainBuildings = {
       return cached.geom;
     }
 
-    if (ctx._chunksBakedThisFrame.has(key) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
+    if (ctx._buildingChunksBakedThisFrame.has(key) || ctx._buildingBakeBudgetUsedMs >= BAKE_BUDGET_MS || ctx._isBuildingShadow) {
       if (cached && cached.geom) return cached.geom;
       return null;
     }
@@ -297,8 +297,8 @@ export const TerrainBuildings = {
         }
       });
     } catch (err) { console.error(err); } finally { ctx._isBuildingShadow = false; }
-    ctx._bakeBudgetUsedMs += performance.now() - t0;
-    ctx._chunksBakedThisFrame.add(key);
+    ctx._buildingBakeBudgetUsedMs += performance.now() - t0;
+    ctx._buildingChunksBakedThisFrame.add(key);
     
     ctx._buildingShadowChunkCache.set(key, { geom, sunX: sun.x, sunY: sun.y, sunZ: sun.z });
     return geom;

@@ -643,6 +643,11 @@ export function createVironProfiler(cfg) {
     frame: 0,
     spread: 0,
     shader: 0,
+    input: 0,
+    perfScale: 0,
+    cacheGc: 0,
+    sentinel: 0,
+    ambiance: 0,
     overlayInfection: 0,
     overlayBarrier: 0,
     overlayInfectionTiles: 0,
@@ -670,6 +675,11 @@ export function createVironProfiler(cfg) {
       spreadMsPerFrame: +(totals.spread / frames).toFixed(3),
       spreadMsPerUpdate: totals.spreadSteps ? +(totals.spread / totals.spreadSteps).toFixed(3) : 0,
       shaderMs: +(totals.shader / frames).toFixed(3),
+      inputMs: +(totals.input / frames).toFixed(3),
+      perfScaleMs: +(totals.perfScale / frames).toFixed(3),
+      cacheGcMs: +(totals.cacheGc / frames).toFixed(3),
+      sentinelMs: +(totals.sentinel / frames).toFixed(3),
+      ambianceMs: +(totals.ambiance / frames).toFixed(3),
       vironOverlayMs: +(totals.overlayInfection / frames).toFixed(3),
       vironTiles: Math.round(totals.overlayInfectionTiles / frames),
       barrierOverlayMs: +(totals.overlayBarrier / frames).toFixed(3),
@@ -684,7 +694,19 @@ export function createVironProfiler(cfg) {
       buildingMs: +(totals.buildingMs / frames).toFixed(3),
       enemyMs: +(totals.enemyMs / frames).toFixed(3),
       particleMs: +(totals.particleMs / frames).toFixed(3),
+      viewNear: VIEW_NEAR,
+      viewFar: VIEW_FAR,
+      cullDist: CULL_DIST,
+      perfBudgetMs: (typeof window !== 'undefined' && window._perf && window._perf.budgetMs)
+        ? +Number(window._perf.budgetMs).toFixed(2)
+        : 0,
     };
+    const trackedPerFrame = (
+      (totals.spread + totals.shader + totals.input + totals.perfScale + totals.cacheGc + totals.sentinel + totals.ambiance +
+      totals.overlayInfection + totals.overlayBarrier +
+      totals.villagerMs + totals.wizardMs + totals.terrainMs + totals.treeMs + totals.buildingMs + totals.enemyMs + totals.particleMs) / frames
+    );
+    summary.untrackedMs = +(Math.max(0, (totals.frame / frames) - trackedPerFrame)).toFixed(3);
     const prefix = label ? `VIRON_PROFILE[${label}]` : 'VIRON_PROFILE';
     console.log(`${prefix}:${JSON.stringify(summary)}`);
     if (typeof window !== 'undefined') {
@@ -693,6 +715,7 @@ export function createVironProfiler(cfg) {
     }
 
     totals.frame = totals.spread = totals.shader = 0;
+    totals.input = totals.perfScale = totals.cacheGc = totals.sentinel = totals.ambiance = 0;
     totals.overlayInfection = totals.overlayBarrier = totals.spreadSteps = 0;
     totals.overlayInfectionTiles = totals.overlayBarrierTiles = 0;
     totals.villagerMs = totals.villagerCount = totals.wizardMs = totals.wizardCount = 0;
@@ -708,6 +731,11 @@ export function createVironProfiler(cfg) {
       if (!active) return;
       if (name === 'spread') totals.spread += delta;
       else if (name === 'shader') totals.shader += delta;
+      else if (name === 'input') totals.input += delta;
+      else if (name === 'perfScale') totals.perfScale += delta;
+      else if (name === 'cacheGc') totals.cacheGc += delta;
+      else if (name === 'sentinel') totals.sentinel += delta;
+      else if (name === 'ambiance') totals.ambiance += delta;
       else if (name === 'terrain') totals.terrainMs += delta;
       else if (name === 'trees') totals.treeMs += delta;
       else if (name === 'buildings') totals.buildingMs += delta;

@@ -13,7 +13,17 @@
  * @exports   mobileController  — singleton
  * @exports   handleTouchStarted() — called by sketch.js touchStarted()
  */
-class MobileController {
+import { p } from './p5Context.js';
+import { gameState } from './gameState.js';
+import { inputManager } from './InputManager.js';
+import { aimAssist } from './aimAssist.js';
+import { setup2DViewport } from './gameRenderer.js';
+import { SHIP_DESIGNS } from './shipDesigns.js';
+import { startGame } from './sketch.js';
+
+void inputManager;
+
+export class MobileController {
     constructor() {
         this.aimTouchId = null;
         this.missileTouchId = null;
@@ -186,8 +196,8 @@ class MobileController {
         const maxStretch = 100 * this._scale;
 
         // Map virtual joystick displacement to normalized steering.
-        const turnX = constrain(offsetX / maxStretch, -1.0, 1.0);
-        const turnY = constrain(offsetY / maxStretch, -1.0, 1.0);
+        const turnX = p.constrain(offsetX / maxStretch, -1.0, 1.0);
+        const turnY = p.constrain(offsetY / maxStretch, -1.0, 1.0);
 
         // Inverted: drag right turns right; drag up pitches up.
         // Original sensitivity (1.5) preserved for cockpit view as requested.
@@ -221,13 +231,13 @@ class MobileController {
      */
     _drawJoystickBase(cx, cy) {
         const maxStretch = 100 * this._scale;
-        noStroke();
-        fill(255, 255, 255, 100);
-        circle(cx, cy, 20 * this._scale);
-        strokeWeight(3 * this._scale);
-        stroke(255, 255, 255, 40);
-        noFill();
-        circle(cx, cy, maxStretch * 2);
+        p.noStroke();
+        p.fill(255, 255, 255, 100);
+        p.circle(cx, cy, 20 * this._scale);
+        p.strokeWeight(3 * this._scale);
+        p.stroke(255, 255, 255, 40);
+        p.noFill();
+        p.circle(cx, cy, maxStretch * 2);
     }
 
     // -------------------------------------------------------------------------
@@ -361,16 +371,16 @@ class MobileController {
         }
 
         if (gameState.mode === 'instructions') {
-            if ((this.shootActive || this.barrierActive) && frameCount > this.previewFired + 8) {
-                this.previewFired = frameCount;
+            if ((this.shootActive || this.barrierActive) && p.frameCount > this.previewFired + 8) {
+                this.previewFired = p.frameCount;
                 this._spawnPreviewBullet(this.barrierActive);
             }
         }
     }
 
     _spawnPreviewBullet(isBarrier) {
-        let cp = cos(this.previewPitch), sp = sin(this.previewPitch);
-        let cy = cos(this.previewYaw), sy = sin(this.previewYaw);
+        let cp = Math.cos(this.previewPitch), sp = Math.sin(this.previewPitch);
+        let cy = Math.cos(this.previewYaw), sy = Math.sin(this.previewYaw);
         let speed = 5;
         this.previewBullets.push({
             x: 0, y: 0, z: 0,
@@ -397,11 +407,11 @@ class MobileController {
         if (typeof setup2DViewport === 'function') {
             setup2DViewport();
         } else {
-            push();
+            p.push();
         }
-        let gl = drawingContext;
+        let gl = p.drawingContext;
         gl.disable(gl.DEPTH_TEST);
-        translate(-w / 2, -h / 2, 0);
+        p.translate(-w / 2, -h / 2, 0);
 
         const isInstructions = gameState.mode === 'instructions';
         const isCockpitSelection = gameState.mode === 'cockpitSelection';
@@ -415,68 +425,68 @@ class MobileController {
         let aimX = this.isSwapped ? 0 : w / 2;
 
         // --- Visual hints for Action Zones ---
-        noStroke();
+        p.noStroke();
 
         if (isInstructions) {
             // Thrust Zone
             if (showThrust) {
                 let active = this.thrustActive;
                 let alpha = (active ? 60 : 40);
-                fill(0, 255, 60, alpha);
-                rect(leftX, h / 2, w / 2, h / 2);
+                p.fill(0, 255, 60, alpha);
+                p.rect(leftX, h / 2, w / 2, h / 2);
             }
 
             // Shoot Zone
             if (showShoot) {
                 let active = this.shootActive;
                 let alpha = (active ? 60 : 40);
-                fill(255, 60, 60, alpha);
+                p.fill(255, 60, 60, alpha);
                 let sx = (!this.isSwapped) ? leftX : leftX + w / 4;
-                rect(sx, 0, w / 4, h / 2);
+                p.rect(sx, 0, w / 4, h / 2);
             }
 
             // Barrier Zone
             if (showBarrier) {
                 let active = this.barrierActive;
                 let alpha = (active ? 60 : 40);
-                fill(100, 200, 255, alpha);
+                p.fill(100, 200, 255, alpha);
                 let bx = (!this.isSwapped) ? leftX + w / 4 : leftX;
-                rect(bx, 0, w / 4, h / 2);
+                p.rect(bx, 0, w / 4, h / 2);
             }
 
             // Aim Zone background hint
             if (showAim) {
-                fill(255, 255, 255, 20);
-                rect(aimX, 0, w / 2, h);
+                p.fill(255, 255, 255, 20);
+                p.rect(aimX, 0, w / 2, h);
             }
 
             // Dividers
-            stroke(255, 255, 255, 60);
-            strokeWeight(2 * this._scale);
+            p.stroke(255, 255, 255, 60);
+            p.strokeWeight(2 * this._scale);
             // Vertical center (Left vs Right)
-            line(w / 2, 0, w / 2, h);
-            // Horizontal action line (Top vs Bottom)
-            line(leftX, h / 2, leftX + w / 2, h / 2);
+            p.line(w / 2, 0, w / 2, h);
+            // Horizontal action p.line (Top vs Bottom)
+            p.line(leftX, h / 2, leftX + w / 2, h / 2);
             // Vertical action split (Shoot vs Barrier)
-            line(leftX + w / 4, 0, leftX + w / 4, h / 2);
+            p.line(leftX + w / 4, 0, leftX + w / 4, h / 2);
 
             // Labels
-            noStroke();
-            textAlign(CENTER, CENTER);
-            textSize(16 * Math.max(1, this._scale));
-            fill(255, 255, 255, 200);
+            p.noStroke();
+            p.textAlign(p.CENTER, p.CENTER);
+            p.textSize(16 * Math.max(1, this._scale));
+            p.fill(255, 255, 255, 200);
             let shootLabelX = (!this.isSwapped) ? leftX + w / 8 : leftX + 3 * w / 8;
             let barrierLabelX = (!this.isSwapped) ? leftX + 3 * w / 8 : leftX + w / 8;
 
-            text("SHOOT", shootLabelX, h * 0.28);
-            text("BARRIER", barrierLabelX, h * 0.28);
-            text("THRUST", leftX + w / 4, h * 0.68);
-            text("AIM (JOYSTICK)", aimX + w / 4, h / 2 + 130 * this._scale);
+            p.text("SHOOT", shootLabelX, h * 0.28);
+            p.text("BARRIER", barrierLabelX, h * 0.28);
+            p.text("THRUST", leftX + w / 4, h * 0.68);
+            p.text("AIM (JOYSTICK)", aimX + w / 4, h / 2 + 130 * this._scale);
         }
 
         // --- Settings Buttons ---
         if (isInstructions || (isCockpitSelection && gameState.isMobile)) {
-            rectMode(CENTER);
+            p.rectMode(p.CENTER);
             for (let k in this.settingsBtns) {
                 // Filter buttons based on screen
                 if (isInstructions && k === 'cockpit') continue;
@@ -488,24 +498,24 @@ class MobileController {
                 let baseCol = k === 'switchSides' ? [0, 220, 255] : [0, 255, 136];
 
                 // 3D Shadow/Depth effect
-                fill(0, 0, 0, 150);
-                rect(btn.x + 4 * this._scale, btn.y + 4 * this._scale, btn.w, btn.h, 8);
+                p.fill(0, 0, 0, 150);
+                p.rect(btn.x + 4 * this._scale, btn.y + 4 * this._scale, btn.w, btn.h, 8);
 
                 // Main button body
-                fill(baseCol[0] * 0.4, baseCol[1] * 0.4, baseCol[2] * 0.4, 250);
-                stroke(baseCol[0], baseCol[1], baseCol[2], 255);
-                strokeWeight(2 * this._scale);
-                rect(btn.x, btn.y, btn.w, btn.h, 8);
+                p.fill(baseCol[0] * 0.4, baseCol[1] * 0.4, baseCol[2] * 0.4, 250);
+                p.stroke(baseCol[0], baseCol[1], baseCol[2], 255);
+                p.strokeWeight(2 * this._scale);
+                p.rect(btn.x, btn.y, btn.w, btn.h, 8);
 
                 // Text Label
-                noStroke();
-                fill(255);
-                textSize(12 * this._scale);
+                p.noStroke();
+                p.fill(255);
+                p.textSize(12 * this._scale);
                 let label = btn.label;
                 if (k === 'cockpit') {
                     label = "VIEW: " + (gameState.firstPersonView ? "COCKPIT" : "BEHIND CRAFT");
                 }
-                text(label, btn.x, btn.y);
+                p.text(label, btn.x, btn.y);
             }
         }
 
@@ -518,58 +528,58 @@ class MobileController {
 
             // If user is actively touching the joystick area in instructions, show live joystick
             if (this.aimTouchId !== null && this._isAimZoneTouch({x: this.lastAimX, y: this.lastAimY}, w)) {
-                // Tracking line
-                stroke(255, 255, 255, 80);
-                strokeWeight(2 * this._scale);
-                line(aimZoneX, aimZoneY, aimZoneX + (this.lastAimX - this.aimAnchorX), aimZoneY + (this.lastAimY - this.aimAnchorY));
+                // Tracking p.line
+                p.stroke(255, 255, 255, 80);
+                p.strokeWeight(2 * this._scale);
+                p.line(aimZoneX, aimZoneY, aimZoneX + (this.lastAimX - this.aimAnchorX), aimZoneY + (this.lastAimY - this.aimAnchorY));
                 
-                fill(255, 255, 255, 200);
-                noStroke();
-                circle(aimZoneX + (this.lastAimX - this.aimAnchorX), aimZoneY + (this.lastAimY - this.aimAnchorY), 60 * this._scale);
+                p.fill(255, 255, 255, 200);
+                p.noStroke();
+                p.circle(aimZoneX + (this.lastAimX - this.aimAnchorX), aimZoneY + (this.lastAimY - this.aimAnchorY), 60 * this._scale);
             } else {
                 // Represent typical thumb position preview
-                let previewOffX = 40 * this._scale * sin(frameCount * 0.03);
-                let previewOffY = -30 * this._scale * cos(frameCount * 0.04);
-                stroke(255, 255, 255, 50);
-                strokeWeight(2 * this._scale);
-                line(aimZoneX, aimZoneY, aimZoneX + previewOffX, aimZoneY + previewOffY);
-                fill(255, 255, 255, 150);
-                noStroke();
-                circle(aimZoneX + previewOffX, aimZoneY + previewOffY, 60 * this._scale);
+                let previewOffX = 40 * this._scale * Math.sin(p.frameCount * 0.03);
+                let previewOffY = -30 * this._scale * Math.cos(p.frameCount * 0.04);
+                p.stroke(255, 255, 255, 50);
+                p.strokeWeight(2 * this._scale);
+                p.line(aimZoneX, aimZoneY, aimZoneX + previewOffX, aimZoneY + previewOffY);
+                p.fill(255, 255, 255, 150);
+                p.noStroke();
+                p.circle(aimZoneX + previewOffX, aimZoneY + previewOffY, 60 * this._scale);
             }
         }
 
         // --- Render Live Preview (Only on Cockpit Selection) ---
         if (isCockpitSelection) {
-            push();
-            resetMatrix();
+            p.push();
+            p.resetMatrix();
             if (gameState.firstPersonView) {
                 // DRAW CROSSHAIRS (Center of screen 2D)
                 gl.disable(gl.DEPTH_TEST);
-                stroke(0, 255, 136, 180);
-                strokeWeight(2);
-                line(0, -20 * this._scale, 0, 20 * this._scale);
-                line(-20 * this._scale, 0, 20 * this._scale, 0);
-                noFill();
-                circle(0, 0, 40 * this._scale);
+                p.stroke(0, 255, 136, 180);
+                p.strokeWeight(2);
+                p.line(0, -20 * this._scale, 0, 20 * this._scale);
+                p.line(-20 * this._scale, 0, 20 * this._scale, 0);
+                p.noFill();
+                p.circle(0, 0, 40 * this._scale);
             } else {
                 // DRAW SHIP
                 gl.enable(gl.DEPTH_TEST);
                 gl.clear(gl.DEPTH_BUFFER_BIT);
                 
                 // Re-setup 3D for the preview
-                perspective(PI/3, w/h, 1, 1000);
-                camera(0, -10, 80, 0, 0, 0, 0, 1, 0);
+                p.perspective(p.PI/3, w/h, 1, 1000);
+                p.camera(0, -10, 80, 0, 0, 0, 0, 1, 0);
                 
                 // Lighting
-                ambientLight(100);
-                directionalLight(255, 255, 255, 0.5, 1, -0.5);
+                p.ambientLight(100);
+                p.directionalLight(255, 255, 255, 0.5, 1, -0.5);
                 
-                translate(0, 0, 0); 
+                p.translate(0, 0, 0); 
                 
-                push();
-                rotateY(this.previewYaw + frameCount * 0.005);
-                rotateX(this.previewPitch + sin(frameCount * 0.02) * 0.1);
+                p.push();
+                p.rotateY(this.previewYaw + p.frameCount * 0.005);
+                p.rotateX(this.previewPitch + Math.sin(p.frameCount * 0.02) * 0.1);
                 
                 let design = SHIP_DESIGNS[gameState.players[0].designIndex]; 
                 let tintColor = [80, 180, 255];
@@ -578,10 +588,10 @@ class MobileController {
                 let engineGray = [80, 80, 85];
                 
                 const drawFace = (pts, col) => {
-                    fill(col[0], col[1], col[2], col[3] || 255);
-                    beginShape();
-                    for(let p of pts) vertex(p[0], p[1], p[2]);
-                    endShape(CLOSE);
+                    p.fill(col[0], col[1], col[2], col[3] || 255);
+                    p.beginShape();
+                    for (let pt of pts) p.vertex(pt[0], pt[1], pt[2]);
+                    p.endShape(p.CLOSE);
                 };
                 
                 const sFake = { pitch: 0, yaw: 0 };
@@ -591,50 +601,50 @@ class MobileController {
                 // Draw thrust flames (Only on Instructions)
                 if (isInstructions && this.thrustActive && Array.isArray(flamePoints)) {
                     flamePoints.forEach(fp => {
-                        push();
-                        translate(fp.x, fp.y, fp.z);
-                        let flicker = 1.0 + sin(frameCount * 0.8) * 0.15;
-                        fill(100, 230, 255, 200);
-                        cone(4 * flicker, 15 * flicker, 8);
-                        pop();
+                        p.push();
+                        p.translate(fp.x, fp.y, fp.z);
+                        let flicker = 1.0 + Math.sin(p.frameCount * 0.8) * 0.15;
+                        p.fill(100, 230, 255, 200);
+                        p.cone(4 * flicker, 15 * flicker, 8);
+                        p.pop();
                     });
                 }
                 
                 if (isInstructions) {
                     for (let b of this.previewBullets) {
-                        push();
-                        translate(b.x, b.y, b.z);
+                        p.push();
+                        p.translate(b.x, b.y, b.z);
                         if (b.isBarrier) {
-                            fill(100, 200, 255);
-                            box(4);
+                            p.fill(100, 200, 255);
+                            p.box(4);
                         } else {
-                            fill(255, 255, 100);
-                            sphere(2);
+                            p.fill(255, 255, 100);
+                            p.sphere(2);
                         }
-                        pop();
+                        p.pop();
                     }
                 }
-                pop(); // End ship rotation
+                p.pop(); // End ship rotation
             }
-            pop(); // End preview pass
+            p.pop(); // End preview pass
 
             gl.disable(gl.DEPTH_TEST);
-            rectMode(CORNER);
+            p.rectMode(p.CORNER);
         }
 
         // Floating Trackpad Indicator if aiming (only during actual gameplay)
         if (!isInstructions && !isCockpitSelection && this.aimTouchId !== null) {
             this._drawJoystickBase(this.aimAnchorX, this.aimAnchorY);
 
-            // Connecting line
-            stroke(255, 255, 255, 50);
-            strokeWeight(2 * this._scale);
-            line(this.aimAnchorX, this.aimAnchorY, this.lastAimX, this.lastAimY);
+            // Connecting p.line
+            p.stroke(255, 255, 255, 50);
+            p.strokeWeight(2 * this._scale);
+            p.line(this.aimAnchorX, this.aimAnchorY, this.lastAimX, this.lastAimY);
 
             // Current finger position
-            fill(255, 255, 255, 150);
-            noStroke();
-            circle(this.lastAimX, this.lastAimY, 60 * this._scale);
+            p.fill(255, 255, 255, 150);
+            p.noStroke();
+            p.circle(this.lastAimX, this.lastAimY, 60 * this._scale);
         }
 
         // Action buttons (Only during gameplay or instructions)
@@ -642,27 +652,27 @@ class MobileController {
             for (let b in this.btns) {
                 let btn = this.btns[b];
 
-                stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
-                strokeWeight(2 * this._scale);
-                fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
-                circle(btn.x, btn.y, btn.r * 2);
+                p.stroke(btn.col[0], btn.col[1], btn.col[2], btn.active ? 200 : 80);
+                p.strokeWeight(2 * this._scale);
+                p.fill(btn.col[0], btn.col[1], btn.col[2], btn.active ? 80 : 20);
+                p.circle(btn.x, btn.y, btn.r * 2);
 
                 // Active glow only during gameplay (not on the instructions preview)
                 if (btn.active && !forceInstructions && !isInstructions) {
-                    fill(btn.col[0], btn.col[1], btn.col[2], 40);
-                    circle(btn.x, btn.y, btn.r * 2.4);
+                    p.fill(btn.col[0], btn.col[1], btn.col[2], 40);
+                    p.circle(btn.x, btn.y, btn.r * 2.4);
                 }
 
-                noStroke();
-                fill(255, btn.active ? 255 : 150);
-                textAlign(CENTER, CENTER);
-                textSize(Math.max(10, btn.r * 0.4));
-                text(btn.label, btn.x, btn.y);
+                p.noStroke();
+                p.fill(255, btn.active ? 255 : 150);
+                p.textAlign(p.CENTER, p.CENTER);
+                p.textSize(Math.max(10, btn.r * 0.4));
+                p.text(btn.label, btn.x, btn.y);
             }
         }
 
         gl.enable(gl.DEPTH_TEST);
-        pop();
+        p.pop();
     }
     /**
      * Checks if a point (mouse/touch) hits any settings buttons on the Instructions screen.
@@ -697,10 +707,10 @@ class MobileController {
     }
 }
 
-const mobileController = new MobileController();
+export const mobileController = new MobileController();
 
 function shouldRequestFullscreen() {
-    if (typeof fullscreen !== 'function' || fullscreen()) return false;
+    if (typeof p.fullscreen !== 'function' || p.fullscreen()) return false;
 
     // Detect if we are on a mobile device (including iPad Pro)
     const ua = navigator.userAgent;
@@ -713,25 +723,25 @@ function shouldRequestFullscreen() {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
 
     // If we are on mobile (phone/tablet) and already in standalone mode, 
-    // we usually DON'T want to request "real" fullscreen as it's redundant 
+    // we usually DON'T want to request "real" p.fullscreen as it's redundant 
     // or can cause browser UI glitches.
     if (isStandalone && isMobile) return false;
 
     // On Desktop (macOS/Windows/Linux), even in standalone mode, we often 
-    // want to trigger "real" fullscreen to hide the OS title bar/toolbar.
-    // Also, don't request fullscreen on iPad/iPhone anyway as it can be flaky.
+    // want to trigger "real" p.fullscreen to hide the OS title bar/toolbar.
+    // Also, don't request p.fullscreen on iPad/iPhone anyway as it can be flaky.
     if (isIOS || isIPadPro) return false;
 
     return true;
 }
 
-function handleTouchStarted(event) {
+export function handleTouchStarted(event) {
     if (event && event.target && event.target.tagName !== 'CANVAS') return true;
 
-    // Request fullscreen immediately on first interaction from Title screen
+    // Request p.fullscreen immediately on first interaction from Title screen
     if (gameState.mode === 'menu' || gameState.mode === 'instructions') {
         if (shouldRequestFullscreen()) {
-            fullscreen(true);
+            p.fullscreen(true);
         }
     }
 

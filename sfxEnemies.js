@@ -5,7 +5,7 @@
 //                           playEnemyExplosion(), etc.
 // =============================================================================
 
-const SfxEnemies = {
+export const SfxEnemies = {
 
     playInfectionSpread(sfxCore, x, y, z) {
         if (!sfxCore.initialized || !sfxCore.ctx) return;

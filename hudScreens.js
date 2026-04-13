@@ -10,27 +10,44 @@
 // @exports   HUD_Screens          — namespace: drawCockpitSelection()
 // =============================================================================
 
+import { p } from './p5Context.js';
+import {
+  UI_TYPE_TITLE, UI_TYPE_HEADER, UI_TYPE_BODY, UI_TYPE_HINT, UI_TYPE_PROMPT,
+  UI_LAYOUT_TITLE_Y, UI_LAYOUT_HEADER_Y, UI_LAYOUT_BODY_Y, UI_LAYOUT_PROMPT_Y,
+  HUD_Manager
+} from './hudCore.js';
+import { SHIP_DESIGNS } from './shipDesigns.js';
+import { gameState } from './gameState.js';
+import { mobileController } from './mobileControls.js';
+import { terrain } from './terrain.js';
+import { drawBackgroundLandscape, setup2DViewport } from './gameRenderer.js';
+import { startGame, startLevel } from './sketch.js';
+
+void terrain;
+void startGame;
+void startLevel;
+
 /**
- * Sets up the perspective camera and scene lights for a 3D ship preview.
- * Both the ship-select and cockpit-selection screens share identical camera
+ * Sets up the p.perspective p.camera and scene lights for a 3D ship preview.
+ * Both the ship-select and cockpit-selection screens share identical p.camera
  * positioning and lighting; this helper eliminates the duplication.
- * @param {number} vw          Viewport width in canvas pixels.
- * @param {number} vh          Viewport height in canvas pixels.
- * @param {number} keyLightB   Blue channel of the key directional light (default 255 = neutral
+ * @param {number} vw          Viewport p.width in canvas pixels.
+ * @param {number} vh          Viewport p.height in canvas pixels.
+ * @param {number} keyLightB   Blue channel of the p.key directional light (default 255 = neutral
  *                             white; use 220 for the slightly warmer cockpit-selection tone).
  * @private
  */
 function _setupShipPreviewCamera(vw, vh, keyLightB = 255) {
-  perspective(PI / 3, vw / vh, 1, 1000);
-  camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
-  directionalLight(255, 255, keyLightB, 0.5, 1, -0.5);
-  directionalLight(120, 180, 255, -0.5, -1, 0.5);
-  ambientLight(45, 45, 55);
+  p.perspective(p.PI / 3, vw / vh, 1, 1000);
+  p.camera(0, -15, 60, 0, 0, 0, 0, 1, 0);
+  p.directionalLight(255, 255, keyLightB, 0.5, 1, -0.5);
+  p.directionalLight(120, 180, 255, -0.5, -1, 0.5);
+  p.ambientLight(45, 45, 55);
 }
 
 /**
  * Sets up the background landscape, 2D viewport, and dim overlay — the shared
- * preamble for every full-screen menu.  The caller MUST call pop() when done.
+ * preamble for every full-screen menu.  The caller MUST call p.pop() when done.
  * @private
  */
 function _beginFullScreenUI() {
@@ -49,11 +66,11 @@ function _beginFullScreenUI() {
  */
 function _drawContinuePrompt(hideOnMobile = true) {
   if (gameState.isMobile && hideOnMobile) return;
-  const blink = sin(frameCount * 0.1) * 0.5 + 0.5;
-  fill(150, 255, 150, 255 * blink);
-  textAlign(CENTER, CENTER);
-  textSize(UI_TYPE_PROMPT);
-  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * UI_LAYOUT_PROMPT_Y);
+  const blink = Math.sin(p.frameCount * 0.1) * 0.5 + 0.5;
+  p.fill(150, 255, 150, 255 * blink);
+  p.textAlign(p.CENTER, p.CENTER);
+  p.textSize(UI_TYPE_PROMPT);
+  p.text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, p.height * UI_LAYOUT_PROMPT_Y);
 }
 
 /**
@@ -63,8 +80,8 @@ function _drawContinuePrompt(hideOnMobile = true) {
  */
 function _drawMobileController() {
   if (!gameState.isMobile || !mobileController) return;
-  mobileController.update(touches, width, height);
-  mobileController.draw(width, height);
+  mobileController.update(p.touches, p.width, p.height);
+  mobileController.draw(p.width, p.height);
 }
 
 /**
@@ -73,37 +90,37 @@ function _drawMobileController() {
  */
 function _drawScreenTitle(label, xOffset = 0) {
   const titleSize = gameState.isMobile ? UI_TYPE_TITLE * 0.6 : UI_TYPE_TITLE * 0.8;
-  textAlign(CENTER, TOP);
-  fill(255, 255, 255, 220);
-  textSize(titleSize);
-  text(label.toUpperCase(), xOffset, height * UI_LAYOUT_TITLE_Y);
+  p.textAlign(p.CENTER, p.TOP);
+  p.fill(255, 255, 255, 220);
+  p.textSize(titleSize);
+  p.text(label.toUpperCase(), xOffset, p.height * UI_LAYOUT_TITLE_Y);
 }
 
 /**
- * Renders the primary ship details text for the selection screen.
+ * Renders the primary ship details p.text for the selection screen.
  * @private
  */
-function _renderShipDetails(p, design, relX, vw, vh) {
+function _renderShipDetails(player, design, relX, vw, vh) {
   if (!design) return;
 
   _drawScreenTitle("SELECT YOUR CRAFT", relX);
 
-  fill(...p.labelColor);
-  textSize(UI_TYPE_TITLE);
-  text(design.name.toUpperCase(), relX, vh / 2 - 320);
+  p.fill(...player.labelColor);
+  p.textSize(UI_TYPE_TITLE);
+  p.text(design.name.toUpperCase(), relX, vh / 2 - 320);
 
-  fill(220);
-  textSize(UI_TYPE_BODY);
-  rectMode(CENTER);
-  text(design.desc || "", relX, vh / 2 - 215, vw * 0.85);
-  rectMode(CORNER);
+  p.fill(220);
+  p.textSize(UI_TYPE_BODY);
+  p.rectMode(p.CENTER);
+  p.text(design.desc || "", relX, vh / 2 - 215, vw * 0.85);
+  p.rectMode(p.CORNER);
 }
 
 /**
  * Renders ship statistics bars for the selection screen.
  * @private
  */
-function _drawShipStats(p, design, relX, vw, vh) {
+function _drawShipStats(player, design, relX, vw, vh) {
   if (!design) return;
 
   const statY = vh / 2 - 195;
@@ -120,94 +137,94 @@ function _drawShipStats(p, design, relX, vw, vh) {
 
   stats.forEach((s, i) => {
     const y = statY + i * 18;
-    textAlign(RIGHT, TOP);
-    fill(180);
-    textSize(UI_TYPE_HINT);
-    text(s.label, statX - 10, y + 2);
+    p.textAlign(p.RIGHT, p.TOP);
+    p.fill(180);
+    p.textSize(UI_TYPE_HINT);
+    p.text(s.label, statX - 10, y + 2);
 
-    fill(40);
-    rect(statX, y + 3, statW, 8, 2);
-    fill(p.labelColor[0], p.labelColor[1], p.labelColor[2], 200);
-    const fillW = map(s.val, 0, s.max, 0, statW, true);
-    rect(statX, y + 3, fillW, 8, 2);
+    p.fill(40);
+    p.rect(statX, y + 3, statW, 8, 2);
+    p.fill(player.labelColor[0], player.labelColor[1], player.labelColor[2], 200);
+    const fillW = p.map(s.val, 0, s.max, 0, statW, true);
+    p.rect(statX, y + 3, fillW, 8, 2);
   });
 }
 
 /**
  * Renders the animated title / start screen.
  */
-function drawMenu() {
+export function drawMenu() {
   _beginFullScreenUI();
 
-  let glowPulse = sin(frameCount * 0.04) * 0.3 + 0.7;
+  let glowPulse = Math.sin(p.frameCount * 0.04) * 0.3 + 0.7;
 
-  noStroke();
-  fill(255, 220, 10, 32 * glowPulse);
-  ellipse(0, -height * 0.14, 580 * glowPulse, 170 * glowPulse);
-  fill(200, 180, 5, 20 * glowPulse);
-  ellipse(0, -height * 0.14, 820 * glowPulse, 240 * glowPulse);
+  p.noStroke();
+  p.fill(255, 220, 10, 32 * glowPulse);
+  p.ellipse(0, -p.height * 0.14, 580 * glowPulse, 170 * glowPulse);
+  p.fill(200, 180, 5, 20 * glowPulse);
+  p.ellipse(0, -p.height * 0.14, 820 * glowPulse, 240 * glowPulse);
 
-  textAlign(CENTER, CENTER);
-  noStroke();
+  p.textAlign(p.CENTER, p.CENTER);
+  p.noStroke();
 
-  fill(40, 80, 0, 100);
-  textSize(110);
-  text('V I R O N', 3, -height * 0.14 + 4);
+  p.fill(40, 80, 0, 100);
+  p.textSize(110);
+  p.text('V I R O N', 3, -p.height * 0.14 + 4);
 
-  let titlePulse = sin(frameCount * 0.06) * 0.5 + 0.5;
-  fill(lerp(220, 255, titlePulse), lerp(180, 255, titlePulse), lerp(0, 50, titlePulse));
-  textSize(110);
-  text('V I R O N', 0, -height * 0.14);
+  let titlePulse = Math.sin(p.frameCount * 0.06) * 0.5 + 0.5;
+  p.fill(p.lerp(220, 255, titlePulse), p.lerp(180, 255, titlePulse), p.lerp(0, 50, titlePulse));
+  p.textSize(110);
+  p.text('V I R O N', 0, -p.height * 0.14);
 
-  textSize(22);
-  fill(140, 200, 140, 210);
-  text('Christian Nold, 2026', 0, -height * 0.14 + 78);
+  p.textSize(22);
+  p.fill(140, 200, 140, 210);
+  p.text('Christian Nold, 2026', 0, -p.height * 0.14 + 78);
 
   if (!gameState.isMobile) {
-    stroke(0, 0, 0, 20); strokeWeight(1);
-    for (let y = -height / 2; y < height / 2; y += 4) {
-      line(-width / 2, y, width / 2, y);
+    p.stroke(0, 0, 0, 20); p.strokeWeight(1);
+    for (let y = -p.height / 2; y < p.height / 2; y += 4) {
+      p.line(-p.width / 2, y, p.width / 2, y);
     }
-    noStroke();
+    p.noStroke();
   }
 
-  let optY = height * 0.08;
-  let blink1 = sin(frameCount * 0.08) * 0.3 + 0.7;
-  let blink2 = sin(frameCount * 0.08 + 1.5) * 0.3 + 0.7;
+  let optY = p.height * 0.08;
+  let blink1 = Math.sin(p.frameCount * 0.08) * 0.3 + 0.7;
+  let blink2 = Math.sin(p.frameCount * 0.08 + 1.5) * 0.3 + 0.7;
 
-  textSize(28);
+  p.textSize(28);
   if (gameState.isMobile) {
-    fill(255, 255, 255, 255 * blink1);
-    text('TAP TO START', 0, optY + 25);
+    p.fill(255, 255, 255, 255 * blink1);
+    p.text('TAP TO START', 0, optY + 25);
   } else {
-    fill(255, 255, 255, 255 * blink1);
-    text('PRESS 1 — SINGLE PLAYER', 0, optY);
-    fill(255, 255, 255, 255 * blink2);
-    text('PRESS 2 — SPLIT SCREEN 2 PLAYER', 0, optY + 50);
+    p.fill(255, 255, 255, 255 * blink1);
+    p.text('PRESS 1 — SINGLE PLAYER', 0, optY);
+    p.fill(255, 255, 255, 255 * blink2);
+    p.text('PRESS 2 — SPLIT SCREEN 2 PLAYER', 0, optY + 50);
   }
-  pop();
+  p.pop();
 }
 
 /**
  * Renders the Mission Briefing screen.
  */
-function drawMission() {
+export function drawMission() {
   _beginFullScreenUI();
 
-  textAlign(CENTER, CENTER);
+  p.textAlign(p.CENTER, p.CENTER);
 
   _drawScreenTitle('MISSION BRIEFING');
 
-  fill(200, 255, 200, 200);
+  p.fill(200, 255, 200, 200);
   const headerSize = gameState.isMobile ? UI_TYPE_HEADER * 0.7 : UI_TYPE_HEADER;
-  textSize(headerSize);
-  text('OBJECTIVE: VIRAL CONTAINMENT', 0, height * UI_LAYOUT_HEADER_Y);
+  p.textSize(headerSize);
+  p.text('OBJECTIVE: VIRAL CONTAINMENT', 0, p.height * UI_LAYOUT_HEADER_Y);
 
   const bodySize = gameState.isMobile ? UI_TYPE_BODY * 0.85 : UI_TYPE_BODY;
-  fill(220, 220, 220);
-  textSize(bodySize);
-  textAlign(CENTER, TOP);
-  rectMode(CENTER);
+  p.fill(220, 220, 220);
+  p.textSize(bodySize);
+  p.textAlign(p.CENTER, p.TOP);
+  p.rectMode(p.CENTER);
   let briefing =
     "A virus is being spread by aliens. " +
     "Left unchecked, it will take over the planet.\n\n" +
@@ -216,21 +233,21 @@ function drawMission() {
     "2. CONTAIN the virus spread\n" +
     "3. PROTECT the temples.";
 
-  text(briefing, 0, height * UI_LAYOUT_BODY_Y, min(width * 0.85, 700));
-  rectMode(CORNER);
+  p.text(briefing, 0, p.height * UI_LAYOUT_BODY_Y, Math.min(p.width * 0.85, 700));
+  p.rectMode(p.CORNER);
 
   _drawContinuePrompt(false); // show on mobile too (no controller CONTINUE button on this screen)
 
-  pop();
+  p.pop();
 }
 
 /**
  * Renders the Instructions screen.
  */
-function drawInstructions() {
+export function drawInstructions() {
   _beginFullScreenUI();
 
-  textAlign(CENTER, CENTER);
+  p.textAlign(p.CENTER, p.CENTER);
 
   if (gameState.isMobile) {
     _drawMobileController();
@@ -239,18 +256,18 @@ function drawInstructions() {
 
 
     const drawConfig = (title, color, items, side) => {
-      const tx = width * 0.25 * side;
-      const ty = height * UI_LAYOUT_HEADER_Y;
+      const tx = p.width * 0.25 * side;
+      const ty = p.height * UI_LAYOUT_HEADER_Y;
       const my = ty + 40;
       const lh = 36;
-      textAlign(CENTER, TOP);
-      textSize(UI_TYPE_HEADER * 0.7);
-      fill(...color, 200);
-      text(title, tx, ty);
-      textSize(UI_TYPE_BODY * 0.9);
-      fill(255, 255, 255, 180);
+      p.textAlign(p.CENTER, p.TOP);
+      p.textSize(UI_TYPE_HEADER * 0.7);
+      p.fill(...color, 200);
+      p.text(title, tx, ty);
+      p.textSize(UI_TYPE_BODY * 0.9);
+      p.fill(255, 255, 255, 180);
       items.forEach((item, i) => {
-        text(item, tx, my + lh * i);
+        p.text(item, tx, my + lh * i);
       });
     };
 
@@ -264,7 +281,7 @@ function drawInstructions() {
   }
 
   _drawContinuePrompt();
-  pop();
+  p.pop();
 }
 
 /**
@@ -274,92 +291,92 @@ function drawCockpitSelection() {
   _beginFullScreenUI();
 
   // Draw 3D ship preview in the center
-  push();
-  const vw = width / gameState.numPlayers;
-  const pxD = pixelDensity();
+  p.push();
+  const vw = p.width / gameState.numPlayers;
+  const pxD = p.pixelDensity();
 
   for (let pi = 0; pi < gameState.players.length; pi++) {
-    const p = gameState.players[pi];
+    const player = gameState.players[pi];
     const vx = pi * vw;
 
     // Set up viewport for this player's ship preview
-    drawingContext.viewport(vx * pxD, 0, vw * pxD, height * pxD);
-    drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);
+    p.drawingContext.viewport(vx * pxD, 0, vw * pxD, p.height * pxD);
+    p.drawingContext.clear(p.drawingContext.DEPTH_BUFFER_BIT);
 
     // On mobile, the mobileController handles the 3D ship preview to support touch rotation.
     // We only render it here for non-mobile devices.
     if (!gameState.isMobile) {
-      push();
-      _setupShipPreviewCamera(vw, height, 220);
+      p.push();
+      _setupShipPreviewCamera(vw, p.height, 220);
 
-      push();
-      rotateY(frameCount * 0.012);
-      rotateX(sin(frameCount * 0.008) * 0.1);
-      noStroke();
+      p.push();
+      p.rotateY(p.frameCount * 0.012);
+      p.rotateX(Math.sin(p.frameCount * 0.008) * 0.1);
+      p.noStroke();
       if (!gameState.firstPersonView) {
-        drawShipPreview(p.designIndex, p.labelColor);
+        drawShipPreview(player.designIndex, player.labelColor);
       }
-      pop();
-      pop();
+      p.pop();
+      p.pop();
     }
   }
-  pop();
+  p.pop();
 
   setup2DViewport();
 
-  textAlign(CENTER, CENTER);
+  p.textAlign(p.CENTER, p.CENTER);
 
   if (gameState.isMobile) {
     _drawMobileController();
   } else {
     _drawScreenTitle('SELECT VIEW MODE');
 
-    fill(200, 255, 200, 200);
-    textSize(UI_TYPE_HEADER);
+    p.fill(200, 255, 200, 200);
+    p.textSize(UI_TYPE_HEADER);
     const viewMode = gameState.firstPersonView ? "COCKPIT" : "BEHIND CRAFT";
-    text('CURRENT VIEW: ' + viewMode, 0, 0);
+    p.text('CURRENT VIEW: ' + viewMode, 0, 0);
 
-    textSize(UI_TYPE_BODY);
-    fill(255, 255, 255, 180);
-    text("PRESS 'O' KEY TO TOGGLE VIEW", 0, 40);
+    p.textSize(UI_TYPE_BODY);
+    p.fill(255, 255, 255, 180);
+    p.text("PRESS 'O' KEY TO TOGGLE VIEW", 0, 40);
 
     if (gameState.firstPersonView) {
       // Draw crosshair overlay preview
-      stroke(0, 255, 0, 150);
-      strokeWeight(2);
-      noFill();
-      ellipse(0, 0, 60, 60);
-      line(-40, 0, 40, 0);
-      line(0, -40, 0, 40);
+      p.stroke(0, 255, 0, 150);
+      p.strokeWeight(2);
+      p.noFill();
+      p.ellipse(0, 0, 60, 60);
+      p.line(-40, 0, 40, 0);
+      p.line(0, -40, 0, 40);
     }
   }
 
   _drawContinuePrompt();
-  pop();
+  p.pop();
 }
 
 /**
- * Draws the game-over text content.
+ * Draws the game-over p.text content.
  * @private
  */
 function _drawGameOverContent() {
-  drawingContext.clear(drawingContext.DEPTH_BUFFER_BIT);
+  p.drawingContext.clear(p.drawingContext.DEPTH_BUFFER_BIT);
 
-  if (gameState.gameFont) textFont(gameState.gameFont);
-  fill(255, 60, 60);
-  textAlign(CENTER, CENTER);
-  textSize(80);
-  text('GAME OVER', 0, -50);
+  if (gameState.gameFont) p.textFont(gameState.gameFont);
+  p.fill(255, 60, 60);
+  p.textAlign(p.CENTER, p.CENTER);
+  p.textSize(80);
+  p.text('GAME OVER', 0, -50);
 
-  textSize(24);
-  fill(180, 200, 180);
-  text(gameState.gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
+  p.textSize(24);
+  p.fill(180, 200, 180);
+  p.text(gameState.gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
 
-  textSize(18);
-  fill(180, 200, 180, 160);
-  text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, height * 0.35);
+  p.textSize(18);
+  p.fill(180, 200, 180, 160);
+  p.text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, p.height * 0.35);
 
-  if (millis() - gameState.levelEndTime > 5000) {
+  if (p.millis() - gameState.levelEndTime > 5000) {
     gameState.mode = 'menu';
   }
 }
@@ -367,42 +384,42 @@ function _drawGameOverContent() {
 /**
  * Renders the full-screen game-over overlay.
  */
-function drawGameOver() {
+export function drawGameOver() {
   setup2DViewport();
   HUD_Manager.drawDimOverlay();
   _drawGameOverContent();
-  pop();
+  p.pop();
 }
 
 /**
  * Renders the Pause screen overlay.
  */
-function drawPauseScreen() {
+export function drawPauseScreen() {
   setup2DViewport();
   if (gameState.pauseSnapshot) {
-    push();
-    imageMode(CENTER);
-    image(gameState.pauseSnapshot, 0, 0, width, height);
-    pop();
+    p.push();
+    p.imageMode(p.CENTER);
+    p.image(gameState.pauseSnapshot, 0, 0, p.width, p.height);
+    p.pop();
   }
 
   HUD_Manager.drawDimOverlay();
 
-  textAlign(CENTER, CENTER);
-  if (gameState.gameFont) textFont(gameState.gameFont);
+  p.textAlign(p.CENTER, p.CENTER);
+  if (gameState.gameFont) p.textFont(gameState.gameFont);
 
-  fill(0, 255, 136);
-  textSize(80);
-  text('PAUSED', 0, -100);
+  p.fill(0, 255, 136);
+  p.textSize(80);
+  p.text('PAUSED', 0, -100);
 
   const btnW = 280, btnH = 60, spacing = 40;
   _drawMenuButton('RESUME', 0, 20, btnW, btnH, [0, 255, 136]);
   _drawMenuButton('RESTART', 0, 20 + btnH + spacing, btnW, btnH, [255, 60, 60]);
 
-  textSize(18);
-  fill(255, 200);
-  text(gameState.isMobile ? '' : 'PRESS ESC TO RESUME', 0, 20 + btnH + spacing + 80);
-  pop();
+  p.textSize(18);
+  p.fill(255, 200);
+  p.text(gameState.isMobile ? '' : 'PRESS ESC TO RESUME', 0, 20 + btnH + spacing + 80);
+  p.pop();
 }
 
 /**
@@ -410,155 +427,106 @@ function drawPauseScreen() {
  * @private
  */
 function _drawMenuButton(label, x, y, w, h, col) {
-  rectMode(CENTER);
-  fill(0, 200);
-  rect(x + 4, y + 4, w, h, 12);
-  fill(col[0] * 0.2, col[1] * 0.2, col[2] * 0.2, 255);
-  stroke(col[0], col[1], col[2], 255);
-  strokeWeight(2);
-  rect(x, y, w, h, 12);
-  noStroke();
-  fill(255);
-  textSize(28);
-  text(label, x, y);
-  rectMode(CORNER);
-}
-
-/**
- * Renders the shared 3D landscape background.
- */
-function drawBackgroundLandscape() {
-  let gl = drawingContext;
-  let pxD = pixelDensity();
-  gl.viewport(0, 0, width * pxD, height * pxD);
-  gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-  // Clear stencil every frame so shadow stencil values from the previous menu
-  // frame don't accumulate and progressively block new shadow draws.
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-
-  // Pre-warm the desktop FBO and post-processing shader on the first background
-  // render so the first gameplay frame has no lazy-init stutter from FBO
-  // allocation and GLSL compilation.
-  if (!gameState.isMobile && !gameRenderer.masterFBO) {
-    gameRenderer.masterFBO = createFramebuffer();
-    gameRenderer.postShader = createShader(POST_VERT, POST_FRAG);
-    // Call shader() once to trigger GLSL compilation now instead of on the
-    // first gameplay frame.
-    shader(gameRenderer.postShader);
-    gameRenderer.postShader.setUniform('uTex', gameRenderer.masterFBO);
-    resetShader();
-  }
-
-  push();
-  // Lower culling range on menu to prioritize background baking and UI responsiveness.
-  const originalViewFar = VIEW_FAR;
-  const menuViewFar = 30;
-  perspective(PI / 3, width / height, 10, menuViewFar * TILE * 1.5);
-  gameState.menuCam.yaw += 0.0006;
-  let cx = gameState.menuCam.x + sin(gameState.menuCam.yaw) * 550;
-  let cz = gameState.menuCam.z + cos(gameState.menuCam.yaw) * 550;
-  let terrainY = terrain.getAltitude(cx, cz);
-  let cy = min(-90, terrainY - 60);
-  camera(cx, cy, cz, gameState.menuCam.x, -10, gameState.menuCam.z, 0, 1, 0);
-
-  // Briefly set VIEW_FAR so terrain/tree methods use the tighter bounds
-  VIEW_FAR = menuViewFar;
-  let fakeShip = { x: gameState.menuCam.x, y: cy, z: gameState.menuCam.z, yaw: gameState.menuCam.yaw, pitch: 0 };
-  setSceneLighting();
-  terrain.drawLandscape(fakeShip, width / height);
-  terrain.drawTrees(fakeShip);
-  terrain.drawBuildings(fakeShip);
-  VIEW_FAR = originalViewFar;
-  pop();
-
-  gl.clear(gl.DEPTH_BUFFER_BIT);
+  p.rectMode(p.CENTER);
+  p.fill(0, 200);
+  p.rect(x + 4, y + 4, w, h, 12);
+  p.fill(col[0] * 0.2, col[1] * 0.2, col[2] * 0.2, 255);
+  p.stroke(col[0], col[1], col[2], 255);
+  p.strokeWeight(2);
+  p.rect(x, y, w, h, 12);
+  p.noStroke();
+  p.fill(255);
+  p.textSize(28);
+  p.text(label, x, y);
+  p.rectMode(p.CORNER);
 }
 
 /**
  * Main entry point for the Ship Select screen.
  */
-function drawShipSelect() {
+export function drawShipSelect() {
   drawBackgroundLandscape();
-  let pxD = pixelDensity();
+  let pxD = p.pixelDensity();
   if (gameState.numPlayers === 1) {
-    renderShipSelectView(gameState.players[0], 0, 0, width, height, pxD);
+    renderShipSelectView(gameState.players[0], 0, 0, p.width, p.height, pxD);
   } else {
-    let hw = floor(width / 2);
-    renderShipSelectView(gameState.players[0], 0, 0, hw, height, pxD);
-    renderShipSelectView(gameState.players[1], 1, hw, hw, height, pxD);
+    let hw = Math.floor(p.width / 2);
+    renderShipSelectView(gameState.players[0], 0, 0, hw, p.height, pxD);
+    renderShipSelectView(gameState.players[1], 1, hw, hw, p.height, pxD);
     setup2DViewport();
-    stroke(0, 255, 0, 180); strokeWeight(2);
-    line(0, -height / 2, 0, height / 2);
-    pop();
+    p.stroke(0, 255, 0, 180); p.strokeWeight(2);
+    p.line(0, -p.height / 2, 0, p.height / 2);
+    p.pop();
   }
 }
 
 /**
- * Renders the 3D ship preview and 2D selection text.
+ * Renders the 3D ship preview and 2D selection p.text.
  */
-function renderShipSelectView(p, pi, vx, vw, vh, pxD) {
-  let gl = drawingContext;
+function renderShipSelectView(player, pi, vx, vw, vh, pxD) {
+  void pi;
+  let gl = p.drawingContext;
   gl.viewport(vx * pxD, 0, vw * pxD, vh * pxD);
   gl.enable(gl.SCISSOR_TEST);
   gl.scissor(vx * pxD, 0, vw * pxD, vh * pxD);
   gl.clear(gl.DEPTH_BUFFER_BIT);
 
-  push();
+  p.push();
   _setupShipPreviewCamera(vw, vh);
 
-  push();
-  rotateY(frameCount * 0.018);
-  rotateX(sin(frameCount * 0.012) * 0.15);
-  noStroke();
-  drawShipPreview(p.designIndex, p.labelColor);
-  pop();
-  pop();
+  p.push();
+  p.rotateY(p.frameCount * 0.018);
+  p.rotateX(Math.sin(p.frameCount * 0.012) * 0.15);
+  p.noStroke();
+  drawShipPreview(player.designIndex, player.labelColor);
+  p.pop();
+  p.pop();
 
   setup2DViewport();
 
   // Handle smooth transitions
   HUD_Manager.drawDimOverlay();
 
-  let relX = (vx + vw / 2) - width / 2;
+  let relX = (vx + vw / 2) - p.width / 2;
 
-  noStroke();
-  const design = SHIP_DESIGNS[p.designIndex];
-  _renderShipDetails(p, design, relX, vw, vh);
-  _drawShipStats(p, design, relX, vw, vh);
+  p.noStroke();
+  const design = SHIP_DESIGNS[player.designIndex];
+  _renderShipDetails(player, design, relX, vw, vh);
+  _drawShipStats(player, design, relX, vw, vh);
 
-  if (!p.ready) {
+  if (!player.ready) {
     const arrowX = 220; // Distance from center
     const arrowW = 60, arrowH = 80;
     
-    textAlign(CENTER, CENTER);
-    fill(255, 60);
-    stroke(255, 100);
-    strokeWeight(2);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.fill(255, 60);
+    p.stroke(255, 100);
+    p.strokeWeight(2);
     
     // Left Arrow
-    rect(relX - arrowX - arrowW/2, -arrowH/2, arrowW, arrowH, 10);
+    p.rect(relX - arrowX - arrowW/2, -arrowH/2, arrowW, arrowH, 10);
     // Right Arrow
-    rect(relX + arrowX - arrowW/2, -arrowH/2, arrowW, arrowH, 10);
+    p.rect(relX + arrowX - arrowW/2, -arrowH/2, arrowW, arrowH, 10);
     
-    noStroke();
-    fill(255);
-    textSize(44);
-    text("<", relX - arrowX, 0);
-    text(">", relX + arrowX, 0);
+    p.noStroke();
+    p.fill(255);
+    p.textSize(44);
+    p.text("<", relX - arrowX, 0);
+    p.text(">", relX + arrowX, 0);
 
-    fill(p.labelColor[0], p.labelColor[1], p.labelColor[2], 120);
-    rect(relX - 120, vh / 2 - 100, 240, 60, 30);
-    fill(255); 
-    textSize(22);
-    text("CONFIRM", relX, vh / 2 - 70);
-    textAlign(CENTER, TOP);
+    p.fill(player.labelColor[0], player.labelColor[1], player.labelColor[2], 120);
+    p.rect(relX - 120, vh / 2 - 100, 240, 60, 30);
+    p.fill(255); 
+    p.textSize(22);
+    p.text("CONFIRM", relX, vh / 2 - 70);
+    p.textAlign(p.CENTER, p.TOP);
   }
 
-  if (p.ready) {
-    fill(0, 255, 0); textSize(36); textAlign(CENTER, CENTER);
-    text("READY", relX, 0);
+  if (player.ready) {
+    p.fill(0, 255, 0); p.textSize(36); p.textAlign(p.CENTER, p.CENTER);
+    p.text("READY", relX, 0);
   }
-  pop();
+  p.pop();
   gl.disable(gl.SCISSOR_TEST);
 }
 
@@ -571,19 +539,19 @@ function drawShipPreview(designIdx, tintColor) {
 
   let r = tintColor[0], g = tintColor[1], b = tintColor[2];
   let dark = [r * 0.4, g * 0.4, b * 0.4];
-  let light = [lerp(r, 255, 0.4), lerp(g, 255, 0.4), lerp(b, 255, 0.4)];
+  let light = [p.lerp(r, 255, 0.4), p.lerp(g, 255, 0.4), p.lerp(b, 255, 0.4)];
   let engineGray = [80, 80, 85];
 
-  noStroke();
+  p.noStroke();
   const drawFace = (pts, col, xform) => {
     const activeTransform = xform || transform;
-    fill(col[0], col[1], col[2], col[3] || 255);
-    beginShape();
-    for (let p of pts) {
-      let t = activeTransform(p);
-      vertex(t[0], t[1], t[2]);
+    p.fill(col[0], col[1], col[2], col[3] || 255);
+    p.beginShape();
+    for (let pt of pts) {
+      let t = activeTransform(pt);
+      p.vertex(t[0], t[1], t[2]);
     }
-    endShape(CLOSE);
+    p.endShape(p.CLOSE);
   };
   const sFake = { pitch: 0, yaw: 0 };
   const transform = (pt) => pt;
@@ -593,13 +561,45 @@ function drawShipPreview(designIdx, tintColor) {
 /**
  * HUD_Screens: Collection of screen-rendering logic.
  */
-const HUD_Screens = {
+export function _shipSelectHit(mx, my, isTouch) {
+  const vw = p.width / gameState.numPlayers;
+  const playerIdx = Math.floor(mx / vw);
+  if (playerIdx >= gameState.players.length) return;
+  const player = gameState.players[playerIdx];
+  if (player.ready) return;
+
+  const localX = mx % vw;
+  const centerX = vw / 2;
+  const arrowOffset = 220;
+  const arrowHitWidth = isTouch ? 120 : 80;
+
+  let arrowHit = false;
+  if (my > p.height / 2 - 60 && my < p.height / 2 + 60) {
+    if (localX > centerX - arrowOffset - arrowHitWidth / 2 && localX < centerX - arrowOffset + arrowHitWidth / 2) {
+      player.designIndex = (player.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+      arrowHit = true;
+    } else if (localX > centerX + arrowOffset - arrowHitWidth / 2 && localX < centerX + arrowOffset + arrowHitWidth / 2) {
+      player.designIndex = (player.designIndex + 1) % SHIP_DESIGNS.length;
+      arrowHit = true;
+    }
+  }
+
+  if (!arrowHit) {
+    const isConfirmHit = my > p.height - 110 && localX > centerX - 130 && localX < centerX + 130;
+    if (isConfirmHit || !isTouch) player.ready = true;
+  }
+
+  if (gameState.players.every(plr => plr.ready)) {
+    gameState.mode = 'cockpitSelection';
+  }
+}
+
+export const HUD_Screens = {
   drawMenu,
   drawMission,
   drawInstructions,
   drawCockpitSelection,
   drawShipSelect,
   drawGameOver,
-  drawPauseScreen,
-  drawBackgroundLandscape
+  drawPauseScreen
 };

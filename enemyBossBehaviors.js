@@ -4,7 +4,14 @@
 // @exports   EnemyBossAI   — namespace: updateColossus(), updateKraken()
 // =============================================================================
 
-const EnemyBossAI = {
+import { p } from './p5Context.js';
+import { BOSS_BULLET_LIFE, KRAKEN_TENTACLE_LIFE, aboveSea, SEA } from './constants.js';
+import { terrain } from './terrain.js';
+import { particleSystem } from './particles.js';
+import { physicsEngine } from './PhysicsEngine.js';
+import { gameSFX } from './sfx.js';
+
+export const EnemyBossAI = {
 
   updateColossus(e, alivePlayers, refShip, ctx) {
     let tShip = ctx._getTargetShip(e, alivePlayers, refShip);
@@ -70,23 +77,23 @@ const EnemyBossAI = {
       const kScale = e.krakenScale || 1;
       const lashY = e.y - 40 * kScale;
       for (let t = 0; t < 4; t++) {
-        const a = (t / 4) * (typeof TWO_PI !== 'undefined' ? TWO_PI : Math.PI * 2) + (Math.random() * 0.6 - 0.3);
+        const a = (t / 4) * (Math.PI * 2) + (p.random() * 0.6 - 0.3);
         if (typeof particleSystem !== 'undefined') {
           particleSystem.enemyBullets.push({
             x: e.x, y: lashY, z: e.z,
-            vx: Math.cos(a) * 8, vy: (Math.random() * -1), vz: Math.sin(a) * 8,
-            life: typeof KRAKEN_TENTACLE_LIFE !== 'undefined' ? KRAKEN_TENTACLE_LIFE : 900
+            vx: Math.cos(a) * 8, vy: (p.random() * -1), vz: Math.sin(a) * 8,
+            life: KRAKEN_TENTACLE_LIFE || 900
           });
         }
       }
       const adx = tShip.x - e.x, adz = tShip.z - e.z;
-      const ad = typeof mag2 !== 'undefined' ? mag2(adx, adz) : Math.sqrt(adx*adx + adz*adz);
+      const ad = Math.hypot(adx, adz);
       if (ad > 0) {
         if (typeof particleSystem !== 'undefined') {
           particleSystem.enemyBullets.push({
             x: e.x, y: lashY, z: e.z,
             vx: (adx / ad) * 10, vy: -0.5, vz: (adz / ad) * 10,
-            life: typeof KRAKEN_TENTACLE_LIFE !== 'undefined' ? KRAKEN_TENTACLE_LIFE : 900
+            life: KRAKEN_TENTACLE_LIFE || 900
           });
         }
       }

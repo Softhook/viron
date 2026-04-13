@@ -12,7 +12,19 @@
 // @exports   villagerManager  — singleton
 // =============================================================================
 
+import { p } from './p5Context.js';
+import { TILE, CULL_DIST, aboveSea, infection, tileKey, toTile } from './constants.js';
+import { AgentManager, ENEMY_CONFRONT_OFFSET, STEERING_LERP_FACTOR } from './agentManager.js';
+import { _bldgSafeR } from './buildingGeometry.js';
+import { particleSystem } from './particles.js';
+import { terrain } from './terrain.js';
+import { gameState } from './gameState.js';
+import { enemyManager } from './enemies.js';
+import { gameSFX } from './sfx.js';
+import { setSceneLighting } from './gameRenderer.js';
+
 // --- Villager tuning constants ---
+
 const VILLAGER_MAX_PER_VILLAGE = 5;       // Maximum villagers a single village can spawn
 const VILLAGER_SPAWN_INTERVAL = 300;     // Frames between spawn attempts (~5 seconds at 60 Hz)
 const VILLAGER_RESPAWN_INTERVAL = 1200;    // Frames to regenerate one villager budget (~20 seconds)
@@ -21,7 +33,7 @@ const VILLAGER_SPEED = 0.8;     // World units per physics tick
 const VILLAGER_CURE_PROB = 0.004;   // Per-tick probability of curing a nearby virus tile
 const VILLAGER_SEARCH_RADIUS = 4;      // Tile radius to search for infected tiles
 const VILLAGER_CURE_RADIUS = 1;       // Must be within 1 tile to attempt a cure (matches 100 unit stop dist)
-const VILLAGER_CULL_DIST_SQ = CULL_DIST * CULL_DIST;
+const getVillagerCullDistSq = () => CULL_DIST * CULL_DIST;
 const VILLAGER_MAX_HEALTH = 100;
 const VILLAGER_INFECTION_DAM = 1.2;    // Health loss per tick on infected tile
 const VILLAGER_HEAL_RATE = 0.5;    // Health recovery per tick when safe
@@ -36,7 +48,7 @@ const VILLAGER_PLANT_RADIUS = 3;       // Base tile radius from pagoda when pick
 const VILLAGER_FIGHT_RADIUS = 8;       // Tile radius to detect nearby ground enemies
 const VILLAGER_PUNCH_GAP = 20;         // World units gap from enemy body edge where villager stops and punches
 
-class VillagerManager extends AgentManager {
+export class VillagerManager extends AgentManager {
   constructor() {
     super(2, {
       maxHealth: VILLAGER_MAX_HEALTH,
@@ -74,11 +86,11 @@ class VillagerManager extends AgentManager {
 
   onAgentDeath(v) {
     // Death particles
-    for (let p = 0; p < 12; p++) {
+    for (let i = 0; i < 12; i++) {
       particleSystem.particles.push({
         x: v.x, y: v.y - 8, z: v.z,
-        vx: random(-3, 3), vy: random(-4, -1), vz: random(-3, 3),
-        life: 200, decay: 10, size: random(2, 5),
+        vx: p.random(-3, 3), vy: p.random(-4, -1), vz: p.random(-3, 3),
+        life: 200, decay: 10, size: p.random(2, 5),
         color: [200, 60, 40]
       });
     }
@@ -115,70 +127,70 @@ class VillagerManager extends AgentManager {
     const legR = _bldgSafeR(80), legG = 60, legB = 40;
 
     for (let f = 0; f < 64; f++) {
-      const phase = (f / 64) * TWO_PI;
-      const legSwing = sin(phase) * 0.6;
-      const armSwing = sin(phase + PI) * 0.5;
+      const phase = (f / 64) * (Math.PI * 2);
+      const legSwing = Math.sin(phase) * 0.6;
+      const armSwing = Math.sin(phase + Math.PI) * 0.5;
 
       VillagerManager._geoms[f] = terrain._safeBuildGeometry(() => {
-        noStroke();
-        translate(0, 5, 0); // Anchor feet precisely to Y=0
+        p.noStroke();
+        p.translate(0, 5, 0); // Anchor feet precisely to Y=0
 
         // --- Head ---
-        fill(skinR, skinG, skinB);
-        push(); translate(0, -22, 0); box(5, 5, 5); pop();
+        p.fill(skinR, skinG, skinB);
+        p.push(); p.translate(0, -22, 0); p.box(5, 5, 5); p.pop();
 
         // --- Body ---
-        fill(tunicR, tunicG, tunicB);
-        push(); translate(0, -16, 0); box(6, 8, 4); pop();
+        p.fill(tunicR, tunicG, tunicB);
+        p.push(); p.translate(0, -16, 0); p.box(6, 8, 4); p.pop();
 
         // --- Legs ---
-        fill(legR, legG, legB);
+        p.fill(legR, legG, legB);
         // Left
-        push(); translate(-1.5, -11, 0); rotateX(legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        p.push(); p.translate(-1.5, -11, 0); p.rotateX(legSwing); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
         // Right
-        push(); translate(1.5, -11, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        p.push(); p.translate(1.5, -11, 0); p.rotateX(-legSwing); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
 
         // --- Arms ---
-        fill(skinR, skinG, skinB);
+        p.fill(skinR, skinG, skinB);
         // Left
-        push(); translate(-4.5, -17, 0); rotateX(armSwing); translate(0, 3, 0); box(2, 5, 2); pop();
+        p.push(); p.translate(-4.5, -17, 0); p.rotateX(armSwing); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
         // Right
-        push(); translate(4.5, -17, 0); rotateX(-armSwing); translate(0, 3, 0); box(2, 5, 2); pop();
+        p.push(); p.translate(4.5, -17, 0); p.rotateX(-armSwing); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
       });
     }
 
     // Static frame for standing still
     VillagerManager._staticGeom = terrain._safeBuildGeometry(() => {
-      noStroke();
-      translate(0, 5, 0); // Anchor feet precisely to Y=0
+      p.noStroke();
+      p.translate(0, 5, 0); // Anchor feet precisely to Y=0
 
-      fill(skinR, skinG, skinB); push(); translate(0, -22, 0); box(5, 5, 5); pop();
-      fill(tunicR, tunicG, tunicB); push(); translate(0, -16, 0); box(6, 8, 4); pop();
-      fill(legR, legG, legB);
-      push(); translate(-1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-      push(); translate(1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-      fill(skinR, skinG, skinB);
-      push(); translate(-4.5, -17, 0); translate(0, 3, 0); box(2, 5, 2); pop();
-      push(); translate(4.5, -17, 0); translate(0, 3, 0); box(2, 5, 2); pop();
+      p.fill(skinR, skinG, skinB); p.push(); p.translate(0, -22, 0); p.box(5, 5, 5); p.pop();
+      p.fill(tunicR, tunicG, tunicB); p.push(); p.translate(0, -16, 0); p.box(6, 8, 4); p.pop();
+      p.fill(legR, legG, legB);
+      p.push(); p.translate(-1.5, -11, 0); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
+      p.push(); p.translate(1.5, -11, 0); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
+      p.fill(skinR, skinG, skinB);
+      p.push(); p.translate(-4.5, -17, 0); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
+      p.push(); p.translate(4.5, -17, 0); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
     });
 
     // Special "curing" frame with waving arms
     VillagerManager._curingGeoms = [];
     for (let f = 0; f < 64; f++) {
-      const phase = (f / 64) * TWO_PI;
-      const wave = sin(phase * 3) * 0.8; // Match original procedural wave speed (phase * 3)
+      const phase = (f / 64) * (Math.PI * 2);
+      const wave = Math.sin(phase * 3) * 0.8; // Match original procedural wave speed (phase * 3)
       VillagerManager._curingGeoms[f] = terrain._safeBuildGeometry(() => {
-        noStroke();
-        translate(0, 5, 0); // Anchor feet precisely to Y=0
+        p.noStroke();
+        p.translate(0, 5, 0); // Anchor feet precisely to Y=0
 
-        fill(skinR, skinG, skinB); push(); translate(0, -22, 0); box(5, 5, 5); pop();
-        fill(tunicR, tunicG, tunicB); push(); translate(0, -16, 0); box(6, 8, 4); pop();
-        fill(legR, legG, legB);
-        push(); translate(-1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-        push(); translate(1.5, -11, 0); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-        fill(skinR, skinG, skinB);
-        push(); translate(-4.5, -17, 0); rotateX(wave); translate(0, 3, 0); box(2, 5, 2); pop();
-        push(); translate(4.5, -17, 0); rotateX(-wave); translate(0, 3, 0); box(2, 5, 2); pop();
+        p.fill(skinR, skinG, skinB); p.push(); p.translate(0, -22, 0); p.box(5, 5, 5); p.pop();
+        p.fill(tunicR, tunicG, tunicB); p.push(); p.translate(0, -16, 0); p.box(6, 8, 4); p.pop();
+        p.fill(legR, legG, legB);
+        p.push(); p.translate(-1.5, -11, 0); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
+        p.push(); p.translate(1.5, -11, 0); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
+        p.fill(skinR, skinG, skinB);
+        p.push(); p.translate(-4.5, -17, 0); p.rotateX(wave); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
+        p.push(); p.translate(4.5, -17, 0); p.rotateX(-wave); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
       });
     }
 
@@ -186,43 +198,43 @@ class VillagerManager extends AgentManager {
     // 64 pre-baked frames keep the hot-path draw() loop allocation-free.
     VillagerManager._plantingGeoms = [];
     for (let f = 0; f < 64; f++) {
-      const phase = (f / 64) * TWO_PI;
+      const phase = (f / 64) * (Math.PI * 2);
       // Subtle body-sway while bending (±10°)
       // Negative angle bends the top of the body toward +Z (forward in model space).
-      const bendAngle = -(0.75 + sin(phase * 2) * 0.1);
+      const bendAngle = -(0.75 + Math.sin(phase * 2) * 0.1);
       // Alternating arm plunge toward the ground: positive rotateX tips the arm tip
       // toward +Z (forward / ground-ward) in the already-forward-tilted torso frame.
-      const leftArmDip = 0.9 + sin(phase * 2) * 0.55;
-      const rightArmDip = 0.9 + sin(phase * 2 + PI) * 0.55;
+      const leftArmDip = 0.9 + Math.sin(phase * 2) * 0.55;
+      const rightArmDip = 0.9 + Math.sin(phase * 2 + Math.PI) * 0.55;
 
       VillagerManager._plantingGeoms[f] = terrain._safeBuildGeometry(() => {
-        noStroke();
-        translate(0, 5, 0); // feet at Y=0
+        p.noStroke();
+        p.translate(0, 5, 0); // feet at Y=0
 
         // Legs — slightly bent at knees for a crouching posture
-        fill(legR, legG, legB);
-        push(); translate(-1.5, -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
-        push(); translate(1.5, -11, 0); rotateX(-0.2); translate(0, 3, 0); box(2.5, 6, 2.5); pop();
+        p.fill(legR, legG, legB);
+        p.push(); p.translate(-1.5, -11, 0); p.rotateX(-0.2); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
+        p.push(); p.translate(1.5, -11, 0); p.rotateX(-0.2); p.translate(0, 3, 0); p.box(2.5, 6, 2.5); p.pop();
 
         // Upper body: pivot at hip (~y=-13), rotate forward to simulate waist-bend
-        push();
-        translate(0, -13, 0); // hip pivot
-        rotateX(bendAngle);   // bend forward (negative = top toward +Z)
+        p.push();
+        p.translate(0, -13, 0); // hip pivot
+        p.rotateX(bendAngle);   // bend forward (negative = top toward +Z)
 
         // Torso
-        fill(tunicR, tunicG, tunicB);
-        push(); translate(0, -4, 0); box(6, 8, 4); pop();
+        p.fill(tunicR, tunicG, tunicB);
+        p.push(); p.translate(0, -4, 0); p.box(6, 8, 4); p.pop();
 
         // Head (follows torso bend)
-        fill(skinR, skinG, skinB);
-        push(); translate(0, -10, 0); box(5, 5, 5); pop();
+        p.fill(skinR, skinG, skinB);
+        p.push(); p.translate(0, -10, 0); p.box(5, 5, 5); p.pop();
 
         // Left arm — plunges down to plant, then lifts back
-        push(); translate(-4.5, -5, 0); rotateX(leftArmDip); translate(0, 3, 0); box(2, 5, 2); pop();
+        p.push(); p.translate(-4.5, -5, 0); p.rotateX(leftArmDip); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
         // Right arm — opposite phase for natural alternating motion
-        push(); translate(4.5, -5, 0); rotateX(rightArmDip); translate(0, 3, 0); box(2, 5, 2); pop();
+        p.push(); p.translate(4.5, -5, 0); p.rotateX(rightArmDip); p.translate(0, 3, 0); p.box(2, 5, 2); p.pop();
 
-        pop(); // end upper-body pivot
+        p.pop(); // end upper-body pivot
       });
     }
   }
@@ -297,7 +309,7 @@ class VillagerManager extends AgentManager {
         const dx = Math.abs(toTile(v.x) - v.targetTx);
         const dz = Math.abs(toTile(v.z) - v.targetTz);
         if (dx <= VILLAGER_CURE_RADIUS && dz <= VILLAGER_CURE_RADIUS) {
-          if (random() < VILLAGER_CURE_PROB) {
+          if (p.random() < VILLAGER_CURE_PROB) {
             const cureKey = tileKey(v.targetTx, v.targetTz);
             if (infection.has(cureKey)) {
               infection.remove(cureKey);
@@ -305,11 +317,11 @@ class VillagerManager extends AgentManager {
               terrain.addPulse(v.targetTx * TILE, v.targetTz * TILE, 3.0);
               gameSFX?.playVillagerCure(v.x, v.y, v.z);
               // Small particle burst
-              for (let p = 0; p < 8; p++) {
+              for (let i = 0; i < 8; i++) {
                 particleSystem.particles.push({
                   x: v.x, y: v.y - 10, z: v.z,
-                  vx: random(-2, 2), vy: random(-3, -1), vz: random(-2, 2),
-                  life: 180, decay: 8, size: random(3, 6),
+                  vx: p.random(-2, 2), vy: p.random(-3, -1), vz: p.random(-2, 2),
+                  life: 180, decay: 8, size: p.random(3, 6),
                   color: [60, 220, 120]
                 });
               }
@@ -377,10 +389,10 @@ class VillagerManager extends AgentManager {
       b._activeVillagers = (b._activeVillagers || 0) + 1;
 
       // Spawn position: near the pagoda, slightly offset
-      const angle = random(TWO_PI);
-      const dist = random(40, 120);
-      const sx = b.x + cos(angle) * dist;
-      const sz = b.z + sin(angle) * dist;
+      const angle = p.random(Math.PI * 2);
+      const dist = p.random(40, 120);
+      const sx = b.x + Math.cos(angle) * dist;
+      const sz = b.z + Math.sin(angle) * dist;
       const sy = terrain.getAltitude(sx, sz);
 
       if (aboveSea(sy)) {
@@ -394,8 +406,8 @@ class VillagerManager extends AgentManager {
         x: sx, y: sy, z: sz,
         vx: 0, vz: 0,
         targetTx: null, targetTz: null,
-        walkPhase: random(TWO_PI),
-        id: random(),              // Unique seed for animation offsets
+        walkPhase: p.random(Math.PI * 2),
+        id: p.random(),              // Unique seed for animation offsets
         villageX: b.x,             // Home pagoda position (for reference)
         villageZ: b.z,
         villageRef: b,             // Pointer to home village for budget tracking
@@ -407,7 +419,7 @@ class VillagerManager extends AgentManager {
         plantTargetZ: null,        // World Z of chosen crop plot
         isConfronting: false,      // True when moving toward or punching a ground enemy
         facingAngle: angle,        // Start facing outward from spawn
-        _retargetTimer: Math.floor(random(60)) // Stagger CPU spikes
+        _retargetTimer: Math.floor(p.random(60)) // Stagger CPU spikes
       });
     }
   }
@@ -456,17 +468,17 @@ class VillagerManager extends AgentManager {
       } else {
         const d = Math.sqrt(distSq);
         const spd = VILLAGER_SPEED * 0.4;
-        v.vx = lerp(v.vx || 0, (dx / d) * spd, STEERING_LERP_FACTOR);
-        v.vz = lerp(v.vz || 0, (dz / d) * spd, STEERING_LERP_FACTOR);
+        v.vx = p.lerp(v.vx || 0, (dx / d) * spd, STEERING_LERP_FACTOR);
+        v.vz = p.lerp(v.vz || 0, (dz / d) * spd, STEERING_LERP_FACTOR);
       }
       return;
     }
 
     // Pick a new crop-plot position near the home pagoda (~2 % chance per tick
     // so villagers don't all rush to a new spot on the same frame).
-    if (random() < 0.02) {
-      const angle = random(Math.PI * 2);
-      const dist = (0.5 + random(1.5)) * TILE * VILLAGER_PLANT_RADIUS;
+    if (p.random() < 0.02) {
+      const angle = p.random(Math.PI * 2);
+      const dist = (0.5 + p.random(1.5)) * TILE * VILLAGER_PLANT_RADIUS;
       const tx = v.villageX + Math.cos(angle) * dist;
       const tz = v.villageZ + Math.sin(angle) * dist;
       // Keep within the max wander leash
@@ -506,8 +518,8 @@ class VillagerManager extends AgentManager {
     if (dist > stopDist) {
       // Move toward enemy — direction toward body edge and centre are collinear,
       // so (dx/dist, dz/dist) naturally leads to the body surface.
-      v.vx = lerp(v.vx || 0, (dx / dist) * VILLAGER_SPEED, STEERING_LERP_FACTOR);
-      v.vz = lerp(v.vz || 0, (dz / dist) * VILLAGER_SPEED, STEERING_LERP_FACTOR);
+      v.vx = p.lerp(v.vx || 0, (dx / dist) * VILLAGER_SPEED, STEERING_LERP_FACTOR);
+      v.vz = p.lerp(v.vz || 0, (dz / dist) * VILLAGER_SPEED, STEERING_LERP_FACTOR);
       v.isConfronting = true;
       this._clearPlantingState(v);
     } else {
@@ -541,7 +553,7 @@ class VillagerManager extends AgentManager {
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
-    const vis = this._cullVisible(s, VILLAGER_CULL_DIST_SQ);
+    const vis = this._cullVisible(s, getVillagerCullDistSq());
 
     if (vis.length === 0) {
       if (profiler) profiler.recordVillagers(0, performance.now() - start);
@@ -554,7 +566,7 @@ class VillagerManager extends AgentManager {
 
 
     this._ensureGeoms();
-    noStroke();
+    p.noStroke();
 
     for (let i = 0; i < vis.length; i++) {
       const v = vis[i];
@@ -562,38 +574,41 @@ class VillagerManager extends AgentManager {
       const vz = v.vz || 0;
       const isWalking = (vx * vx + vz * vz) > 0.01;
 
-      push();
-      translate(v.x, v.y, v.z);
+      p.push();
+      p.translate(v.x, v.y, v.z);
 
       // Face current smoothed angle
-      rotateY(v.facingAngle);
+      p.rotateY(v.facingAngle);
 
       // Scale down — villagers are small
-      scale(2);
+      p.scale(2);
 
       // Selection of the pre-baked geometry frame based on animation state
       let geom;
       if (isWalking) {
-        const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
+        const twoPi = Math.PI * 2;
+        const fIdx = Math.floor(((v.walkPhase % twoPi + twoPi) % twoPi) / twoPi * 64);
         geom = VillagerManager._geoms[fIdx];
       } else if (v.isCuring || v.isConfronting) {
         // Curing animation doubles as a punch attempt when confronting enemies
         // (visual only — villagers never actually damage ground enemies)
-        const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
+        const twoPi = Math.PI * 2;
+        const fIdx = Math.floor(((v.walkPhase % twoPi + twoPi) % twoPi) / twoPi * 64);
         geom = VillagerManager._curingGeoms[fIdx];
       } else if (v.isPlanting) {
-        const fIdx = Math.floor(((v.walkPhase % TWO_PI + TWO_PI) % TWO_PI) / TWO_PI * 64);
+        const twoPi = Math.PI * 2;
+        const fIdx = Math.floor(((v.walkPhase % twoPi + twoPi) % twoPi) / twoPi * 64);
         geom = VillagerManager._plantingGeoms[fIdx];
       } else {
         geom = VillagerManager._staticGeom;
       }
 
-      if (geom) model(geom);
+      if (geom) p.model(geom);
 
-      pop(); // End of villager transform
+      p.pop(); // End of villager transform
     }
 
-    resetShader();
+    p.resetShader();
     setSceneLighting();
 
     if (profiler) profiler.recordVillagers(vis.length, performance.now() - start);
@@ -601,4 +616,4 @@ class VillagerManager extends AgentManager {
 }
 
 // Singleton instance
-const villagerManager = new VillagerManager();
+export const villagerManager = new VillagerManager();

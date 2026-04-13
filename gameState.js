@@ -11,6 +11,32 @@
 // @exports   gameState         — singleton (used by nearly every module)
 // =============================================================================
 
+import { p } from './p5Context.js';
+import {
+  TileManager,
+  infection,
+  P1_KEYS,
+  P2_KEYS,
+  LAUNCH_MIN,
+  LAUNCH_MAX,
+  tileKey,
+  toTile,
+  isLaunchpad,
+  aboveSea,
+  updateTimeOfDay
+} from './constants.js';
+import { createPlayer, resetShip, getSpawnX } from './player.js';
+import { physicsEngine } from './PhysicsEngine.js';
+import { enemyManager } from './enemies.js';
+import { villagerManager } from './villagers.js';
+import { wizardManager } from './wizards.js';
+import { terrain } from './terrain.js';
+import { particleSystem } from './particles.js';
+import { gameSFX } from './sfx.js';
+import { initWorld } from './worldGenerator.js';
+import { inputManager } from './InputManager.js';
+import { mobileController } from './mobileControls.js';
+
 class GameState {
   constructor() {
     // --- Level & Progression ---
@@ -140,7 +166,7 @@ class GameState {
    */
   startNewGame(np) {
     this.numPlayers = np;
-    this.gameStartTime = millis();
+    this.gameStartTime = p.millis();
     this.colossusSpawnCount = 0;
     this.krakenSpawnCount = 0;
     if (typeof inputManager !== 'undefined' && inputManager) {
@@ -173,7 +199,7 @@ class GameState {
    */
   activatePlayingMode() {
     this.mode = 'playing';
-    this.playingStartTime = millis();
+    this.playingStartTime = p.millis();
     this.startLevel(this.level);
   }
 
@@ -222,10 +248,10 @@ class GameState {
     const MAX_TRIES = 50;
 
     for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
-      let angle = random(TWO_PI);
-      let dist = random(MIN_DIST, MAX_DIST);
-      let wx = CENTER_X + cos(angle) * dist;
-      let wz = CENTER_Z + sin(angle) * dist;
+      let angle = p.random(Math.PI * 2);
+      let dist = p.random(MIN_DIST, MAX_DIST);
+      let wx = CENTER_X + Math.cos(angle) * dist;
+      let wz = CENTER_Z + Math.sin(angle) * dist;
 
       if (aboveSea(terrain.getAltitude(wx, wz))) continue;
       if (isLaunchpad(wx, wz)) continue;
@@ -244,7 +270,7 @@ class GameState {
     if (this.mode === 'gameover') return;
     this.mode = 'gameover';
     this.gameOverReason = reason;
-    this.levelEndTime = millis();
+    this.levelEndTime = p.millis();
     if (gameSFX) {
       gameSFX.stopAll();
       gameSFX.playGameOver();
@@ -257,7 +283,7 @@ class GameState {
   completeLevelSequence() {
     if (!this.levelComplete) {
       this.levelComplete = true;
-      this.levelEndTime = millis();
+      this.levelEndTime = p.millis();
       gameSFX?.playLevelComplete();
     }
   }
@@ -377,3 +403,9 @@ class GameState {
 
 // Single global state instance
 const gameState = new GameState();
+
+if (typeof globalThis !== 'undefined') {
+  globalThis.gameState = gameState;
+}
+
+export { GameState, gameState };

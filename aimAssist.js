@@ -20,7 +20,12 @@
 // assist is purely a steering aid and never influences missiles.
 // =============================================================================
 
-class AimAssist {
+import { p } from './p5Context.js';
+import { TILE, infection, tileKey, toTile } from './constants.js';
+import { enemyManager } from './enemies.js';
+import { terrain } from './terrain.js';
+
+export class AimAssist {
     constructor() {
         // --- Tuning ---
         this.CONE_ANGLE = 0.82;    // ~35° half-angle for enemy lock-on
@@ -269,33 +274,33 @@ class AimAssist {
 
         if (this.lastTracking.target) {
             let t = this.lastTracking.target;
-            push();
-            translate(t.x, t.y, t.z);
-            noFill(); stroke(255, 0, 0, 200); strokeWeight(3);
+            p.push();
+            p.translate(t.x, t.y, t.z);
+            p.noFill(); p.stroke(255, 0, 0, 200); p.strokeWeight(3);
 
-            let s = this.getReticleSize(t.type) + Math.sin(frameCount * 0.1) * 5;
-            beginShape(); vertex(-s, 0, 0); vertex(0, -s, 0); vertex(s, 0, 0); vertex(0, s, 0); endShape(CLOSE);
-            beginShape(); vertex(0, 0, -s); vertex(0, -s, 0); vertex(0, 0, s); vertex(0, s, 0); endShape(CLOSE);
-            pop();
+            let s = this.getReticleSize(t.type) + Math.sin(p.frameCount * 0.1) * 5;
+            p.beginShape(); p.vertex(-s, 0, 0); p.vertex(0, -s, 0); p.vertex(s, 0, 0); p.vertex(0, s, 0); p.endShape(p.CLOSE);
+            p.beginShape(); p.vertex(0, 0, -s); p.vertex(0, -s, 0); p.vertex(0, 0, s); p.vertex(0, s, 0); p.endShape(p.CLOSE);
+            p.pop();
 
             if (this.lastTracking.predictedPos) {
-                let p = this.lastTracking.predictedPos;
-                push();
-                stroke(255, 255, 0, 150); strokeWeight(2);
-                line(t.x, t.y, t.z, p.x, p.y, p.z);
-                translate(p.x, p.y, p.z);
-                noFill(); circle(0, 0, 20); rotateY(PI / 4); circle(0, 0, 20);
-                pop();
+                let pred = this.lastTracking.predictedPos;
+                p.push();
+                p.stroke(255, 255, 0, 150); p.strokeWeight(2);
+                p.line(t.x, t.y, t.z, pred.x, pred.y, pred.z);
+                p.translate(pred.x, pred.y, pred.z);
+                p.noFill(); p.circle(0, 0, 20); p.rotateY(p.PI / 4); p.circle(0, 0, 20);
+                p.pop();
             }
         }
 
         if (this.lastTracking.virusTarget) {
             let vt = this.lastTracking.virusTarget;
-            push();
-            translate(vt.x, vt.y - 2, vt.z);
-            noFill(); stroke(0, 255, 0, 180); strokeWeight(2);
-            rotateX(PI / 2); rectMode(CENTER); rect(0, 0, 120, 120);
-            pop();
+            p.push();
+            p.translate(vt.x, vt.y - 2, vt.z);
+            p.noFill(); p.stroke(0, 255, 0, 180); p.strokeWeight(2);
+            p.rotateX(p.PI / 2); p.rectMode(p.CENTER); p.rect(0, 0, 120, 120);
+            p.pop();
         }
     }
 
@@ -307,4 +312,4 @@ class AimAssist {
 }
 
 // Singleton — all modules reference this directly
-const aimAssist = new AimAssist();
+export const aimAssist = new AimAssist();

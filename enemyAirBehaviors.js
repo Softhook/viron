@@ -8,7 +8,17 @@
 //                            updateFighter(), updateHunter(), etc.
 // =============================================================================
 
-const EnemyAirAI = {
+import { p } from './p5Context.js';
+import {
+  ENEMY_BULLET_LIFE, BOMBER_DROP_INTERVAL_TICKS,
+  FIGHTER_STATE_TOGGLE_TICKS, BOMBER_BOUNDARY_LIMIT,
+  SEEDER_BOUNDARY_LIMIT, mag3
+} from './constants.js';
+import { physicsEngine } from './PhysicsEngine.js';
+import { particleSystem } from './particles.js';
+import { gameSFX } from './sfx.js';
+
+export const EnemyAirAI = {
 
   updateBomber(e, refShip, ctx) {
     e.y += Math.sin(physicsEngine.tickCount * 0.02 + e.id);
@@ -40,8 +50,8 @@ const EnemyAirAI = {
       e.stateTimer = 0;
       e.aggressive = Math.random() > 0.5;
       if (!e.aggressive) {
-        e.wanderX = e.x + random(-1500, 1500);
-        e.wanderZ = e.z + random(-1500, 1500);
+        e.wanderX = e.x + p.random(-1500, 1500);
+        e.wanderZ = e.z + p.random(-1500, 1500);
       }
     }
 
@@ -57,9 +67,9 @@ const EnemyAirAI = {
     e.fireTimer++;
     if (e.aggressive && d < 1200 && e.fireTimer > 90) {
       e.fireTimer = 0;
-      let pvx = (dx / d) + random(-0.2, 0.2);
-      let pvy = (dy / d) + random(-0.2, 0.2);
-      let pvz = (dz / d) + random(-0.2, 0.2);
+      let pvx = (dx / d) + p.random(-0.2, 0.2);
+      let pvy = (dy / d) + p.random(-0.2, 0.2);
+      let pvz = (dz / d) + p.random(-0.2, 0.2);
       let pd = mag3(pvx, pvy, pvz);
       particleSystem.enemyBullets.push({
         x: e.x, y: e.y, z: e.z,
@@ -98,7 +108,7 @@ const EnemyAirAI = {
 
     if (e.inkSqueeze && e.inkSqueeze > 0) e.inkSqueeze--;
 
-    if (e.inkCooldown === undefined) e.inkCooldown = floor(random(120, 200));
+    if (e.inkCooldown === undefined) e.inkCooldown = Math.floor(p.random(120, 200));
     e.inkCooldown--;
     if (e.inkCooldown <= 0) {
       let shouldSquirt = (d < 1500 && Math.random() < 0.4) || Math.random() < 0.05;
@@ -106,18 +116,18 @@ const EnemyAirAI = {
         let vm = Math.max(mag3(e.vx || 0, e.vy || 0, e.vz || 0), 0.001);
         let bx = -(e.vx || 0) / vm, by = -(e.vy || 0) / vm, bz = -(e.vz || 0) / vm;
         
-        const count = 3 + floor(random(3));
+        const count = 3 + Math.floor(p.random(3));
         for (let i = 0; i < count; i++) {
           particleSystem.addFogParticle({
-            x: e.x + bx * 34 + random(-20, 20),
-            y: e.y + by * 20 + random(-20, 20),
-            z: e.z + bz * 34 + random(-20, 20),
-            vx: bx * (1.2 + random(0.5)) + random(-0.4, 0.4),
-            vy: by * (0.8 + random(0.4)) + random(-0.3, 0.3),
-            vz: bz * (1.2 + random(0.5)) + random(-0.4, 0.4),
-            life: random(300, 400),
-            decay: 0.9 + random(0.1),
-            size: random(850, 1100),
+            x: e.x + bx * 34 + p.random(-20, 20),
+            y: e.y + by * 20 + p.random(-20, 20),
+            z: e.z + bz * 34 + p.random(-20, 20),
+            vx: bx * (1.2 + p.random(0.5)) + p.random(-0.4, 0.4),
+            vy: by * (0.8 + p.random(0.4)) + p.random(-0.3, 0.3),
+            vz: bz * (1.2 + p.random(0.5)) + p.random(-0.4, 0.4),
+            life: p.random(300, 400),
+            decay: 0.9 + p.random(0.1),
+            size: p.random(850, 1100),
             color: [1, 1, 2],
             isInkBurst: true
           });
@@ -129,7 +139,7 @@ const EnemyAirAI = {
         e.vy += (e.vy || 0) * recoil;
         e.vz += (e.vz || 0) * recoil;
       }
-      e.inkCooldown = floor(random(180, 280));
+      e.inkCooldown = Math.floor(p.random(180, 280));
     }
 
     ctx._updateFlyingMovement(e);

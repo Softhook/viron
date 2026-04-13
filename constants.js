@@ -30,58 +30,71 @@
 // =============================================================================
 
 // --- World geometry ---
-const TILE = 120;              // World-space size of one terrain tile (pixels)
-const SEA = 200;              // Y value above which terrain is below sea (sea surface)
-const LAUNCH_ALT = 100;        // Fixed Y altitude of the flat launchpad surface
-const GRAV = 0.09;             // Per-frame gravitational acceleration applied to ships
-const LAUNCH_MIN = 0;          // Launchpad world-space minimum X and Z coordinate
-const LAUNCH_MAX = 840;        // Launchpad world-space maximum X and Z coordinate
+export const TILE = 120;              // World-space size of one terrain tile (pixels)
+export const SEA = 200;              // Y value above which terrain is below sea (sea surface)
+export const LAUNCH_ALT = 100;        // Fixed Y altitude of the flat launchpad surface
+export const GRAV = 0.09;             // Per-frame gravitational acceleration applied to ships
+export const LAUNCH_MIN = 0;          // Launchpad world-space minimum X and Z coordinate
+export const LAUNCH_MAX = 840;        // Launchpad world-space maximum X and Z coordinate
 // Number of launchpad tiles on each axis: floor(LAUNCH_MAX / TILE) = 7.
 // GameLoop.spreadInfection() checks tiles [0, LAUNCHPAD_TILE_SIZE) × [0, LAUNCHPAD_TILE_SIZE).
-const LAUNCHPAD_TILE_SIZE = 7;
-const LIFT_FACTOR = 0.008;     // Per-frame lift acceleration coefficient (scales with forward velocity)
-const DRAG = 0.992;            // Global air resistance (higher = thinner air, more gliding)
-const INDUCED_DRAG = 0.002;    // Extra drag proportional to how much lift is being generated
+export const LAUNCHPAD_TILE_SIZE = 7;
+export const LIFT_FACTOR = 0.008;     // Per-frame lift acceleration coefficient (scales with forward velocity)
+export const DRAG = 0.992;            // Global air resistance (higher = thinner air, more gliding)
+export const INDUCED_DRAG = 0.002;    // Extra drag proportional to how much lift is being generated
 
 // --- Rendering distances [MUTABLE — changed by sketch.js setup() and gameRenderer.js updatePerformanceScaling()] ---
-const DESKTOP_VIEW_LIMITS = { far: 80, near: 60, cull: 10000 };
-const MOBILE_VIEW_LIMITS  = { far: 45, near: 30, cull: 4500 };
+export const DESKTOP_VIEW_LIMITS = { far: 80, near: 60, cull: 10000 };
+export const MOBILE_VIEW_LIMITS  = { far: 45, near: 30, cull: 4500 };
 
 // [MUTABLE] Active render distances — initialised from *_VIEW_LIMITS above,
 // then re-assigned whenever setup() (platform detection) or
 // updatePerformanceScaling() (FPS-adaptive quality) runs.
-let VIEW_NEAR = 35;            // Inner tile radius — always rendered, no frustum test
-let VIEW_FAR = 50;             // Outer tile radius — rendered with frustum culling
-let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
+export let VIEW_NEAR = 35;            // Inner tile radius — always rendered, no frustum test
+export let VIEW_FAR = 50;             // Outer tile radius — rendered with frustum culling
+export let CULL_DIST = 6000;          // Max world distance for rendering enemies / particles
+
+/**
+ * Sets the three active render-distance variables.
+ * Called by sketch.js setup() and gameRenderer.js updatePerformanceScaling()
+ * because ES-module live bindings (export let) are read-only for importers;
+ * mutations must go through the defining module.
+ * @param {number} near @param {number} far @param {number} cull
+ */
+export function setViewDistances(near, far, cull) {
+  VIEW_NEAR = near;
+  VIEW_FAR  = far;
+  CULL_DIST = cull;
+}
 
 // --- Sky / fog colour components [MUTABLE — changed by updateTimeOfDay()] ---
-let SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky (horizon/fog colour)
+export let SKY_R = 190, SKY_G = 140, SKY_B = 100; // Warmer sky (horizon/fog colour)
 // Ambient light used by setSceneLighting (shared with shadow tinting for consistency)
-let AMBIENT_R = 80, AMBIENT_G = 75, AMBIENT_B = 95; // Warmer ambient
+export let AMBIENT_R = 80, AMBIENT_G = 75, AMBIENT_B = 95; // Warmer ambient
 
 // --- Global sunrise light model [MUTABLE — changed by updateTimeOfDay()] ---
 // SUN_DIR is the direction light travels from the sun into the world.
 // [MUTABLE] SUN_DIR_* components — reassigned by updateTimeOfDay() each time-step change.
-let SUN_DIR_X = 0.96;
-let SUN_DIR_Y = 0.12;
-let SUN_DIR_Z = -0.34;
-let SUN_DIR_LEN = 1;
-let SUN_DIR_NX = 1;
-let SUN_DIR_NY = 0;
-let SUN_DIR_NZ = 0;
+export let SUN_DIR_X = 0.96;
+export let SUN_DIR_Y = 0.12;
+export let SUN_DIR_Z = -0.34;
+export let SUN_DIR_LEN = 1;
+export let SUN_DIR_NX = 1;
+export let SUN_DIR_NY = 0;
+export let SUN_DIR_NZ = 0;
 // Minimum sun elevation (Y component) used for shadow projection to avoid near-horizontal artifacts
 // (grazing angles produced kilometer-long shadows and z-fighting); 0.12 keeps sunrise feel without instability.
-const SUN_DIR_MIN_Y = 0.12;
+export const SUN_DIR_MIN_Y = 0.12;
 // Shadow tuning: fades with caster height and clamps alpha floor to avoid fully disappearing tall-caster shadows.
-const SHADOW_HEIGHT_FADE_RATE = 0.0016;
-const SHADOW_HEIGHT_FADE_MIN = 0.45;
-const SHADOW_OPACITY_MAX = 1;
+export const SHADOW_HEIGHT_FADE_RATE = 0.0016;
+export const SHADOW_HEIGHT_FADE_MIN = 0.45;
+export const SHADOW_OPACITY_MAX = 1;
 // Shadow projection clamp: avoid projecting shadows past the far view plane.
-const SHADOW_MAX_VIEW_FRACTION = 0.9;
+export const SHADOW_MAX_VIEW_FRACTION = 0.9;
 // Shadow alpha is the only control needed; color is now pure black (0,0,0) for correct darkening.
 
-const TREE_SHADOW_BASE_ALPHA = 75;
-const TREE_DEFAULT_TRUNK_HEIGHT = 40;
+export const TREE_SHADOW_BASE_ALPHA = 75;
+export const TREE_DEFAULT_TRUNK_HEIGHT = 40;
 
 /**
  * Returns opacity multiplier for a shadow cast by a height `casterH`.
@@ -89,9 +102,9 @@ const TREE_DEFAULT_TRUNK_HEIGHT = 40;
  * @param {number} casterH
  * @returns {number} opacity factor in [SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX]
  */
-const shadowOpacityFactor = (casterH) => {
+export const shadowOpacityFactor = (casterH) => {
   const rawOpacity = 1 - casterH * SHADOW_HEIGHT_FADE_RATE;
-  return constrain(rawOpacity, SHADOW_HEIGHT_FADE_MIN, SHADOW_OPACITY_MAX);
+  return Math.min(Math.max(rawOpacity, SHADOW_HEIGHT_FADE_MIN), SHADOW_OPACITY_MAX);
 };
 
 /**
@@ -101,22 +114,22 @@ const shadowOpacityFactor = (casterH) => {
  * @param {{x:number,y:number,z:number}} sun
  * @returns {number} clamped projection shift distance
  */
-const shadowShift = (casterH, sun) => {
+export const shadowShift = (casterH, sun) => {
   // VIEW_FAR can change at runtime (quality scaling), so recompute the clamp per call.
   const maxShift = VIEW_FAR * TILE * SHADOW_MAX_VIEW_FRACTION;
   return Math.min(casterH / sun.y, maxShift);
 };
-let SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180; // [MUTABLE — updateTimeOfDay()]
+export let SUN_KEY_R = 255, SUN_KEY_G = 220, SUN_KEY_B = 180; // [MUTABLE — updateTimeOfDay()]
 // Shader lighting defaults — match the Late Morning initial time step.
 // sSun values are kept ≤ 1.1 so that combined with sAmbH the total light
 // term stays below ~1.5 on the brightest channel, preventing blown-out whites.
-let SHADER_SUN_R = 1.05, SHADER_SUN_G = 0.88, SHADER_SUN_B = 0.72; // [MUTABLE — updateTimeOfDay()]
-let SHADER_AMB_L_R = 0.26, SHADER_AMB_L_G = 0.28, SHADER_AMB_L_B = 0.38; // [MUTABLE — updateTimeOfDay()]
-let SHADER_AMB_H_R = 0.40, SHADER_AMB_H_G = 0.50, SHADER_AMB_H_B = 0.62; // [MUTABLE — updateTimeOfDay()]
+export let SHADER_SUN_R = 1.05, SHADER_SUN_G = 0.88, SHADER_SUN_B = 0.72; // [MUTABLE — updateTimeOfDay()]
+export let SHADER_AMB_L_R = 0.26, SHADER_AMB_L_G = 0.28, SHADER_AMB_L_B = 0.38; // [MUTABLE — updateTimeOfDay()]
+export let SHADER_AMB_H_R = 0.40, SHADER_AMB_H_G = 0.50, SHADER_AMB_H_B = 0.62; // [MUTABLE — updateTimeOfDay()]
 
-let currentTimeStep = 0; // [MUTABLE — updateTimeOfDay() / sketch.js keyPressed()]
+export let currentTimeStep = 0; // [MUTABLE — updateTimeOfDay() / sketch.js keyPressed()]
 
-const DAY_CYCLE = [
+export const DAY_CYCLE = [
   { // 0: Morning 1 (Gentle warm light from low angle)
     name: 'Morning 1',
     dir: [0.95, 0.16, -0.34],
@@ -219,7 +232,7 @@ const DAY_CYCLE = [
   }
 ];
 
-function updateTimeOfDay(stepIndex) {
+export function updateTimeOfDay(stepIndex) {
   if (stepIndex === undefined) return;
 
   // Cleanly wrap negative and out-of-bounds indices
@@ -247,18 +260,18 @@ function updateTimeOfDay(stepIndex) {
 }
 
 // --- Infection spread parameters ---
-const MAX_INF = 2000;   // Total infected tile count that triggers game over
-const INF_RATE = 0.01;   // Per-tile per-update probability of spreading to a neighbour
-const YELLOW_INF_RATE = 0.04; // 4x faster than normal virus (virulent yellow virus)
-const RAPID_INF_RATE = 0.8; // Accelerated spread rate during game over
-const CLEAR_R = 3;      // Radius (in tiles) cleared by a single bullet/missile impact
-const TANK_SHELL_CLEAR_R = 7; // Radius (in tiles) cleared by a tank shell impact
+export const MAX_INF = 2000;   // Total infected tile count that triggers game over
+export const INF_RATE = 0.01;   // Per-tile per-update probability of spreading to a neighbour
+export const YELLOW_INF_RATE = 0.04; // 4x faster than normal virus (virulent yellow virus)
+export const RAPID_INF_RATE = 0.8; // Accelerated spread rate during game over
+export const CLEAR_R = 3;      // Radius (in tiles) cleared by a single bullet/missile impact
+export const TANK_SHELL_CLEAR_R = 7; // Radius (in tiles) cleared by a tank shell impact
 
 // --- Infection spread direction vectors (4-connected grid) ---
-const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+export const ORTHO_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // --- Terrain chunking ---
-const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached as p5 geometry
+export const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached as p5 geometry
 
 // --- Mountain peaks — Gaussian altitude bumps placed at fixed world positions ---
 // Each entry lowers the terrain Y value (raises the peak height) by `strength` at the centre.
@@ -273,16 +286,26 @@ const CHUNK_SIZE = 16;   // Each chunk is CHUNK_SIZE × CHUNK_SIZE tiles; cached
 ]; */
 // [MUTABLE] Peak array — re-assigned by randomizeMountainPeaks() in worldGenerator.js.
 // Treated as an array of {x,z,strength,sigma,_s2,_skipDistSq} after initializeMountainPeaks().
-let MOUNTAIN_PEAKS = [
+export let MOUNTAIN_PEAKS = [
   { x: -2200, z: -1600, strength: 450, sigma: 1100 },
 ];
 
+/**
+ * Replaces the active mountain peak list and recomputes cached Gaussian terms.
+ * Importers must call this instead of assigning to MOUNTAIN_PEAKS directly.
+ * @param {Array<{x:number,z:number,strength:number,sigma?:number}>} peaks
+ */
+export function setMountainPeaks(peaks) {
+  MOUNTAIN_PEAKS = Array.isArray(peaks) ? peaks : [];
+  initializeMountainPeaks();
+}
 
-const SENTINEL_PEAK_SIGMA = 400;  // Default Gaussian spread radius — used when a peak has no sigma field
-const SENTINEL_PULSE_INTERVAL = 5000;  // Milliseconds between each sentinel pulse (~5 s)
+
+export const SENTINEL_PEAK_SIGMA = 400;  // Default Gaussian spread radius — used when a peak has no sigma field
+export const SENTINEL_PULSE_INTERVAL = 5000;  // Milliseconds between each sentinel pulse (~5 s)
 // Pre-compute the Gaussian denominator (2σ²) and the early-exit distance threshold
 // for each peak — these are constant across the lifetime of the page.
-function initializeMountainPeaks() {
+export function initializeMountainPeaks() {
   for (let peak of MOUNTAIN_PEAKS) {
     const sig = peak.sigma !== undefined ? peak.sigma : SENTINEL_PEAK_SIGMA;
     peak._s2 = 2 * sig * sig;
@@ -295,12 +318,12 @@ function initializeMountainPeaks() {
 // Initial pre-calculation for default peak(s)
 initializeMountainPeaks();
 // Infection parameters for an infected sentinel (much faster than normal INF_RATE)
-const SENTINEL_INFECTION_RADIUS = 5;     // Tile radius of accelerated spread around an infected sentinel
-const SENTINEL_INFECTION_PROBABILITY = 0.35;  // Per-tile per-update spread chance near an infected sentinel
+export const SENTINEL_INFECTION_RADIUS = 5;     // Tile radius of accelerated spread around an infected sentinel
+export const SENTINEL_INFECTION_PROBABILITY = 0.35;  // Per-tile per-update spread chance near an infected sentinel
 
 // --- Tree visual variants (healthy colour, infected colour, cone geometry) ---
 // Each variant is used to draw one of three distinct tree silhouettes.
-const TREE_VARIANTS = [
+export const TREE_VARIANTS = [
   // Variant 0: Single-tier small round tree
   { infected: [180, 30, 20], healthy: [25, 130, 20], cones: [[12, 45, 20]] },
   // Variant 1: Two-tier layered tree
@@ -313,17 +336,17 @@ const TREE_VARIANTS = [
 ];
 
 // --- Ship steering rates (radians per frame) ---
-const YAW_RATE = 0.04;   // Keyboard left/right turn speed
-const PITCH_RATE = 0.04;   // Keyboard pitch up/down speed
+export const YAW_RATE = 0.04;   // Keyboard left/right turn speed
+export const PITCH_RATE = 0.04;   // Keyboard pitch up/down speed
 
 // --- Mouse steering ---
-const MOUSE_SENSITIVITY = 0.003;  // Mouse pixels → radians conversion factor
-const MOUSE_SMOOTHING = 0.25;   // Lerp blend factor for smoothed mouse delta (lower = smoother)
+export const MOUSE_SENSITIVITY = 0.003;  // Mouse pixels → radians conversion factor
+export const MOUSE_SMOOTHING = 0.25;   // Lerp blend factor for smoothed mouse delta (lower = smoother)
 
 // --- Weapon modes (index into WEAPON_MODES array) ---
-const WEAPON_MODES = ['NORMAL', 'MISSILE', 'BARRIER'];
-const NORMAL_SHOT_MODES = ['single', 'double', 'triple', 'spread'];
-const NORMAL_SHOT_MODE_LABELS = {
+export const WEAPON_MODES = ['NORMAL', 'MISSILE', 'BARRIER'];
+export const NORMAL_SHOT_MODES = ['single', 'double', 'triple', 'spread'];
+export const NORMAL_SHOT_MODE_LABELS = {
   single: 'SINGLE',
   double: 'DOUBLE',
   triple: 'TRIPLE',
@@ -331,7 +354,7 @@ const NORMAL_SHOT_MODE_LABELS = {
 };
 
 // --- Key bindings — Player 1 (WASD + Q / E / R / F) ---
-const P1_KEYS = {
+export const P1_KEYS = {
   thrust: 87,      // W
   left: 65,        // A
   right: 68,       // D
@@ -343,7 +366,7 @@ const P1_KEYS = {
 };
 
 // --- Key bindings — Player 2 (Arrow keys + punctuation row) ---
-const P2_KEYS = {
+export const P2_KEYS = {
   thrust: 38,        // UP_ARROW
   left: 37,          // LEFT_ARROW
   right: 39,         // RIGHT_ARROW
@@ -362,7 +385,7 @@ const P2_KEYS = {
  * Encodes X and Z into a single positive integer: (X+10000)*20001 + (Z+10000).
  * Safe for coordinates from -10000 to 10000.
  */
-const tileKey = (tx, tz) => (tx + 10000) * 20001 + (tz + 10000);
+export const tileKey = (tx, tz) => (tx + 10000) * 20001 + (tz + 10000);
 
 /**
  * Returns a numeric Map key for a chunk-grid coordinate pair.
@@ -372,22 +395,22 @@ const tileKey = (tx, tz) => (tx + 10000) * 20001 + (tz + 10000);
  * allocation `${cx},${cz}` that was previously used as a Map key in the hot
  * tile-overlay render path.
  */
-const chunkKey = (cx, cz) => (cx + 10000) * 20001 + (cz + 10000);
+export const chunkKey = (cx, cz) => (cx + 10000) * 20001 + (cz + 10000);
 
 /** Converts a world-space coordinate to its containing tile index. */
-const toTile = v => Math.floor(v / TILE);
+export const toTile = v => Math.floor(v / TILE);
 
 /** Returns true if world-space (x, z) falls inside the flat launchpad area. */
-const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_MIN && z <= LAUNCH_MAX;
+export const isLaunchpad = (x, z) => x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_MIN && z <= LAUNCH_MAX;
 
 /**
  * Returns true if tile coordinates (tx, tz) fall inside the launchpad tile grid.
  * Used by TileManager to maintain the incremental launchpadCount field.
  */
-const isTileOnLaunchpad = (tx, tz) => tx >= 0 && tx < LAUNCHPAD_TILE_SIZE && tz >= 0 && tz < LAUNCHPAD_TILE_SIZE;
+export const isTileOnLaunchpad = (tx, tz) => tx >= 0 && tx < LAUNCHPAD_TILE_SIZE && tz >= 0 && tz < LAUNCHPAD_TILE_SIZE;
 
 /** Returns true when terrain depth y indicates a submerged tile (y ≥ SEA means underwater; WEBGL Y axis is inverted, larger values are deeper). */
-const aboveSea = y => y >= SEA - 1;
+export const aboveSea = y => y >= SEA - 1;
 
 /**
  * Fast magnitude helpers used in per-frame AI/physics paths.
@@ -395,9 +418,9 @@ const aboveSea = y => y >= SEA - 1;
  * trimming a bit of overhead in hot loops.
  */
 /** @param {number} dx @param {number} dz @returns {number} */
-const mag2 = (dx, dz) => Math.sqrt(dx * dx + dz * dz);
+export const mag2 = (dx, dz) => Math.sqrt(dx * dx + dz * dz);
 /** @param {number} dx @param {number} dy @param {number} dz @returns {number} */
-const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
+export const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
 
 /**
  * Squared 3-D Euclidean distance between two world-space points.
@@ -407,7 +430,7 @@ const mag3 = (dx, dy, dz) => Math.sqrt(dx * dx + dy * dy + dz * dz);
  * @param {number} x2 @param {number} y2 @param {number} z2
  * @returns {number}
  */
-const dist3dSq = (x1, y1, z1, x2, y2, z2) => {
+export const dist3dSq = (x1, y1, z1, x2, y2, z2) => {
   const dx = x1 - x2, dy = y1 - y2, dz = z1 - z2;
   return dx * dx + dy * dy + dz * dz;
 };
@@ -421,7 +444,7 @@ const dist3dSq = (x1, y1, z1, x2, y2, z2) => {
  * @param {Array} arr  The array to mutate.
  * @param {number} i   Index of the element to remove.
  */
-function swapRemove(arr, i) {
+export function swapRemove(arr, i) {
   const last = arr.pop();
   if (i < arr.length) arr[i] = last;
 }
@@ -434,7 +457,7 @@ function swapRemove(arr, i) {
 // Array with a swap-with-last removal technique for O(1) removal while 
 // maintaining a fast iteration list (no iterator overhead).
 // =============================================================================
-class TileManager {
+export class TileManager {
   /**
    * @param {boolean} [withBuckets=false]  When true, tiles are also indexed into
    *   a per-chunk bucket map (keyed by "cx,cz") so the renderer can iterate only
@@ -489,7 +512,8 @@ class TileManager {
    * @returns {object|null} the newly added tile object, or null if it already existed.
    */
   add(k, type = 'normal') {
-    if (this === infection && gameState?.barrierTiles.has(k)) return null;
+    const gs = globalThis.gameState;
+    if (this === infection && gs?.barrierTiles?.has(k)) return null;
     if (this.tiles.has(k)) return null;
     const tx = Math.floor(k / 20001) - 10000;
     const tz = (k % 20001) - 10000;
@@ -606,12 +630,12 @@ class TileManager {
 /** Singleton infection state shared across all modules. */
 // withBuckets=true: renderer iterates only tiles in visible chunks, not the
 // entire world list — same optimisation applied to barrierTiles.
-const infection = new TileManager(true);
+export const infection = new TileManager(true);
 
 // =============================================================================
 // Lightweight opt-in profiler (no overhead unless window.VIRON_PROFILE is set)
 // =============================================================================
-function createVironProfiler(cfg) {
+export function createVironProfiler(cfg) {
   if (typeof performance === 'undefined') return null;
   const sampleFrames = cfg.sampleFrames || 180;
   const label = cfg.label || 'default';
@@ -732,7 +756,7 @@ function createVironProfiler(cfg) {
   };
 }
 
-function initVironProfiler() {
+export function initVironProfiler() {
   if (typeof window === 'undefined') return null;
   const cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
     ? window.VIRON_PROFILE
@@ -741,7 +765,7 @@ function initVironProfiler() {
   return window.__vironProfiler;
 }
 
-function getVironProfiler() {
+export function getVironProfiler() {
   if (typeof window === 'undefined') return null;
   const cfg = (typeof window.VIRON_PROFILE === 'object' && window.VIRON_PROFILE.enabled === true)
     ? window.VIRON_PROFILE
@@ -752,22 +776,23 @@ function getVironProfiler() {
 }
 
 // --- Enemy behavior and projectile constants ---
-const ENEMY_BULLET_LIFE      = 1000;  // Standard enemy bullets
-const ENEMY_CRAB_BULLET_LIFE = 1000;  // Crab / scorpion upward shots
-const BOSS_BULLET_LIFE       = 1200;  // Kraken burst projectiles
-const KRAKEN_TENTACLE_LIFE   = 900;   // Kraken tentacle lash projectiles
+export const ENEMY_BULLET_LIFE      = 1000;  // Standard enemy bullets
+export const ENEMY_CRAB_BULLET_LIFE = 1000;  // Crab / scorpion upward shots
+export const BOSS_BULLET_LIFE       = 1200;  // Kraken burst projectiles
+export const KRAKEN_TENTACLE_LIFE   = 900;   // Kraken tentacle lash projectiles
 
-const BOMBER_BOUNDARY_LIMIT      = 4000;
-const BOMBER_DROP_INTERVAL_TICKS = 600;
-const SEEDER_BOUNDARY_LIMIT      = 5000;
-const FIGHTER_STATE_TOGGLE_TICKS = 120;
+export const BOMBER_BOUNDARY_LIMIT      = 4000;
+export const BOMBER_DROP_INTERVAL_TICKS = 600;
+export const SEEDER_BOUNDARY_LIMIT      = 5000;
+export const FIGHTER_STATE_TOGGLE_TICKS = 120;
 
-const SCORPION_STUCK_THRESHOLD_TICKS = 300;
-const SCORPION_SKIP_DURATION_TICKS   = 1800;
+export const SCORPION_STUCK_THRESHOLD_TICKS = 300;
+export const SCORPION_SKIP_DURATION_TICKS   = 1800;
 
 initVironProfiler();
 
 
+// Expose profiler hooks to window for benchmark scripts / devtools console
 if (typeof window !== 'undefined') {
   window.initVironProfiler = initVironProfiler;
   window.getVironProfiler = getVironProfiler;

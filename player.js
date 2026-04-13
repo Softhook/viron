@@ -28,6 +28,27 @@
 // Spawn helpers
 // ---------------------------------------------------------------------------
 
+import { p } from './p5Context.js';
+import { SHIP_DESIGNS } from './shipDesigns.js';
+import {
+  LAUNCH_ALT, WEAPON_MODES, TILE, tileKey, toTile, infection,
+  YAW_RATE, PITCH_RATE, MOUSE_SENSITIVITY, MOUSE_SMOOTHING,
+  SUN_DIR_MIN_Y, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ, aboveSea
+} from './constants.js';
+import { Vehicle } from './Vehicle.js';
+import { TerrainShadows } from './terrainShadows.js';
+import { gameState } from './gameState.js';
+import { aimAssist } from './aimAssist.js';
+import { mobileController } from './mobileControls.js';
+import { terrain } from './terrain.js';
+import { particleSystem } from './particles.js';
+import { gameSFX } from './sfx.js';
+import { inputManager } from './InputManager.js';
+import { physicsEngine } from './PhysicsEngine.js';
+import { setSceneLighting } from './gameRenderer.js';
+
+const p5 = p;
+
 /** Fallback ship-design object used when the player's designIndex has no entry in SHIP_DESIGNS. */
 const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };
 
@@ -38,14 +59,14 @@ const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust:
  * @param {object} p  Player object (uses p.id).
  * @returns {number}  World-space X offset for the launchpad position.
  */
-function getSpawnX(p) {
+export function getSpawnX(p) {
   return gameState.numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520);
 }
 
 /**
  * Player - Encapsulates player metadata, weapon state, and their active Vehicle.
  */
-class Player {
+export class Player {
   constructor(id, keys, offsetX, labelColor) {
     this.id = id;
     this.keys = keys;
@@ -91,12 +112,12 @@ class Player {
 }
 
 /** Legacy factory for backward compatibility during transition. */
-function createPlayer(id, keys, offsetX, labelColor) {
+export function createPlayer(id, keys, offsetX, labelColor) {
   return new Player(id, keys, offsetX, labelColor);
 }
 
 /** Legacy resetShip for backward compatibility. */
-function resetShip(p, offsetX) {
+export function resetShip(p, offsetX) {
   p.reset(offsetX);
 }
 
@@ -112,8 +133,8 @@ function resetShip(p, offsetX) {
  * @returns {{fx,fy,fz,cp,sp,cy,sy}}
  */
 function _calcForwardDir(pitch, yaw) {
-  const cp = cos(pitch), sp = sin(pitch);
-  const cy = cos(yaw), sy = sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
   return { fx: -cp * sy, fy: sp, fz: -cp * cy, cp, sp, cy, sy };
 }
 
@@ -200,9 +221,9 @@ function fireNormalPattern(p, s) {
     p.bullets.push(spawnProjectile(ship, power, life));
     p.bullets.push(spawnProjectileOffset(ship, power, life, 0.08));
   } else if (mode === 'spread') {
-    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.05 + random(-0.03, 0.03)));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, random(-0.025, 0.025)));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.05 + random(-0.03, 0.03)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.05 + p5.random(-0.03, 0.03)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, p5.random(-0.025, 0.025)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.05 + p5.random(-0.03, 0.03)));
   } else {
     p.bullets.push(spawnProjectile(ship, power, life));
   }
@@ -352,16 +373,16 @@ function _drawProjectedShadowFromFootprint(x, groundY, z, localPts, casterH, yaw
   const hull = _shadowHull2D(top);
   if (hull.length < 3) return;
 
-  noStroke();
+  p.noStroke();
   // Pure black shadow with alpha is most consistent for darkening background terrain.
-  fill(0, 0, 0, alpha * getOpacityFactor(casterH));
+  p.fill(0, 0, 0, alpha * getOpacityFactor(casterH));
 
   _beginShadowStencil();
-  beginShape();
-  for (const p of hull) {
-    vertex(p.x, terrain.getAltitude(p.x, p.z) - 0.7, p.z);
+  p.beginShape();
+  for (const pt of hull) {
+    p.vertex(pt.x, terrain.getAltitude(pt.x, pt.z) - 0.7, pt.z);
   }
-  endShape(CLOSE);
+  p.endShape(p.CLOSE);
   _endShadowStencil();
 }
 
@@ -385,7 +406,7 @@ function drawShadow(x, groundY, z, w, h, casterH = 80, yaw = 0) {
  * @param {number} yaw     Ship yaw (used to orient the shadow).
  * @param {number} alt     Ship current altitude Y.
  */
-function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
+export function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
   // Ground altitude is authoritative for projection; recompute if available to avoid
   // shadows sticking directly below the ship when caller passes an imprecise value.
   const gy = (terrain && typeof terrain.getAltitude === 'function') ? terrain.getAltitude(x, z) : groundY;
@@ -395,9 +416,9 @@ function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
   // Remove this built-in ride clearance from shadow projection so shadows sit under
   // both aircraft and ground vehicles instead of appearing laterally detached.
   const groundClearance = 12;
-  const rawShadowHeight = max(0, gy - alt - groundClearance);
-  const shadowHeight = max(rawShadowHeight, 0.08);
-  const alpha = map(rawShadowHeight, 0, 600, 95, 40, true);
+  const rawShadowHeight = Math.max(0, gy - alt - groundClearance);
+  const shadowHeight = Math.max(rawShadowHeight, 0.08);
+  const alpha = p.map(rawShadowHeight, 0, 600, 95, 40, true);
 
   let shipFootprint = [
     { x: -13, z: 13 },
@@ -427,15 +448,15 @@ function drawShipShadow(x, groundY, z, yaw, alt, designIdx = 0) {
  * @param {{x,y,z,pitch,yaw}} s    Ship state.
  * @param {number[]}          tintColor  RGB player colour [r, g, b].
  */
-function shipDisplay(s, tintColor) {
+export function shipDisplay(s, tintColor) {
   terrain.applyShader();
-  noStroke();
+  p.noStroke();
 
   let cy = Math.cos(s.yaw), sy = Math.sin(s.yaw);
 
   // Find the player to get their design index and input state
-  let p = gameState.players.find(player => player.labelColor === tintColor);
-  let designIdx = p ? (p.designIndex || 0) : 0;
+  let shipPlayer = gameState.players.find(player => player.labelColor === tintColor);
+  let designIdx = shipPlayer ? (shipPlayer.designIndex || 0) : 0;
   const isGround = SHIP_DESIGNS[designIdx] && SHIP_DESIGNS[designIdx].isGroundVehicle;
 
   // Ground vehicles stay flat against the horizon (body pitch = 0)
@@ -467,7 +488,7 @@ function shipDisplay(s, tintColor) {
 
   let r = tintColor[0], g = tintColor[1], b = tintColor[2];
   let dark = [r * 0.4, g * 0.4, b * 0.4];
-  let light = [lerp(r, 255, 0.4), lerp(g, 255, 0.4), lerp(b, 255, 0.4)];
+  let light = [p.lerp(r, 255, 0.4), p.lerp(g, 255, 0.4), p.lerp(b, 255, 0.4)];
   let engineGray = [80, 80, 85];
 
   const drawFace = (pts, col, xform) => {
@@ -486,22 +507,22 @@ function shipDisplay(s, tintColor) {
         // Cross product v1 × v2 gives the face normal; we always pass it as-is.
         // For the ship geometry in shipDesigns.js, triangles are consistently wound
         // CCW when viewed from outside, so this gives an outward-pointing normal.
-        normal(nx / mag, ny / mag, nz / mag);
+        p.normal(nx / mag, ny / mag, nz / mag);
       }
     }
 
-    fill(col[0], col[1], col[2], col[3] || 255);
-    beginShape();
-    for (let p of pts) {
-      let t = activeTransform(p);
-      vertex(t[0], t[1], t[2]);
+    p.fill(col[0], col[1], col[2], col[3] || 255);
+    p.beginShape();
+    for (let pt of pts) {
+      let t = activeTransform(pt);
+      p.vertex(t[0], t[1], t[2]);
     }
-    endShape(CLOSE);
+    p.endShape(p.CLOSE);
   };
 
   let isPushing = false;
-  if (p) {
-    isPushing = inputManager.getActionActive(p, 'thrust');
+  if (shipPlayer) {
+    isPushing = inputManager.getActionActive(shipPlayer, 'thrust');
   }
 
   let flamePoints = [], thrustAngle = 0;
@@ -511,68 +532,68 @@ function shipDisplay(s, tintColor) {
   }
 
   // Reset material state to avoid specular leakage into subsequent draws (like shadows)
-  specularMaterial(0);
-  shininess(0);
+  p.specularMaterial(0);
+  p.shininess(0);
 
-  resetShader();
+  p.resetShader();
   setSceneLighting();
 
   // --- Afterburner / Thrust Flames (Skipped for ground vehicles) ---
-  if (p && !isGround) {
+  if (shipPlayer && !isGround) {
     const drawThrustFlame = (flamePt) => {
-      push();
+      p.push();
       // Add a dedicated light from the camera's perspective to illuminate the back of the thrust cone
       // This ensures the specular highlight actually catches the geometry instead of being in shadow
-      directionalLight(255, 255, 255, 0, 0, -1);
+      p.directionalLight(255, 255, 255, 0, 0, -1);
 
       // 1. Move to engine nozzle in world space
       let t = transform([flamePt.x, flamePt.y, flamePt.z]);
-      translate(t[0], t[1], t[2]);
+      p.translate(t[0], t[1], t[2]);
 
       // 2. Orient to match ship + design's thrust offset
-      rotateY(s.yaw);
-      rotateX(s.pitch + thrustAngle);
+      p.rotateY(s.yaw);
+      p.rotateX(s.pitch + thrustAngle);
 
-      let flicker = 1.0 + Math.sin(frameCount * 0.8) * 0.15;
+      let flicker = 1.0 + Math.sin(p5.frameCount * 0.8) * 0.15;
       let power = isPushing ? 1.0 : 0.3;
-      noStroke();
+      p.noStroke();
 
       // Cone 1: Hot Core
       // p5 cone is centered; shift it down by half-height to anchor apex at nozzle
       let h1 = 15 * power * flicker;
-      push();
-      translate(0, h1 / 2, 0);
-      specularMaterial(255);
-      shininess(60);
-      fill(isPushing ? 200 : 80, 230, 255, isPushing ? 255 : 180);
-      cone(4 * power * flicker, h1, 8);
-      pop();
+      p.push();
+      p.translate(0, h1 / 2, 0);
+      p.specularMaterial(255);
+      p.shininess(60);
+      p.fill(isPushing ? 200 : 80, 230, 255, isPushing ? 255 : 180);
+      p.cone(4 * power * flicker, h1, 8);
+      p.pop();
 
       // Cone 2: Middle Flame
       let h2 = 30 * power * flicker;
-      push();
-      translate(0, h2 / 2 + 5 * power, 0); // Start slightly further out
-      specularMaterial(255);
-      shininess(40);
-      fill(50, 150, 255, isPushing ? 200 : 80);
-      cone(7 * power * flicker, h2, 8);
-      pop();
+      p.push();
+      p.translate(0, h2 / 2 + 5 * power, 0); // Start slightly further out
+      p.specularMaterial(255);
+      p.shininess(40);
+      p.fill(50, 150, 255, isPushing ? 200 : 80);
+      p.cone(7 * power * flicker, h2, 8);
+      p.pop();
 
       if (isPushing) {
         // Outer Exhaust Glow
         let h3 = 50 * flicker;
-        push();
-        translate(0, h3 / 2 + 15, 0);
-        fill(255, 100, 0, 120);
-        cone(12 * flicker, h3, 6);
-        pop();
+        p.push();
+        p.translate(0, h3 / 2 + 15, 0);
+        p.fill(255, 100, 0, 120);
+        p.cone(12 * flicker, h3, 6);
+        p.pop();
 
         // Engine Glow Point (small highlight at nozzle)
-        specularMaterial(255);
-        fill(255, 255, 255);
-        sphere(3);
+        p.specularMaterial(255);
+        p.fill(255, 255, 255);
+        p.sphere(3);
       }
-      pop();
+      p.pop();
     };
 
     if (Array.isArray(flamePoints)) {
@@ -580,7 +601,7 @@ function shipDisplay(s, tintColor) {
     }
   }
 
-  resetShader();
+  p.resetShader();
   setSceneLighting();
 
   let gy = terrain.getAltitude(s.x, s.z);
@@ -610,7 +631,7 @@ function shipDisplay(s, tintColor) {
  *
  * @param {object} p  Player state object (mutated in place).
  */
-function updateShipInput(p) {
+export function updateShipInput(p) {
   if (p.dead || gameState.mode === 'gameover') return;
 
   p.aimTarget = null;
@@ -669,7 +690,7 @@ function _fireRateLimitedPrimary(p) {
 function _handleWeaponFiring(p, isShooting) {
   // Safety cooldown: ignore shooting inputs for 500ms after entering PLAYING mode
   if (gameState.mode === 'playing') {
-    if (millis() - gameState.playingStartTime < 500) return;
+    if (p5.millis() - gameState.playingStartTime < 500) return;
   }
 
   // Mobile action mapping is direct (no cycle dependency):
@@ -708,7 +729,7 @@ function _handleWeaponFiring(p, isShooting) {
  * All in-flight bullets are discarded.
  * @param {object} p  Player state object.
  */
-function killPlayer(p) {
+export function killPlayer(p) {
   gameSFX?.setThrust(p.id, false);
   particleSystem.addExplosion(p.ship.x, p.ship.y, p.ship.z);
   terrain.addPulse(p.ship.x, p.ship.z, 2.0);  // Yellow ship-explosion ring (type 2)
@@ -738,3 +759,24 @@ function killPlayer(p) {
   }
 }
 
+
+
+export function renderProjectiles(...args) {
+  if (typeof globalThis.renderProjectiles === 'function') {
+    return globalThis.renderProjectiles(...args);
+  }
+}
+
+
+export function updateBarrierPhysics(...args) {
+  if (typeof globalThis.updateBarrierPhysics === 'function') {
+    return globalThis.updateBarrierPhysics(...args);
+  }
+}
+
+
+export function clearInfectionRadius(...args) {
+  if (typeof globalThis.clearInfectionRadius === 'function') {
+    return globalThis.clearInfectionRadius(...args);
+  }
+}

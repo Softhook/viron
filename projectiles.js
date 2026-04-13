@@ -5,6 +5,48 @@
 // @exports   updateBarrierPhysics()     — called per-tick by sketch.js draw()
 // =============================================================================
 
+import { p } from './p5Context.js';
+import { TILE, infection, tileKey, mag3, TANK_SHELL_CLEAR_R } from './constants.js';
+import { clearInfectionAt, clearInfectionRadius } from './utils.js';
+import { aimAssist } from './aimAssist.js';
+import { enemyManager } from './enemies.js';
+import { terrain } from './terrain.js';
+import { particleSystem } from './particles.js';
+import { physicsEngine } from './PhysicsEngine.js';
+import { gameState } from './gameState.js';
+import { gameSFX } from './sfx.js';
+
+function _lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function _swapRemove(arr, i) {
+  const last = arr.pop();
+  if (i < arr.length) arr[i] = last;
+}
+
+function _findNearestEnemy(arr, x, y, z) {
+  let best = null;
+  let bestMag = Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    const e = arr[i];
+    const d = mag3(x - e.x, y - e.y, z - e.z);
+    if (d < bestMag) {
+      bestMag = d;
+      best = e;
+    }
+  }
+  return best;
+}
+
+function _getCullDist() {
+  return typeof globalThis.CULL_DIST === 'number' ? globalThis.CULL_DIST : 6000;
+}
+
+function _getGameRenderer() {
+  return globalThis.gameRenderer;
+}
+
 /**
  * Advances bullet and homing-missile physics for one frame.
  *
@@ -17,11 +59,11 @@
  *
  * @param {object} p  Player state object containing bullets[], homingMissiles[], tankShells[].
  */
-function updateProjectilePhysics(p) {
+function updateProjectilePhysics(plyr) {
   // --- Bullets ---
   let assistEnabled = aimAssist.enabled;
-  for (let i = p.bullets.length - 1; i >= 0; i--) {
-    let b = p.bullets[i];
+  for (let i = plyr.bullets.length - 1; i >= 0; i--) {
+    let b = plyr.bullets[i];
 
     if (assistEnabled && b.life > 240) {
       let bestTarget = null;
@@ -70,27 +112,27 @@ function updateProjectilePhysics(p) {
         let dx = bestTarget.x - b.x, dy = bestTarget.y - b.y, dz = bestTarget.z - b.z;
         let d = Math.hypot(dx, dy, dz);
         let steer = 0.04;
-        b.vx = lerp(b.vx, (dx / d) * speed, steer);
-        b.vy = lerp(b.vy, (dy / d) * speed, steer);
-        b.vz = lerp(b.vz, (dz / d) * speed, steer);
+        b.vx = _lerp(b.vx, (dx / d) * speed, steer);
+        b.vy = _lerp(b.vy, (dy / d) * speed, steer);
+        b.vz = _lerp(b.vz, (dz / d) * speed, steer);
       }
     }
 
     b.x += b.vx; b.y += b.vy; b.z += b.vz;
     b.life -= 2;
     if (b.life <= 0) {
-      swapRemove(p.bullets, i);
+      _swapRemove(plyr.bullets, i);
     } else if (b.y > terrain.getAltitude(b.x, b.z)) {
-      clearInfectionAt(b.x, b.z, p);
-      swapRemove(p.bullets, i);
+      clearInfectionAt(b.x, b.z, plyr);
+      _swapRemove(plyr.bullets, i);
     }
   }
 
   // --- Homing missiles ---
-  for (let i = p.homingMissiles.length - 1; i >= 0; i--) {
-    let m = p.homingMissiles[i];
+  for (let i = plyr.homingMissiles.length - 1; i >= 0; i--) {
+    let m = plyr.homingMissiles[i];
     const maxSpd = 30;
-    let target = p.aimTarget || findNearest(enemyManager.enemies, m.x, m.y, m.z);
+    let target = plyr.aimTarget || _findNearestEnemy(enemyManager.enemies, m.x, m.y, m.z);
 
     if (target) {
       let dest = aimAssist.enabled ? aimAssist._getPredictedPos(m, target, maxSpd) : target;
@@ -99,9 +141,9 @@ function updateProjectilePhysics(p) {
       if (dSq > 0) {
         let mg = Math.sqrt(dSq);
         let bl = 0.12;
-        m.vx = lerp(m.vx, (dx / mg) * maxSpd, bl);
-        m.vy = lerp(m.vy, (dy / mg) * maxSpd, bl);
-        m.vz = lerp(m.vz, (dz / mg) * maxSpd, bl);
+        m.vx = _lerp(m.vx, (dx / mg) * maxSpd, bl);
+        m.vy = _lerp(m.vy, (dy / mg) * maxSpd, bl);
+        m.vz = _lerp(m.vz, (dz / mg) * maxSpd, bl);
       }
     }
 
@@ -119,8 +161,8 @@ function updateProjectilePhysics(p) {
     if (physicsEngine.tickCount % 2 === 0) {
       particleSystem.particles.push({
         x: m.x, y: m.y, z: m.z,
-        vx: random(-.5, .5), vy: random(-.5, .5), vz: random(-.5, .5),
-        life: 120, decay: 5, seed: random(1.0), size: random(2, 5)
+        vx: p.random(-.5, .5), vy: p.random(-.5, .5), vz: p.random(-.5, .5),
+        life: 120, decay: 5, seed: p.random(1.0), size: p.random(2, 5)
       });
     }
 
@@ -128,15 +170,15 @@ function updateProjectilePhysics(p) {
     if (m.life <= 0 || m.y > gnd) {
       if (m.y > gnd) {
         particleSystem.addExplosion(m.x, m.y, m.z);
-        clearInfectionAt(m.x, m.z, p);
+        clearInfectionAt(m.x, m.z, plyr);
       }
-      swapRemove(p.homingMissiles, i);
+      _swapRemove(plyr.homingMissiles, i);
     }
   }
 
   // --- Tank Shells ---
-  for (let i = p.tankShells.length - 1; i >= 0; i--) {
-    let s = p.tankShells[i];
+  for (let i = plyr.tankShells.length - 1; i >= 0; i--) {
+    let s = plyr.tankShells[i];
     s.vy += 0.15; // Gravity
     s.x += s.vx; s.y += s.vy; s.z += s.vz;
     s.life--;
@@ -155,21 +197,21 @@ function updateProjectilePhysics(p) {
         let dx = e.x - s.x, dy = e.y - s.y, dz = e.z - s.z;
         if (dx * dx + dy * dy + dz * dz < impactRadSq) {
           particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
-          swapRemove(enemyManager.enemies, j);
-          p.score += 300;
+          _swapRemove(enemyManager.enemies, j);
+          plyr.score += 300;
         }
       }
 
-      let tx = toTile(s.x), tz = toTile(s.z);
+      let tx = Math.floor(s.x / TILE), tz = Math.floor(s.z / TILE);
       let cleared = clearInfectionRadius(tx, tz, TANK_SHELL_CLEAR_R);
       if (cleared > 0) {
-        p.score += cleared * 50;
+        plyr.score += cleared * 50;
       }
       terrain.addPulse(s.x, s.z, 2.0);
-      gameRenderer?.setShake(15);
-      gameSFX?.setThrust(p.id, false);
+      _getGameRenderer()?.setShake(15);
+      gameSFX?.setThrust(plyr.id, false);
       gameSFX?.playClearInfection(s.x, g, s.z);
-      swapRemove(p.tankShells, i);
+      _swapRemove(plyr.tankShells, i);
     }
   }
 }
@@ -189,7 +231,7 @@ function updateBarrierPhysics() {
         let tx = Math.floor(b.x / TILE), tz = Math.floor(b.z / TILE);
         gameState.barrierTiles.add(tileKey(tx, tz));
       }
-      swapRemove(gameState.inFlightBarriers, i);
+      _swapRemove(gameState.inFlightBarriers, i);
     }
   }
 }
@@ -202,11 +244,12 @@ function updateBarrierPhysics() {
  */
 function renderInFlightBarriers(camX, camZ) {
   if (!gameState.inFlightBarriers.length) return;
-  const cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
-  noStroke(); fill(255, 255, 255, 220);
+  const cullDist = _getCullDist();
+  const cullSq = (cullDist * 0.8) * (cullDist * 0.8);
+  p.noStroke(); p.fill(255, 255, 255, 220);
   for (let b of gameState.inFlightBarriers) {
     if ((b.x - camX) ** 2 + (b.z - camZ) ** 2 > cullSq) continue;
-    push(); translate(b.x, b.y, b.z); box(8); pop();
+    p.push(); p.translate(b.x, b.y, b.z); p.box(8); p.pop();
   }
 }
 
@@ -218,76 +261,84 @@ function renderInFlightBarriers(camX, camZ) {
  * @param {number} camX  Camera world X (viewport camera, not ship).
  * @param {number} camZ  Camera world Z.
  */
-function renderProjectiles(p, camX, camZ) {
-  let cullSq = (CULL_DIST * 0.8) * (CULL_DIST * 0.8);
+function renderProjectiles(plyr, camX, camZ) {
+  const cullDist = _getCullDist();
+  let cullSq = (cullDist * 0.8) * (cullDist * 0.8);
   let bulletR = 4; // Player bullet size control (sphere radius)
   let bulletDetailX = 4;
   let bulletDetailY = 3;
-  let br = p.labelColor[0], bg = p.labelColor[1], bb = p.labelColor[2];
+  let br = plyr.labelColor[0], bg = plyr.labelColor[1], bb = plyr.labelColor[2];
 
   // Bullets use low-poly flat spheres for a simple explosion-like look.
-  noLights();
-  noStroke();
-  fill(br, bg, bb);
+  p.noLights();
+  p.noStroke();
+  p.fill(br, bg, bb);
 
-  for (let b of p.bullets) {
+  for (let b of plyr.bullets) {
     let dx = b.x - camX;
     let dz = b.z - camZ;
     if (dx * dx + dz * dz > cullSq) continue;
-    push(); translate(b.x, b.y, b.z);
-    sphere(bulletR, bulletDetailX, bulletDetailY);
-    pop();
+    p.push(); p.translate(b.x, b.y, b.z);
+    p.sphere(bulletR, bulletDetailX, bulletDetailY);
+    p.pop();
   }
 
-  for (let m of p.homingMissiles) {
+  for (let m of plyr.homingMissiles) {
     if ((m.x - camX) ** 2 + (m.z - camZ) ** 2 > cullSq) continue;
 
-    push();
-    translate(m.x, m.y, m.z);
+    p.push();
+    p.translate(m.x, m.y, m.z);
 
     // Direct orientation toward velocity vector
     let h = Math.sqrt(m.vx * m.vx + m.vz * m.vz);
-    rotateY(Math.atan2(m.vx, m.vz));
-    rotateX(Math.atan2(-m.vy, h));
+    p.rotateY(Math.atan2(m.vx, m.vz));
+    p.rotateX(Math.atan2(-m.vy, h));
 
-    noStroke();
+    p.noStroke();
 
     // Body (Main Fuselage)
-    fill(0, 180, 255);
-    box(3, 3, 14);
+    p.fill(0, 180, 255);
+    p.box(3, 3, 14);
 
     // Nose Cone (Pointed Tip)
-    push();
-    translate(0, 0, 10);
-    rotateX(PI / 2);
-    fill(255);
-    cone(2, 6, 4); // Low-poly pyramid-like nose
-    pop();
+    p.push();
+    p.translate(0, 0, 10);
+    p.rotateX(Math.PI / 2);
+    p.fill(255);
+    p.cone(2, 6, 4); // Low-poly pyramid-like nose
+    p.pop();
 
     // Faint Glow / Core
-    fill(255, 255, 255, 100);
-    box(1, 1, 16);
+    p.fill(255, 255, 255, 100);
+    p.box(1, 1, 16);
 
     // Fins (Tail stabilizers)
-    fill(0, 100, 255);
-    translate(0, 0, -6);
-    box(10, 1, 4); // Horizontal fins
-    box(1, 10, 4); // Vertical fins
+    p.fill(0, 100, 255);
+    p.translate(0, 0, -6);
+    p.box(10, 1, 4); // Horizontal fins
+    p.box(1, 10, 4); // Vertical fins
 
-    pop();
+    p.pop();
   }
 
   // Draw Tank Shells
-  for (let s of p.tankShells) {
+  for (let s of plyr.tankShells) {
     if ((s.x - camX) ** 2 + (s.z - camZ) ** 2 > cullSq) continue;
-    push();
-    translate(s.x, s.y, s.z);
+    p.push();
+    p.translate(s.x, s.y, s.z);
     // Draw as a larger, glowing grey "shell"
-    noStroke();
-    fill(100, 100, 110);
-    sphere(8, 6, 4); // Larger than bullets
-    fill(255, 150, 50, 200); // Glow
-    sphere(5, 4, 3);
-    pop();
+    p.noStroke();
+    p.fill(100, 100, 110);
+    p.sphere(8, 6, 4); // Larger than bullets
+    p.fill(255, 150, 50, 200); // Glow
+    p.sphere(5, 4, 3);
+    p.pop();
   }
 }
+
+globalThis.updateProjectilePhysics = updateProjectilePhysics;
+globalThis.updateBarrierPhysics = updateBarrierPhysics;
+globalThis.renderProjectiles = renderProjectiles;
+globalThis.renderInFlightBarriers = renderInFlightBarriers;
+
+export { updateProjectilePhysics, updateBarrierPhysics };

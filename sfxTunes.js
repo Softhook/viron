@@ -4,7 +4,7 @@
 // @exports   SFX_LEVEL_TUNES  — array of tune factory functions
 // =============================================================================
 
-const SFX_LEVEL_TUNES = [
+export const SFX_LEVEL_TUNES = [
 
         // 0 — Original: eerie resonant filter sweep on low A minor
         function(ctx, t, targetNode) {

@@ -2,19 +2,33 @@
 // terrainRender.js — Shader application and landscape drawing for Terrain
 // =============================================================================
 
-const TerrainRender = {
+
+import { p } from './p5Context.js';
+import {
+    toTile, VIEW_FAR, CHUNK_SIZE, TILE, SEA, infection, chunkKey, getVironProfiler,
+    SKY_R, SKY_G, SKY_B, LAUNCH_MIN, LAUNCH_MAX, LAUNCH_ALT,
+    SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ,
+    SHADER_SUN_R, SHADER_SUN_G, SHADER_SUN_B,
+    SHADER_AMB_L_R, SHADER_AMB_L_G, SHADER_AMB_L_B,
+    SHADER_AMB_H_R, SHADER_AMB_H_G, SHADER_AMB_H_B
+} from './constants.js';
+import { TerrainGeometry } from './terrainGeometry.js';
+import { TERRAIN_PALETTE_FLAT } from './terrainShaders.js';
+import { gameState } from './gameState.js';
+import { setSceneLighting } from './gameRenderer.js';
+
+export const TerrainRender = {
 
     drawLandscape(ctx, s, viewAspect, firstPerson = false) {
-        const gx = toTile(s.x), gz = toTile(s.z);
-        noStroke();
+        const { gx, gz, cam } = ctx.resolveViewSource(s, firstPerson);
+        p.noStroke();
 
         ctx._renderPassId++;
-        const cam = ctx.getCameraParams(s, firstPerson);
         cam.fovSlope = 0.57735 * viewAspect + 0.3;
         cam.skipFrustum = firstPerson && Math.abs(cam.pitch) > Math.PI / 4;
         ctx._cam = cam;
 
-        noLights();
+        p.noLights();
         const profiler = getVironProfiler();
         const shaderStart = profiler ? performance.now() : 0;
         this.applyShader(ctx);
@@ -47,7 +61,7 @@ const TerrainRender = {
         this._drawSeaPlane(ctx, s);
         if (profiler) profiler.record('terrain', performance.now() - terrainStart);
 
-        resetShader();
+        p.resetShader();
         setSceneLighting();
 
         this._drawLaunchpadMissiles(ctx, cam);
@@ -59,7 +73,7 @@ const TerrainRender = {
             for (let cx = minCx; cx <= maxCx; cx++) {
                 if (!ctx._isChunkVisible(cam, cx, cz, chunkHalf)) continue;
                 const geom = ctx.getChunkGeometry(cx, cz);
-                if (geom) model(geom);
+                if (geom) p.model(geom);
             }
         }
     },
@@ -69,36 +83,36 @@ const TerrainRender = {
         const seaCx = toTile(s.x) * TILE, seaCz = toTile(s.z) * TILE;
         const sx0 = seaCx - seaSize, sx1 = seaCx + seaSize;
         const sz0 = seaCz - seaSize, sz1 = seaCz + seaSize;
-        const gl = drawingContext;
+        const gl = p.drawingContext;
         gl.enable(gl.POLYGON_OFFSET_FILL);
         gl.polygonOffset(-1.0, -4.0);
-        fill(30, 45, 150);
-        beginShape(TRIANGLES);
-        normal(0, -1, 0);
-        vertex(sx0, SEA, sz0); vertex(sx1, SEA, sz0); vertex(sx0, SEA, sz1);
-        vertex(sx1, SEA, sz0); vertex(sx1, SEA, sz1); vertex(sx0, SEA, sz1);
-        endShape();
+        p.fill(30, 45, 150);
+        p.beginShape(p.TRIANGLES);
+        p.normal(0, -1, 0);
+        p.vertex(sx0, SEA, sz0); p.vertex(sx1, SEA, sz0); p.vertex(sx0, SEA, sz1);
+        p.vertex(sx1, SEA, sz0); p.vertex(sx1, SEA, sz1); p.vertex(sx0, SEA, sz1);
+        p.endShape();
         gl.disable(gl.POLYGON_OFFSET_FILL);
     },
 
     _drawLaunchpadMissiles(ctx, cam) {
-        push();
+        p.push();
         const mX = LAUNCH_MAX - 100;
         for (let mZ = LAUNCH_MIN + 200; mZ <= LAUNCH_MAX - 200; mZ += 120) {
             const fogF = ctx.getFogFactor((mX - cam.x) * cam.fwdX + (mZ - cam.z) * cam.fwdZ);
-            push();
-            translate(mX, LAUNCH_ALT, mZ);
-            fill(lerp(60, SKY_R, fogF), lerp(60, SKY_G, fogF), lerp(60, SKY_B, fogF));
-            push(); translate(0, -10, 0); box(30, 20, 30); pop();
-            fill(lerp(255, SKY_R, fogF), lerp(140, SKY_G, fogF), lerp(20, SKY_B, fogF));
-            push(); translate(0, -70, 0); rotateX(Math.PI); cone(18, 100, 4, 1); pop();
-            pop();
+            p.push();
+            p.translate(mX, LAUNCH_ALT, mZ);
+            p.fill(p.lerp(60, SKY_R, fogF), p.lerp(60, SKY_G, fogF), p.lerp(60, SKY_B, fogF));
+            p.push(); p.translate(0, -10, 0); p.box(30, 20, 30); p.pop();
+            p.fill(p.lerp(255, SKY_R, fogF), p.lerp(140, SKY_G, fogF), p.lerp(20, SKY_B, fogF));
+            p.push(); p.translate(0, -70, 0); p.rotateX(Math.PI); p.cone(18, 100, 4, 1); p.pop();
+            p.pop();
         }
-        pop();
+        p.pop();
     },
 
     applyShader(ctx) {
-        shader(ctx.shader);
+        p.shader(ctx.shader);
         const needsTerrainUpload = (ctx._uniformUploadedPassId[0] !== ctx._renderPassId);
         this._uploadSharedUniforms(ctx, ctx.shader);
         if (!needsTerrainUpload) return;
@@ -123,7 +137,7 @@ const TerrainRender = {
 
     applyFillColorShader(ctx) {
         if (!ctx.fillShader) return;
-        shader(ctx.fillShader);
+        p.shader(ctx.fillShader);
         this._uploadSharedUniforms(ctx, ctx.fillShader);
         ctx._uFillColorArr[0] = 1.0; ctx._uFillColorArr[1] = 1.0; ctx._uFillColorArr[2] = 1.0;
         ctx.fillShader.setUniform('uFillColor', ctx._uFillColorArr);
@@ -139,7 +153,7 @@ const TerrainRender = {
 
     applyShadowShader(ctx) {
         if (!ctx.shadowShader) return;
-        shader(ctx.shadowShader);
+        p.shader(ctx.shadowShader);
         ctx.shadowShader.setUniform('uFogDist', ctx._uFogDistArr);
     },
 
@@ -156,7 +170,7 @@ const TerrainRender = {
         ctx._uAmbLowArr[0] = SHADER_AMB_L_R; ctx._uAmbLowArr[1] = SHADER_AMB_L_G; ctx._uAmbLowArr[2] = SHADER_AMB_L_B;
         ctx._uAmbHighArr[0] = SHADER_AMB_H_R; ctx._uAmbHighArr[1] = SHADER_AMB_H_G; ctx._uAmbHighArr[2] = SHADER_AMB_H_B;
 
-        const r = _renderer;
+        const r = p._renderer;
         if (r && r.uViewMatrix) {
             if (!ctx._invViewMat) ctx._invViewMat = new p5.Matrix();
             ctx._invViewMat.set(r.uViewMatrix);
@@ -164,7 +178,7 @@ const TerrainRender = {
             sh.setUniform('uInvViewMatrix', ctx._invViewMat.mat4);
         }
 
-        sh.setUniform('uTime', millis() / 1000.0);
+        sh.setUniform('uTime', p.millis() / 1000.0);
         sh.setUniform('uFogDist', ctx._uFogDistArr);
         sh.setUniform('uFogColor', ctx._uFogColorArr);
         sh.setUniform('uSunDir', ctx._uSunDirArr);

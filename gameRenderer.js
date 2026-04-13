@@ -9,7 +9,34 @@
 // @exports   gameRenderer     — singleton
 // @exports   setSceneLighting  — compat shim (delegates to gameRenderer)
 // @exports   setup2DViewport   — compat shim (delegates to gameRenderer)
+// @exports   drawBackgroundLandscape
 // =============================================================================
+
+import { p } from './p5Context.js';
+import {
+  AMBIENT_R, AMBIENT_G, AMBIENT_B,
+  SUN_KEY_R, SUN_KEY_G, SUN_KEY_B,
+  SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ,
+  VIEW_NEAR, VIEW_FAR, TILE, CULL_DIST,
+  MOBILE_VIEW_LIMITS, DESKTOP_VIEW_LIMITS,
+  SKY_R, SKY_G, SKY_B,
+  setViewDistances, getVironProfiler,
+  SENTINEL_PULSE_INTERVAL, infection, tileKey, toTile
+} from './constants.js';
+import { gameState } from './gameState.js';
+import { terrain } from './terrain.js';
+import { enemyManager } from './enemies.js';
+import { particleSystem, ParticleSystem } from './particles.js';
+import { villagerManager } from './villagers.js';
+import { wizardManager } from './wizards.js';
+import { drawPlayerHUD } from './hudComponents.js';
+import { shipDisplay, drawShipShadow, renderProjectiles } from './player.js';
+import { HUD_Manager } from './hudCore.js';
+import { aimAssist } from './aimAssist.js';
+import { mobileController } from './mobileControls.js';
+import { gameSFX } from './sfx.js';
+
+void drawShipShadow;
 
 const POST_VERT = `
 precision highp float;
@@ -36,121 +63,123 @@ void main() {
 }
 `;
 
-class GameRenderer {
+function _drawGameOverContent() {
+  p.drawingContext.clear(p.drawingContext.DEPTH_BUFFER_BIT);
+
+  if (gameState.gameFont) p.textFont(gameState.gameFont);
+  p.fill(255, 60, 60);
+  p.textAlign(p.CENTER, p.CENTER);
+  p.textSize(80);
+  p.text('GAME OVER', 0, -50);
+
+  p.textSize(24);
+  p.fill(180, 200, 180);
+  p.text(gameState.gameOverReason || 'INFECTION REACHED CRITICAL MASS', 0, 40);
+
+  p.textSize(18);
+  p.fill(180, 200, 180, 160);
+  p.text(gameState.isMobile ? 'TAP TO CONTINUE' : 'PRESS ENTER TO CONTINUE', 0, p.height * 0.35);
+
+  if (p.millis() - gameState.levelEndTime > 5000) {
+    gameState.mode = 'menu';
+  }
+}
+
+export class GameRenderer {
   constructor() {
     this.sceneFBO = null;
+    this.masterFBO = null;
+    this.postShader = null;
     this.shakeAmount = 0;
   }
 
-  /**
-   * Triggers or increases camera shake intensity.
-   * @param {number} amt Shake intensity (pixels of offset).
-   */
   setShake(amt) {
     this.shakeAmount = Math.max(this.shakeAmount, amt);
   }
 
-  /**
-   * Initializes rendering subsystems depending on platform.
-   * Desktop: initializes particle billboard shader.
-   * Mobile: skips FBO/billboard path due to tile-flush stall cost.
-   */
   initialize(isMobile) {
     if (!isMobile) {
       ParticleSystem.init();
     }
     this.sceneFBO = null;
-    // Patch limits into the static perf profiles now that constants are defined.
     GameRenderer._PERF_PROFILE_MOBILE.limits = MOBILE_VIEW_LIMITS;
     GameRenderer._PERF_PROFILE_DESKTOP.limits = DESKTOP_VIEW_LIMITS;
   }
 
-  /**
-   * Applies directional + ambient lighting for the 3D scene.
-   * Calls noLights() first to reset p5's internal light accumulation.
-   */
   setSceneLighting() {
-    noLights();
-    specularColor(0, 0, 0);
-    specularMaterial(0);
-    shininess(0);
-    ambientLight(AMBIENT_R, AMBIENT_G, AMBIENT_B);
-    directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ);
+    p.noLights();
+    p.specularColor(0, 0, 0);
+    p.specularMaterial(0);
+    p.shininess(0);
+    p.ambientLight(AMBIENT_R, AMBIENT_G, AMBIENT_B);
+    p.directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ);
   }
 
-  /**
-   * Draws a sunrise sun-disc and glow in world space.
-   * Anchored relative to camera so it maintains fixed parallax distance.
-   */
   drawSunInWorld(cx, cy, cz, viewFarWorld, intensity = 1.0) {
-    const toSunX = -SUN_DIR_NX, toSunY = -SUN_DIR_NY, toSunZ = -SUN_DIR_NZ;
+    const toSunX = -SUN_DIR_NX;
+    const toSunY = -SUN_DIR_NY;
+    const toSunZ = -SUN_DIR_NZ;
     const sunDist = viewFarWorld * 1.4;
     const sunPosX = cx + toSunX * sunDist;
     const sunHeight = cy + toSunY * sunDist;
     const sunPosZ = cz + toSunZ * sunDist;
 
-    push();
-    noStroke();
-    blendMode(ADD);
-    push();
-    translate(sunPosX, sunHeight, sunPosZ);
-    emissiveMaterial(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B);
-    // Mobile: low-detail disc only (no glow halo spheres).
-    // Desktop: reduced from 40×32 to 16×12 — p5 generates 2*detailX*detailY
-    // triangles per sphere, so 40×32 = 2,560 → 16×12 = 384 triangles each.
-    // The sun is always a small distant disc, so the extra polygons buy nothing visually.
+    p.push();
+    p.noStroke();
+    p.blendMode(p.ADD);
+    p.push();
+    p.translate(sunPosX, sunHeight, sunPosZ);
+    p.emissiveMaterial(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B);
     if (gameState.isMobile) {
-      sphere(viewFarWorld * 0.038, 8, 6);
+      p.sphere(viewFarWorld * 0.038, 8, 6);
     } else {
-      const sunDetailLongitude = 16, sunDetailLatitude = 12;
-      sphere(viewFarWorld * 0.038, sunDetailLongitude, sunDetailLatitude);
-      fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 80 * intensity);
-      sphere(viewFarWorld * 0.057, sunDetailLongitude, sunDetailLatitude);
-      fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 40 * intensity);
-      sphere(viewFarWorld * 0.083, sunDetailLongitude, sunDetailLatitude);
+      const sunDetailLongitude = 16;
+      const sunDetailLatitude = 12;
+      p.sphere(viewFarWorld * 0.038, sunDetailLongitude, sunDetailLatitude);
+      p.fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 80 * intensity);
+      p.sphere(viewFarWorld * 0.057, sunDetailLongitude, sunDetailLatitude);
+      p.fill(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, 40 * intensity);
+      p.sphere(viewFarWorld * 0.083, sunDetailLongitude, sunDetailLatitude);
     }
-    pop();
-    blendMode(BLEND);
-    pop();
+    p.pop();
+    p.blendMode(p.BLEND);
+    p.pop();
   }
 
-  /**
-   * Switches to 2D orthographic projection covering full canvas.
-   * Sets WebGL viewport and ortho camera. Caller MUST call pop() when finished.
-   */
   setup2DViewport() {
-    let pxD = pixelDensity();
-    drawingContext.viewport(0, 0, width * pxD, height * pxD);
-    push();
-    ortho(-width / 2, width / 2, -height / 2, height / 2, 0, 1000);
-    resetMatrix();
+    const pxD = p.pixelDensity();
+    p.drawingContext.viewport(0, 0, p.width * pxD, p.height * pxD);
+    p.push();
+    p.ortho(-p.width / 2, p.width / 2, -p.height / 2, p.height / 2, 0, 1000);
+    p.resetMatrix();
   }
 
-  /**
-   * Computes camera eye/look vectors for a player's ship.
-   * @private
-   */
   _computeCamera(ship) {
-    let camNear = gameState.firstPersonView ? 5 : 50;
-    let camFar = VIEW_FAR * TILE * 1.5;
-    let cx, cy, cz, lx, ly, lz;
+    const camNear = gameState.firstPersonView ? 5 : 50;
+    const camFar = VIEW_FAR * TILE * 1.5;
+    let cx;
+    let cy;
+    let cz;
+    let lx;
+    let ly;
+    let lz;
 
     if (gameState.firstPersonView) {
-      let cosPitch = cos(ship.pitch), sinPitch = sin(ship.pitch);
+      const cosPitch = Math.cos(ship.pitch);
+      const sinPitch = Math.sin(ship.pitch);
       cx = ship.x;
       cy = ship.y - 25;
       cz = ship.z;
-      lx = ship.x + (-sin(ship.yaw) * cosPitch) * 500;
+      lx = ship.x + (-Math.sin(ship.yaw) * cosPitch) * 500;
       ly = (ship.y - 25) + sinPitch * 500;
-      lz = ship.z + (-cos(ship.yaw) * cosPitch) * 500;
+      lz = ship.z + (-Math.cos(ship.yaw) * cosPitch) * 500;
     } else {
-      cy = min(ship.y - 120, 140);
-      cx = ship.x + 300 * sin(ship.yaw);
-      cz = ship.z + 300 * cos(ship.yaw);
+      cy = Math.min(ship.y - 120, 140);
+      cx = ship.x + 300 * Math.sin(ship.yaw);
+      cz = ship.z + 300 * Math.cos(ship.yaw);
 
-      // Constrain altitude to be above terrain and sea level
-      let terrainY = terrain.getAltitude(cx, cz);
-      cy = min(cy, terrainY - 60); // Maintain safety margin above surface
+      const terrainY = terrain.getAltitude(cx, cz);
+      cy = Math.min(cy, terrainY - 60);
 
       lx = ship.x;
       ly = ship.y;
@@ -158,39 +187,31 @@ class GameRenderer {
     }
 
     if (this.shakeAmount > 0.1) {
-      let sx = (random() - 0.5) * this.shakeAmount;
-      let sy = (random() - 0.5) * this.shakeAmount;
-      let sz = (random() - 0.5) * this.shakeAmount;
-      cx += sx; cy += sy; cz += sz;
-      lx += sx; ly += sy; lz += sz;
+      const sx = (p.random() - 0.5) * this.shakeAmount;
+      const sy = (p.random() - 0.5) * this.shakeAmount;
+      const sz = (p.random() - 0.5) * this.shakeAmount;
+      cx += sx;
+      cy += sy;
+      cz += sz;
+      lx += sx;
+      ly += sy;
+      lz += sz;
     }
 
     return { camNear, camFar, cx, cy, cz, lx, ly, lz };
   }
 
-  /**
-   * Applies viewport + scissor for one split-screen region.
-   * @private
-   */
   _applyViewportScissor(gl, vx, vw, vh) {
     gl.viewport(vx, 0, vw, vh);
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(vx, 0, vw, vh);
   }
 
-  /**
-   * Sets perspective and camera transform for 3D scene draw.
-   * @private
-   */
   _setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
-    perspective(PI / 3, viewW / viewH, camNear, camFar);
-    camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
+    p.perspective(Math.PI / 3, viewW / viewH, camNear, camFar);
+    p.camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
   }
 
-  /**
-   * Draws shared opaque world/actor content.
-   * @private
-   */
   _drawSharedWorld(s, player, viewAspect, drawAimAssist) {
     this.setSceneLighting();
     terrain.drawLandscape(s, viewAspect, gameState.firstPersonView);
@@ -200,165 +221,133 @@ class GameRenderer {
     villagerManager?.draw(s);
     wizardManager?.draw(s);
     this._drawEnemyBeams(s);
-    for (let p of gameState.players) {
-      if (!p.dead && (p !== player || !gameState.firstPersonView)) shipDisplay(p.ship, p.labelColor);
-      renderProjectiles(p, s.x, s.z);
+    for (const plyr of gameState.players) {
+      if (!plyr.dead && (plyr !== player || !gameState.firstPersonView)) shipDisplay(plyr.ship, plyr.labelColor);
+      renderProjectiles(plyr, s.x, s.z);
     }
-    renderInFlightBarriers(s.x, s.z);
+    if (typeof globalThis.renderInFlightBarriers === 'function') globalThis.renderInFlightBarriers(s.x, s.z);
     if (drawAimAssist && aimAssist) aimAssist.drawDebug3D(s);
   }
 
-  /**
-   * Renders the complete 3D scene for one player using scissor testing.
-   * Handles camera positioning, lighting, terrain, enemies, particles, and HUD.
-   *
-   * @param {WebGLRenderingContext} gl       Raw WebGL context.
-   * @param {object}                player   Player state object.
-   * @param {number}                playerIdx Player index (0 or 1).
-   * @param {number}                viewX    Left pixel of viewport.
-   * @param {number}                viewW    Width of viewport in CSS pixels.
-   * @param {number}                viewH    Height of viewport in CSS pixels.
-   * @param {number}                pxDensity Device pixel ratio from p5's pixelDensity().
-   */
   renderPlayerView(gl, player, playerIdx, viewX, viewW, viewH, pxDensity) {
-    let s = player.ship;
-    let vx = viewX * pxDensity, vw = viewW * pxDensity, vh = viewH * pxDensity;
-    let { camNear, camFar, cx, cy, cz, lx, ly, lz } = this._computeCamera(s);
+    const s = player.ship;
+    const vx = viewX * pxDensity;
+    const vw = viewW * pxDensity;
+    const vh = viewH * pxDensity;
+    const { camNear, camFar, cx, cy, cz, lx, ly, lz } = this._computeCamera(s);
 
-    // Update spatial audio listener once per viewport
     gameSFX?.updateListener(cx, cy, cz, lx, ly, lz, 0, 1, 0);
 
     if (this.sceneFBO) {
-      this._renderWithFBO(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
+      this._renderWithFBO(gl, s, player, viewX, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     } else {
       this._renderSinglePass(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     }
-    // HUD overlay (2D)
     gl.clear(gl.DEPTH_BUFFER_BIT);
     drawPlayerHUD(player, playerIdx, viewW, viewH);
     if ((gameState.isMobile || mobileController?.debug) && gameState.numPlayers === 1 && mobileController) {
-      mobileController.draw(width, height);
+      mobileController.draw(p.width, p.height);
     }
     gl.disable(gl.SCISSOR_TEST);
   }
 
-  /**
-   * Multi-pass rendering with FBO for soft particles at depth intersections.
-   * @private
-   */
-  _renderWithFBO(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
-    // Pass 1: Render opaque scene to FBO
+  _renderWithFBO(gl, s, player, viewX, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
+    void player;
+
     this.sceneFBO.begin();
     this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    push();
+    p.push();
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     this._drawSharedWorld(s, player, viewW / viewH, true);
-    
+
     const profiler = getVironProfiler();
     let pStart = profiler ? performance.now() : 0;
     particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
     if (profiler) profiler.record('particles', performance.now() - pStart);
-    pop();
+    p.pop();
     this.sceneFBO.end();
 
-    // Pass 2: Blit FBO to main canvas
     this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    push();
-    ortho(-viewW / 2, viewW / 2, -viewH / 2, viewH / 2, -1, 1);
-    resetMatrix();
-    imageMode(CORNER);
+    p.push();
+    p.ortho(-viewW / 2, viewW / 2, -viewH / 2, viewH / 2, -1, 1);
+    p.resetMatrix();
+    p.imageMode(p.CORNER);
     gl.disable(gl.DEPTH_TEST);
-    image(this.sceneFBO, -viewW / 2, -viewH / 2, viewW, viewH, viewX, 0, viewW, viewH);
+    p.image(this.sceneFBO, -viewW / 2, -viewH / 2, viewW, viewH, viewX, 0, viewW, viewH);
     gl.enable(gl.DEPTH_TEST);
-    pop();
+    p.pop();
 
-    // Pass 3: Render soft billboard particles
     this._applyViewportScissor(gl, vx, vw, vh);
-    push();
+    p.push();
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
-    
     pStart = profiler ? performance.now() : 0;
     particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, this.sceneFBO);
     if (profiler) profiler.record('particles', performance.now() - pStart);
-    pop();
+    p.pop();
   }
 
-  /**
-   * Single-pass rendering (WebGL1 / no-FBO fallback).
-   * @private
-   */
   _renderSinglePass(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
+    void player;
+
     this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    push();
+    p.push();
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     this._drawSharedWorld(s, player, viewW / viewH, false);
-    
+
     const profiler = getVironProfiler();
     const pStart = profiler ? performance.now() : 0;
     particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
     if (profiler) profiler.record('particles', performance.now() - pStart);
     if (aimAssist) aimAssist.drawDebug3D(s);
-    pop();
+    p.pop();
   }
 
-  /**
-   * Draws shared 2D overlays: split-screen divider, level-complete banner,
-   * and game-over screen.  Called from renderAllPlayers() in both the mobile
-   * (direct-to-canvas) and desktop (masterFBO) branches so the code is not
-   * duplicated between the two paths.
-   * @private
-   */
   _drawShared2DOverlay() {
     this.setup2DViewport();
-    
-    // Smooth transitions for gameplay dimming (e.g. resuming from pause)
+
     HUD_Manager?.drawDimOverlay();
 
     if (gameState.numPlayers === 2) {
-
-      stroke(0, 255, 0, 180); strokeWeight(2);
-      line(0, -height / 2, 0, height / 2);
+      p.stroke(0, 255, 0, 180);
+      p.strokeWeight(2);
+      p.line(0, -p.height / 2, 0, p.height / 2);
     }
     if (gameState.levelComplete) {
-      noStroke(); fill(0, 255, 0); textAlign(CENTER, CENTER); textSize(40);
-      text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
+      p.noStroke();
+      p.fill(0, 255, 0);
+      p.textAlign(p.CENTER, p.CENTER);
+      p.textSize(40);
+      p.text('LEVEL ' + gameState.level + ' COMPLETE', 0, 0);
     }
     if (gameState.mode === 'gameover') {
       _drawGameOverContent();
     }
-    pop();
+    p.pop();
   }
 
-  /**
-   * Dispatches one 3D render pass per player and draws shared 2D overlay.
-   */
   renderAllPlayers(gl) {
-    // Decay camera shake
     this.shakeAmount *= 0.88;
     if (this.shakeAmount < 0.1) this.shakeAmount = 0;
 
-    const h = height, pxDensity = pixelDensity();
+    const h = p.height;
+    const pxDensity = p.pixelDensity();
 
     if (gameState.isMobile) {
-      // Mobile: render directly to the canvas without an intermediate masterFBO.
-      // Bypassing the FBO eliminates the expensive tile-flush stall that
-      // Apple Silicon tile-based GPUs incur on every FBO begin()/end() pair, and
-      // skips the desktop full-screen resolve shader pass.
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
       if (gameState.numPlayers === 1) {
-        this.renderPlayerView(gl, gameState.players[0], 0, 0, width, h, pxDensity);
+        this.renderPlayerView(gl, gameState.players[0], 0, 0, p.width, h, pxDensity);
       } else {
-        let hw = floor(width / 2);
+        const hw = Math.floor(p.width / 2);
         for (let pi = 0; pi < 2; pi++) {
           this.renderPlayerView(gl, gameState.players[pi], pi, pi * hw, hw, h, pxDensity);
         }
@@ -368,13 +357,12 @@ class GameRenderer {
       return;
     }
 
-    // Desktop: render into masterFBO, then run one full-screen resolve pass.
     if (!this.masterFBO) {
-      this.masterFBO = createFramebuffer();
-      this.postShader = createShader(POST_VERT, POST_FRAG);
+      this.masterFBO = p.createFramebuffer();
+      this.postShader = p.createShader(POST_VERT, POST_FRAG);
     }
-    if (this.masterFBO.width !== width || this.masterFBO.height !== h) {
-      this.masterFBO.resize(width, h);
+    if (this.masterFBO.width !== p.width || this.masterFBO.height !== h) {
+      this.masterFBO.resize(p.width, h);
     }
 
     this.masterFBO.begin();
@@ -382,84 +370,60 @@ class GameRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
     if (gameState.numPlayers === 1) {
-      this.renderPlayerView(gl, gameState.players[0], 0, 0, width, h, pxDensity);
+      this.renderPlayerView(gl, gameState.players[0], 0, 0, p.width, h, pxDensity);
     } else {
-      let hw = floor(width / 2);
+      const hw = Math.floor(p.width / 2);
       for (let pi = 0; pi < 2; pi++) {
         this.renderPlayerView(gl, gameState.players[pi], pi, pi * hw, hw, h, pxDensity);
       }
     }
 
-    // Shared 2D overlay — drawn into masterFBO so scene + overlay are resolved
-    // together in the same final pass.
     this._drawShared2DOverlay();
     this.masterFBO.end();
 
-    // Final full-screen resolve pass to screen.
     this.setup2DViewport();
     gl.disable(gl.DEPTH_TEST);
-    shader(this.postShader);
+    p.shader(this.postShader);
     this.postShader.setUniform('uTex', this.masterFBO);
 
-    noStroke();
-    rectMode(CENTER);
-    rect(0, 0, width, height);
+    p.noStroke();
+    p.rectMode(p.CENTER);
+    p.rect(0, 0, p.width, p.height);
 
-    resetShader();
+    p.resetShader();
     gl.enable(gl.DEPTH_TEST);
-    pop();
+    p.pop();
   }
 
-  /**
-   * Returns platform-tuned performance scaling thresholds.
-   * Returns a reference to one of two pre-built static objects so that
-   * updatePerformanceScaling() (called every frame) does not allocate.
-   * @private
-   */
   _getPerfProfile() {
     return gameState.isMobile
       ? GameRenderer._PERF_PROFILE_MOBILE
       : GameRenderer._PERF_PROFILE_DESKTOP;
   }
 
-  /**
-   * Clears streak counters used to trigger scale adjustments.
-   * @private
-   */
   _resetPerfCounters(perf) {
     perf.overBudgetEvals = 0;
     perf.underBudgetEvals = 0;
   }
 
-  /**
-   * Applies one quality-level reduction step.
-   * @private
-   */
   _applyPerfReduction(perf, now, profile) {
-    VIEW_NEAR = max(profile.limits.near / 2, VIEW_NEAR - 1);
-    VIEW_FAR = max(profile.limits.far / 2, VIEW_FAR - 1);
-    CULL_DIST = max(profile.limits.cull / 2, CULL_DIST - 250);
+    const nextNear = Math.max(profile.limits.near / 2, VIEW_NEAR - 1);
+    const nextFar = Math.max(profile.limits.far / 2, VIEW_FAR - 1);
+    const nextCull = Math.max(profile.limits.cull / 2, CULL_DIST - 250);
+    setViewDistances(nextNear, nextFar, nextCull);
     perf.cooldown = now + 6000;
     this._resetPerfCounters(perf);
   }
 
-  /**
-   * Applies one quality-level restoration step.
-   * @private
-   */
   _applyPerfRestore(perf, now, profile) {
-    VIEW_NEAR = min(profile.limits.near, VIEW_NEAR + 1);
-    VIEW_FAR = min(profile.limits.far, VIEW_FAR + 2);
-    CULL_DIST = min(profile.limits.cull, CULL_DIST + 250);
+    const nextNear = Math.min(profile.limits.near, VIEW_NEAR + 1);
+    const nextFar = Math.min(profile.limits.far, VIEW_FAR + 2);
+    const nextCull = Math.min(profile.limits.cull, CULL_DIST + 250);
+    setViewDistances(nextNear, nextFar, nextCull);
     perf.cooldown = now + 4000;
     this._resetPerfCounters(perf);
   }
 
-  /**
-   * Runs adaptive performance quality scaling based on frame-time percentiles.
-   * Uses 60-sample circular buffer to detect thermal throttling and adjust
-   * VIEW_NEAR/FAR and CULL_DIST accordingly with 6-second cooldown.
-   */
   updatePerformanceScaling() {
     if (!window._perf) {
       window._perf = {
@@ -478,7 +442,7 @@ class GameRenderer {
     const perf = window._perf;
     const profile = this._getPerfProfile();
 
-    perf.buf[perf.idx] = Math.min(deltaTime, 100);
+    perf.buf[perf.idx] = Math.min(p.deltaTime, 100);
     perf.idx = (perf.idx + 1) % 60;
     if (perf.idx === 0) perf.full = true;
 
@@ -487,7 +451,7 @@ class GameRenderer {
       perf.sortedBuf.sort();
       const medMs = (perf.sortedBuf[29] + perf.sortedBuf[30]) / 2;
       const tierMs = [6.94, 8.33, 11.11, 13.33, 16.67, 33.33];
-      perf.budgetMs = tierMs.reduce((b, c) => Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b);
+      perf.budgetMs = tierMs.reduce((b, c) => (Math.abs(c - medMs) < Math.abs(b - medMs) ? c : b));
       perf.budgetMs = Math.max(perf.budgetMs, 1000 / 60);
       perf.budgetSet = true;
     }
@@ -498,6 +462,7 @@ class GameRenderer {
 
     perf.sortedBuf.set(perf.buf);
     perf.sortedBuf.sort();
+
     const p90ms = perf.sortedBuf[53];
     const canRestore = now >= perf.cooldown;
 
@@ -518,36 +483,25 @@ class GameRenderer {
     }
   }
 
-  /**
-   * Checks whether a sentinel building is on an infected tile.
-   * @private
-   */
   _isSentinelInfected(building) {
     return infection.has(tileKey(toTile(building.x), toTile(building.z)));
   }
 
-  /**
-   * True when any living player is close enough to hear a pulse.
-   * Uses squared distance to avoid a sqrt per player per pulse.
-   * @private
-   */
   _canAnyPlayerHearPulse(x, y, z, hearDist) {
     const hearDistSq = hearDist * hearDist;
-    for (let p of gameState.players) {
-      if (!p.dead) {
-        let dx = p.ship.x - x, dy = p.ship.y - y, dz = p.ship.z - z;
+    for (const plyr of gameState.players) {
+      if (!plyr.dead) {
+        const dx = plyr.ship.x - x;
+        const dy = plyr.ship.y - y;
+        const dz = plyr.ship.z - z;
         if (dx * dx + dy * dy + dz * dz < hearDistSq) return true;
       }
     }
     return false;
   }
 
-  /**
-   * Handles infected sentinel interval tick.
-   * @private
-   */
   _handleInfectedSentinelPulse(building) {
-    building._lastPulseMs = millis();
+    building._lastPulseMs = p.millis();
     terrain.addPulse(building.x, building.z, 1.0);
 
     if (!gameSFX) return;
@@ -556,39 +510,19 @@ class GameRenderer {
     }
   }
 
-  /**
-   * Handles non-infected sentinel visual state.
-   * @private
-   */
   _handleCleanSentinel(building) {
-    // Cache the glow descriptor on the building object the first time we see it
-    // so we never allocate a { x, z, radius } literal inside this per-frame hot path.
-    // Assumes sentinel positions and sizes are static after world creation —
-    // valid for all current sentinel types (spawned once, never moved or resized).
     if (!building._cachedGlow) {
       building._cachedGlow = { x: building.x, z: building.z, radius: building.w * 1.5 };
     }
     terrain.sentinelGlows.push(building._cachedGlow);
   }
 
-  /**
-   * Updates sentinel glow/pulse data for terrain shaders.
-   * Regenerated every frame to reflect infection state.
-   * Pulse interval is millisecond-based so it fires at the same wall-clock
-   * rate regardless of display refresh rate.
-   */
   updateSentinelGlows() {
-    terrain.sentinelGlows.length = 0;  // reuse array — avoid per-frame GC allocation
-    const now = millis();
-    for (let building of gameState.buildings) {
+    terrain.sentinelGlows.length = 0;
+    const now = p.millis();
+    for (const building of gameState.buildings) {
       if (building.type !== 4) continue;
 
-      // Initialize _lastPulseMs on first visit.  building.pulseTimer was set
-      // in setup() as a ms-based stagger offset (floor(i*SENTINEL_PULSE_INTERVAL/n)):
-      // the sentinel has already "run" that many ms of its first cycle, so the
-      // first pulse fires after (SENTINEL_PULSE_INTERVAL - pulseTimer) ms from
-      // game start.  The pulseTimer field is a one-time read; _lastPulseMs owns
-      // the timing from this point on.
       if (building._lastPulseMs === undefined) {
         building._lastPulseMs = now - (building.pulseTimer || 0);
       }
@@ -598,9 +532,6 @@ class GameRenderer {
           this._handleInfectedSentinelPulse(building);
         }
       } else {
-        // Advance _lastPulseMs through whole intervals even while clean so that
-        // a newly-infected sentinel fires on the next scheduled boundary instead
-        // of immediately (which would happen if _lastPulseMs had stalled).
         while (now - building._lastPulseMs >= SENTINEL_PULSE_INTERVAL) {
           building._lastPulseMs += SENTINEL_PULSE_INTERVAL;
         }
@@ -609,112 +540,115 @@ class GameRenderer {
     }
   }
 
-  /**
-   * Draws vertical light beams from the sky connecting to each enemy.
-   *
-   * Mobile: skipped entirely — blendMode(ADD) over multiple overlapping
-   * transparent cylinders is expensive on tile-based GPUs (Apple Silicon iPads)
-   * and the effect is purely cosmetic.
-   *
-   * Desktop: reduced from 11 to 7 draw calls per in-range enemy by:
-   *   • Dropping the near-invisible outer-aura cylinder (alpha 25)
-   *   • Reducing torus rings from 2 to 1
-   *   • Reducing ripple passes from 3 to 2
-   *   • Lowering torus radial segments from 16 to 8
-   * @private
-   */
   _drawEnemyBeams(s) {
     if (!enemyManager?.enemies) return;
-
-    // Skip on mobile: blendMode(ADD) with overlapping transparent geometry
-    // causes severe tile-flush stalls on Apple Silicon tile-based GPUs.
     if (gameState.isMobile) return;
 
     const beamHeight = 25000;
     const beamRadius = 14;
-    const time = millis() / 1000.0;
+    const time = p.millis() / 1000.0;
 
-    push();
-    noStroke();
-    blendMode(ADD);
+    p.push();
+    p.noStroke();
+    p.blendMode(p.ADD);
 
-    for (let e of enemyManager.enemies) {
-      // Distance culling
-      let dSq = (s.x - e.x) ** 2 + (s.z - e.z) ** 2;
+    for (const e of enemyManager.enemies) {
+      const dSq = (s.x - e.x) ** 2 + (s.z - e.z) ** 2;
       if (dSq > 6000 * 6000) continue;
 
-      let col = enemyManager.getColor(e.type);
-      let flicker = 0.8 + 0.2 * sin(time * 25.0 + e.id * 10.0);
+      const col = enemyManager.getColor(e.type);
+      const flicker = 0.8 + 0.2 * Math.sin(time * 25.0 + e.id * 10.0);
 
-      push();
-      translate(e.x, e.y, e.z);
+      p.push();
+      p.translate(e.x, e.y, e.z);
 
-      // --- Energetic Ground Splash (single ring; was 2) ---
-      let expand = (time * 1.5) % 1.0;
-      let ringAlpha = (1.0 - expand) * 120 * flicker;
-      push();
-      rotateX(HALF_PI);
-      fill(col[0], col[1], col[2], ringAlpha);
-      torus(beamRadius * (2.0 + expand * 8.0), 2.0, 8, 4); // 16 → 8 segments
-      pop();
+      const expand = (time * 1.5) % 1.0;
+      const ringAlpha = (1.0 - expand) * 120 * flicker;
+      p.push();
+      p.rotateX(p.HALF_PI);
+      p.fill(col[0], col[1], col[2], ringAlpha);
+      p.torus(beamRadius * (2.0 + expand * 8.0), 2.0, 8, 4);
+      p.pop();
 
-      // --- Main Volumetric Beam (outer aura dropped; mid + core remain) ---
-      push();
-      translate(0, -beamHeight / 2 - 10, 0);
-      fill(col[0], col[1], col[2], 70 * flicker);
-      cylinder(beamRadius * 2.2, beamHeight, 6, 1, false, false);
-      fill(255, 255, 255, 200 * flicker);
-      cylinder(beamRadius * 0.5, beamHeight, 6, 1, false, false);
-      pop();
+      p.push();
+      p.translate(0, -beamHeight / 2 - 10, 0);
+      p.fill(col[0], col[1], col[2], 70 * flicker);
+      p.cylinder(beamRadius * 2.2, beamHeight, 6, 1, false, false);
+      p.fill(255, 255, 255, 200 * flicker);
+      p.cylinder(beamRadius * 0.5, beamHeight, 6, 1, false, false);
+      p.pop();
 
-      // --- High-Speed Energy Ripples (2 passes; was 3) ---
       const rippleRange = 8000;
       for (let i = 0; i < 2; i++) {
-        let pOffset = (time * 2500.0 + e.id * 1000.0 + i * 2200.0) % rippleRange;
-        let pY = -rippleRange + pOffset;
-        let fadeEdge = 1500;
+        const pOffset = (time * 2500.0 + e.id * 1000.0 + i * 2200.0) % rippleRange;
+        const pY = -rippleRange + pOffset;
+        const fadeEdge = 1500;
         let rippleAlphaMult = 1.0;
-        // Fade ripples as they emerge from the sky so they don't pop in abruptly.
         if (pY < -rippleRange + fadeEdge) rippleAlphaMult = (pY + rippleRange) / fadeEdge;
-        push();
-        translate(0, pY, 0);
-        fill(255, 255, 255, 130 * flicker * rippleAlphaMult);
-        cylinder(beamRadius * 4.5, 120, 6, 1, false, false);
-        fill(col[0], col[1], col[2], 90 * flicker * rippleAlphaMult);
-        cylinder(beamRadius * 9.0, 30, 6, 1, false, false); // 8 → 6 segments
-        pop();
+        p.push();
+        p.translate(0, pY, 0);
+        p.fill(255, 255, 255, 130 * flicker * rippleAlphaMult);
+        p.cylinder(beamRadius * 4.5, 120, 6, 1, false, false);
+        p.fill(col[0], col[1], col[2], 90 * flicker * rippleAlphaMult);
+        p.cylinder(beamRadius * 9.0, 30, 6, 1, false, false);
+        p.pop();
       }
 
-      pop();
+      p.pop();
     }
 
-    blendMode(BLEND);
-    pop();
+    p.blendMode(p.BLEND);
+    p.pop();
   }
 }
 
-// Static performance profiles — referenced by _getPerfProfile() so that method
-// never allocates an object.  MOBILE_VIEW_LIMITS and DESKTOP_VIEW_LIMITS are
-// defined in constants.js before this file loads.
+export function drawBackgroundLandscape() {
+  const gl = p.drawingContext;
+  gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+
+  const t = p.millis() * 0.00008;
+  const orbit = 1800;
+  const cx = Math.cos(t) * orbit;
+  const cz = Math.sin(t) * orbit;
+  const cy = -380;
+  const ly = terrain.getAltitude(0, 0) - 120;
+  const cam = {
+    x: cx,
+    z: cz,
+    fwdX: -cx / orbit,
+    fwdZ: -cz / orbit,
+    pitch: 0
+  };
+
+  p.push();
+  p.perspective(Math.PI / 3, p.width / p.height, 30, VIEW_FAR * TILE * 1.8);
+  p.camera(cx, cy, cz, 0, ly, 0, 0, 1, 0);
+  gameRenderer.setSceneLighting();
+  gameRenderer.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 0.8);
+  terrain.drawLandscape(cam, p.width / p.height, false);
+  terrain.drawTrees(cam);
+  terrain.drawBuildings(cam);
+  p.pop();
+}
+
 GameRenderer._PERF_PROFILE_MOBILE = {
   reduceRatio: 1.40,
   restoreRatio: 1.15,
-  limits: null  // patched to MOBILE_VIEW_LIMITS in initialize() once constants are ready
+  limits: null
 };
 GameRenderer._PERF_PROFILE_DESKTOP = {
   reduceRatio: 1.55,
   restoreRatio: 1.08,
-  limits: null  // patched to DESKTOP_VIEW_LIMITS in initialize()
+  limits: null
 };
 
-// Single global renderer instance
-const gameRenderer = new GameRenderer();
+export const gameRenderer = new GameRenderer();
 
-// Backward-compatibility shims for pre-refactor global helper calls.
-function setSceneLighting() {
+export function setSceneLighting() {
   return gameRenderer.setSceneLighting();
 }
 
-function setup2DViewport() {
+export function setup2DViewport() {
   return gameRenderer.setup2DViewport();
 }

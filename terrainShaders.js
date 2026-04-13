@@ -13,7 +13,7 @@
 // TERRAIN CONFIGURATION (The "Brain")
 // Edit these swatches to change the look of the world instantly.
 // =============================================================================
-const TERRAIN_PALETTE = {
+export const TERRAIN_PALETTE = {
   // Material 1: Inland (6 swatches)
   inland: [
     [60, 180, 60], [30, 120, 40], [180, 200, 50],
@@ -47,7 +47,7 @@ const TERRAIN_PALETTE = {
 // Index layout: 0-5 Inland, 6-8 Shore, 9-11 Viron (Red/Dark/Scan),
 //               12-13 Barrier, 14-16 YellowViron (Yellow/Dark/Luminous).
 // Total: 17 vec3 swatches → uPalette[17] uniform array.
-const TERRAIN_PALETTE_FLAT = (() => {
+export const TERRAIN_PALETTE_FLAT = (() => {
   let p = TERRAIN_PALETTE;
   let arr = [];
   for (let c of p.inland) arr.push(...c);
@@ -61,7 +61,7 @@ const TERRAIN_PALETTE_FLAT = (() => {
 // --- GLSL vertex shader ---
 // Passes world-space position through to the fragment shader so the pulse rings
 // can be computed in world space rather than screen space.
-const TERRAIN_VERT = `
+export const TERRAIN_VERT = `
 precision highp float;
 attribute vec3 aPosition;
 attribute vec4 aVertexColor;
@@ -147,7 +147,7 @@ const _GLSL_FOG = `
 //      normal bomb = 0, crab infection = 1, ship explosion = 2).
 //   2. Distance fog that blends to the sky colour at the view boundary,
 //      smoothly hiding chunk-load pop-in.
-const TERRAIN_FRAG = `
+export const TERRAIN_FRAG = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
@@ -576,7 +576,7 @@ void main() {
 // distance fog and shockwave pulse effects.  Base colour comes from the
 // uFillColor uniform rather than the aVertexColor material-ID system, so
 // p5 box()/cylinder() primitives are rendered correctly under a custom shader.
-const FILL_COLOR_FRAG = `
+export const FILL_COLOR_FRAG = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
@@ -641,7 +641,7 @@ void main() {
 // already blended into the fog.  This minimal shader reads the baked vertex
 // colour and fades its alpha to zero across the same fog range used by the
 // terrain/fill-colour shaders, making shadows correctly disappear in the fog.
-const SHADOW_FRAG = `
+export const SHADOW_FRAG = `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else

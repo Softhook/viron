@@ -2,7 +2,14 @@
 // terrainMath.js — Pure math and altitude lookup procedures for Terrain
 // =============================================================================
 
-const TerrainMath = {
+
+import { p } from './p5Context.js';
+import {
+    tileKey, toTile, TILE, isLaunchpad, LAUNCH_ALT, SEA, CHUNK_SIZE,
+  MOUNTAIN_PEAKS, VIEW_FAR
+} from './constants.js';
+
+export const TerrainMath = {
 
     /**
      * Returns the altitude at a grid-corner position.
@@ -21,9 +28,9 @@ const TerrainMath = {
             alt = LAUNCH_ALT;
         } else {
             let xs = x * 0.0008, zs = z * 0.0008;
-            let elevation = noise(xs, zs) +
-                0.5 * noise(xs * 2.5 + 31.7, zs * 2.5 + 83.3) +
-                0.25 * noise(xs * 5 + 67.1, zs * 5 + 124.9);
+            let elevation = p.noise(xs, zs) +
+                0.5 * p.noise(xs * 2.5 + 31.7, zs * 2.5 + 83.3) +
+                0.25 * p.noise(xs * 5 + 67.1, zs * 5 + 124.9);
             alt = 300 - Math.pow(elevation / 1.75, 2.0) * 550;
 
             for (let peak of MOUNTAIN_PEAKS) {
@@ -62,13 +69,13 @@ const TerrainMath = {
      * Provides a smoothed fog distance value.
      */
     getFogFarWorld(ctx) {
-        let frame = (typeof frameCount === 'number') ? frameCount : -1;
+        let frame = (typeof p.frameCount === 'number') ? p.frameCount : -1;
         if (frame === ctx._fogFrameStamp) return ctx._fogFarWorldSmoothed;
 
         ctx._fogFrameStamp = frame;
         const target = VIEW_FAR * TILE;
-        const dtMs = (typeof deltaTime === 'number' && Number.isFinite(deltaTime))
-            ? Math.max(0, Math.min(deltaTime, 100))
+        const dtMs = (typeof p.deltaTime === 'number' && Number.isFinite(p.deltaTime))
+            ? Math.max(0, Math.min(p.deltaTime, 100))
             : 16.67;
         const alpha = 1.0 - Math.exp(-dtMs / 320.0);
         ctx._fogFarWorldSmoothed += (target - ctx._fogFarWorldSmoothed) * alpha;
@@ -76,10 +83,32 @@ const TerrainMath = {
     },
 
     getCameraParams(s, firstPerson = false) {
-        let fwdX = -sin(s.yaw), fwdZ = -cos(s.yaw);
+        let fwdX = -Math.sin(s.yaw), fwdZ = -Math.cos(s.yaw);
         return firstPerson
             ? { x: s.x, z: s.z, fwdX, fwdZ, pitch: s.pitch }
             : { x: s.x - fwdX * 550, z: s.z - fwdZ * 550, fwdX, fwdZ, pitch: s.pitch };
+    },
+
+    resolveViewSource(ctx, source, firstPerson = false) {
+        if (source && typeof source.fwdX === 'number' && typeof source.fwdZ === 'number') {
+            return {
+                gx: toTile(source.x),
+                gz: toTile(source.z),
+                cam: {
+                    x: source.x,
+                    z: source.z,
+                    fwdX: source.fwdX,
+                    fwdZ: source.fwdZ,
+                    pitch: source.pitch || 0
+                }
+            };
+        }
+
+        return {
+            gx: toTile(source.x),
+            gz: toTile(source.z),
+            cam: this.getCameraParams(source, firstPerson)
+        };
     },
 
     inFrustum(cam, tx, tz) {

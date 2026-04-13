@@ -6,7 +6,15 @@
  * @exports   InputManager      — class definition
  * @exports   inputManager      — singleton
  */
-class InputManager {
+
+import { gameState } from './gameState.js';
+import { p } from './p5Context.js';
+import { mobileController } from './mobileControls.js';
+import { WEAPON_MODES, YAW_RATE, PITCH_RATE, MOUSE_SENSITIVITY, MOUSE_SMOOTHING } from './constants.js';
+import { aimAssist } from './aimAssist.js';
+import { enemyManager } from './enemies.js';
+
+export class InputManager {
   constructor() {
     this.initialized = false;
     this.keys = new Set();
@@ -108,17 +116,17 @@ class InputManager {
    * Called at the start of every draw() call.
    */
   update() {
-    this.mouse.x = mouseX;
-    this.mouse.y = mouseY;
-    this.mouse.movedX = movedX;
-    this.mouse.movedY = movedY;
+    this.mouse.x = p.mouseX;
+    this.mouse.y = p.mouseY;
+    this.mouse.movedX = p.movedX;
+    this.mouse.movedY = p.movedY;
 
     if (!this.mouse.left) {
       this.mouseReleasedSinceStart = true;
     }
 
     if (this.isMobile && mobileController) {
-      mobileController.update(touches, width, height);
+      mobileController.update(p.touches, p.width, p.height);
     }
   }
 
@@ -191,13 +199,13 @@ class InputManager {
 
     if (this.isKeyDown(k.left)) dy += turnRate;
     if (this.isKeyDown(k.right)) dy -= turnRate;
-    if (this.isKeyDown(k.pitchUp)) dp = constrain(dp + pitchRate, -PI / 2.2, PI / 2.2);
-    if (this.isKeyDown(k.pitchDown)) dp = constrain(dp - pitchRate, -PI / 2.2, PI / 2.2);
+    if (this.isKeyDown(k.pitchUp)) dp = p.constrain(dp + pitchRate, -p.PI / 2.2, p.PI / 2.2);
+    if (this.isKeyDown(k.pitchDown)) dp = p.constrain(dp - pitchRate, -p.PI / 2.2, p.PI / 2.2);
 
     // 2. Mouse Look (P1 Desktop)
     if (isP1 && !isMobile && document.pointerLockElement) {
-      const smoothedX = lerp(this.smoothedMX || 0, movedX, MOUSE_SMOOTHING);
-      const smoothedY = lerp(this.smoothedMY || 0, movedY, MOUSE_SMOOTHING);
+      const smoothedX = p.lerp(this.smoothedMX || 0, p.movedX, MOUSE_SMOOTHING);
+      const smoothedY = p.lerp(this.smoothedMY || 0, p.movedY, MOUSE_SMOOTHING);
       this.smoothedMX = smoothedX;
       this.smoothedMY = smoothedY;
 
@@ -234,9 +242,9 @@ class InputManager {
     const mode = gameState.mode;
 
     if (type === 'key') {
-      return this._handleKeyTransition(mode, keyCode, key);
+      return this._handleKeyTransition(mode, p.keyCode, p.key);
     } else if (type === 'mouse') {
-      return this._handleMouseTransition(mode, mouseButton);
+      return this._handleMouseTransition(mode, p.mouseButton);
     } else if (type === 'touch') {
       return this._handleTouchTransition(mode);
     }
@@ -246,22 +254,22 @@ class InputManager {
 
   _handleKeyTransition(mode, keyCode, key) {
     if (mode === 'menu') {
-      if (key === '1') { startGame(1); return true; }
-      if (key === '2') { startGame(2); return true; }
+      if (key === '1') { globalThis.startGame(1); return true; }
+      if (key === '2') { globalThis.startGame(2); return true; }
     }
 
     if (keyCode === 27) { // ESC
       if (mode === 'playing') { gameState.pauseGame(); return true; }
       if (mode === 'paused') { 
         gameState.resumeGame(); 
-        if (!gameState.isMobile) requestPointerLock();
+        if (!gameState.isMobile) p.requestPointerLock();
         return true; 
       }
     }
 
     if (mode === 'mission') { gameState.mode = 'instructions'; return true; }
     if (mode === 'instructions') {
-      if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
+      if (keyCode === p.ENTER || key === ' ' || key === '1' || key === '2') {
         gameState.mode = 'shipselect';
         return true;
       }
@@ -273,7 +281,7 @@ class InputManager {
     }
 
     if (mode === 'cockpitSelection') {
-      if (keyCode === ENTER || key === ' ' || key === '1' || key === '2') {
+      if (keyCode === p.ENTER || key === ' ' || key === '1' || key === '2') {
         gameState.activatePlayingMode();
         return true;
       }
@@ -288,16 +296,19 @@ class InputManager {
 
   _handleMouseTransition(mode, button) {
     if (gameState.isMobile) return false;
+    
+    const mouseX = p.mouseX;
+    const mouseY = p.mouseY;
 
     if (mode === 'menu') {
       if (!this.hasClickedOnce) {
-        if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
-          fullscreen(true);
+        if (typeof globalThis.shouldRequestFullscreen === 'function' && globalThis.shouldRequestFullscreen()) {
+          p.fullscreen(true);
         }
         this.hasClickedOnce = true;
         return true;
       }
-      startGame(1);
+      globalThis.startGame(1);
       return true;
     }
 
@@ -314,32 +325,35 @@ class InputManager {
     }
 
     if (mode === 'paused') {
-      const action = _handlePauseScreenHit(mouseX, mouseY);
-      if (action === 'resume') { gameState.resumeGame(); requestPointerLock(); return true; }
+      const action = globalThis._handlePauseScreenHit(mouseX, mouseY);
+      if (action === 'resume') { gameState.resumeGame(); p.requestPointerLock(); return true; }
       if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; return true; }
     }
 
     if (mode === 'playing') {
-      if (button === CENTER) {
+      if (button === p.CENTER) {
         if (gameState.players.length > 0 && !gameState.players[0].dead) {
           gameState.players[0].weaponMode = (gameState.players[0].weaponMode + 1) % WEAPON_MODES.length;
           return true;
         }
       }
-      requestPointerLock();
+      p.requestPointerLock();
     }
 
     return false;
   }
 
   _handleTouchTransition(mode) {
+    const mouseX = p.mouseX;
+    const mouseY = p.mouseY;
+
     if (mode === 'menu' || mode === 'instructions') {
-      if (typeof shouldRequestFullscreen === 'function' && shouldRequestFullscreen()) {
-        fullscreen(true);
+      if (typeof globalThis.shouldRequestFullscreen === 'function' && globalThis.shouldRequestFullscreen()) {
+        p.fullscreen(true);
       }
     }
 
-    if (mode === 'menu') { startGame(1); return true; }
+    if (mode === 'menu') { globalThis.startGame(1); return true; }
     if (mode === 'mission') { gameState.mode = 'instructions'; return true; }
     if (mode === 'instructions') {
       if (mobileController) {
@@ -349,7 +363,7 @@ class InputManager {
       return true;
     }
     if (mode === 'paused') {
-      const action = _handlePauseScreenHit(mouseX, mouseY);
+      const action = globalThis._handlePauseScreenHit(mouseX, mouseY);
       if (action === 'resume') { gameState.resumeGame(); return true; }
       if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; return true; }
     }
@@ -358,4 +372,4 @@ class InputManager {
   }
 }
 
-const inputManager = new InputManager();
+export const inputManager = new InputManager();

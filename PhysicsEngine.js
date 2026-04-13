@@ -6,7 +6,7 @@
  * @exports   PhysicsEngine   — class definition
  * @exports   physicsEngine   — singleton (used by sketch.js, gameLoop.js, gameState.js)
  */
-class PhysicsEngine {
+export class PhysicsEngine {
   constructor(tickRate = 60) {
     this.simDt = 1000 / tickRate;
     this.maxStepMs = 100; // Cap raw delta to avoid spiral-of-death
@@ -51,4 +51,4 @@ class PhysicsEngine {
   }
 }
 
-const physicsEngine = new PhysicsEngine(60);
+export const physicsEngine = new PhysicsEngine(60);

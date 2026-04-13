@@ -3,7 +3,19 @@
 // Now as a stateless service to improve LLM-readability.
 // =============================================================================
 
-const TerrainTrees = {
+
+import { p } from './p5Context.js';
+import {
+  TILE, CHUNK_SIZE, TREE_VARIANTS, infection, tileKey, toTile,
+  aboveSea, isLaunchpad, getVironProfiler,
+  TREE_DEFAULT_TRUNK_HEIGHT, TREE_SHADOW_BASE_ALPHA, VIEW_FAR
+} from './constants.js';
+import { TerrainShadows } from './terrainShadows.js';
+import { gameState } from './gameState.js';
+import { setSceneLighting } from './gameRenderer.js';
+import { _beginShadowStencil, _endShadowStencil, BAKE_BUDGET_MS, TREE_BATCH_SIZE } from './terrain.js';
+
+export const TerrainTrees = {
 
   /** Deterministic 0..1 hash from integer tile coordinates. */
   _treeHash01(tx, tz, salt = 0) {
@@ -14,13 +26,13 @@ const TerrainTrees = {
   _getProceduralTreeDensity(tx, tz) {
     if ((tx & 1) !== 0 || (tz & 1) !== 0) return 0;
 
-    const forest = noise(tx * 0.014 + 180.0, tz * 0.014 - 260.0);
+    const forest = p.noise(tx * 0.014 + 180.0, tz * 0.014 - 260.0);
     if (forest < 0.36) return 0;
 
-    const grove = noise(tx * 0.052 - 90.0, tz * 0.052 + 140.0);
-    const patch = noise(tx * 0.120 + 22.0, tz * 0.120 - 38.0);
+    const grove = p.noise(tx * 0.052 - 90.0, tz * 0.052 + 140.0);
+    const patch = p.noise(tx * 0.120 + 22.0, tz * 0.120 - 38.0);
 
-    let density = map(forest, 0.36, 1.0, 0.10, 0.52, true);
+    let density = p.map(forest, 0.36, 1.0, 0.10, 0.52, true);
 
     if (grove < 0.28) density *= 0.08;
     else if (grove > 0.62) density *= 1.85;
@@ -28,7 +40,7 @@ const TerrainTrees = {
     if (patch < 0.30) density *= 0.55;
     else if (patch > 0.70) density *= 1.30;
 
-    return constrain(density, 0.0, 0.78);
+    return p.constrain(density, 0.0, 0.78);
   },
 
   /**
@@ -48,7 +60,7 @@ const TerrainTrees = {
     return {
       x: tx * TILE + TILE * 0.5 + jx,
       z: tz * TILE + TILE * 0.5 + jz,
-      variant: floor(this._treeHash01(tx, tz, 4.0) * 3),
+      variant: Math.floor(this._treeHash01(tx, tz, 4.0) * 3),
       trunkH: 26 + this._treeHash01(tx, tz, 5.0) * 24,
       canopyScale: 1.0 + this._treeHash01(tx, tz, 6.0) * 0.8
     };
@@ -103,7 +115,7 @@ const TerrainTrees = {
   },
 
   drawTrees(ctx, s) {
-    const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
+    const currentFrame = (typeof p.frameCount === 'number') ? p.frameCount : 0;
     if (ctx._bakeFrame !== currentFrame) {
       ctx._bakeFrame = currentFrame;
       ctx._chunksBakedThisFrame.clear();
@@ -112,14 +124,14 @@ const TerrainTrees = {
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
-    let cam = ctx._cam || ctx.getCameraParams(s);
-    let gx = toTile(s.x), gz = toTile(s.z);
+    let { gx, gz, cam } = ctx.resolveViewSource(s, false);
+    cam = ctx._cam || cam;
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
     let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
     let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
 
-    noStroke();
+    p.noStroke();
     ctx.applyShader();
 
     const chunkHalf = CHUNK_SIZE * TILE;
@@ -137,27 +149,27 @@ const TerrainTrees = {
         visibleChunks.push({ cx, cz });
         const treeState = this._advanceChunkTreeBatch(ctx, cx, cz);
         if (treeState) {
-          for (const geom of treeState.batches) model(geom);
+          for (const geom of treeState.batches) p.model(geom);
           for (let i = treeState.nextIdx; i < treeState.trees.length; i++) {
             const t = treeState.trees[i];
-            push(); translate(t.x, t.y, t.z);
+            p.push(); p.translate(t.x, t.y, t.z);
             this._drawTreeImmediate(ctx, t, infection.has(t.k));
-            pop();
+            p.pop();
           }
         }
       }
     }
 
-    resetShader();
+    p.resetShader();
     setSceneLighting();
 
-    noLights(); noStroke();
+    p.noLights(); p.noStroke();
     ctx.applyShadowShader();
     _beginShadowStencil();
     for (const c of visibleChunks) {
       const shadowMesh = this._getChunkTreeShadow(ctx, c.cx, c.cz, sun);
       if (shadowMesh) {
-        model(shadowMesh);
+        p.model(shadowMesh);
       } else if (!ctx._treeShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         if (gameState.mode === 'menu') continue;
         if (ctx._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
@@ -172,7 +184,7 @@ const TerrainTrees = {
       }
     }
     _endShadowStencil();
-    resetShader();
+    p.resetShader();
     setSceneLighting();
 
     if (profiler) profiler.record('trees', performance.now() - start);
@@ -190,7 +202,7 @@ const TerrainTrees = {
       { x: trunkHalf, z: trunkHalf }, { x: -trunkHalf, z: trunkHalf }
     );
     for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * TWO_PI;
+      const a = (i / 16) * (2 * Math.PI);
       footprint.push({ x: Math.cos(a) * hrx, z: Math.sin(a) * hrz });
     }
     t._footprint = footprint;
@@ -203,22 +215,22 @@ const TerrainTrees = {
     let tv = TREE_VARIANTS[vi];
     const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
 
-    fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
-    push(); translate(0, -h / 2, 0); box(5, h, 5); pop();
+    p.fill(safeR(inf ? 80 : 100), inf ? 40 : 65, inf ? 20 : 25);
+    p.push(); p.translate(0, -h / 2, 0); p.box(5, h, 5); p.pop();
 
     let c1 = inf ? tv.infected : tv.healthy;
-    fill(safeR(c1[0]), c1[1], c1[2]);
+    p.fill(safeR(c1[0]), c1[1], c1[2]);
 
     if (vi === 2) {
-      push(); translate(0, -h, 0); cone(35 * sc, 15 * sc, 6, 1); pop();
+      p.push(); p.translate(0, -h, 0); p.cone(35 * sc, 15 * sc, 6, 1); p.pop();
     } else {
       let cn = tv.cones[0];
-      push(); translate(0, -h - cn[2] * sc, 0); cone(cn[0] * sc, cn[1] * sc, 4, 1); pop();
+      p.push(); p.translate(0, -h - cn[2] * sc, 0); p.cone(cn[0] * sc, cn[1] * sc, 4, 1); p.pop();
       if (tv.cones2) {
         let c2 = inf ? tv.infected2 : tv.healthy2;
-        fill(safeR(c2[0]), c2[1], c2[2]);
+        p.fill(safeR(c2[0]), c2[1], c2[2]);
         let cn2 = tv.cones2[0];
-        push(); translate(0, -h - cn2[2] * sc, 0); cone(cn2[0] * sc, cn2[1] * sc, 4, 1); pop();
+        p.push(); p.translate(0, -h - cn2[2] * sc, 0); p.cone(cn2[0] * sc, cn2[1] * sc, 4, 1); p.pop();
       }
     }
   },
@@ -257,9 +269,9 @@ const TerrainTrees = {
       geom = ctx._safeBuildGeometry(() => {
         for (let i = state.nextIdx; i < end; i++) {
           const t = state.trees[i];
-          push(); translate(t.x, t.y, t.z);
+          p.push(); p.translate(t.x, t.y, t.z);
           this._drawTreeImmediate(ctx, t, infection.has(t.k));
-          pop();
+          p.pop();
         }
       });
     } catch (err) {

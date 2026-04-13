@@ -24,7 +24,19 @@
 //   • When a wizard dies its tower can spawn a replacement (once tower is clean).
 // =============================================================================
 
+import { p } from './p5Context.js';
+import { TILE, CULL_DIST, infection, swapRemove, tileKey, toTile, aboveSea } from './constants.js';
+import { AgentManager, ENEMY_CONFRONT_OFFSET, STEERING_LERP_FACTOR } from './agentManager.js';
+import { _bldgSafeR } from './buildingGeometry.js';
+import { particleSystem } from './particles.js';
+import { terrain } from './terrain.js';
+import { gameState } from './gameState.js';
+import { enemyManager } from './enemies.js';
+import { gameSFX } from './sfx.js';
+import { setSceneLighting } from './gameRenderer.js';
+
 // --- Wizard tuning constants ---
+
 const WIZARD_MAX_PER_TOWER   = 1;            // One wizard per sentinel tower
 const WIZARD_SPAWN_DELAY     = 180;          // Ticks before first spawn (~3 s at 60 Hz)
 const WIZARD_SPEED           = 1.0;          // World units per physics tick
@@ -35,7 +47,7 @@ const WIZARD_CAST_PROB       = 0.015;        // Per-tick probability of casting 
 // Spell clears a 2×2 block (4 tiles) — matching the issue spec "remove a block of four virus".
 const WIZARD_CLEAR_SIZE      = 2;            // Side length of the 2×2 clearing square
 const WIZARD_MAX_WANDER_DIST_SQ = 2400 * 2400; // 20-tile max wander radius squared
-const WIZARD_CULL_DIST_SQ    = CULL_DIST * CULL_DIST;
+const getWizardCullDistSq = () => CULL_DIST * CULL_DIST;
 const WIZARD_MAX_HEALTH      = 150;          // Sturdier than villager (100)
 const WIZARD_INFECTION_DAM   = 1.2;          // Health loss per tick on infected tile
 const WIZARD_HEAL_RATE       = 0.5;          // Health recovery per tick when safe
@@ -49,7 +61,7 @@ const WIZARD_FIGHT_RADIUS = 8;               // Tile radius to detect nearby gro
 const WIZARD_FIGHT_RANGE = 350;              // World units: cast range for ground enemy spells
 const WIZARD_GROUND_KILL_PROB = 0.05;        // Per-cast probability of killing a ground enemy
 
-class WizardManager extends AgentManager {
+export class WizardManager extends AgentManager {
   constructor() {
     super(0, {
       maxHealth: WIZARD_MAX_HEALTH,
@@ -71,7 +83,7 @@ class WizardManager extends AgentManager {
   onWalkToTarget(w) { w.isCasting = false; }
   onReachTarget(w) {
     if (w.spells.length === 0) {
-      if (random() < WIZARD_CAST_PROB) {
+      if (p.random() < WIZARD_CAST_PROB) {
         this._castSpell(w);
       } else {
         w.isCasting = false;
@@ -81,12 +93,12 @@ class WizardManager extends AgentManager {
   onNoTarget(w) { w.isCasting = false; }
 
   onAgentDeath(w) {
-    for (let p = 0; p < 16; p++) {
+    for (let i = 0; i < 16; i++) {
       particleSystem.particles.push({
         x: w.x, y: w.y - 8, z: w.z,
-        vx: random(-3, 3), vy: random(-5, -1), vz: random(-3, 3),
-        life: 220, decay: 9, size: random(3, 7),
-        color: p % 2 === 0 ? [200, 50, 40] : [255, 195, 50]
+        vx: p.random(-3, 3), vy: p.random(-5, -1), vz: p.random(-3, 3),
+        life: 220, decay: 9, size: p.random(3, 7),
+        color: i % 2 === 0 ? [200, 50, 40] : [255, 195, 50]
       });
     }
 
@@ -112,51 +124,51 @@ class WizardManager extends AgentManager {
 
     const buildWiz = (isCasting, phase, castPhase, isSitting = false) => {
       return terrain._safeBuildGeometry(() => {
-        noStroke();
+        p.noStroke();
         
         if (isSitting) {
-          translate(0, 5, 0); // lower to the ground
+          p.translate(0, 5, 0); // lower to the ground
         }
 
         // Head
-        fill(_bldgSafeR(220), 185, 150);
-        push(); translate(0, -22, 0); box(5, 5, 5); pop();
+        p.fill(_bldgSafeR(220), 185, 150);
+        p.push(); p.translate(0, -22, 0); p.box(5, 5, 5); p.pop();
 
         // Beard
-        fill(_bldgSafeR(235), 235, 230);
-        push(); translate(0, -19, 2.5); box(3, 4, 2); pop();
+        p.fill(_bldgSafeR(235), 235, 230);
+        p.push(); p.translate(0, -19, 2.5); p.box(3, 4, 2); p.pop();
 
         // Hat
-        fill(_bldgSafeR(90), 140, 60);
-        push(); translate(0, -26, 0); cylinder(8, 1.5, 8, 1); pop();
-        push(); translate(0, -30, 0); rotateX(Math.PI); cone(5, 7, 8, 1); pop();
-        fill(_bldgSafeR(220), 185, 50);
-        push(); translate(0, -26.8, 0); cylinder(8.1, 0.6, 8, 1); pop();
+        p.fill(_bldgSafeR(90), 140, 60);
+        p.push(); p.translate(0, -26, 0); p.cylinder(8, 1.5, 8, 1); p.pop();
+        p.push(); p.translate(0, -30, 0); p.rotateX(Math.PI); p.cone(5, 7, 8, 1); p.pop();
+        p.fill(_bldgSafeR(220), 185, 50);
+        p.push(); p.translate(0, -26.8, 0); p.cylinder(8.1, 0.6, 8, 1); p.pop();
 
         // Robe
-        fill(_bldgSafeR(70), 100, 185);
-        push(); translate(0, -16, 0); box(7, 8, 4); pop();
-        fill(_bldgSafeR(220), 185, 50);
-        push(); translate(0, -12.5, 0); box(8, 1.8, 5); pop();
-        fill(_bldgSafeR(70), 100, 185);
-        push(); translate(0, -9, 0); box(8, 5, 5); pop();
+        p.fill(_bldgSafeR(70), 100, 185);
+        p.push(); p.translate(0, -16, 0); p.box(7, 8, 4); p.pop();
+        p.fill(_bldgSafeR(220), 185, 50);
+        p.push(); p.translate(0, -12.5, 0); p.box(8, 1.8, 5); p.pop();
+        p.fill(_bldgSafeR(70), 100, 185);
+        p.push(); p.translate(0, -9, 0); p.box(8, 5, 5); p.pop();
 
         // Legs
-        fill(_bldgSafeR(48), 65, 140);
+        p.fill(_bldgSafeR(48), 65, 140);
         let legSwing = 0;
         if (isSitting) {
-          push(); translate(-1.5, -6.5, 0); rotateX(Math.PI * 0.4); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
-          push(); translate( 1.5, -6.5, 0); rotateX(Math.PI * 0.4); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+          p.push(); p.translate(-1.5, -6.5, 0); p.rotateX(Math.PI * 0.4); p.translate(0, 3, 0); p.box(2.5, 4, 2.5); p.pop();
+          p.push(); p.translate( 1.5, -6.5, 0); p.rotateX(Math.PI * 0.4); p.translate(0, 3, 0); p.box(2.5, 4, 2.5); p.pop();
         } else {
           legSwing = isCasting ? 0 : Math.sin(phase) * 0.6;
-          push(); translate(-1.5, -6.5, 0); rotateX(legSwing);  translate(0, 3, 0); box(2.5, 4, 2.5); pop();
-          push(); translate( 1.5, -6.5, 0); rotateX(-legSwing); translate(0, 3, 0); box(2.5, 4, 2.5); pop();
+          p.push(); p.translate(-1.5, -6.5, 0); p.rotateX(legSwing);  p.translate(0, 3, 0); p.box(2.5, 4, 2.5); p.pop();
+          p.push(); p.translate( 1.5, -6.5, 0); p.rotateX(-legSwing); p.translate(0, 3, 0); p.box(2.5, 4, 2.5); p.pop();
         }
 
         // Left Arm
-        fill(_bldgSafeR(70), 100, 185);
+        p.fill(_bldgSafeR(70), 100, 185);
         const leftArmSwing = isSitting ? 0.3 : (isCasting ? Math.sin(castPhase * 3) * 0.3 : Math.sin(phase + Math.PI) * 0.5);
-        push(); translate(-4.5, -17, 0); rotateX(leftArmSwing); translate(0, 3, 0); box(2.5, 5, 2.5); pop();
+        p.push(); p.translate(-4.5, -17, 0); p.rotateX(leftArmSwing); p.translate(0, 3, 0); p.box(2.5, 5, 2.5); p.pop();
 
         // Right Arm (Staff)
         const staffArm = isSitting 
@@ -165,17 +177,17 @@ class WizardManager extends AgentManager {
             ? -Math.PI * 0.6 + Math.sin(castPhase) * 0.15
             : (legSwing !== 0 ? Math.sin(phase) * 0.5 : -0.15)); // Stand idle: -0.15
         
-        fill(_bldgSafeR(70), 100, 185);
-        push(); translate(4.5, -17, 0); rotateX(staffArm); translate(0, 3, 0); box(2.5, 5, 2.5);
+        p.fill(_bldgSafeR(70), 100, 185);
+        p.push(); p.translate(4.5, -17, 0); p.rotateX(staffArm); p.translate(0, 3, 0); p.box(2.5, 5, 2.5);
         
         // Staff & Orb
-        fill(_bldgSafeR(90), 140, 60);
-        push(); translate(0, -13, 0); cylinder(0.8, 18, 5, 1); pop();
-        fill(_bldgSafeR(220), 185, 50);
-        push(); translate(0, -22.5, 0); rotateX(Math.PI / 2); torus(2.5, 0.5, 8, 4); pop();
-        fill(_bldgSafeR(isCasting ? 55 : 40), isCasting ? 225 : 200, isCasting ? 145 : 120);
-        push(); translate(0, -25, 0); sphere(2.0, 6, 4); pop();
-        pop(); // right arm group
+        p.fill(_bldgSafeR(90), 140, 60);
+        p.push(); p.translate(0, -13, 0); p.cylinder(0.8, 18, 5, 1); p.pop();
+        p.fill(_bldgSafeR(220), 185, 50);
+        p.push(); p.translate(0, -22.5, 0); p.rotateX(Math.PI / 2); p.torus(2.5, 0.5, 8, 4); p.pop();
+        p.fill(_bldgSafeR(isCasting ? 55 : 40), isCasting ? 225 : 200, isCasting ? 145 : 120);
+        p.push(); p.translate(0, -25, 0); p.sphere(2.0, 6, 4); p.pop();
+        p.pop(); // right arm group
       });
     };
 
@@ -274,19 +286,19 @@ class WizardManager extends AgentManager {
           const eIdx = sp.targetEnemy ? enemyManager.enemies.indexOf(sp.targetEnemy) : -1;
           if (eIdx >= 0) {
             const e = enemyManager.enemies[eIdx];
-            if (random() < WIZARD_GROUND_KILL_PROB) {
+            if (p.random() < WIZARD_GROUND_KILL_PROB) {
               particleSystem.addExplosion(e.x, e.y, e.z, enemyManager.getColor(e.type), e.type);
               swapRemove(enemyManager.enemies, eIdx);
             }
           }
           // Impact burst regardless of kill (shows the spell tried)
           const ix = sp.targetWx, iy = sp.targetWy, iz = sp.targetWz;
-          for (let p = 0; p < 12; p++) {
+          for (let i = 0; i < 12; i++) {
             particleSystem.particles.push({
               x: ix, y: iy - 8, z: iz,
-              vx: random(-3.0, 3.0), vy: random(-5, -1), vz: random(-3.0, 3.0),
-              life: 180, decay: 8, size: random(3, 8),
-              color: p % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
+              vx: p.random(-3.0, 3.0), vy: p.random(-5, -1), vz: p.random(-3.0, 3.0),
+              life: 180, decay: 8, size: p.random(3, 8),
+              color: i % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
             });
           }
           swapRemove(w.spells, i);
@@ -311,12 +323,12 @@ class WizardManager extends AgentManager {
             const ix = htx * TILE + TILE * 0.5;
             const iz = htz * TILE + TILE * 0.5;
             const iy = terrain.getAltitude(ix, iz);
-            for (let p = 0; p < 18; p++) {
+            for (let i = 0; i < 18; i++) {
               particleSystem.particles.push({
                 x: ix, y: iy - 8, z: iz,
-                vx: random(-3.5, 3.5), vy: random(-6, -1), vz: random(-3.5, 3.5),
-                life: 220, decay: 7, size: random(4, 10),
-                color: p % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
+                vx: p.random(-3.5, 3.5), vy: p.random(-6, -1), vz: p.random(-3.5, 3.5),
+                life: 220, decay: 7, size: p.random(4, 10),
+                color: i % 3 === 0 ? [255, 240, 140] : [255, 200, 55]
               });
             }
             gameSFX?.playVillagerCure(ix, iy, iz);
@@ -354,10 +366,10 @@ class WizardManager extends AgentManager {
       if (b._wizardTimer < WIZARD_SPAWN_DELAY) continue;
 
       // Spawn position: close to the tower.
-      const angle = random(TWO_PI);
-      const dist  = random(40, 100);
-      const sx    = b.x + cos(angle) * dist;
-      const sz    = b.z + sin(angle) * dist;
+      const angle = p.random(Math.PI * 2);
+      const dist  = p.random(40, 100);
+      const sx    = b.x + Math.cos(angle) * dist;
+      const sz    = b.z + Math.sin(angle) * dist;
       const sy    = terrain.getAltitude(sx, sz);
 
       if (aboveSea(sy)) continue; // Underwater spawn point — retry next tick.
@@ -369,8 +381,8 @@ class WizardManager extends AgentManager {
         x: sx, y: sy, z: sz,
         vx: 0, vz: 0,
         targetTx: null, targetTz: null,
-        walkPhase: random(TWO_PI),
-        id: random(),
+        walkPhase: p.random(Math.PI * 2),
+        id: p.random(),
         towerX: b.x,
         towerZ: b.z,
         towerRef: b,         // Back-reference so death can clear _wizardSpawned.
@@ -381,7 +393,7 @@ class WizardManager extends AgentManager {
         castPhase: 0,
         facingAngle: angle,
         spells: [],
-        _retargetTimer: Math.floor(random(60)) // Stagger CPU spikes
+        _retargetTimer: Math.floor(p.random(60)) // Stagger CPU spikes
       });
     }
   }
@@ -444,8 +456,8 @@ class WizardManager extends AgentManager {
     if (distSq > rangeSq) {
       // Steer toward the near body edge (ENEMY_CONFRONT_OFFSET from centre),
       // keeping the wizard at casting range from the body surface.
-      w.vx = lerp(w.vx || 0, (dx / dist) * WIZARD_SPEED, STEERING_LERP_FACTOR);
-      w.vz = lerp(w.vz || 0, (dz / dist) * WIZARD_SPEED, STEERING_LERP_FACTOR);
+      w.vx = p.lerp(w.vx || 0, (dx / dist) * WIZARD_SPEED, STEERING_LERP_FACTOR);
+      w.vz = p.lerp(w.vz || 0, (dz / dist) * WIZARD_SPEED, STEERING_LERP_FACTOR);
       w.isConfronting = true;
       w.isCasting = false;
       w.isSitting = false;
@@ -458,7 +470,7 @@ class WizardManager extends AgentManager {
       w.targetAngle = Math.atan2(dx, dz);
 
       // Only fire if no enemy spell already in flight
-      if (!w.spells.some(sp => sp.isEnemySpell) && random() < WIZARD_CAST_PROB) {
+      if (!w.spells.some(sp => sp.isEnemySpell) && p.random() < WIZARD_CAST_PROB) {
         this._castSpellAtEnemy(w, enemy);
       }
     }
@@ -514,7 +526,7 @@ class WizardManager extends AgentManager {
     const profiler = getVironProfiler();
     const start = profiler ? performance.now() : 0;
 
-    const vis = this._cullVisible(s, WIZARD_CULL_DIST_SQ);
+    const vis = this._cullVisible(s, getWizardCullDistSq());
 
     if (vis.length === 0) {
       if (profiler) profiler.recordWizards(0, performance.now() - start);
@@ -522,7 +534,7 @@ class WizardManager extends AgentManager {
     }
 
     this._ensureGeoms();
-    noStroke();
+    p.noStroke();
 
     // 1. Draw wizards with vertex-baked geometries using the standard terrain shader
     terrain.applyShader();
@@ -533,10 +545,10 @@ class WizardManager extends AgentManager {
       const vz = w.vz || 0;
       const isWalking = (vx * vx + vz * vz) > 0.01;
 
-      push();
-      translate(w.x, w.y, w.z);
-      rotateY(w.facingAngle);
-      scale(WIZARD_DRAW_SCALE);
+      p.push();
+      p.translate(w.x, w.y, w.z);
+      p.rotateY(w.facingAngle);
+      p.scale(WIZARD_DRAW_SCALE);
 
       let geom;
       if (isWalking) {
@@ -553,9 +565,9 @@ class WizardManager extends AgentManager {
         geom = WizardManager._staticGeom;
       }
 
-      if (geom) model(geom);
+      if (geom) p.model(geom);
 
-      pop(); // End of wizard transform
+      p.pop(); // End of wizard transform
     }
 
     // 2. Draw in-flight spell blobs in world space using fill shader (no scanlines)
@@ -570,7 +582,7 @@ class WizardManager extends AgentManager {
       this._drawSpells(vis[i]);
     }
 
-    resetShader();
+    p.resetShader();
     setSceneLighting();
 
     if (profiler) profiler.recordWizards(vis.length, performance.now() - start);
@@ -613,18 +625,18 @@ class WizardManager extends AgentManager {
 
       // Amber/gold core.
       this._setColor(255, 200, 55);
-      push(); translate(bx, by, bz); sphere(blobR, 6, 4); pop();
+      p.push(); p.translate(bx, by, bz); p.sphere(blobR, 6, 4); p.pop();
 
       // Lighter amber halo.
       this._setColor(255, 240, 145);
-      push(); translate(bx, by, bz); sphere(blobR * 0.55, 5, 3); pop();
+      p.push(); p.translate(bx, by, bz); p.sphere(blobR * 0.55, 5, 3); p.pop();
 
       // Trailing sparkle particles (occasional, cheap).
-      if (random() < 0.45) {
+      if (p.random() < 0.45) {
         particleSystem.particles.push({
           x: bx, y: by, z: bz,
-          vx: random(-0.8, 0.8), vy: random(-0.6, 0.6), vz: random(-0.8, 0.8),
-          life: 28, decay: 3, size: random(2, 5),
+          vx: p.random(-0.8, 0.8), vy: p.random(-0.6, 0.6), vz: p.random(-0.8, 0.8),
+          life: 28, decay: 3, size: p.random(2, 5),
           color: [255, 200, 50]
         });
       }
@@ -637,10 +649,10 @@ class WizardManager extends AgentManager {
    * @private
    */
   _setColor(r, g, b) {
-    fill(r, g, b);
+    p.fill(r, g, b);
     terrain.setFillColor(r, g, b);
   }
 }
 
 // Singleton instance
-const wizardManager = new WizardManager();
+export const wizardManager = new WizardManager();

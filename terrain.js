@@ -5,11 +5,29 @@
 // @exports   terrain             — singleton
 // =============================================================================
 
+
+import { p } from './p5Context.js';
+import {
+  VIEW_FAR, TILE, CHUNK_SIZE, infection, getVironProfiler,
+  chunkKey, tileKey
+} from './constants.js';
+import {
+  TERRAIN_PALETTE_FLAT, TERRAIN_VERT, TERRAIN_FRAG,
+  FILL_COLOR_FRAG, SHADOW_FRAG
+} from './terrainShaders.js';
+import { TerrainMath } from './terrainMath.js';
+import { TerrainGeometry } from './terrainGeometry.js';
+import { TerrainRender } from './terrainRender.js';
+import { TerrainShadows } from './terrainShadows.js';
+import { TerrainTrees } from './terrainTrees.js';
+import { TerrainBuildings } from './terrainBuildings.js';
+import { gameState } from './gameState.js';
+
 /**
  * Enables stencil before drawing one shadow polygon.
  */
-function _beginShadowStencil() {
-  const gl = drawingContext;
+export function _beginShadowStencil() {
+  const gl = p.drawingContext;
   gl.enable(gl.STENCIL_TEST);
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(-2.0, -5.0);
@@ -21,17 +39,17 @@ function _beginShadowStencil() {
 /**
  * Disables the stencil test after drawing one shadow polygon.
  */
-function _endShadowStencil() {
-  const gl = drawingContext;
+export function _endShadowStencil() {
+  const gl = p.drawingContext;
   gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.disable(gl.STENCIL_TEST);
 }
 
-const TREE_BATCH_SIZE = 4;
-const BUILDING_BATCH_SIZE = 2;
-const BAKE_BUDGET_MS = 4.0;
+export const TREE_BATCH_SIZE = 4;
+export const BUILDING_BATCH_SIZE = 2;
+export const BAKE_BUDGET_MS = 4.0;
 
-class Terrain {
+export class Terrain {
   constructor() {
     this.altCache = new Map();
     this.chunkCache = new Map();
@@ -83,6 +101,7 @@ class Terrain {
   getGridAltitude(tx, tz) { return TerrainMath.getGridAltitude(this, tx, tz); }
   getAltitude(x, z) { return TerrainMath.getAltitude(this, x, z); }
   getCameraParams(s, fp) { return TerrainMath.getCameraParams(s, fp); }
+  resolveViewSource(s, fp) { return TerrainMath.resolveViewSource(this, s, fp); }
   inFrustum(cam, tx, tz) { return TerrainMath.inFrustum(cam, tx, tz); }
   _isChunkVisible(cam, cx, cz, ch) { return TerrainMath.isChunkVisible(cam, cx, cz, ch); }
   getFogFarWorld() { return TerrainMath.getFogFarWorld(this); }
@@ -99,7 +118,7 @@ class Terrain {
   applyShadowShader() { return TerrainRender.applyShadowShader(this); }
   getFogFactor(d) {
     const fogFar = this.getFogFarWorld();
-    return constrain(map(d, fogFar - 800, fogFar + 400, 0, 1), 0, 1);
+    return p.constrain(p.map(d, fogFar - 800, fogFar + 400, 0, 1), 0, 1);
   }
 
   // Trees / Buildings delegation
@@ -121,13 +140,13 @@ class Terrain {
   // --- Core State Management (Kept in Terrain) ---
 
   init() {
-    this.shader = createShader(TERRAIN_VERT, TERRAIN_FRAG);
-    this.fillShader = createShader(TERRAIN_VERT, FILL_COLOR_FRAG);
-    this.shadowShader = createShader(TERRAIN_VERT, SHADOW_FRAG);
+    this.shader = p.createShader(TERRAIN_VERT, TERRAIN_FRAG);
+    this.fillShader = p.createShader(TERRAIN_VERT, FILL_COLOR_FRAG);
+    this.shadowShader = p.createShader(TERRAIN_VERT, SHADOW_FRAG);
   }
 
   addPulse(x, z, type = 0.0) {
-    this.activePulses.unshift({ x, z, start: millis() / 1000.0, type });
+    this.activePulses.unshift({ x, z, start: p.millis() / 1000.0, type });
     if (this.activePulses.length > 5) this.activePulses.length = 5;
   }
 
@@ -226,8 +245,8 @@ class Terrain {
 // ---------------------------------------------------------------------------
 // These provide backward compatibility for legacy rendering code (Enemies, 
 // Villagers, Wizards) that expects these functions in the global scope.
-const _safeBuildGeometry = (cb) => TerrainGeometry._safeBuildGeometry(cb);
-const getFogFarWorld = () => TerrainMath.getFogFarWorld(terrain);
+export const _safeBuildGeometry = (cb) => TerrainGeometry._safeBuildGeometry(cb);
+export const getFogFarWorld = () => TerrainMath.getFogFarWorld(terrain);
 
 // Singleton instance
-const terrain = new Terrain();
+export const terrain = new Terrain();

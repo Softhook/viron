@@ -5,7 +5,7 @@
 //                           playMissile(), playLaunchpadAlarm(), etc.
 // =============================================================================
 
-const SfxWeapons = {
+export const SfxWeapons = {
 
     playShot(sfxCore, x, y, z) {
         const s = sfxCore._setup(x, y, z);

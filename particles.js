@@ -10,6 +10,12 @@
 // @exports   particleSystem  — singleton
 // =============================================================================
 
+import { p } from './p5Context.js';
+import { VIEW_NEAR, CULL_DIST, TILE, infection, tileKey, toTile } from './constants.js';
+import { terrain } from './terrain.js';
+import { gameSFX } from './sfx.js';
+import { gameState } from './gameState.js';
+
 // --- Bomb Physics & Infection Constants ---
 const BOMB_FALL_SPEED = 8;
 const MEGA_BOMB_TILE_RAD = 4;
@@ -149,23 +155,51 @@ const _softColorBuf = [0, 0, 0];
 // Eliminates the temporary [r/255, g/255, b/255, alpha] array literal that would
 // otherwise be allocated once per visible soft particle per frame (~220/frame → GC).
 const _softShaderColorBuf = new Float32Array(4);
+const _ALARM_COOLDOWN_MS = 1000;
+
+function _lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function _constrain(v, lo, hi) {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+function _seaLevel() {
+  return typeof globalThis.SEA === 'number' ? globalThis.SEA : 200;
+}
+
+function _isLaunchpad(x, z) {
+  const launchMin = typeof globalThis.LAUNCH_MIN === 'number' ? globalThis.LAUNCH_MIN : 0;
+  const launchMax = typeof globalThis.LAUNCH_MAX === 'number' ? globalThis.LAUNCH_MAX : 840;
+  return x >= launchMin && x <= launchMax && z >= launchMin && z <= launchMax;
+}
+
+function _maybePlayLaunchpadAlarm() {
+  const now = performance.now();
+  if (now - gameState.lastAlarmTime <= _ALARM_COOLDOWN_MS) return false;
+  gameSFX?.playAlarm();
+  gameState.lastAlarmTime = now;
+  return true;
+}
+
 function _calcSoftParticleColor(p, t) {
   let r, g, b;
   if (p.isFog && p.color) {
     if (p.isInkBurst) {
       let f = Math.min(t * 0.7, 1.0);
-      r = lerp(p.color[0], 3, f); g = lerp(p.color[1], 3, f); b = lerp(p.color[2], 4, f);
+      r = _lerp(p.color[0], 3, f); g = _lerp(p.color[1], 3, f); b = _lerp(p.color[2], 4, f);
     } else {
       let f = Math.min(t * 0.9, 1.0);
-      r = lerp(p.color[0], 8, f); g = lerp(p.color[1], 8, f); b = lerp(p.color[2], 10, f);
+      r = _lerp(p.color[0], 8, f); g = _lerp(p.color[1], 8, f); b = _lerp(p.color[2], 10, f);
     }
   } else if (p.color) {
     let f = Math.min(t * 1.5, 1.0);
-    r = lerp(p.color[0], 30, f); g = lerp(p.color[1], 30, f); b = lerp(p.color[2], 30, f);
+    r = _lerp(p.color[0], 30, f); g = _lerp(p.color[1], 30, f); b = _lerp(p.color[2], 30, f);
     if (p.isThrust) {
       // Desaturate exhaust smoke toward grey
       let grey = (r + g + b) / 3;
-      r = lerp(r, grey, 0.75); g = lerp(g, grey, 0.75); b = lerp(b, grey, 0.75);
+      r = _lerp(r, grey, 0.75); g = _lerp(g, grey, 0.75); b = _lerp(b, grey, 0.75);
     }
   } else {
     // Seed-based rainbow hue: bright flash → vivid colour → dim ember
@@ -175,11 +209,11 @@ function _calcSoftParticleColor(p, t) {
     let vg = 255 * (1 - Math.max(Math.min(kg, 4 - kg, 1), 0));
     let vb = 255 * (1 - Math.max(Math.min(kb, 4 - kb, 1), 0));
     if (t < 0.15) {
-      let f = t / 0.15; r = lerp(255, vr, f); g = lerp(255, vg, f); b = lerp(255, vb, f);
+      let f = t / 0.15; r = _lerp(255, vr, f); g = _lerp(255, vg, f); b = _lerp(255, vb, f);
     } else if (t < 0.6) {
-      let f = (t - 0.15) / 0.45; r = lerp(vr, vr * 0.4, f); g = lerp(vg, vg * 0.4, f); b = lerp(vb, vb * 0.4, f);
+      let f = (t - 0.15) / 0.45; r = _lerp(vr, vr * 0.4, f); g = _lerp(vg, vg * 0.4, f); b = _lerp(vb, vb * 0.4, f);
     } else {
-      let f = (t - 0.6) / 0.4; r = lerp(vr * 0.4, 15, f); g = lerp(vg * 0.4, 15, f); b = lerp(vb * 0.4, 15, f);
+      let f = (t - 0.6) / 0.4; r = _lerp(vr * 0.4, 15, f); g = _lerp(vg * 0.4, 15, f); b = _lerp(vb * 0.4, 15, f);
     }
   }
   _softColorBuf[0] = r; _softColorBuf[1] = g; _softColorBuf[2] = b;
@@ -247,7 +281,7 @@ class ParticleSystem {
     // 64×64 white radial gradient: opaque centre → fully transparent edge.
     // Used as the diffuse sprite for each billboard particle so the puff
     // looks soft and cloud-like rather than hard-edged.
-    _cloudTex = createGraphics(64, 64);
+    _cloudTex = p.createGraphics(64, 64);
     const ctx = _cloudTex.drawingContext;
     const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
     grad.addColorStop(0, 'rgba(255,255,255,0.90)');
@@ -256,7 +290,7 @@ class ParticleSystem {
     grad.addColorStop(1.0, 'rgba(255,255,255,0.00)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 64, 64);
-    _softShader = createShader(SOFT_PARTICLE_VERT, SOFT_PARTICLE_FRAG);
+    _softShader = p.createShader(SOFT_PARTICLE_VERT, SOFT_PARTICLE_FRAG);
   }
 
   // ---------------------------------------------------------------------------
@@ -291,9 +325,9 @@ class ParticleSystem {
     let count = gameState.isMobile ? 220 : 400;
 
     for (let i = 0; i < count; i++) {
-      let speed = random(5.0, 45.0);
-      let a1 = random(TWO_PI);
-      let a2 = random(TWO_PI);
+      let speed = p.random(5.0, 45.0);
+      let a1 = p.random(Math.PI * 2);
+      let a2 = p.random(Math.PI * 2);
 
       // Default fire palette: bright yellow core → orange mid → dark smoke
       let br = 255, bg = 200, bb = 50;
@@ -302,17 +336,17 @@ class ParticleSystem {
 
       if (isCustom) {
         // Custom tint: blend base colour toward white for the hot core
-        let rV = baseColor[0] + random(-15, 15);
-        let gV = baseColor[1] + random(-15, 15);
-        let bV = baseColor[2] + random(-15, 15);
+        let rV = baseColor[0] + p.random(-15, 15);
+        let gV = baseColor[1] + p.random(-15, 15);
+        let bV = baseColor[2] + p.random(-15, 15);
 
-        if (random() > 0.6) {
-          rV = lerp(rV, 255, 0.8);
-          gV = lerp(gV, 255, 0.8);
-          bV = lerp(bV, 255, 0.4);
+        if (p.random() > 0.6) {
+          rV = _lerp(rV, 255, 0.8);
+          gV = _lerp(gV, 255, 0.8);
+          bV = _lerp(bV, 255, 0.4);
         }
 
-        br = constrain(rV, 0, 255); bg = constrain(gV, 0, 255); bb = constrain(bV, 0, 255);
+        br = _constrain(rV, 0, 255); bg = _constrain(gV, 0, 255); bb = _constrain(bV, 0, 255);
         er = br * 0.8; eg = bg * 0.8; eb = bb * 0.8;
         sr = br * 0.3 + 10; sg = bg * 0.3 + 10; sb = bb * 0.3 + 10;
       }
@@ -325,12 +359,12 @@ class ParticleSystem {
         br, bg, bb,              // Bright (core) colour
         er, eg, eb,              // Ember (mid) colour
         sr, sg, sb,              // Smoke (outer) colour
-        vx: speed * sin(a1) * cos(a2),
-        vy: speed * sin(a1) * sin(a2),
-        vz: speed * cos(a1),
+        vx: speed * Math.sin(a1) * Math.cos(a2),
+        vy: speed * Math.sin(a1) * Math.sin(a2),
+        vz: speed * Math.cos(a1),
         life: 255,
-        decay: random(2.0, 6.0),
-        size: random(8, 26)
+        decay: p.random(2.0, 6.0),
+        size: p.random(8, 26)
       });
     }
   }
@@ -375,20 +409,20 @@ class ParticleSystem {
             for (let c = -MEGA_BOMB_TILE_RAD; c <= MEGA_BOMB_TILE_RAD; c++) {
               if (r * r + c * c <= MEGA_BOMB_TILE_RAD_SQ) {
                 let nx = tx + r, nz = tz + c;
-                if (aboveSea(terrain.getAltitude(nx * TILE, nz * TILE))) continue;
+                if (terrain.getAltitude(nx * TILE, nz * TILE) > _seaLevel()) continue;
                 let nk = tileKey(nx, nz);
                 if (infection.add(nk)) {
-                  if (isLaunchpad(nx * TILE, nz * TILE)) hitLP = true;
+                  if (_isLaunchpad(nx * TILE, nz * TILE)) hitLP = true;
                 }
               }
             }
           }
-          if (hitLP) maybePlayLaunchpadAlarm();
+          if (hitLP) _maybePlayLaunchpadAlarm();
         } else {
           // Normal bomb: infect the single tile recorded when the bomb was spawned
           if (infection.add(b.k)) {
-            if (isLaunchpad(b.x, b.z)) {
-              maybePlayLaunchpadAlarm();
+            if (_isLaunchpad(b.x, b.z)) {
+              _maybePlayLaunchpadAlarm();
             }
           }
         }
@@ -405,7 +439,7 @@ class ParticleSystem {
       let b = this.enemyBullets[i];
       b.x += b.vx; b.y += b.vy; b.z += b.vz;
       b.life -= 2;
-      if (b.life <= 0 || b.y > terrain.getAltitude(b.x, b.z) || b.y > SEA) {
+      if (b.life <= 0 || b.y > terrain.getAltitude(b.x, b.z) || b.y > _seaLevel()) {
         // Swap-and-pop for O(1) removal (order doesn't matter for enemy bullets)
         let last = this.enemyBullets.pop();
         if (i < this.enemyBullets.length) this.enemyBullets[i] = last;
@@ -446,11 +480,11 @@ class ParticleSystem {
     const MAX_THRUST_RENDER = Math.floor(180 * renderLoadScale);
     let fogRendered = 0;
     let thrustRendered = 0;
-    let pxD = pixelDensity();
+    let pxD = p.pixelDensity();
 
     if (this.particles.length > 0) {
-      noLights();  // Particles are emissive — skip directional shading
-      noStroke();
+      p.noLights();  // Particles are emissive — skip directional shading
+      p.noStroke();
 
       // ── Soft billboard particles: exhaust, squid fog, missile smoke ──────
       const useDepthSoftShader = (_softShader && _cloudTex && sceneFBO);
@@ -461,15 +495,15 @@ class ParticleSystem {
       const useBillowSprites = (!!_cloudTex && !useDepthSoftShader && !isMobile);
       const disableDepthForSoft = useDepthSoftShader || useBillowSprites;
       if (disableDepthForSoft) {
-        drawingContext.disable(drawingContext.DEPTH_TEST);
+        p.drawingContext.disable(p.drawingContext.DEPTH_TEST);
       }
       if (useDepthSoftShader) {
-        shader(_softShader);
+        p.shader(_softShader);
         _softShader.setUniform('sTexture', _cloudTex);
         _softShader.setUniform('sDepth', sceneFBO.depth);
         _softCameraRangeBuf[0] = camNear; _softCameraRangeBuf[1] = camFar;
         _softShader.setUniform('uCameraRange', _softCameraRangeBuf);
-        _softInvViewportBuf[0] = 1 / (width * pxD); _softInvViewportBuf[1] = 1 / (height * pxD);
+        _softInvViewportBuf[0] = 1 / (p.width * pxD); _softInvViewportBuf[1] = 1 / (p.height * pxD);
         _softShader.setUniform('uInvViewportSize', _softInvViewportBuf);
         _softShader.setUniform('uTransitionSize', 0.05);
       }
@@ -493,69 +527,69 @@ class ParticleSystem {
         if (_uInfo && _uInfo.location != null) _directColorLoc = _uInfo.location;
       }
 
-      if (useBillowSprites) texture(_cloudTex);
+      if (useBillowSprites) p.texture(_cloudTex);
 
       for (let i = 0; i < this.particles.length; i++) {
-        let p = this.particles[i];
-        if (p.isExplosion) continue;
-        let dxC = p.x - camX;
-        let dzC = p.z - camZ;
+        let part = this.particles[i];
+        if (part.isExplosion) continue;
+        let dxC = part.x - camX;
+        let dzC = part.z - camZ;
         let dSq = dxC * dxC + dzC * dzC;
         if (dSq > cullSq) continue;
-        if (p.isFog) {
+        if (part.isFog) {
           if (dSq > fogCullSq) continue;
           if (fogRendered >= MAX_FOG_RENDER) continue;
           fogRendered++;
         }
-        if (p.isThrust) {
+        if (part.isThrust) {
           if (thrustRendered >= MAX_THRUST_RENDER) continue;
           thrustRendered++;
         }
 
-        let lifeNorm = p.life / 255.0;
+        let lifeNorm = part.life / 255.0;
         let t = 1.0 - lifeNorm;
         let alpha = lifeNorm < 0.4 ? lifeNorm / 0.4 : 1.0;
-        if (p.isFog) alpha *= p.isInkBurst ? 1.15 : 0.85;
-        if (p.isThrust) alpha *= 0.42;
+        if (part.isFog) alpha *= part.isInkBurst ? 1.15 : 0.85;
+        if (part.isThrust) alpha *= 0.42;
         if (alpha <= 0.02) continue;
 
-        let [r, g, b] = _calcSoftParticleColor(p, t);
+        let [r, g, b] = _calcSoftParticleColor(part, t);
 
         if (useDepthSoftShader || useBillowSprites) {
-          let dx = (camCX ?? p.x) - p.x, dy = (camCY ?? p.y) - p.y, dz = (camCZ ?? (p.z + 1)) - p.z;
+          let dx = (camCX ?? part.x) - part.x, dy = (camCY ?? part.y) - part.y, dz = (camCZ ?? (part.z + 1)) - part.z;
           let horiz = Math.hypot(dx, dz);
-          if (horiz < 0.0001 && abs(dy) < 0.0001) continue;
-          let yaw = atan2(dx, dz), pitch = -atan2(dy, Math.max(horiz, 0.0001));
-          let sz = p.size || 8;
-          if (p.isThrust) sz *= (1.0 + t * 1.1);
+          if (horiz < 0.0001 && Math.abs(dy) < 0.0001) continue;
+          let yaw = Math.atan2(dx, dz), pitch = -Math.atan2(dy, Math.max(horiz, 0.0001));
+          let sz = part.size || 8;
+          if (part.isThrust) sz *= (1.0 + t * 1.1);
           // Ink bursts bloom significantly over their life to obscure the screen
-          if (p.isFog) sz *= (p.isInkBurst ? (1.5 + t * 6.5) : (1.35 + t * 2.3));
-          push(); translate(p.x, p.y, p.z); rotateY(yaw); rotateX(pitch);
+          if (part.isFog) sz *= (part.isInkBurst ? (1.5 + t * 6.5) : (1.35 + t * 2.3));
+          p.push(); p.translate(part.x, part.y, part.z); p.rotateY(yaw); p.rotateX(pitch);
           if (useDepthSoftShader) {
             // Direct gl.uniform4f — zero allocations vs setUniform's slice(0) copy.
             if (_directColorLoc !== null) {
-              drawingContext.uniform4f(_directColorLoc, r / 255, g / 255, b / 255, alpha);
+              p.drawingContext.uniform4f(_directColorLoc, r / 255, g / 255, b / 255, alpha);
             } else {
               // Fallback if location unavailable (first frame or driver quirk).
               _softShaderColorBuf[0] = r / 255; _softShaderColorBuf[1] = g / 255;
               _softShaderColorBuf[2] = b / 255; _softShaderColorBuf[3] = alpha;
               _softShader.setUniform('uParticleColor', _softShaderColorBuf);
             }
-            plane(sz, sz);
+            p.plane(sz, sz);
           } else {
-            tint(r, g, b, alpha * 255); plane(sz, sz);
+            p.tint(r, g, b, alpha * 255); p.plane(sz, sz);
           }
-          pop();
+          p.pop();
         } else {
           // Fallback path (mobile/non-shader): apply growth to sphere size so ink still blooms
-          let sz = (p.size || 8);
-          if (p.isFog) sz *= (p.isInkBurst ? (1.5 + t * 6.5) : (1.35 + t * 2.3));
-          push(); translate(p.x, p.y, p.z); fill(r, g, b, alpha * 255); sphere(sz / 2, 5, 4); pop();
+          let sz = (part.size || 8);
+          if (part.isFog) sz *= (part.isInkBurst ? (1.5 + t * 6.5) : (1.35 + t * 2.3));
+          p.push(); p.translate(part.x, part.y, part.z); p.fill(r, g, b, alpha * 255); p.sphere(sz / 2, 5, 4); p.pop();
         }
       }
-      if (useBillowSprites) noTint();
-      if (useDepthSoftShader) resetShader();
-      if (disableDepthForSoft) drawingContext.enable(drawingContext.DEPTH_TEST);
+      if (useBillowSprites) p.noTint();
+      if (useDepthSoftShader) p.resetShader();
+      if (disableDepthForSoft) p.drawingContext.enable(p.drawingContext.DEPTH_TEST);
 
       if (!sceneFBO) this._drawHardGeometry(camCX ?? camX, camCY ?? 0, camCZ ?? camZ, camX, camZ, cullSq);
     } else if (!sceneFBO) {
@@ -573,13 +607,13 @@ class ParticleSystem {
    * @param {number} shipZ Ship Z for distance culling.
    */
   renderHardParticles(cx, cy, cz, shipX, shipZ) {
-    noLights(); noStroke();
+    p.noLights(); p.noStroke();
     this._drawHardGeometry(cx, cy, cz, shipX, shipZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
   }
 
   /** @private Shared draw logic for explosions, bombs, and enemy bullets. */
   _drawHardGeometry(cx, cy, cz, shipX, shipZ, cullSq) {
-    noLights(); noStroke();
+    p.noLights(); p.noStroke();
 
     // Explosion particles: unlit points (wave-front colour model).
     //
@@ -588,16 +622,16 @@ class ParticleSystem {
     // the GPU, so bucketing reduces draw-calls from ~N/frame down to 4.
     _expBucketCounts[0] = _expBucketCounts[1] = _expBucketCounts[2] = _expBucketCounts[3] = 0;
 
-    for (let p of this.particles) {
-      if (!p.isExplosion) continue;
-      if ((p.x - shipX) ** 2 + (p.z - shipZ) ** 2 > cullSq) continue;
+    for (let part of this.particles) {
+      if (!part.isExplosion) continue;
+      if ((part.x - shipX) ** 2 + (part.z - shipZ) ** 2 > cullSq) continue;
 
-      let lifeNorm = p.life / 255.0;
+      let lifeNorm = part.life / 255.0;
       // Fade out over the last 40% of life, and cap maximum alpha for better transparency
       let alpha = lifeNorm < 0.4 ? (lifeNorm / 0.4) * 140 : 140;
 
-      const wave = _EXPLOSION_WAVE_LUT[p.life | 0] || 0;
-      const dx = p.x - p.cx, dy = p.y - p.cy, dz = p.z - p.cz;
+      const wave = _EXPLOSION_WAVE_LUT[part.life | 0] || 0;
+      const dx = part.x - part.cx, dy = part.y - part.cy, dz = part.z - part.cz;
       if (Math.abs(dx) > wave + 100 || Math.abs(dy) > wave + 100 || Math.abs(dz) > wave + 100) continue;
 
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -606,21 +640,21 @@ class ParticleSystem {
       let r, g, b;
       if (diff < 40) {
         let f = (diff + 50) / 90;
-        r = lerp(255, p.br, f); g = lerp(255, p.bg, f); b = lerp(255, p.bb, f);
+        r = _lerp(255, part.br, f); g = _lerp(255, part.bg, f); b = _lerp(255, part.bb, f);
       } else if (diff < 150) {
         let f = (diff - 40) / 110;
-        r = lerp(p.br, p.er, f); g = lerp(p.bg, p.eg, f); b = lerp(p.bb, p.eb, f);
+        r = _lerp(part.br, part.er, f); g = _lerp(part.bg, part.eg, f); b = _lerp(part.bb, part.eb, f);
       } else if (diff < 350) {
         let f = (diff - 150) / 200;
-        r = lerp(p.er, p.sr, f); g = lerp(p.eg, p.sg, f); b = lerp(p.eb, p.sb, f);
+        r = _lerp(part.er, part.sr, f); g = _lerp(part.eg, part.sg, f); b = _lerp(part.eb, part.sb, f);
       } else {
-        r = p.sr; g = p.sg; b = p.sb;
+        r = part.sr; g = part.sg; b = part.sb;
       }
 
       // Perspective-scale point size. Tuning constant (750) and min-distance
       // floor (120) prevents infinite size when the camera is inside the burst.
-      const dToCam = Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2 + (p.z - cz) ** 2);
-      const screenSz = (p.size || 10) * (750 / Math.max(dToCam, 120));
+      const dToCam = Math.sqrt((part.x - cx) ** 2 + (part.y - cy) ** 2 + (part.z - cz) ** 2);
+      const screenSz = (part.size || 10) * (750 / Math.max(dToCam, 120));
       // Clamp to [1.5, 64] to respect hardware POINT_SIZE limits.
       const clampedSz = screenSz < 1.5 ? 1.5 : screenSz > 64 ? 64 : screenSz;
 
@@ -630,7 +664,7 @@ class ParticleSystem {
       if (cnt >= _EXP_BUCKET_MAX) continue; // safety cap
       const off = cnt * 7;
       const buf = _expBucketBufs[bi];
-      buf[off]     = p.x;     buf[off + 1] = p.y;     buf[off + 2] = p.z;
+      buf[off]     = part.x;     buf[off + 1] = part.y;     buf[off + 2] = part.z;
       buf[off + 3] = r;       buf[off + 4] = g;       buf[off + 5] = b;
       buf[off + 6] = alpha;
       _expBucketCounts[bi]++;
@@ -640,26 +674,28 @@ class ParticleSystem {
     for (let bi = 0; bi < 4; bi++) {
       const cnt = _expBucketCounts[bi];
       if (cnt === 0) continue;
-      strokeWeight(_EXP_BUCKET_WEIGHTS[bi]);
+      p.strokeWeight(_EXP_BUCKET_WEIGHTS[bi]);
       const buf = _expBucketBufs[bi];
       for (let i = 0; i < cnt; i++) {
         const off = i * 7;
-        stroke(buf[off + 3], buf[off + 4], buf[off + 5], buf[off + 6]);
-        point(buf[off], buf[off + 1], buf[off + 2]);
+        p.stroke(buf[off + 3], buf[off + 4], buf[off + 5], buf[off + 6]);
+        p.point(buf[off], buf[off + 1], buf[off + 2]);
       }
     }
-    noStroke();
+    p.noStroke();
 
     // Bombs 
     for (let b of this.bombs) {
-      push(); translate(b.x, b.y, b.z); noStroke(); fill(200, 50, 50); box(8, 20, 8); pop();
+      p.push(); p.translate(b.x, b.y, b.z); p.noStroke(); p.fill(200, 50, 50); p.box(8, 20, 8); p.pop();
     }
 
     // Enemy bullets 
     for (let b of this.enemyBullets) {
-      push(); translate(b.x, b.y, b.z); fill(255, 80, 80); sphere(4, 4, 3); pop();
+      p.push(); p.translate(b.x, b.y, b.z); p.fill(255, 80, 80); p.sphere(4, 4, 3); p.pop();
     }
   }
 }
 
 const particleSystem = new ParticleSystem();
+
+export { ParticleSystem, particleSystem };

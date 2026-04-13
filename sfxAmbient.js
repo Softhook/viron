@@ -4,7 +4,7 @@
 // @exports   SfxAmbient   — namespace: updateAmbiance(), updateThrust()
 // =============================================================================
 
-const SfxAmbient = {
+export const SfxAmbient = {
 
     updateAmbiance(sfxCore, proximityData, infectionCount, maxInfection) {
         if (!sfxCore.initialized || !sfxCore.ctx) return;

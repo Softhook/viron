@@ -6,28 +6,34 @@
 // @exports   randomizeMountainPeaks() — procedural peak randomisation
 // =============================================================================
 
+import {
+  MOUNTAIN_PEAKS, setMountainPeaks, SENTINEL_PULSE_INTERVAL,
+  TILE, tileKey, toTile, isLaunchpad
+} from './constants.js';
+import { terrain } from './terrain.js';
+import { gameState } from './gameState.js';
+import { villagerManager } from './villagers.js';
+import { wizardManager } from './wizards.js';
+import { p } from './p5Context.js';
+
 /**
  * Randomizes the number, position, and strength of mountain peaks.
  * Updates the global MOUNTAIN_PEAKS array and re-initializes terrain state.
  */
-function randomizeMountainPeaks() {
-  const count = floor(random(0, 11)); // 0 to 10 peaks
+export function randomizeMountainPeaks() {
+  const count = Math.floor(p.random(0, 11)); // 0 to 10 peaks
   const newPeaks = [];
 
   for (let i = 0; i < count; i++) {
     newPeaks.push({
-      x: random(-4500, 4500),
-      z: random(-4500, 4500),
-      strength: random(300, 550),
-      sigma: random(600, 1400)
+      x: p.random(-4500, 4500),
+      z: p.random(-4500, 4500),
+      strength: p.random(300, 550),
+      sigma: p.random(600, 1400)
     });
   }
 
-  MOUNTAIN_PEAKS = newPeaks;
-  
-  if (typeof initializeMountainPeaks === 'function') {
-    initializeMountainPeaks();
-  }
+  setMountainPeaks(newPeaks);
 
   // Clear terrain cache so altitude changes take effect
   if (terrain?.reset) {
@@ -41,10 +47,10 @@ function randomizeMountainPeaks() {
  * Initializes the entire world state including terrain peaks and building placement.
  * Uses the provided seed for deterministic variety.
  */
-function initWorld(seed) {
-  const finalSeed = seed !== undefined ? seed : floor(millis() + (typeof second === 'function' ? second() : 0) * 1000);
-  randomSeed(finalSeed);
-  noiseSeed(finalSeed);
+export function initWorld(seed) {
+  const finalSeed = seed !== undefined ? seed : Math.floor(performance.now() + (typeof second === 'function' ? second() : 0) * 1000);
+  p.randomSeed(finalSeed);
+  p.noiseSeed(finalSeed);
   gameState.worldSeed = finalSeed;
   
   console.log(`%c[Viron] WORLD SEED: ${finalSeed}`, 'color: #00ffcc; font-weight: bold; font-size: 1.2em;');
@@ -55,7 +61,7 @@ function initWorld(seed) {
   // 2. Populate standard buildings (including villages)
   let numBldgs = gameState.isMobile ? 15 : 40;
   for (let i = 0; i < numBldgs; i++) {
-    let bx = random(-4500, 4500), bz = random(-4500, 4500);
+    let bx = p.random(-4500, 4500), bz = p.random(-4500, 4500);
     // Avoid placing buildings directly on the launchpad
     if (isLaunchpad(bx, bz)) {
       i--; // Try again
@@ -63,17 +69,17 @@ function initWorld(seed) {
     }
     
     // 30% chance to spawn a village instead of a single building
-    if (random() < 0.3) {
+    if (p.random() < 0.3) {
       spawnVillage(bx, bz);
       // Villages count as 3-5 buildings for density purposes
     } else {
-      let bType = [0, 1, 2, 3, 5][floor(random(5))]; // Includes 3 (Powerup), excludes 4 (Sentinel)
+      let bType = [0, 1, 2, 3, 5][Math.floor(p.random(5))]; // Includes 3 (Powerup), excludes 4 (Sentinel)
       gameState.buildings.push({
         x: bx, z: bz,
         y: terrain.getAltitude(bx, bz),
-        w: 80, h: random(120, 160), d: 80,
+        w: 80, h: p.random(120, 160), d: 80,
         type: bType,
-        col: [random(100, 160), random(100, 160), random(100, 160)]
+        col: [p.random(100, 160), p.random(100, 160), p.random(100, 160)]
       });
     }
   }
@@ -87,7 +93,7 @@ function initWorld(seed) {
       w: 60, h: 280, d: 60,
       type: 4,
       col: [0, 220, 200],
-      pulseTimer: floor(i * SENTINEL_PULSE_INTERVAL / Math.max(1, MOUNTAIN_PEAKS.length))
+      pulseTimer: Math.floor(i * SENTINEL_PULSE_INTERVAL / Math.max(1, MOUNTAIN_PEAKS.length))
     });
   }
 
@@ -97,7 +103,7 @@ function initWorld(seed) {
 /**
  * Spawns a cluster of Chinese buildings (one Pagoda and multiple Huts) to form a village.
  */
-function spawnVillage(cx, cz) {
+export function spawnVillage(cx, cz) {
   // Center Pagoda
   gameState.buildings.push({
     x: cx, z: cz,
@@ -108,18 +114,18 @@ function spawnVillage(cx, cz) {
   });
 
   // Surround with huts
-  let numHuts = floor(random(3, 6));
+  let numHuts = Math.floor(p.random(3, 6));
   for (let i = 0; i < numHuts; i++) {
-    let angle = random(TWO_PI);
-    let dist = random(120, 300);
-    let hx = cx + cos(angle) * dist;
-    let hz = cz + sin(angle) * dist;
+    let angle = p.random(2 * Math.PI);
+    let dist = p.random(120, 300);
+    let hx = cx + Math.cos(angle) * dist;
+    let hz = cz + Math.sin(angle) * dist;
     
     if (!isLaunchpad(hx, hz)) {
       gameState.buildings.push({
         x: hx, z: hz,
         y: terrain.getAltitude(hx, hz),
-        w: 50, h: random(60, 75), d: 50,
+        w: 50, h: p.random(60, 75), d: 50,
         type: 5, // Small Hut
         col: [120, 100, 80]
       });

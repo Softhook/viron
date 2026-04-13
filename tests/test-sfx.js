@@ -14,6 +14,12 @@
 const fs   = require('fs');
 const path = require('path');
 
+function stripEsmSyntax(src) {
+    return src
+        .replace(/^\s*import\s+[^;]+;\s*$/gm, '')
+        .replace(/^\s*export\s+/gm, '');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Minimal Web Audio API mock
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,6 +146,7 @@ class MockAudioContext {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const mockCtx = new MockAudioContext();
+global.window = global;
 global.getAudioContext  = () => mockCtx;
 global.userStartAudio   = () => {};
 global.lerp             = (a, b, t) => a + (b - a) * t;
@@ -147,11 +154,11 @@ global.constrain        = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 global.gameState        = { players: [] };
 
 // Read sfx.js and its neighbors
-const sfxTunesSrc   = fs.readFileSync(path.join(__dirname, '..', 'sfxTunes.js'), 'utf8');
-const sfxAmbientSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxAmbient.js'), 'utf8');
-const sfxWeaponsSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxWeapons.js'), 'utf8');
-const sfxEnemiesSrc = fs.readFileSync(path.join(__dirname, '..', 'sfxEnemies.js'), 'utf8');
-const sfxSrc        = fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8');
+const sfxTunesSrc   = stripEsmSyntax(fs.readFileSync(path.join(__dirname, '..', 'sfxTunes.js'), 'utf8'));
+const sfxAmbientSrc = stripEsmSyntax(fs.readFileSync(path.join(__dirname, '..', 'sfxAmbient.js'), 'utf8'));
+const sfxWeaponsSrc = stripEsmSyntax(fs.readFileSync(path.join(__dirname, '..', 'sfxWeapons.js'), 'utf8'));
+const sfxEnemiesSrc = stripEsmSyntax(fs.readFileSync(path.join(__dirname, '..', 'sfxEnemies.js'), 'utf8'));
+const sfxSrc        = stripEsmSyntax(fs.readFileSync(path.join(__dirname, '..', 'sfx.js'), 'utf8'));
 const sfxAllSrc     = [sfxSrc, sfxAmbientSrc, sfxWeaponsSrc, sfxEnemiesSrc, sfxTunesSrc].join('\n');
 
 // Load modules into global scope

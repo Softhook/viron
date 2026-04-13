@@ -5,7 +5,14 @@
 // @exports   gameSFX        — singleton (used by sketch.js, gameLoop.js,
 //                             gameState.js, player.js, enemies.js)
 // =============================================================================
-class GameSFX {
+
+import { SfxAmbient } from './sfxAmbient.js';
+import { SfxWeapons } from './sfxWeapons.js';
+import { SfxEnemies } from './sfxEnemies.js';
+import { SFX_LEVEL_TUNES } from './sfxTunes.js';
+import { gameState } from './gameState.js';
+
+export class GameSFX {
     constructor() {
         this.initialized = false;
         this.distCurve = null;
@@ -33,9 +40,9 @@ class GameSFX {
 
     init() {
         if (this.initialized) return;
-        try { if (typeof userStartAudio !== 'undefined') userStartAudio(); } catch (e) { }
-        if (typeof getAudioContext !== 'undefined') {
-            this.ctx = getAudioContext();
+        try { window.userStartAudio?.(); } catch (e) { }
+        if (typeof window.getAudioContext !== 'undefined') {
+            this.ctx = window.getAudioContext?.();
 
             // Simple master gain — no dynamics compressor.
             // A DynamicsCompressor causes audible pumping/ducking on every transient
@@ -761,4 +768,4 @@ class GameSFX {
     }
 }
 
-const gameSFX = new GameSFX();
+export const gameSFX = new GameSFX();

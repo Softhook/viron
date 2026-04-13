@@ -24,12 +24,25 @@
 //              lashes out with far-reaching tentacle strikes, only lives on water tiles
 // =============================================================================
 
+import { p } from './p5Context.js';
+import { tileKey, toTile, TILE, CULL_DIST, mag3, aboveSea, isLaunchpad, SEA, infection, ENEMY_CRAB_BULLET_LIFE } from './constants.js';
+import { findNearest, maybePlayLaunchpadAlarm } from './utils.js';
+import { EnemyRenderer } from './enemyRenderer.js';
+import { EnemyAirAI } from './enemyAirBehaviors.js';
+import { EnemyGroundAI } from './enemyGroundBehaviors.js';
+import { EnemyBossAI } from './enemyBossBehaviors.js';
+import { gameState } from './gameState.js';
+import { terrain } from './terrain.js';
+import { particleSystem } from './particles.js';
+import { gameSFX } from './sfx.js';
+import { physicsEngine } from './PhysicsEngine.js';
+
 // Seeder double-diamond geometry: two layers, each defined by [yOffset, r, g, b].
 // Hoisted out of the draw loop so the nested array literal is not re-allocated every frame.
 const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
 
 // Uniform scale applied to every enemy mesh in both rendering passes.
-const ENEMY_DRAW_SCALE = 4;
+export const ENEMY_DRAW_SCALE = 4;
 
 // (Constants removed and consolidated in constants.js)
 
@@ -41,7 +54,7 @@ const ENEMY_DRAW_SCALE = 4;
 // ENEMY_SHADOW_DIMS, and inline spawn checks.
 // =============================================================================
 
-const ENEMY_TYPES = {
+export const ENEMY_TYPES = {
   seeder: {
     color: [220, 30, 30],
     shadow: [68, 50],
@@ -141,7 +154,7 @@ for (const [type, cfg] of Object.entries(ENEMY_TYPES)) {
 
 // (Scorpion constants moved to constants.js)
 
-class EnemyManager {
+export class EnemyManager {
   constructor() {
     /** @type {Array<object>} Live enemy objects. Each has at minimum: x, y, z, vx, vz, type. */
     this.enemies = [];
@@ -194,8 +207,8 @@ class EnemyManager {
 
   /** Reflects enemy velocity if it moves too far from the reference ship. */
   _reflectWithinRefBounds(e, refShip, limit) {
-    if (abs(e.x - refShip.x) > limit) e.vx *= -1;
-    if (abs(e.z - refShip.z) > limit) e.vz *= -1;
+    if (Math.abs(e.x - refShip.x) > limit) e.vx *= -1;
+    if (Math.abs(e.z - refShip.z) > limit) e.vz *= -1;
   }
 
   /**
@@ -219,7 +232,7 @@ class EnemyManager {
     if (!spreadNeighbors) return;
     for (let di = -1; di <= 1; di++) {
       for (let dj = -1; dj <= 1; dj++) {
-        if (random() < 0.25) {
+        if (p.random() < 0.25) {
           let nk = tileKey(tx + di, tz + dj);
           if (!infection.has(nk)) {
             let nx = (tx + di) * TILE, nz = (tz + dj) * TILE;
@@ -239,10 +252,10 @@ class EnemyManager {
   /** Shared 2D pursuit steering with velocity smoothing. */
   _steer2D(e, tx, tz, speed, smooth) {
     const dx = tx - e.x, dz = tz - e.z;
-    const d = mag2(dx, dz);
+    const d = Math.hypot(dx, dz);
     if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * speed, smooth);
-      e.vz = lerp(e.vz || 0, (dz / d) * speed, smooth);
+      e.vx = p.lerp(e.vx || 0, (dx / d) * speed, smooth);
+      e.vz = p.lerp(e.vz || 0, (dz / d) * speed, smooth);
     }
     return { dx, dz, d };
   }
@@ -252,9 +265,9 @@ class EnemyManager {
     const dx = tx - e.x, dy = ty - e.y, dz = tz - e.z;
     const d = mag3(dx, dy, dz);
     if (d > 0) {
-      e.vx = lerp(e.vx || 0, (dx / d) * speed, smooth);
-      e.vy = lerp(e.vy || 0, (dy / d) * speed, smooth);
-      e.vz = lerp(e.vz || 0, (dz / d) * speed, smooth);
+      e.vx = p.lerp(e.vx || 0, (dx / d) * speed, smooth);
+      e.vy = p.lerp(e.vy || 0, (dy / d) * speed, smooth);
+      e.vz = p.lerp(e.vz || 0, (dz / d) * speed, smooth);
     }
     return { dx, dy, dz, d };
   }
@@ -347,7 +360,7 @@ class EnemyManager {
     const tier = gameState[countKey];
     const hp = cfg.hpBase + (tier - 1) * cfg.hpStep;
     entry[tierKey] = tier;
-    entry[scaleKey] = min(1 + (tier - 1) * cfg.sizeStep, cfg.maxSizeMult);
+    entry[scaleKey] = Math.min(1 + (tier - 1) * cfg.sizeStep, cfg.maxSizeMult);
     entry.hp = hp;
     entry.maxHp = hp;
     entry.hitFlash = 0;
@@ -382,9 +395,9 @@ class EnemyManager {
         if (bd > 0) {
           particleSystem.enemyBullets.push({
             x: e.x, y: e.y - muzzleYOffset, z: e.z,
-            vx: (bdx / bd) * cfg.speed + random(-cfg.spread, cfg.spread) * cfg.speed,
+            vx: (bdx / bd) * cfg.speed + p.random(-cfg.spread, cfg.spread) * cfg.speed,
             vy: (bdy / bd) * cfg.speed,
-            vz: (bdz / bd) * cfg.speed + random(-cfg.spread, cfg.spread) * cfg.speed,
+            vz: (bdz / bd) * cfg.speed + p.random(-cfg.spread, cfg.spread) * cfg.speed,
             life: cfg.bulletLife
           });
           gameSFX?.playEnemyShot('fighter', e.x, e.y - muzzleYOffset, e.z);
@@ -426,8 +439,8 @@ class EnemyManager {
 
     let entry = {
       x: ex, y: ey, z: ez,
-      vx: random(-2, 2), vz: random(-2, 2),
-      id: random(),        // Unique random seed used for per-enemy animation phase offsets
+      vx: p.random(-2, 2), vz: p.random(-2, 2),
+      id: p.random(),        // Unique random seed used for per-enemy animation phase offsets
       type,
       fireTimer: 0,        // Counts frames since last bullet fired
       bombTimer: 0         // Counts frames since last bomb dropped (bomber/fighter/scorpion)
@@ -450,7 +463,7 @@ class EnemyManager {
    * @private
    */
   _rollEnemyType() {
-    let r = random();
+    let r = p.random();
     if (r < 0.32) return 'seeder';
     if (r < 0.54) return 'fighter';
     if (r < 0.69) return 'bomber';
@@ -479,22 +492,22 @@ class EnemyManager {
     }
 
     const cfg = ENEMY_TYPES[type];
-    const ex = random(-4000, 4000);
-    const ez = random(-4000, 4000);
+    const ex = p.random(-4000, 4000);
+    const ez = p.random(-4000, 4000);
 
     if (cfg && cfg.locomotion === 'ground') {
       return { x: ex, y: terrain.getAltitude(ex, ez) - 10, z: ez };
     }
 
-    return { x: ex, y: random(-300, -800), z: ez };
+    return { x: ex, y: p.random(-300, -800), z: ez };
   }
 
   /** @private Colossus: far polar offset so the player has time to react. */
   _getColossusSpawnPosition() {
-    const angle = random(TWO_PI);
-    const dist = random(2500, 4000);
-    const ex = cos(angle) * dist;
-    const ez = sin(angle) * dist;
+    const angle = p.random((Math.PI * 2));
+    const dist = p.random(2500, 4000);
+    const ex = Math.cos(angle) * dist;
+    const ez = Math.sin(angle) * dist;
     return { x: ex, y: terrain.getAltitude(ex, ez), z: ez };
   }
 
@@ -507,10 +520,10 @@ class EnemyManager {
 
     // Random angular sampling — 60 attempts
     for (let attempt = 0; attempt < 60; attempt++) {
-      const angle = random(TWO_PI);
-      const dist = random(1500, 4500);
-      ex = cos(angle) * dist;
-      ez = sin(angle) * dist;
+      const angle = p.random((Math.PI * 2));
+      const dist = p.random(1500, 4500);
+      ex = Math.cos(angle) * dist;
+      ez = Math.sin(angle) * dist;
       ey = terrain.getAltitude(ex, ez);
       if (aboveSea(ey)) return { x: ex, y: ey, z: ez };
     }
@@ -518,8 +531,8 @@ class EnemyManager {
     // Grid-scan fallback: guaranteed water spawn
     for (let r = 1500; r <= 5000; r += 400) {
       for (let a = 0; a < 16; a++) {
-        const cx = cos((a / 16) * TWO_PI) * r;
-        const cz = sin((a / 16) * TWO_PI) * r;
+        const cx = Math.cos((a / 16) * (Math.PI * 2)) * r;
+        const cz = Math.sin((a / 16) * (Math.PI * 2)) * r;
         if (aboveSea(terrain.getAltitude(cx, cz))) {
           return { x: cx, y: terrain.getAltitude(cx, cz), z: cz };
         }
@@ -570,4 +583,5 @@ class EnemyManager {
 }
 
 // Singleton instance used by all other modules
-const enemyManager = new EnemyManager();
+const enemyRenderer = new EnemyRenderer();
+export const enemyManager = new EnemyManager();

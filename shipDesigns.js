@@ -9,9 +9,10 @@
 // @exports   SHIP_DESIGNS   — array of ship design configs
 // =============================================================================
 
+import { p } from './p5Context.js';
 
 // Geometry Helpers for enclosed faces
-const dBox = (df, cx, cy, cz, w, h, d, col, xform) => {
+export const dBox = (df, cx, cy, cz, w, h, d, col, xform) => {
     let hw=w/2, hh=h/2, hd=d/2;
     df([[cx-hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy+hh, cz-hd], [cx-hw, cy+hh, cz-hd]], col, xform); // Bot (+Y)
     df([[cx-hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz-hd], [cx+hw, cy-hh, cz+hd], [cx-hw, cy-hh, cz+hd]], col, xform); // Top (-Y)
@@ -21,7 +22,7 @@ const dBox = (df, cx, cy, cz, w, h, d, col, xform) => {
     df([[cx+hw, cy-hh, cz-hd], [cx+hw, cy+hh, cz-hd], [cx+hw, cy+hh, cz+hd], [cx+hw, cy-hh, cz+hd]], col, xform); // Right (+X)
 };
 
-const dExtrude = (df, pts, vec, col, xform) => {
+export const dExtrude = (df, pts, vec, col, xform) => {
     let top = pts.map(p => [p[0] + vec[0], p[1] + vec[1], p[2] + vec[2]]);
     df(pts, col, xform); 
     df([...top].reverse(), col, xform); 
@@ -31,7 +32,7 @@ const dExtrude = (df, pts, vec, col, xform) => {
     }
 };
 
-const SHIP_DESIGNS = [
+export const SHIP_DESIGNS = [
     // =========================================================================
     // HOVER / VTOL DESIGNS (Thrust Directly Down)
     // =========================================================================
@@ -647,7 +648,7 @@ const SHIP_DESIGNS = [
             dBox(0, -13, 27.5, 24, 10, 5, engineGray);
             
             // Fan blades (centered in the new lower fan housing)
-            let fanA = frameCount * 0.4;
+            let fanA = p.frameCount * 0.4;
             let f1 = [Math.cos(fanA) * 8, Math.sin(fanA) * 8 - 13, 30.1];
             let f2 = [-Math.cos(fanA) * 8, -Math.sin(fanA) * 8 - 13, 30.1];
             drawFace([[0, -13, 30.1], f2, f1], [255, 255, 255, 100]);

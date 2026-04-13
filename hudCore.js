@@ -10,15 +10,21 @@
 // @exports   RADAR_SCALE          — world-to-radar-pixel scale factor
 // =============================================================================
 
-const HUD_WEAPON_LABELS = ['NORMAL', 'MISSILE', 'BARRIER'];
-const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
-const HUD_LABEL_CACHE = Object.create(null); // Static labels graphic per viewport size
-const HUD_RADAR_BUFFERS = Object.create(null); // Graphics buffers for radar (one per player)
-const HUD_WEAPON_BUFFERS = Object.create(null); // Cached weapon-selector graphic per player id
+import { p } from './p5Context.js';
+import { SEA, NORMAL_SHOT_MODE_LABELS, infection } from './constants.js';
+import { gameState } from './gameState.js';
+import { enemyManager } from './enemies.js';
+import { setup2DViewport } from './gameRenderer.js';
 
-const RADAR_SCALE = 0.012;
-const RADAR_HALF = 68;
-const RADAR_TILE_RADIUS_SQ = 4200;
+export const HUD_WEAPON_LABELS = ['NORMAL', 'MISSILE', 'BARRIER'];
+export const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
+export const HUD_LABEL_CACHE = Object.create(null); // Static labels graphic per viewport size
+export const HUD_RADAR_BUFFERS = Object.create(null); // Graphics buffers for radar (one per player)
+export const HUD_WEAPON_BUFFERS = Object.create(null); // Cached weapon-selector graphic per player id
+
+export const RADAR_SCALE = 0.012;
+export const RADAR_HALF = 68;
+export const RADAR_TILE_RADIUS_SQ = 4200;
 
 // Transition Settings
 const HUD_DIM_MAX = 180;
@@ -34,16 +40,16 @@ const HUD_STATS = [
 ];
 
 // Standardized UI Typography and Layout
-const UI_TYPE_TITLE = 84;
-const UI_TYPE_HEADER = 36;
-const UI_TYPE_BODY = 20;
-const UI_TYPE_HINT = 14;
-const UI_TYPE_PROMPT = 26;
+export const UI_TYPE_TITLE = 84;
+export const UI_TYPE_HEADER = 36;
+export const UI_TYPE_BODY = 20;
+export const UI_TYPE_HINT = 14;
+export const UI_TYPE_PROMPT = 26;
 
-const UI_LAYOUT_TITLE_Y = -0.32;
-const UI_LAYOUT_HEADER_Y = -0.18;
-const UI_LAYOUT_BODY_Y = 0.05; // Base Y for body text
-const UI_LAYOUT_PROMPT_Y = 0.40;
+export const UI_LAYOUT_TITLE_Y = -0.32;
+export const UI_LAYOUT_HEADER_Y = -0.18;
+export const UI_LAYOUT_BODY_Y = 0.05; // Base Y for body text
+export const UI_LAYOUT_PROMPT_Y = 0.40;
 
 const HUD_STATS_BY_SIZE = (() => {
   const groups = new Map();
@@ -57,7 +63,7 @@ const HUD_STATS_BY_SIZE = (() => {
 /**
  * HUD_Manager: Orchestrates HUD rendering, transitions, and state.
  */
-const HUD_Manager = {
+export const HUD_Manager = {
   dimAlpha: 0,
   targetDim: 0,
 
@@ -68,7 +74,7 @@ const HUD_Manager = {
 
     // Smoothly interpolate dimAlpha
     if (Math.abs(this.dimAlpha - this.targetDim) > 0.1) {
-      this.dimAlpha = lerp(this.dimAlpha, this.targetDim, HUD_DIM_SPEED);
+      this.dimAlpha = p.lerp(this.dimAlpha, this.targetDim, HUD_DIM_SPEED);
     } else {
       this.dimAlpha = this.targetDim;
     }
@@ -78,10 +84,10 @@ const HUD_Manager = {
   drawDimOverlay() {
     if (this.dimAlpha <= 0) return;
     setup2DViewport();
-    fill(0, 0, 0, this.dimAlpha);
-    noStroke();
-    rect(-width / 2, -height / 2, width, height);
-    pop();
+    p.fill(0, 0, 0, this.dimAlpha);
+    p.noStroke();
+    p.rect(-p.width / 2, -p.height / 2, p.width, p.height);
+    p.pop();
   }
 };
 
@@ -93,11 +99,11 @@ function _getHUDLabelGraphic(hw, h) {
   const key = `${hw}|${h}`;
   if (HUD_LABEL_CACHE[key]) return HUD_LABEL_CACHE[key];
 
-  const g = createGraphics(hw, h);
+  const g = p.createGraphics(hw, h);
   g.pixelDensity(1);
   g.clear();
   g.noStroke();
-  g.textAlign(LEFT, TOP);
+  g.textAlign(p.LEFT, p.TOP);
   if (gameState.gameFont) g.textFont(gameState.gameFont);
 
   const lx = 14;
@@ -116,7 +122,7 @@ function _getHUDLabelGraphic(hw, h) {
  */
 function _getRadarBuffer(pId, size) {
   if (HUD_RADAR_BUFFERS[pId]) return HUD_RADAR_BUFFERS[pId];
-  const g = createGraphics(size, size);
+  const g = p.createGraphics(size, size);
   g.pixelDensity(1);
   HUD_RADAR_BUFFERS[pId] = g;
   return g;

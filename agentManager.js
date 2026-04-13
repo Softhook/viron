@@ -6,16 +6,22 @@
 // @exports   ENEMY_CONFRONT_OFFSET — module-level constant (72 world units)
 // =============================================================================
 
+import { p } from './p5Context.js';
+import { CULL_DIST, TILE, aboveSea, infection, swapRemove, tileKey, toTile } from './constants.js';
+import { enemyManager } from './enemies.js';
+import { gameState } from './gameState.js';
+import { terrain } from './terrain.js';
+
 // Ground-enemy body offset: approximate half-width of a ground enemy at
 // ENEMY_DRAW_SCALE=4 (crab body box(36,…) → 144 world units wide → half = 72).
 // Used to aim confronting agents at the near body surface rather than the centre.
-const ENEMY_CONFRONT_OFFSET = 72;
+export const ENEMY_CONFRONT_OFFSET = 72;
 
 // Velocity-blend factor used whenever an agent steers toward a target or wanders.
 // A value of 0.15 gives smooth acceleration while remaining responsive.
-const STEERING_LERP_FACTOR = 0.15;
+export const STEERING_LERP_FACTOR = 0.15;
 
-class AgentManager {
+export class AgentManager {
   constructor(hubType, config = {}) {
     this.agents = [];
     this._visible = [];
@@ -188,8 +194,8 @@ class AgentManager {
       
       const d = Math.sqrt(distFromHomeSq);
       if (d > 0) {
-        u.vx = lerp(u.vx || 0, (-dxFromHome / d) * this.config.speed, STEERING_LERP_FACTOR);
-        u.vz = lerp(u.vz || 0, (-dzFromHome / d) * this.config.speed, STEERING_LERP_FACTOR);
+        u.vx = p.lerp(u.vx || 0, (-dxFromHome / d) * this.config.speed, STEERING_LERP_FACTOR);
+        u.vz = p.lerp(u.vz || 0, (-dzFromHome / d) * this.config.speed, STEERING_LERP_FACTOR);
       }
       return;
     }
@@ -213,8 +219,8 @@ class AgentManager {
       const d = Math.sqrt(dx * dx + dz * dz);
       
       if (d > this.config.stopDist) {
-        u.vx = lerp(u.vx || 0, (dx / d) * this.config.speed, STEERING_LERP_FACTOR);
-        u.vz = lerp(u.vz || 0, (dz / d) * this.config.speed, STEERING_LERP_FACTOR);
+        u.vx = p.lerp(u.vx || 0, (dx / d) * this.config.speed, STEERING_LERP_FACTOR);
+        u.vz = p.lerp(u.vz || 0, (dz / d) * this.config.speed, STEERING_LERP_FACTOR);
         if (this.onWalkToTarget) this.onWalkToTarget(u);
       } else {
         // Within range — stop and face target
@@ -227,9 +233,8 @@ class AgentManager {
       // No target — wander slowly
       if (this.onNoTarget) this.onNoTarget(u);
       
-      // Use Math.random since random is global p5
-      if (random() < 0.02) {
-        const angle = random(Math.PI * 2);
+      if (p.random() < 0.02) {
+        const angle = p.random(Math.PI * 2);
         u.vx = Math.cos(angle) * this.config.speed * this.config.wanderSpeedMult;
         u.vz = Math.sin(angle) * this.config.speed * this.config.wanderSpeedMult;
       }

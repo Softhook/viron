@@ -3,7 +3,23 @@
 // Now as a stateless service to improve LLM-readability.
 // =============================================================================
 
-const TerrainBuildings = {
+
+import { p } from './p5Context.js';
+import {
+  tileKey, toTile, CHUNK_SIZE, VIEW_FAR, TILE, infection,
+  aboveSea, isLaunchpad, getVironProfiler
+} from './constants.js';
+import { TerrainShadows } from './terrainShadows.js';
+import {
+  buildType0Geometry, buildType1Geometry, buildType2Geometry,
+  buildType4Geometry, buildType5Geometry, buildPowerupGeometry,
+  getBuildingFootprint
+} from './buildingGeometry.js';
+import { gameState } from './gameState.js';
+import { setSceneLighting } from './gameRenderer.js';
+import { _beginShadowStencil, _endShadowStencil, BAKE_BUDGET_MS, BUILDING_BATCH_SIZE } from './terrain.js';
+
+export const TerrainBuildings = {
 
   _getBuildingsForChunk(ctx, cx, cz) {
     if (typeof gameState === 'undefined' || !gameState.buildings) return [];
@@ -49,13 +65,13 @@ const TerrainBuildings = {
 
   _drawBuildingShadow(ctx, b, groundY, sun) {
     const bw = b.w, bh = b.h;
-    const floatY = groundY - bh - 100 - sin(millis() * 0.0012 + b.x) * 50;
+    const floatY = groundY - bh - 100 - Math.sin(p.millis() * 0.0012 + b.x) * 50;
     const casterH = Math.max(35, groundY - floatY);
     ctx._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 70, sun, true);
   },
 
   drawBuildings(ctx, s) {
-    const currentFrame = (typeof frameCount === 'number') ? frameCount : 0;
+    const currentFrame = (typeof p.frameCount === 'number') ? p.frameCount : 0;
     if (ctx._bakeFrame !== currentFrame) {
       ctx._bakeFrame = currentFrame;
       ctx._chunksBakedThisFrame.clear();
@@ -65,10 +81,10 @@ const TerrainBuildings = {
     const start = profiler ? performance.now() : 0;
 
     let cullSq = VIEW_FAR * TILE * VIEW_FAR * TILE;
-    let cam = ctx._cam || ctx.getCameraParams(s);
+    let { gx, gz, cam } = ctx.resolveViewSource(s, false);
+    cam = ctx._cam || cam;
     const sun = ctx._getSunShadowBasis();
-    
-    let gx = toTile(s.x), gz = toTile(s.z);
+
     let minCx = Math.floor((gx - VIEW_FAR) / CHUNK_SIZE);
     let maxCx = Math.floor((gx + VIEW_FAR) / CHUNK_SIZE);
     let minCz = Math.floor((gz - VIEW_FAR) / CHUNK_SIZE);
@@ -88,12 +104,12 @@ const TerrainBuildings = {
         visibleChunks.push({ cx, cz });
         const bldgState = this._advanceChunkBuildingBatch(ctx, cx, cz);
         if (bldgState) {
-          for (const geom of bldgState.batches) model(geom);
+          for (const geom of bldgState.batches) p.model(geom);
           for (let i = bldgState.nextIdx; i < bldgState.buildings.length; i++) {
             const b = bldgState.buildings[i];
-            push(); translate(b.x, b.y, b.z);
+            p.push(); p.translate(b.x, b.y, b.z);
             this._drawBuildingImmediate(ctx, b, infection.has(b._tileKey));
-            pop();
+            p.pop();
           }
         }
 
@@ -106,7 +122,7 @@ const TerrainBuildings = {
       }
     }
 
-    noStroke();
+    p.noStroke();
     for (const v of visibleBldgs) {
       const b = v.b;
       const y = b.y;
@@ -115,36 +131,36 @@ const TerrainBuildings = {
       const inf = infection.has(b._tileKey);
 
       if (b.type === 3) {
-        push(); translate(b.x, y, b.z);
-        let floatY = y - b.h - 100 - sin(millis() * 0.0012 + b.x) * 50;
-        translate(0, floatY - y, 0);
-        rotateY(millis() * 0.0006 + b.x);
-        rotateZ(millis() * 0.0009 + b.z);
+        p.push(); p.translate(b.x, y, b.z);
+        let floatY = y - b.h - 100 - Math.sin(p.millis() * 0.0012 + b.x) * 50;
+        p.translate(0, floatY - y, 0);
+        p.rotateY(p.millis() * 0.0006 + b.x);
+        p.rotateZ(p.millis() * 0.0009 + b.z);
         let geom = this._getPowerupGeom(ctx, b, inf);
-        if (geom) model(geom);
-        pop();
+        if (geom) p.model(geom);
+        p.pop();
       } else if (b.type === 4) {
-        push(); translate(b.x, y, b.z);
+        p.push(); p.translate(b.x, y, b.z);
         const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
-        fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
-        translate(0, -b.h * 0.87, 0);
-        rotateY(millis() * 0.00192 + b.x * 0.001);
-        torus(b.w * 0.32, b.w * 0.07, 14, 6);
-        pop();
+        p.fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
+        p.translate(0, -b.h * 0.87, 0);
+        p.rotateY(p.millis() * 0.00192 + b.x * 0.001);
+        p.torus(b.w * 0.32, b.w * 0.07, 14, 6);
+        p.pop();
       }
     }
 
-    resetShader();
+    p.resetShader();
     setSceneLighting();
 
-    noLights(); noStroke();
+    p.noLights(); p.noStroke();
     ctx.applyShadowShader();
     _beginShadowStencil();
     
     for (const c of visibleChunks) {
       const geom = this._getChunkBuildingShadow(ctx, c.cx, c.cz, sun);
       if (geom) {
-        model(geom);
+        p.model(geom);
       } else if (!ctx._buildingShadowChunkCache.has(`${c.cx},${c.cz}`)) {
         if (gameState.mode === 'menu') continue;
         if (ctx._chunksBakedThisFrame.has(`${c.cx},${c.cz}`) || ctx._bakeBudgetUsedMs >= BAKE_BUDGET_MS) continue;
@@ -167,7 +183,7 @@ const TerrainBuildings = {
       }
     }
 
-    resetShader();
+    p.resetShader();
     setSceneLighting();
 
     if (profiler) profiler.record('buildings', performance.now() - start);
@@ -226,9 +242,9 @@ const TerrainBuildings = {
       geom = ctx._safeBuildGeometry(() => {
         for (let i = state.nextIdx; i < end; i++) {
           const b = state.buildings[i];
-          push(); translate(b.x, b.y, b.z);
+          p.push(); p.translate(b.x, b.y, b.z);
           this._drawBuildingImmediate(ctx, b, infection.has(b._tileKey));
-          pop();
+          p.pop();
         }
       });
     } catch (err) { console.error('[Viron] Building batch bake failed:', err); } finally { ctx._isBuildingShadow = false; }

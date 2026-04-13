@@ -5,7 +5,17 @@
 //                              updateYellowCrab(), etc.
 // =============================================================================
 
-const EnemyGroundAI = {
+import { p } from './p5Context.js';
+import {
+  isLaunchpad, LAUNCH_MIN, LAUNCH_MAX, tileKey, toTile,
+  infection, aboveSea,
+  SCORPION_STUCK_THRESHOLD_TICKS, SCORPION_SKIP_DURATION_TICKS
+} from './constants.js';
+import { gameState } from './gameState.js';
+import { physicsEngine } from './PhysicsEngine.js';
+import { terrain } from './terrain.js';
+
+export const EnemyGroundAI = {
 
   updateCrab(e, alivePlayers, refShip, ctx) {
     EnemyGroundAI._updateCrabAI(e, alivePlayers, refShip, ctx, 1.2, 0.02, 'normal', 1.0);
@@ -107,7 +117,7 @@ const EnemyGroundAI = {
     e.fireTimer = (e.fireTimer || 0) + 1;
     let target = ctx._getTargetShip(e, alivePlayers, refShip);
     if (target) {
-      let pd = mag2(target.x - e.x, target.z - e.z);
+      let pd = Math.hypot(target.x - e.x, target.z - e.z);
       if (pd < 1200 && e.fireTimer > 150) {
         e.fireTimer = 0;
         ctx._fireUpwardShot(e, 'crab', -10);

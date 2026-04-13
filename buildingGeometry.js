@@ -18,6 +18,9 @@
 //   5 — Chinese Hut (two variants selected by world position)
 // =============================================================================
 
+
+import { p } from './p5Context.js';
+
 // ---------------------------------------------------------------------------
 // Shared colour helper
 // ---------------------------------------------------------------------------
@@ -37,29 +40,29 @@
  *   64    → computeRoofTileColor (blue ceramic, normal)
  *   65    → computeRoofTileColor (blue ceramic, infected)
  *   250   → launchpad blue
- * Building fill() calls must never use these values as a literal red colour
+ * Building p.fill() calls must never use these values as a literal red colour
  * channel. The only exception is when intentionally selecting a terrain-shader
- * material ID (e.g. fill(60,0,0) to select computeWoodColor in the GLSL).
+ * material ID (e.g. p.fill(60,0,0) to select computeWoodColor in the GLSL).
  */
-const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 60, 61, 62, 63, 64, 65, 250]);
+export const _BLDG_RESERVED_R = new Set([1, 2, 10, 11, 14, 15, 20, 21, 30, 60, 61, 62, 63, 64, 65, 250]);
 
 /**
  * Returns r incremented past any reserved terrain-shader palette index so
- * that fill() R values for buildings never accidentally trigger the wrong
+ * that p.fill() R values for buildings never accidentally trigger the wrong
  * GLSL material branch inside the terrain fragment shader.
  * Loops until it finds a value not in _BLDG_RESERVED_R to handle consecutive
  * reserved pairs (e.g. 1→2→3, 10→11→12, 14→15→16, 20→21→22).
  * @param {number} r  Red channel value (0–255 integer).
  * @returns {number}
  */
-function _bldgSafeR(r) {
+export function _bldgSafeR(r) {
   while (_BLDG_RESERVED_R.has(r)) r++;
   return r;
 }
 
 // ---------------------------------------------------------------------------
 // Per-type geometry builders
-// Each function emits p5 drawing calls that will be captured by buildGeometry().
+// Each function emits p5 drawing calls that will be captured by p.buildGeometry().
 // ---------------------------------------------------------------------------
 
 /**
@@ -71,7 +74,7 @@ function _bldgSafeR(r) {
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
-function buildType0Geometry(b, inf) {
+export function buildType0Geometry(b, inf) {
   const bw = b.w, bh = b.h, bd = b.d;
 
   // Color palette: jade-green walls, solid blue eaves, gold trim.
@@ -85,36 +88,36 @@ function buildType0Geometry(b, inf) {
   const rh2 = bw * 0.38;  // upper eave cone height
 
   // Stone plinth base — wide rectangular footing
-  fill(goldR, goldG, goldB);
-  push(); translate(0, -bh * 0.08, 0); box(bw * 1.15, bh * 0.16, bd * 1.15); pop();
+  p.fill(goldR, goldG, goldB);
+  p.push(); p.translate(0, -bh * 0.08, 0); p.box(bw * 1.15, bh * 0.16, bd * 1.15); p.pop();
 
   // Lower tower body (octagonal cylinder)
-  fill(wallR, wallG, wallB);
-  push(); translate(0, -bh * 0.38, 0); cylinder(bw * 0.44, bh * 0.44, 8, 1); pop();
+  p.fill(wallR, wallG, wallB);
+  p.push(); p.translate(0, -bh * 0.38, 0); p.cylinder(bw * 0.44, bh * 0.44, 8, 1); p.pop();
 
   // Decorative gold ring band at mid-tower
-  fill(goldR, goldG, goldB);
-  push(); translate(0, -bh * 0.54, 0); cylinder(bw * 0.47, bh * 0.025, 8, 1); pop();
+  p.fill(goldR, goldG, goldB);
+  p.push(); p.translate(0, -bh * 0.54, 0); p.cylinder(bw * 0.47, bh * 0.025, 8, 1); p.pop();
 
   // Lower eave — wide solid-blue swept roof
-  fill(eaveR, eaveG, eaveB);
-  push(); translate(0, -bh * 0.62 - rh1 / 2, 0); rotateX(PI); cone(bw * 0.84, rh1, 8, 1); pop();
+  p.fill(eaveR, eaveG, eaveB);
+  p.push(); p.translate(0, -bh * 0.62 - rh1 / 2, 0); p.rotateX(Math.PI); p.cone(bw * 0.84, rh1, 8, 1); p.pop();
 
   // Upper tower body (narrower)
-  fill(wallR, wallG, wallB);
-  push(); translate(0, -bh * 0.77, 0); cylinder(bw * 0.27, bh * 0.22, 8, 1); pop();
+  p.fill(wallR, wallG, wallB);
+  p.push(); p.translate(0, -bh * 0.77, 0); p.cylinder(bw * 0.27, bh * 0.22, 8, 1); p.pop();
 
   // Upper eave — smaller solid-blue swept roof
-  fill(eaveR, eaveG, eaveB);
-  push(); translate(0, -bh * 0.88 - rh2 / 2, 0); rotateX(PI); cone(bw * 0.57, rh2, 8, 1); pop();
+  p.fill(eaveR, eaveG, eaveB);
+  p.push(); p.translate(0, -bh * 0.88 - rh2 / 2, 0); p.rotateX(Math.PI); p.cone(bw * 0.57, rh2, 8, 1); p.pop();
 
   // Finial spire (slender gold rod)
-  fill(goldR, goldG, goldB);
-  push(); translate(0, -bh * 0.97, 0); cylinder(bw * 0.035, bh * 0.1, 5, 1); pop();
+  p.fill(goldR, goldG, goldB);
+  p.push(); p.translate(0, -bh * 0.97, 0); p.cylinder(bw * 0.035, bh * 0.1, 5, 1); p.pop();
 
   // Jade orb at the very apex — glows green/jade when healthy
-  fill(orbR, orbG, orbB);
-  push(); translate(0, -bh - bw * 0.04, 0); sphere(bw * 0.1, 6, 4); pop();
+  p.fill(orbR, orbG, orbB);
+  p.push(); p.translate(0, -bh - bw * 0.04, 0); p.sphere(bw * 0.1, 6, 4); p.pop();
 }
 
 /**
@@ -122,11 +125,11 @@ function buildType0Geometry(b, inf) {
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
-function buildType1Geometry(b, inf) {
-  fill(inf ? 43 : 42, inf ? 50 : 160, inf ? 50 : 170);
-  push(); translate(0, -b.h / 2, 0); cylinder(b.w / 2, b.h, 8, 1); pop();
-  fill(_bldgSafeR(inf ? 150 : 80), inf ? 30 : 180, inf ? 30 : 220);
-  push(); translate(0, -b.h, 0); sphere(b.w / 2, 8, 8); pop();
+export function buildType1Geometry(b, inf) {
+  p.fill(inf ? 43 : 42, inf ? 50 : 160, inf ? 50 : 170);
+  p.push(); p.translate(0, -b.h / 2, 0); p.cylinder(b.w / 2, b.h, 8, 1); p.pop();
+  p.fill(_bldgSafeR(inf ? 150 : 80), inf ? 30 : 180, inf ? 30 : 220);
+  p.push(); p.translate(0, -b.h, 0); p.sphere(b.w / 2, 8, 8); p.pop();
 }
 
 /**
@@ -134,14 +137,14 @@ function buildType1Geometry(b, inf) {
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
-function buildType2Geometry(b, inf) {
+export function buildType2Geometry(b, inf) {
   let roofMatId = inf ? 65 : 64;  // Blue ceramic tile shader; infected → red-tile variant
   let wallR = _bldgSafeR(inf ? 200 : 200), wallG = inf ? 30 : 180, wallB = inf ? 30 : 140; // Cream / infected red
   let beamR = _bldgSafeR(inf ? 180 : 80),  beamG = inf ? 20 : 50,  beamB = inf ? 20 : 40;  // Wood / infected red
 
   let bw = b.w, bh = b.h, bd = b.d;
-  fill(beamR, beamG, beamB);
-  push(); translate(0, -bh * 0.05, 0); box(bw * 1.2, bh * 0.1, bd * 1.2); pop();
+  p.fill(beamR, beamG, beamB);
+  p.push(); p.translate(0, -bh * 0.05, 0); p.box(bw * 1.2, bh * 0.1, bd * 1.2); p.pop();
 
   for (let i = 0; i < 3; i++) {
     let ty = -bh * (0.1 + i * 0.3);
@@ -150,22 +153,22 @@ function buildType2Geometry(b, inf) {
     let th = bh * 0.25;
     let rh = th * 0.6;
 
-    fill(wallR, wallG, wallB);
-    push(); translate(0, ty - th / 2, 0); box(tw * 0.8, th, td * 0.8); pop();
+    p.fill(wallR, wallG, wallB);
+    p.push(); p.translate(0, ty - th / 2, 0); p.box(tw * 0.8, th, td * 0.8); p.pop();
 
-    // Roof: rotateX(PI) flips it so point is UP in Y-up system
-    fill(roofMatId, 0, 0);
-    push();
-    translate(0, ty - th - rh / 2, 0);
-    rotateX(PI);
-    rotateY(PI / 4);
-    cone(tw * 1.4, rh, 4, 1);
-    pop();
+    // Roof: p.rotateX(Math.PI) flips it so point is UP in Y-up system
+    p.fill(roofMatId, 0, 0);
+    p.push();
+    p.translate(0, ty - th - rh / 2, 0);
+    p.rotateX(Math.PI);
+    p.rotateY(Math.PI / 4);
+    p.cone(tw * 1.4, rh, 4, 1);
+    p.pop();
   }
-  fill(beamR, beamG, beamB);
-  push(); translate(0, -bh * 1.0, 0); cylinder(bw * 0.05, bh * 0.2, 6, 1); pop();
-  fill(roofMatId, 0, 0);
-  push(); translate(0, -bh * 1.15, 0); sphere(bw * 0.1, 6, 4); pop();
+  p.fill(beamR, beamG, beamB);
+  p.push(); p.translate(0, -bh * 1.0, 0); p.cylinder(bw * 0.05, bh * 0.2, 6, 1); p.pop();
+  p.fill(roofMatId, 0, 0);
+  p.push(); p.translate(0, -bh * 1.15, 0); p.sphere(bw * 0.1, 6, 4); p.pop();
 }
 
 /**
@@ -175,7 +178,7 @@ function buildType2Geometry(b, inf) {
  * @param {{w:number, h:number, d:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
-function buildType4Geometry(b, inf) {
+export function buildType4Geometry(b, inf) {
   const matID = inf ? 47 : 46;
   let steelR   = matID,                    steelG   = inf ? 38 : 68,  steelB   = inf ? 38 : 90;
   let plinthR  = _bldgSafeR(inf ? 130 : 38), plinthG  = inf ? 28 : 52,  plinthB  = inf ? 28 : 72;
@@ -185,34 +188,34 @@ function buildType4Geometry(b, inf) {
   let bw = b.w, bh = b.h;
   let rh = bh * 0.24;
 
-  fill(plinthR, plinthG, plinthB);
-  push(); translate(0, -bh * 0.04, 0); cylinder(bw * 1.1, bh * 0.08, 6, 1); pop();
-  fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.08, 0); cylinder(bw * 1.05, bh * 0.015, 6, 1); pop();
+  p.fill(plinthR, plinthG, plinthB);
+  p.push(); p.translate(0, -bh * 0.04, 0); p.cylinder(bw * 1.1, bh * 0.08, 6, 1); p.pop();
+  p.fill(accentR, accentG, accentB);
+  p.push(); p.translate(0, -bh * 0.08, 0); p.cylinder(bw * 1.05, bh * 0.015, 6, 1); p.pop();
 
-  fill(steelR, steelG, steelB);
-  push(); translate(0, -bh * 0.23, 0); cylinder(bw * 0.75, bh * 0.30, 8, 1); pop();
-  fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.37, 0); cylinder(bw * 0.78, bh * 0.018, 8, 1); pop();
+  p.fill(steelR, steelG, steelB);
+  p.push(); p.translate(0, -bh * 0.23, 0); p.cylinder(bw * 0.75, bh * 0.30, 8, 1); p.pop();
+  p.fill(accentR, accentG, accentB);
+  p.push(); p.translate(0, -bh * 0.37, 0); p.cylinder(bw * 0.78, bh * 0.018, 8, 1); p.pop();
 
-  fill(steelR, steelG, steelB);
-  push(); translate(0, -bh * 0.52, 0); cylinder(bw * 0.48, bh * 0.24, 8, 1); pop();
-  fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.64, 0); cylinder(bw * 0.51, bh * 0.016, 8, 1); pop();
+  p.fill(steelR, steelG, steelB);
+  p.push(); p.translate(0, -bh * 0.52, 0); p.cylinder(bw * 0.48, bh * 0.24, 8, 1); p.pop();
+  p.fill(accentR, accentG, accentB);
+  p.push(); p.translate(0, -bh * 0.64, 0); p.cylinder(bw * 0.51, bh * 0.016, 8, 1); p.pop();
 
-  fill(reactorR, reactorG, reactorB);
-  push(); translate(0, -bh * 0.40, 0); sphere(bw * 0.3, 8, 6); pop();
+  p.fill(reactorR, reactorG, reactorB);
+  p.push(); p.translate(0, -bh * 0.40, 0); p.sphere(bw * 0.3, 8, 6); p.pop();
 
-  fill(steelR, steelG, steelB);
-  push(); translate(0, -bh * 0.76, 0); cylinder(bw * 0.28, bh * 0.20, 8, 1); pop();
-  fill(accentR, accentG, accentB);
-  push(); translate(0, -bh * 0.85, 0); cylinder(bw * 0.31, bh * 0.014, 8, 1); pop();
+  p.fill(steelR, steelG, steelB);
+  p.push(); p.translate(0, -bh * 0.76, 0); p.cylinder(bw * 0.28, bh * 0.20, 8, 1); p.pop();
+  p.fill(accentR, accentG, accentB);
+  p.push(); p.translate(0, -bh * 0.85, 0); p.cylinder(bw * 0.31, bh * 0.014, 8, 1); p.pop();
 
-  fill(spireR, spireG, spireB);
+  p.fill(spireR, spireG, spireB);
   // Top of last cylinder is -bh * 0.85 - bh * 0.1 = -bh * 0.95
-  push(); translate(0, -bh * 0.95 - rh / 2, 0); rotateX(PI); cone(bw * 0.18, rh, 6, 1); pop();
-  fill(reactorR, reactorG, reactorB);
-  push(); translate(0, -bh * 0.95 - rh - bw * 0.08, 0); sphere(bw * 0.08, 6, 4); pop();
+  p.push(); p.translate(0, -bh * 0.95 - rh / 2, 0); p.rotateX(Math.PI); p.cone(bw * 0.18, rh, 6, 1); p.pop();
+  p.fill(reactorR, reactorG, reactorB);
+  p.push(); p.translate(0, -bh * 0.95 - rh - bw * 0.08, 0); p.sphere(bw * 0.08, 6, 4); p.pop();
 }
 
 /**
@@ -222,7 +225,7 @@ function buildType4Geometry(b, inf) {
  * @param {{w:number, h:number, d:number, x:number, z:number}} b  Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
-function buildType5Geometry(b, inf) {
+export function buildType5Geometry(b, inf) {
   let roofMatId = inf ? 63 : 62;  // Straw/thatch roof shader; infected → corrupted/thatch variant
   // Walls: wood-grain shader when healthy; direct red fill when infected (to show fully red).
   let wallR = inf ? _bldgSafeR(200) : 60, wallG = inf ? 25 : 0, wallB = inf ? 25 : 0;
@@ -233,17 +236,17 @@ function buildType5Geometry(b, inf) {
   if (seed < 0.5) {
     // Variant A: Square Hut
     let rh = bh * 0.7;
-    fill(wallR, wallG, wallB);
-    push(); translate(0, -bh * 0.4, 0); box(bw, bh * 0.8, bd); pop();
-    fill(roofMatId, 0, 0);
-    push(); translate(0, -bh * 0.8 - rh / 2, 0); rotateX(PI); rotateY(PI / 4); cone(bw * 1.5, rh, 4, 1); pop();
+    p.fill(wallR, wallG, wallB);
+    p.push(); p.translate(0, -bh * 0.4, 0); p.box(bw, bh * 0.8, bd); p.pop();
+    p.fill(roofMatId, 0, 0);
+    p.push(); p.translate(0, -bh * 0.8 - rh / 2, 0); p.rotateX(Math.PI); p.rotateY(Math.PI / 4); p.cone(bw * 1.5, rh, 4, 1); p.pop();
   } else {
     // Variant B: Long Hut
     let rh = bh * 0.6;
-    fill(wallR, wallG, wallB);
-    push(); translate(0, -bh * 0.3, 0); box(bw * 1.6, bh * 0.6, bd * 1.1); pop();
-    fill(roofMatId, 0, 0);
-    push(); translate(0, -bh * 0.6 - rh / 2, 0); rotateX(PI); rotateY(PI / 2); cone(bw * 2.1, rh, 4, 1); pop();
+    p.fill(wallR, wallG, wallB);
+    p.push(); p.translate(0, -bh * 0.3, 0); p.box(bw * 1.6, bh * 0.6, bd * 1.1); p.pop();
+    p.fill(roofMatId, 0, 0);
+    p.push(); p.translate(0, -bh * 0.6 - rh / 2, 0); p.rotateX(Math.PI); p.rotateY(Math.PI / 2); p.cone(bw * 2.1, rh, 4, 1); p.pop();
   }
 }
 
@@ -253,15 +256,15 @@ function buildType5Geometry(b, inf) {
  * @param {{w:number, h:number}} b   Building descriptor.
  * @param {boolean} inf  Whether the tile is currently infected.
  */
-function buildPowerupGeometry(b, inf) {
-  fill(inf ? 251 : 250, inf ? 50 : 180, inf ? 50 : 240);
-  push();
-  cone(b.w, b.h / 2, 4, 1);
-  pop();
-  push();
-  rotateX(PI);
-  cone(b.w, b.h / 2, 4, 1);
-  pop();
+export function buildPowerupGeometry(b, inf) {
+  p.fill(inf ? 251 : 250, inf ? 50 : 180, inf ? 50 : 240);
+  p.push();
+  p.cone(b.w, b.h / 2, 4, 1);
+  p.pop();
+  p.push();
+  p.rotateX(Math.PI);
+  p.cone(b.w, b.h / 2, 4, 1);
+  p.pop();
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +287,7 @@ function buildPowerupGeometry(b, inf) {
  * @param {{type:number, w:number, h:number, d:number, x:number, z:number}} b
  * @returns {{footprint: Array<{x:number, z:number}>, casterH: number}}
  */
-function getBuildingFootprint(b) {
+export function getBuildingFootprint(b) {
   const bw = b.w, bh = b.h, bd = b.d;
   let footprint, casterH;
 
@@ -299,7 +302,7 @@ function getBuildingFootprint(b) {
   } else if (b.type === 1) {
     footprint = [];
     for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * TWO_PI;
+      const a = (i / 16) * (2 * Math.PI);
       footprint.push({ x: Math.cos(a) * bw * 0.5, z: Math.sin(a) * bw * 0.425 });
     }
     casterH = bh + bw * 0.5;
@@ -334,7 +337,7 @@ function getBuildingFootprint(b) {
     // Type 4 — Sentinel Tower (also default for any future unhandled types).
     footprint = [];
     for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * TWO_PI;
+      const a = (i / 16) * (2 * Math.PI);
       footprint.push({ x: Math.cos(a) * bw * 1.1, z: Math.sin(a) * bw * 0.92 });
     }
     casterH = bh;

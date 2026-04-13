@@ -11,6 +11,42 @@
 //                               updateLevelAndRespawn(), updateAmbianceAudio()
 // =============================================================================
 
+import { p } from './p5Context.js';
+import {
+  tileKey,
+  toTile,
+  TILE,
+  ORTHO_DIRS,
+  MAX_INF,
+  INF_RATE,
+  YELLOW_INF_RATE,
+  RAPID_INF_RATE,
+  SEA,
+  aboveSea,
+  dist3dSq,
+  infection,
+  LAUNCHPAD_TILE_SIZE,
+  SENTINEL_INFECTION_RADIUS,
+  SENTINEL_INFECTION_PROBABILITY,
+  NORMAL_SHOT_MODES,
+  TANK_SHELL_CLEAR_R,
+  isLaunchpad,
+  swapRemove,
+  getVironProfiler
+} from './constants.js';
+import { ENEMY_DRAW_SCALE, enemyManager } from './enemies.js';
+import { gameState } from './gameState.js';
+import { terrain } from './terrain.js';
+import { particleSystem } from './particles.js';
+import { gameSFX } from './sfx.js';
+import { physicsEngine } from './PhysicsEngine.js';
+import { killPlayer } from './player.js';
+import { clearInfectionAt, clearInfectionRadius, maybePlayLaunchpadAlarm } from './utils.js';
+import { villagerManager } from './villagers.js';
+import { wizardManager } from './wizards.js';
+import { SfxAmbient } from './sfxAmbient.js';
+import { gameRenderer } from './gameRenderer.js';
+
 // ENEMY_DRAW_SCALE is defined in enemies.js (= 4). Precompute the squared
 // half-scale used in every checkCollisions() call so Math.pow() is never
 // called inside the per-enemy hot loop.
@@ -44,6 +80,12 @@ const _COLOSSUS_BONES = [
   { x: -105, y: -145, r: 40 }, { x: 105, y: -145, r: 40 },
   { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }
 ];
+
+void SEA;
+void clearInfectionAt;
+void villagerManager;
+void wizardManager;
+void SfxAmbient;
 
 const GameLoop = {
   // Cached proximity distance for ambiance audio (avoids re-scan every frame).
@@ -92,9 +134,9 @@ const GameLoop = {
    */
   _resolveAABBCollision(s, bx, by, bz, hw, hh, hd, sr) {
     let dx = s.x - bx, dy = s.y - by, dz = s.z - bz;
-    let closestX = constrain(dx, -hw, hw);
-    let closestY = constrain(dy, -hh, hh);
-    let closestZ = constrain(dz, -hd, hd);
+    let closestX = Math.min(Math.max(dx, -hw), hw);
+    let closestY = Math.min(Math.max(dy, -hh), hh);
+    let closestZ = Math.min(Math.max(dz, -hd), hd);
     let distVecX = dx - closestX, distVecY = dy - closestY, distVecZ = dz - closestZ;
     let distSq = distVecX * distVecX + distVecY * distVecY + distVecZ * distVecZ;
 
@@ -155,9 +197,9 @@ const GameLoop = {
       let t = active[i];
       let currentRate = (t.type === 'yellow') ? yellowRate : rate;
 
-      if (random() > currentRate) continue;
+      if (p.random() > currentRate) continue;
 
-      let d = ORTHO_DIRS[floor(random(4))];
+      let d = ORTHO_DIRS[Math.floor(p.random(4))];
       let nx = t.tx + d[0], nz = t.tz + d[1], nk = tileKey(nx, nz);
 
       if (!infection.has(nk) && !gameState.barrierTiles.has(nk)) {
@@ -166,13 +208,13 @@ const GameLoop = {
 
         let nObj = infection.add(nk, t.type);
         if (nObj) {
-          if (gameSFX && soundCount < 3 && random() < 0.1) {
+          if (gameSFX && soundCount < 3 && p.random() < 0.1) {
             gameSFX.playInfectionSpread(wx, terrain.getAltitude(wx, wz), wz);
             soundCount++;
           }
           if (isLaunchpad(wx, wz)) maybePlayLaunchpadAlarm();
         }
-      } else if (random() < 0.05) {
+      } else if (p.random() < 0.05) {
         let blocked = true;
         for (const dd of ORTHO_DIRS) {
           let nkk = tileKey(t.tx + dd[0], t.tz + dd[1]);
@@ -202,7 +244,7 @@ const GameLoop = {
         for (let ddx = -rad; ddx <= rad; ddx++) {
           for (let ddz = -rad; ddz <= rad; ddz++) {
             if (ddx * ddx + ddz * ddz > rad * rad) continue;
-            if (random() > SENTINEL_INFECTION_PROBABILITY) continue;
+            if (p.random() > SENTINEL_INFECTION_PROBABILITY) continue;
 
             let nx = stx + ddx, nz = stz + ddz;
             let nk = tileKey(nx, nz);
@@ -494,7 +536,7 @@ const GameLoop = {
       let brSum = broadRad + SHIP_COLLISION_RAD;
       if (bx * bx + by * by + bz * bz > brSum * brSum) return false;
 
-      let yaw = atan2(e.vx || 0, e.vz || 0);
+      let yaw = Math.atan2(e.vx || 0, e.vz || 0);
       let cosY = Math.cos(yaw), sinY = Math.sin(yaw);
 
       const bones = _COLOSSUS_BONES;
@@ -542,7 +584,7 @@ const GameLoop = {
       let b = gameState.buildings[i];
       if (b.type !== 3) continue;
 
-      let floatY = b.y - b.h - 100 - sin(physicsEngine.tickCount * 0.02 + b.x) * 50;
+      let floatY = b.y - b.h - 100 - Math.sin(physicsEngine.tickCount * 0.02 + b.x) * 50;
       let dx = s.x - b.x, dy = s.y - floatY, dz = s.z - b.z;
       let rSum = b.w + 15;
 
@@ -553,8 +595,8 @@ const GameLoop = {
           if (player.missilesRemaining > 0) player.missilesRemaining--;
           gameSFX?.playPowerup(false, b.x, floatY, b.z);
         } else {
-          if (random() < 0.5) player.missilesRemaining++;
-          else player.normalShotMode = NORMAL_SHOT_MODES[1 + floor(random(3))];
+          if (p.random() < 0.5) player.missilesRemaining++;
+          else player.normalShotMode = NORMAL_SHOT_MODES[1 + Math.floor(p.random(3))];
           player.score += 500;
           gameSFX?.playPowerup(true, b.x, floatY, b.z);
         }
@@ -562,8 +604,8 @@ const GameLoop = {
         for (let j = 0; j < 20; j++) {
           particleSystem.particles.push({
             x: b.x, y: floatY, z: b.z,
-            vx: random(-4, 4), vy: random(-4, 4), vz: random(-4, 4),
-            life: 255, decay: 12, size: random(4, 9),
+            vx: p.random(-4, 4), vy: p.random(-4, 4), vz: p.random(-4, 4),
+            life: 255, decay: 12, size: p.random(4, 9),
             color: inf ? [200, 50, 50] : [60, 180, 240]
           });
         }
@@ -578,14 +620,14 @@ const GameLoop = {
   updateAmbianceAudio() {
     if (!gameSFX) return;
 
-    let p = gameState.players[0];
+    let player0 = gameState.players[0];
     let proximityData = { dist: 10000 };
 
-    if (p && !p.dead && p.ship) {
+    if (player0 && !player0.dead && player0.ship) {
       if (physicsEngine.tickCount % 10 !== 0 && GameLoop._lastAmbDist !== undefined) {
         proximityData.dist = GameLoop._lastAmbDist;
       } else {
-        let px = toTile(p.ship.x), pz = toTile(p.ship.z);
+        let px = toTile(player0.ship.x), pz = toTile(player0.ship.z);
         let minDistSq = 1000000;
         for (let dz = -8; dz <= 8; dz++) {
           for (let dx = -8; dx <= 8; dx++) {
@@ -593,7 +635,7 @@ const GameLoop = {
             if (infection.has(tileKey(tx, tz))) {
               let wx = tx * TILE + 60, wz = tz * TILE + 60;
               let wy = terrain.getAltitude(wx, wz);
-              let sdx = p.ship.x - wx, sdy = p.ship.y - wy, sdz = p.ship.z - wz;
+              let sdx = player0.ship.x - wx, sdy = player0.ship.y - wy, sdz = player0.ship.z - wz;
               let dSq = sdx * sdx + sdy * sdy + sdz * sdz;
               if (dSq < minDistSq) minDistSq = dSq;
             }
@@ -603,15 +645,15 @@ const GameLoop = {
         proximityData.dist = GameLoop._lastAmbDist;
       }
 
-      let nowSec = millis() / 1000.0;
+      let nowSec = p.millis() / 1000.0;
       let maxScan = 0;
       for (let pulse of terrain.activePulses) {
         let age = nowSec - pulse.start;
         if (age < 0 || age > 3.0) continue;
         let radius = pulse.type === 1.0 ? age * 300.0 : (pulse.type === 2.0 ? age * 1200.0 : age * 800.0);
-        let dist2D = dist(p.ship.x, p.ship.z, pulse.x, pulse.z);
-        let groundY = terrain.getAltitude(p.ship.x, p.ship.z);
-        let dy = p.ship.y - groundY;
+        let dist2D = Math.hypot(player0.ship.x - pulse.x, player0.ship.z - pulse.z);
+        let groundY = terrain.getAltitude(player0.ship.x, player0.ship.z);
+        let dy = player0.ship.y - groundY;
         let drD = dist2D - radius;
         let distToRing3D = Math.sqrt(drD * drD + dy * dy);
         if (distToRing3D < 120) {
@@ -621,7 +663,7 @@ const GameLoop = {
       }
       proximityData.pulseOverlap = maxScan;
 
-      let xP = p.ship.x / TILE, zP = p.ship.z / TILE;
+      let xP = player0.ship.x / TILE, zP = player0.ship.z / TILE;
       let scanPos = nowSec / 10.0;
       let val = 1.0 - Math.abs(((xP * 0.02 + zP * 0.01 - scanPos) % 1.0 + 1.0) % 1.0 - 0.5) * 2.0;
       proximityData.scanSweepAlpha = Math.max(0, (val - 0.98) / (1.0 - 0.98));
@@ -639,10 +681,12 @@ const GameLoop = {
       gameState.completeLevelSequence();
     }
 
-    if (gameState.levelComplete && millis() - gameState.levelEndTime > 4000) {
+    if (gameState.levelComplete && p.millis() - gameState.levelEndTime > 4000) {
       gameState.startLevel(gameState.level + 1);
     }
 
     gameState.updateRespawns();
   }
 };
+
+export { GameLoop };

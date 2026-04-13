@@ -2,7 +2,12 @@
 // terrainGeometry.js — Geometry building for terrain chunks and overlays
 // =============================================================================
 
-const TerrainGeometry = {
+
+import { p } from './p5Context.js';
+import { CHUNK_SIZE, TILE, aboveSea, SEA, infection, chunkKey, getVironProfiler } from './constants.js';
+import { gameState } from './gameState.js';
+
+export const TerrainGeometry = {
 
     /**
      * Builds or retrieves the cached p5 geometry mesh for one terrain chunk.
@@ -39,8 +44,8 @@ const TerrainGeometry = {
         let geom = null;
         try {
             geom = this._safeBuildGeometry(() => {
-                beginShape(TRIANGLES);
-                fill(34, 139, 34);
+                p.beginShape(p.TRIANGLES);
+                p.fill(34, 139, 34);
 
                 for (let tz = startZ; tz < startZ + CHUNK_SIZE; tz++) {
                     for (let tx = startX; tx < startX + CHUNK_SIZE; tx++) {
@@ -55,30 +60,30 @@ const TerrainGeometry = {
 
                         let avgY = (y00 + y10 + y01 + y11) * 0.25;
                         let isShore = (avgY > SEA - 15);
-                        let noiseVal = noise(tx * 0.15, tz * 0.15);
+                        let noiseVal = p.noise(tx * 0.15, tz * 0.15);
                         let randVal = Math.abs(Math.sin(tx * 12.9898 + tz * 78.233)) * 43758.5453 % 1;
                         let parity = ((tx + tz) % 2 === 0) ? 1.0 : 0.85;
 
-                        fill(isShore ? 2 : 1, noiseVal * 255, randVal * 255, parity * 255);
+                        p.fill(isShore ? 2 : 1, noiseVal * 255, randVal * 255, parity * 255);
 
                         let e1x = xP1 - xP, e1y = y10 - y00, e1z = 0;
                         let e2x = 0, e2y = y01 - y00, e2z = zP1 - zP;
                         let n1x = e1y * e2z - e1z * e2y;
                         let n1y = e1z * e2x - e1x * e2z;
                         let n1z = e1x * e2y - e1y * e2x;
-                        normal(n1x, n1y, n1z);
-                        vertex(xP, y00, zP); vertex(xP1, y10, zP); vertex(xP, y01, zP1);
+                        p.normal(n1x, n1y, n1z);
+                        p.vertex(xP, y00, zP); p.vertex(xP1, y10, zP); p.vertex(xP, y01, zP1);
 
                         e1x = xP1 - xP1; e1y = y11 - y10; e1z = zP1 - zP;
                         e2x = xP - xP1; e2y = y01 - y10; e2z = zP1 - zP;
                         let n2x = e1y * e2z - e1z * e2y;
                         let n2y = e1z * e2x - e1x * e2z;
                         let n2z = e1x * e2y - e1y * e2x;
-                        normal(n2x, n2y, n2z);
-                        vertex(xP1, y10, zP); vertex(xP1, y11, zP1); vertex(xP, y01, zP1);
+                        p.normal(n2x, n2y, n2z);
+                        p.vertex(xP1, y10, zP); p.vertex(xP1, y11, zP1); p.vertex(xP, y01, zP1);
                     }
                 }
-                endShape();
+                p.endShape();
             });
         } catch (err) {
             console.error("[Viron] Chunk geometry build failed:", err);
@@ -114,7 +119,7 @@ const TerrainGeometry = {
 
         let totalTiles = 0;
         const chunkHalf = CHUNK_SIZE * TILE;
-        const _gl = (typeof drawingContext !== 'undefined') ? drawingContext : null;
+        const _gl = (typeof p.drawingContext !== 'undefined') ? p.drawingContext : null;
         if (_gl) {
             _gl.enable(_gl.POLYGON_OFFSET_FILL);
             _gl.polygonOffset(-1.0, -2.0);
@@ -149,7 +154,7 @@ const TerrainGeometry = {
                     for (const matId of matIdSet) {
                         const geom = ctx._overlayCaches.get(`${managerId}_${bk}_${matId}`);
                         if (geom) {
-                            model(geom);
+                            p.model(geom);
                             totalTiles += tileList.length;
                         }
                     }
@@ -175,9 +180,9 @@ const TerrainGeometry = {
                     if (geom === undefined) {
                         const mList = matBuckets[matId];
                         geom = this._safeBuildGeometry(() => {
-                            beginShape(TRIANGLES);
-                            normal(0, 1, 0);
-                            fill(parseInt(matId), 0, 0, 255);
+                            p.beginShape(p.TRIANGLES);
+                            p.normal(0, 1, 0);
+                            p.fill(parseInt(matId), 0, 0, 255);
                             for (let i = 0; i < mList.length; i++) {
                                 const t = mList[i];
                                 if (!t.verts) {
@@ -192,15 +197,15 @@ const TerrainGeometry = {
                                     ]);
                                 }
                                 const v = t.verts;
-                                for (let j = 0; j < 18; j += 3) vertex(v[j], v[j + 1], v[j + 2]);
+                                for (let j = 0; j < 18; j += 3) p.vertex(v[j], v[j + 1], v[j + 2]);
                             }
-                            endShape();
+                            p.endShape();
                         });
                         ctx._overlayCaches.set(cacheKey, geom);
                     }
 
                     if (geom) {
-                        model(geom);
+                        p.model(geom);
                         totalTiles += matBuckets[matId].length;
                     }
                 }
@@ -213,15 +218,15 @@ const TerrainGeometry = {
 
     _safeBuildGeometry(callback) {
         try {
-            return buildGeometry(callback);
+            return p.buildGeometry(callback);
         } catch (err) {
             let cleared = false;
-            try { endGeometry(); cleared = true; } catch (_ignored) {}
+            try { p.endGeometry(); cleared = true; } catch (_ignored) {}
             if (!cleared) {
                 try {
-                    if (typeof _renderer !== 'undefined' && _renderer && _renderer.geometryBuilder) {
-                        _renderer.geometryBuilder = undefined;
-                        try { pop(); } catch (_e) {}
+                    if (p._renderer && p._renderer.geometryBuilder) {
+                        p._renderer.geometryBuilder = undefined;
+                        try { p.pop(); } catch (_e) {}
                     }
                 } catch (_ignored2) {}
             }

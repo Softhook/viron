@@ -3,13 +3,21 @@
 // Now as a stateless service to improve LLM-readability.
 // =============================================================================
 
-const TerrainShadows = {
+
+import { p } from './p5Context.js';
+import {
+  SUN_DIR_MIN_Y, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ,
+  shadowOpacityFactor, shadowShift, TILE
+} from './constants.js';
+import { _beginShadowStencil, _endShadowStencil } from './terrain.js';
+
+export const TerrainShadows = {
 
   /**
    * Computes normalized sun projection data reused by all ground shadow draws.
    */
   getSunShadowBasis(ctx) {
-    const frame = typeof frameCount === 'number' ? frameCount : 0;
+    const frame = typeof p.frameCount === 'number' ? p.frameCount : 0;
     if (frame !== ctx._sunShadowFrame) {
       const clampedSunNY = Math.max(SUN_DIR_MIN_Y, SUN_DIR_NY);
       ctx._sunShadowBasis = {
@@ -105,18 +113,18 @@ const TerrainShadows = {
     let triCount = 0;
 
     const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
-    noStroke();
+    p.noStroke();
     const shadowAlpha = alpha * this.shadowOpacityFactor(casterH);
-    fill(0, 0, 0, shadowAlpha);
+    p.fill(0, 0, 0, shadowAlpha);
 
     if (!isBaking) {
-      if (lightsWereOn) noLights();
+      if (lightsWereOn) p.noLights();
       ctx.applyShadowShader();
       _beginShadowStencil();
     }
 
-    beginShape(TRIANGLES);
-    normal(0, 1, 0);
+    p.beginShape(p.TRIANGLES);
+    p.normal(0, 1, 0);
 
     const emitTri = (x1, z1, x2, z2, x3, z3, depth) => {
       if (triCount >= MAX_SHADOW_TRIS) return;
@@ -138,9 +146,9 @@ const TerrainShadows = {
         emitTri(m12x, m12z, m23x, m23z, m31x, m31z, depth + 1);
       } else {
         triCount++;
-        vertex(x1, ctx.getAltitude(x1, z1) + liftY, z1);
-        vertex(x2, ctx.getAltitude(x2, z2) + liftY, z2);
-        vertex(x3, ctx.getAltitude(x3, z3) + liftY, z3);
+        p.vertex(x1, ctx.getAltitude(x1, z1) + liftY, z1);
+        p.vertex(x2, ctx.getAltitude(x2, z2) + liftY, z2);
+        p.vertex(x3, ctx.getAltitude(x3, z3) + liftY, z3);
       }
     };
 
@@ -150,10 +158,10 @@ const TerrainShadows = {
       emitTri(cx, cz, hullFlat[idx1], hullFlat[idx1 + 1], hullFlat[idx2], hullFlat[idx2 + 1], 0);
     }
 
-    endShape();
+    p.endShape();
     if (!isBaking) {
       _endShadowStencil();
-      resetShader();
+      p.resetShader();
       if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
     }
   },
@@ -162,7 +170,7 @@ const TerrainShadows = {
     const pts = [];
     const steps = 16;
     for (let i = 0; i < steps; i++) {
-      const a = (i / steps) * TWO_PI;
+      const a = (i / steps) * (2 * Math.PI);
       pts.push({ x: Math.cos(a) * rx * 0.5, z: Math.sin(a) * rz * 0.5 });
     }
     this.drawProjectedFootprintShadow(ctx, wx, wz, groundY, casterH, pts, alpha, sun, isFloating);

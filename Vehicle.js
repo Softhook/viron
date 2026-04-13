@@ -5,6 +5,13 @@
  * @exports   Vehicle       — class definition (used exclusively by player.js)
  */
 
+
+import { p } from './p5Context.js';
+import { SEA, GRAV, DRAG, LIFT_FACTOR, INDUCED_DRAG, LAUNCH_ALT } from './constants.js';
+import { terrain } from './terrain.js';
+import { particleSystem } from './particles.js';
+import { physicsEngine } from './PhysicsEngine.js';
+
 // --- Vehicle physics constants ---
 // Ship hull offset from terrain surface (world-units of Y clearance).
 const SHIP_GROUND_CLEARANCE = 12;
@@ -14,7 +21,7 @@ const LANDING_CRASH_SPEED = 4.2;
 const CUSHION_RANGE = 40;
 // Lateral velocity multiplier applied on a non-lethal ground contact.
 const GROUND_LANDING_FRICTION = 0.8;
-class Vehicle {
+export class Vehicle {
   constructor(x, y, z, designIndex) {
     this.x = x;
     this.y = y;
@@ -49,7 +56,7 @@ class Vehicle {
    */
   update(design, inputs, deltas) {
     this.yaw += deltas.yaw;
-    this.pitch = constrain(this.pitch + deltas.pitch, -PI / 2.2, PI / 2.2);
+    this.pitch = p.constrain(this.pitch + deltas.pitch, -Math.PI / 2.2, Math.PI / 2.2);
 
     if (design.isGroundVehicle) {
       return this._updateGround(design, inputs.thrust, inputs.brake);
@@ -210,8 +217,8 @@ class Vehicle {
     if (physicsEngine.tickCount % 4 === 0 && this.y > groundY - 5) {
       particleSystem.particles.push({
         x: this.x, y: this.y + 10, z: this.z,
-        vx: random(-1.5, 1.5), vy: -random(1, 3), vz: random(-1.5, 1.5),
-        life: random(40, 70), decay: 4, seed: random(1), size: random(6, 12),
+        vx: p.random(-1.5, 1.5), vy: -p.random(1, 3), vz: p.random(-1.5, 1.5),
+        life: p.random(40, 70), decay: 4, seed: p.random(1), size: p.random(6, 12),
         color: [140, 130, 110]
       });
     }
@@ -232,7 +239,7 @@ class Vehicle {
     const emitChance = totalParticles > 700 ? 0.28 : (totalParticles > 500 ? 0.42 : 0.65);
 
     engPos.forEach(pos => {
-      if (random() > emitChance) return;
+      if (p.random() > emitChance) return;
       const y1 = pos.y * cx - (pos.z + 2) * sx;
       const z1 = pos.y * sx + (pos.z + 2) * cx;
       const wx = (pos.x * cy + z1 * sy) + this.x;
@@ -240,11 +247,11 @@ class Vehicle {
       const wz = (-pos.x * sy + z1 * cy) + this.z;
       particleSystem.particles.push({
         x: wx, y: wy, z: wz,
-        vx: exDir.x * random(4, 7) + random(-0.8, 0.8),
-        vy: exDir.y * random(4, 7) + random(-0.8, 0.8),
-        vz: exDir.z * random(4, 7) + random(-0.8, 0.8),
-        life: random(190, 240), decay: random(4.2, 6.0), seed: random(1.0), size: random(11, 18),
-        isThrust: true, color: [random(150, 195), random(150, 195), random(150, 195)]
+        vx: exDir.x * p.random(4, 7) + p.random(-0.8, 0.8),
+        vy: exDir.y * p.random(4, 7) + p.random(-0.8, 0.8),
+        vz: exDir.z * p.random(4, 7) + p.random(-0.8, 0.8),
+        life: p.random(190, 240), decay: p.random(4.2, 6.0), seed: p.random(1.0), size: p.random(11, 18),
+        isThrust: true, color: [p.random(150, 195), p.random(150, 195), p.random(150, 195)]
       });
     });
   }

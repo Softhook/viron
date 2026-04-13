@@ -19,13 +19,7 @@ import {
 import { SHIP_DESIGNS } from './shipDesigns.js';
 import { gameState } from './gameState.js';
 import { mobileController } from './mobileControls.js';
-import { terrain } from './terrain.js';
 import { drawBackgroundLandscape, setup2DViewport } from './gameRenderer.js';
-import { startGame, startLevel } from './sketch.js';
-
-void terrain;
-void startGame;
-void startLevel;
 
 /**
  * Sets up the p.perspective p.camera and scene lights for a 3D ship preview.
@@ -448,11 +442,11 @@ export function drawShipSelect() {
   drawBackgroundLandscape();
   let pxD = p.pixelDensity();
   if (gameState.numPlayers === 1) {
-    renderShipSelectView(gameState.players[0], 0, 0, p.width, p.height, pxD);
+    renderShipSelectView(gameState.players[0], 0, p.width, p.height, pxD);
   } else {
     let hw = Math.floor(p.width / 2);
-    renderShipSelectView(gameState.players[0], 0, 0, hw, p.height, pxD);
-    renderShipSelectView(gameState.players[1], 1, hw, hw, p.height, pxD);
+    renderShipSelectView(gameState.players[0], 0, hw, p.height, pxD);
+    renderShipSelectView(gameState.players[1], hw, hw, p.height, pxD);
     setup2DViewport();
     p.stroke(0, 255, 0, 180); p.strokeWeight(2);
     p.line(0, -p.height / 2, 0, p.height / 2);
@@ -463,8 +457,7 @@ export function drawShipSelect() {
 /**
  * Renders the 3D ship preview and 2D selection p.text.
  */
-function renderShipSelectView(player, pi, vx, vw, vh, pxD) {
-  void pi;
+function renderShipSelectView(player, vx, vw, vh, pxD) {
   let gl = p.drawingContext;
   gl.viewport(vx * pxD, 0, vw * pxD, vh * pxD);
   gl.enable(gl.SCISSOR_TEST);

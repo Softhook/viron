@@ -30,13 +30,12 @@ import { particleSystem, ParticleSystem } from './particles.js';
 import { villagerManager } from './villagers.js';
 import { wizardManager } from './wizards.js';
 import { drawPlayerHUD } from './hudComponents.js';
-import { shipDisplay, drawShipShadow, renderProjectiles } from './player.js';
+import { shipDisplay } from './player.js';
+import { renderInFlightBarriers, renderProjectiles } from './projectiles.js';
 import { HUD_Manager } from './hudCore.js';
 import { aimAssist } from './aimAssist.js';
 import { mobileController } from './mobileControls.js';
 import { gameSFX } from './sfx.js';
-
-void drawShipShadow;
 
 const POST_VERT = `
 precision highp float;
@@ -225,7 +224,7 @@ export class GameRenderer {
       if (!plyr.dead && (plyr !== player || !gameState.firstPersonView)) shipDisplay(plyr.ship, plyr.labelColor);
       renderProjectiles(plyr, s.x, s.z);
     }
-    if (typeof globalThis.renderInFlightBarriers === 'function') globalThis.renderInFlightBarriers(s.x, s.z);
+    renderInFlightBarriers(s.x, s.z);
     if (drawAimAssist && aimAssist) aimAssist.drawDebug3D(s);
   }
 
@@ -252,8 +251,6 @@ export class GameRenderer {
   }
 
   _renderWithFBO(gl, s, player, viewX, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
-    void player;
-
     this.sceneFBO.begin();
     this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
@@ -292,8 +289,6 @@ export class GameRenderer {
   }
 
   _renderSinglePass(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
-    void player;
-
     this._applyViewportScissor(gl, vx, vw, vh);
     gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);

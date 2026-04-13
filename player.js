@@ -45,9 +45,12 @@ import { particleSystem } from './particles.js';
 import { gameSFX } from './sfx.js';
 import { inputManager } from './InputManager.js';
 import { physicsEngine } from './PhysicsEngine.js';
+import {
+  renderProjectiles as renderProjectilesImpl,
+  updateBarrierPhysics as updateBarrierPhysicsImpl
+} from './projectiles.js';
+import { clearInfectionRadius as clearInfectionRadiusImpl } from './utils.js';
 import { setSceneLighting } from './gameRenderer.js';
-
-const p5 = p;
 
 /** Fallback ship-design object used when the player's designIndex has no entry in SHIP_DESIGNS. */
 const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };
@@ -56,11 +59,11 @@ const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust:
  * Returns the world-space X spawn position for a given player.
  * In single-player mode both players share the centre (420); in two-player
  * mode they are offset to avoid spawning inside each other.
- * @param {object} p  Player object (uses p.id).
+ * @param {object} player  Player object (uses player.id).
  * @returns {number}  World-space X offset for the launchpad position.
  */
-export function getSpawnX(p) {
-  return gameState.numPlayers === 1 ? 420 : (p.id === 0 ? 320 : 520);
+export function getSpawnX(player) {
+  return gameState.numPlayers === 1 ? 420 : (player.id === 0 ? 320 : 520);
 }
 
 /**
@@ -221,9 +224,9 @@ function fireNormalPattern(p, s) {
     p.bullets.push(spawnProjectile(ship, power, life));
     p.bullets.push(spawnProjectileOffset(ship, power, life, 0.08));
   } else if (mode === 'spread') {
-    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.05 + p5.random(-0.03, 0.03)));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, p5.random(-0.025, 0.025)));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.05 + p5.random(-0.03, 0.03)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.05 + p.random(-0.03, 0.03)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, p.random(-0.025, 0.025)));
+    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.05 + p.random(-0.03, 0.03)));
   } else {
     p.bullets.push(spawnProjectile(ship, power, life));
   }
@@ -554,7 +557,7 @@ export function shipDisplay(s, tintColor) {
       p.rotateY(s.yaw);
       p.rotateX(s.pitch + thrustAngle);
 
-      let flicker = 1.0 + Math.sin(p5.frameCount * 0.8) * 0.15;
+      let flicker = 1.0 + Math.sin(p.frameCount * 0.8) * 0.15;
       let power = isPushing ? 1.0 : 0.3;
       p.noStroke();
 
@@ -687,39 +690,39 @@ function _fireRateLimitedPrimary(p) {
   }
 }
 
-function _handleWeaponFiring(p, isShooting) {
+function _handleWeaponFiring(player, isShooting) {
   // Safety cooldown: ignore shooting inputs for 500ms after entering PLAYING mode
   if (gameState.mode === 'playing') {
-    if (p5.millis() - gameState.playingStartTime < 500) return;
+    if (p.millis() - gameState.playingStartTime < 500) return;
   }
 
   // Mobile action mapping is direct (no cycle dependency):
   // - Shoot zone fires the primary weapon.
   // - Barrier zone fires barrier placement.
-  if (gameState.isMobile && p.id === 0) {
-    const isBarrier = inputManager.getActionActive(p, 'barrier');
+  if (gameState.isMobile && player.id === 0) {
+    const isBarrier = inputManager.getActionActive(player, 'barrier');
 
-    if (isShooting) _fireRateLimitedPrimary(p);
+    if (isShooting) _fireRateLimitedPrimary(player);
 
     if (isBarrier && physicsEngine.tickCount % 8 === 0) {
-      fireBarrier(p);
+      fireBarrier(player);
     }
 
-    p.shootHeld = isShooting;
+    player.shootHeld = isShooting;
     return;
   }
 
-  if (p.weaponMode === 0) { // NORMAL
-    if (isShooting) _fireRateLimitedPrimary(p);
-    p.shootHeld = isShooting;
-  } else if (p.weaponMode === 1) { // MISSILE
-    if (isShooting && !p.shootHeld) {
-      p.fireMissile();
+  if (player.weaponMode === 0) { // NORMAL
+    if (isShooting) _fireRateLimitedPrimary(player);
+    player.shootHeld = isShooting;
+  } else if (player.weaponMode === 1) { // MISSILE
+    if (isShooting && !player.shootHeld) {
+      player.fireMissile();
     }
-    p.shootHeld = isShooting;
-  } else if (p.weaponMode === 2) { // BARRIER
-    if (isShooting && physicsEngine.tickCount % 8 === 0) fireBarrier(p);
-    p.shootHeld = isShooting;
+    player.shootHeld = isShooting;
+  } else if (player.weaponMode === 2) { // BARRIER
+    if (isShooting && physicsEngine.tickCount % 8 === 0) fireBarrier(player);
+    player.shootHeld = isShooting;
   }
 }
 
@@ -762,21 +765,15 @@ export function killPlayer(p) {
 
 
 export function renderProjectiles(...args) {
-  if (typeof globalThis.renderProjectiles === 'function') {
-    return globalThis.renderProjectiles(...args);
-  }
+  return renderProjectilesImpl(...args);
 }
 
 
 export function updateBarrierPhysics(...args) {
-  if (typeof globalThis.updateBarrierPhysics === 'function') {
-    return globalThis.updateBarrierPhysics(...args);
-  }
+  return updateBarrierPhysicsImpl(...args);
 }
 
 
 export function clearInfectionRadius(...args) {
-  if (typeof globalThis.clearInfectionRadius === 'function') {
-    return globalThis.clearInfectionRadius(...args);
-  }
+  return clearInfectionRadiusImpl(...args);
 }

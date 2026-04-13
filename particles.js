@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { p } from './p5Context.js';
-import { VIEW_NEAR, CULL_DIST, TILE, infection, tileKey, toTile } from './constants.js';
+import { VIEW_NEAR, CULL_DIST, TILE, SEA, LAUNCH_MIN, LAUNCH_MAX, infection, tileKey, toTile } from './constants.js';
 import { terrain } from './terrain.js';
 import { gameSFX } from './sfx.js';
 import { gameState } from './gameState.js';
@@ -165,14 +165,8 @@ function _constrain(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }
 
-function _seaLevel() {
-  return typeof globalThis.SEA === 'number' ? globalThis.SEA : 200;
-}
-
 function _isLaunchpad(x, z) {
-  const launchMin = typeof globalThis.LAUNCH_MIN === 'number' ? globalThis.LAUNCH_MIN : 0;
-  const launchMax = typeof globalThis.LAUNCH_MAX === 'number' ? globalThis.LAUNCH_MAX : 840;
-  return x >= launchMin && x <= launchMax && z >= launchMin && z <= launchMax;
+  return x >= LAUNCH_MIN && x <= LAUNCH_MAX && z >= LAUNCH_MIN && z <= LAUNCH_MAX;
 }
 
 function _maybePlayLaunchpadAlarm() {
@@ -409,7 +403,7 @@ class ParticleSystem {
             for (let c = -MEGA_BOMB_TILE_RAD; c <= MEGA_BOMB_TILE_RAD; c++) {
               if (r * r + c * c <= MEGA_BOMB_TILE_RAD_SQ) {
                 let nx = tx + r, nz = tz + c;
-                if (terrain.getAltitude(nx * TILE, nz * TILE) > _seaLevel()) continue;
+                if (terrain.getAltitude(nx * TILE, nz * TILE) > SEA) continue;
                 let nk = tileKey(nx, nz);
                 if (infection.add(nk)) {
                   if (_isLaunchpad(nx * TILE, nz * TILE)) hitLP = true;
@@ -439,7 +433,7 @@ class ParticleSystem {
       let b = this.enemyBullets[i];
       b.x += b.vx; b.y += b.vy; b.z += b.vz;
       b.life -= 2;
-      if (b.life <= 0 || b.y > terrain.getAltitude(b.x, b.z) || b.y > _seaLevel()) {
+      if (b.life <= 0 || b.y > terrain.getAltitude(b.x, b.z) || b.y > SEA) {
         // Swap-and-pop for O(1) removal (order doesn't matter for enemy bullets)
         let last = this.enemyBullets.pop();
         if (i < this.enemyBullets.length) this.enemyBullets[i] = last;

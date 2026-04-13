@@ -13,7 +13,6 @@ import {
 import { gameState } from './gameState.js';
 import { enemyManager } from './enemies.js';
 import { infection, SEA, NORMAL_SHOT_MODE_LABELS, CHUNK_SIZE, TILE, chunkKey, toTile } from './constants.js';
-import { terrain } from './terrain.js';
 
 const HUD_STATS = [
   { label: 'SCORE', color: [255, 255, 255], size: 20, py: 8, getVal: player => player.score },
@@ -137,9 +136,6 @@ export function drawPlayerHUD(player, pi, viewW, viewH) {
   if (viewW <= 0 || viewH <= 0) return;
   let hw = viewW, h = viewH;
   let ship = player.ship;
-
-  void pi;
-  void terrain;
 
   p.push();
   if (gameState.gameFont) p.textFont(gameState.gameFont);

@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { p } from './p5Context.js';
-import { TILE, infection, tileKey, mag3, TANK_SHELL_CLEAR_R } from './constants.js';
+import { TILE, CULL_DIST, infection, tileKey, mag3, TANK_SHELL_CLEAR_R } from './constants.js';
 import { clearInfectionAt, clearInfectionRadius } from './utils.js';
 import { aimAssist } from './aimAssist.js';
 import { enemyManager } from './enemies.js';
@@ -14,6 +14,7 @@ import { terrain } from './terrain.js';
 import { particleSystem } from './particles.js';
 import { physicsEngine } from './PhysicsEngine.js';
 import { gameState } from './gameState.js';
+import { gameRenderer } from './gameRenderer.js';
 import { gameSFX } from './sfx.js';
 
 function _lerp(a, b, t) {
@@ -39,14 +40,6 @@ function _findNearestEnemy(arr, x, y, z) {
   return best;
 }
 
-function _getCullDist() {
-  return typeof globalThis.CULL_DIST === 'number' ? globalThis.CULL_DIST : 6000;
-}
-
-function _getGameRenderer() {
-  return globalThis.gameRenderer;
-}
-
 /**
  * Advances bullet and homing-missile physics for one frame.
  *
@@ -59,7 +52,7 @@ function _getGameRenderer() {
  *
  * @param {object} p  Player state object containing bullets[], homingMissiles[], tankShells[].
  */
-function updateProjectilePhysics(plyr) {
+export function updateProjectilePhysics(plyr) {
   // --- Bullets ---
   let assistEnabled = aimAssist.enabled;
   for (let i = plyr.bullets.length - 1; i >= 0; i--) {
@@ -208,7 +201,7 @@ function updateProjectilePhysics(plyr) {
         plyr.score += cleared * 50;
       }
       terrain.addPulse(s.x, s.z, 2.0);
-      _getGameRenderer()?.setShake(15);
+      gameRenderer?.setShake(15);
       gameSFX?.setThrust(plyr.id, false);
       gameSFX?.playClearInfection(s.x, g, s.z);
       _swapRemove(plyr.tankShells, i);
@@ -220,7 +213,7 @@ function updateProjectilePhysics(plyr) {
  * Advances all in-flight barrier projectiles one frame.
  * On landing, snaps to tile grid and adds key to barrierTiles (dedup is automatic).
  */
-function updateBarrierPhysics() {
+export function updateBarrierPhysics() {
   for (let i = gameState.inFlightBarriers.length - 1; i >= 0; i--) {
     let b = gameState.inFlightBarriers[i];
     b.vy += 0.15;  // Gravity
@@ -242,9 +235,9 @@ function updateBarrierPhysics() {
  * @param {number} camX  Camera world X.
  * @param {number} camZ  Camera world Z.
  */
-function renderInFlightBarriers(camX, camZ) {
+export function renderInFlightBarriers(camX, camZ) {
   if (!gameState.inFlightBarriers.length) return;
-  const cullDist = _getCullDist();
+  const cullDist = CULL_DIST;
   const cullSq = (cullDist * 0.8) * (cullDist * 0.8);
   p.noStroke(); p.fill(255, 255, 255, 220);
   for (let b of gameState.inFlightBarriers) {
@@ -261,8 +254,8 @@ function renderInFlightBarriers(camX, camZ) {
  * @param {number} camX  Camera world X (viewport camera, not ship).
  * @param {number} camZ  Camera world Z.
  */
-function renderProjectiles(plyr, camX, camZ) {
-  const cullDist = _getCullDist();
+export function renderProjectiles(plyr, camX, camZ) {
+  const cullDist = CULL_DIST;
   let cullSq = (cullDist * 0.8) * (cullDist * 0.8);
   let bulletR = 4; // Player bullet size control (sphere radius)
   let bulletDetailX = 4;
@@ -336,9 +329,3 @@ function renderProjectiles(plyr, camX, camZ) {
   }
 }
 
-globalThis.updateProjectilePhysics = updateProjectilePhysics;
-globalThis.updateBarrierPhysics = updateBarrierPhysics;
-globalThis.renderProjectiles = renderProjectiles;
-globalThis.renderInFlightBarriers = renderInFlightBarriers;
-
-export { updateProjectilePhysics, updateBarrierPhysics };

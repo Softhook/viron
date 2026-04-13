@@ -41,10 +41,7 @@ import { particleSystem } from './particles.js';
 import { gameSFX } from './sfx.js';
 import { physicsEngine } from './PhysicsEngine.js';
 import { killPlayer } from './player.js';
-import { clearInfectionAt, clearInfectionRadius, maybePlayLaunchpadAlarm } from './utils.js';
-import { villagerManager } from './villagers.js';
-import { wizardManager } from './wizards.js';
-import { SfxAmbient } from './sfxAmbient.js';
+import { clearInfectionRadius, maybePlayLaunchpadAlarm } from './utils.js';
 import { gameRenderer } from './gameRenderer.js';
 
 // ENEMY_DRAW_SCALE is defined in enemies.js (= 4). Precompute the squared
@@ -80,12 +77,6 @@ const _COLOSSUS_BONES = [
   { x: -105, y: -145, r: 40 }, { x: 105, y: -145, r: 40 },
   { x: -105, y: -25, r: 35 }, { x: 105, y: -25, r: 35 }
 ];
-
-void SEA;
-void clearInfectionAt;
-void villagerManager;
-void wizardManager;
-void SfxAmbient;
 
 const GameLoop = {
   // Cached proximity distance for ambiance audio (avoids re-scan every frame).

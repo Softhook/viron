@@ -15,13 +15,10 @@
  */
 import { p } from './p5Context.js';
 import { gameState } from './gameState.js';
-import { inputManager } from './InputManager.js';
 import { aimAssist } from './aimAssist.js';
 import { setup2DViewport } from './gameRenderer.js';
 import { SHIP_DESIGNS } from './shipDesigns.js';
 import { startGame } from './sketch.js';
-
-void inputManager;
 
 export class MobileController {
     constructor() {
@@ -709,7 +706,7 @@ export class MobileController {
 
 export const mobileController = new MobileController();
 
-function shouldRequestFullscreen() {
+export function shouldRequestFullscreen() {
     if (typeof p.fullscreen !== 'function' || p.fullscreen()) return false;
 
     // Detect if we are on a mobile device (including iPad Pro)

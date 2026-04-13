@@ -16,7 +16,7 @@ import { physicsEngine } from './PhysicsEngine.js';
 import { inputManager } from './InputManager.js';
 import { enemyManager } from './enemies.js';
 import { terrain } from './terrain.js';
-import { mobileController, handleTouchStarted } from './mobileControls.js';
+import { mobileController, handleTouchStarted, shouldRequestFullscreen } from './mobileControls.js';
 import { aimAssist } from './aimAssist.js';
 import { particleSystem } from './particles.js';
 import { villagerManager } from './villagers.js';
@@ -80,6 +80,12 @@ window.startGame = startGame;
 window.startLevel = startLevel;
 window.spawnYellowCrab = spawnYellowCrab;
 window._handlePauseScreenHit = _handlePauseScreenHit;
+
+inputManager.setTransitionHandlers({
+  startGame,
+  pauseScreenHit: _handlePauseScreenHit,
+  shouldRequestFullscreen
+});
 
 const sketch = (inst) => {
   initP5(inst);

@@ -33,6 +33,15 @@ export class InputManager {
     this.isAndroid = false;
     this.smoothedMX = 0;
     this.smoothedMY = 0;
+    this._startGame = null;
+    this._pauseScreenHit = null;
+    this._shouldRequestFullscreen = null;
+  }
+
+  setTransitionHandlers({ startGame, pauseScreenHit, shouldRequestFullscreen } = {}) {
+    if (typeof startGame === 'function') this._startGame = startGame;
+    if (typeof pauseScreenHit === 'function') this._pauseScreenHit = pauseScreenHit;
+    if (typeof shouldRequestFullscreen === 'function') this._shouldRequestFullscreen = shouldRequestFullscreen;
   }
 
   /**
@@ -254,8 +263,8 @@ export class InputManager {
 
   _handleKeyTransition(mode, keyCode, key) {
     if (mode === 'menu') {
-      if (key === '1') { globalThis.startGame(1); return true; }
-      if (key === '2') { globalThis.startGame(2); return true; }
+      if (key === '1' && this._startGame) { this._startGame(1); return true; }
+      if (key === '2' && this._startGame) { this._startGame(2); return true; }
     }
 
     if (keyCode === 27) { // ESC
@@ -302,13 +311,13 @@ export class InputManager {
 
     if (mode === 'menu') {
       if (!this.hasClickedOnce) {
-        if (typeof globalThis.shouldRequestFullscreen === 'function' && globalThis.shouldRequestFullscreen()) {
+        if (this._shouldRequestFullscreen && this._shouldRequestFullscreen()) {
           p.fullscreen(true);
         }
         this.hasClickedOnce = true;
         return true;
       }
-      globalThis.startGame(1);
+      if (this._startGame) this._startGame(1);
       return true;
     }
 
@@ -325,7 +334,7 @@ export class InputManager {
     }
 
     if (mode === 'paused') {
-      const action = globalThis._handlePauseScreenHit(mouseX, mouseY);
+      const action = this._pauseScreenHit ? this._pauseScreenHit(mouseX, mouseY) : null;
       if (action === 'resume') { gameState.resumeGame(); p.requestPointerLock(); return true; }
       if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; return true; }
     }
@@ -348,12 +357,15 @@ export class InputManager {
     const mouseY = p.mouseY;
 
     if (mode === 'menu' || mode === 'instructions') {
-      if (typeof globalThis.shouldRequestFullscreen === 'function' && globalThis.shouldRequestFullscreen()) {
+      if (this._shouldRequestFullscreen && this._shouldRequestFullscreen()) {
         p.fullscreen(true);
       }
     }
 
-    if (mode === 'menu') { globalThis.startGame(1); return true; }
+    if (mode === 'menu') {
+      if (this._startGame) this._startGame(1);
+      return true;
+    }
     if (mode === 'mission') { gameState.mode = 'instructions'; return true; }
     if (mode === 'instructions') {
       if (mobileController) {
@@ -363,7 +375,7 @@ export class InputManager {
       return true;
     }
     if (mode === 'paused') {
-      const action = globalThis._handlePauseScreenHit(mouseX, mouseY);
+      const action = this._pauseScreenHit ? this._pauseScreenHit(mouseX, mouseY) : null;
       if (action === 'resume') { gameState.resumeGame(); return true; }
       if (action === 'restart') { gameState.mode = 'menu'; gameState.pauseSnapshot = null; return true; }
     }

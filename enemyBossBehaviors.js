@@ -44,18 +44,15 @@ export const EnemyBossAI = {
 
     const testX = e.x + e.vx;
     const testZ = e.z + e.vz;
-    const gyTestX = typeof terrain !== 'undefined' && terrain ? terrain.getAltitude(testX, e.z) : 0;
-    const gyTestZ = typeof terrain !== 'undefined' && terrain ? terrain.getAltitude(e.x, testZ) : 0;
-    
-    // Check if the tile is above sea level using the global helper aboveSea()
-    if (typeof aboveSea !== 'undefined') {
-      if (!aboveSea(gyTestX)) e.vx *= -1;
-      if (!aboveSea(gyTestZ)) e.vz *= -1;
-    }
+    const gyTestX = terrain.getAltitude(testX, e.z);
+    const gyTestZ = terrain.getAltitude(e.x, testZ);
+
+    if (!aboveSea(gyTestX)) e.vx *= -1;
+    if (!aboveSea(gyTestZ)) e.vz *= -1;
 
     e.x += e.vx;
     e.z += e.vz;
-    e.y = typeof SEA !== 'undefined' ? SEA : 0;
+    e.y = SEA;
 
     if (e.hitFlash > 0) e.hitFlash--;
 
@@ -68,7 +65,7 @@ export const EnemyBossAI = {
       spread: 0.14,
       scaleKey: 'krakenScale',
       muzzleYFactor: 80,
-      bulletLife: typeof BOSS_BULLET_LIFE !== 'undefined' ? BOSS_BULLET_LIFE : 1200
+      bulletLife: BOSS_BULLET_LIFE || 1200
     });
 
     e._tentacleTimer = (e._tentacleTimer || 0) + 1;
@@ -78,26 +75,22 @@ export const EnemyBossAI = {
       const lashY = e.y - 40 * kScale;
       for (let t = 0; t < 4; t++) {
         const a = (t / 4) * (Math.PI * 2) + (p.random() * 0.6 - 0.3);
-        if (typeof particleSystem !== 'undefined') {
-          particleSystem.enemyBullets.push({
-            x: e.x, y: lashY, z: e.z,
-            vx: Math.cos(a) * 8, vy: (p.random() * -1), vz: Math.sin(a) * 8,
-            life: KRAKEN_TENTACLE_LIFE || 900
-          });
-        }
+        particleSystem.enemyBullets.push({
+          x: e.x, y: lashY, z: e.z,
+          vx: Math.cos(a) * 8, vy: (p.random() * -1), vz: Math.sin(a) * 8,
+          life: KRAKEN_TENTACLE_LIFE || 900
+        });
       }
       const adx = tShip.x - e.x, adz = tShip.z - e.z;
       const ad = Math.hypot(adx, adz);
       if (ad > 0) {
-        if (typeof particleSystem !== 'undefined') {
-          particleSystem.enemyBullets.push({
-            x: e.x, y: lashY, z: e.z,
-            vx: (adx / ad) * 10, vy: -0.5, vz: (adz / ad) * 10,
-            life: KRAKEN_TENTACLE_LIFE || 900
-          });
-        }
+        particleSystem.enemyBullets.push({
+          x: e.x, y: lashY, z: e.z,
+          vx: (adx / ad) * 10, vy: -0.5, vz: (adz / ad) * 10,
+          life: KRAKEN_TENTACLE_LIFE || 900
+        });
       }
-      if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, lashY, e.z);
+      gameSFX?.playEnemyShot('fighter', e.x, lashY, e.z);
     }
   }
 };

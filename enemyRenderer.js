@@ -14,11 +14,10 @@
 // =============================================================================
 
 import { p } from './p5Context.js';
-import { CULL_DIST } from './constants.js';
+import { CULL_DIST, ENEMY_DRAW_SCALE } from './constants.js';
 import { terrain } from './terrain.js';
 import { TerrainShadows } from './terrainShadows.js';
 import { gameState } from './gameState.js';
-import { ENEMY_DRAW_SCALE } from './enemies.js';
 import { setSceneLighting } from './gameRenderer.js';
 
 // Pre-allocated edge vectors for _drawTri() — eliminates 2 array literal

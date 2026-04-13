@@ -212,7 +212,6 @@ export class GameRenderer {
   }
 
   _drawSharedWorld(s, player, viewAspect, drawAimAssist) {
-    this.setSceneLighting();
     terrain.drawLandscape(s, viewAspect, gameState.firstPersonView);
     terrain.drawTrees(s);
     terrain.drawBuildings(s);
@@ -420,6 +419,7 @@ export class GameRenderer {
   }
 
   updatePerformanceScaling() {
+    if (typeof window === 'undefined') return;
     if (!window._perf) {
       window._perf = {
         buf: new Float32Array(60),

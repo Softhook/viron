@@ -76,7 +76,7 @@ export const EnemyAirAI = {
         vx: (pvx / pd) * 10, vy: (pvy / pd) * 10, vz: (pvz / pd) * 10,
         life: ENEMY_BULLET_LIFE
       });
-      if (typeof gameSFX !== 'undefined') gameSFX.playEnemyShot('fighter', e.x, e.y, e.z);
+      gameSFX?.playEnemyShot('fighter', e.x, e.y, e.z);
     }
 
     if (!e.aggressive) {

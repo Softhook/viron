@@ -25,7 +25,7 @@
 // =============================================================================
 
 import { p } from './p5Context.js';
-import { tileKey, toTile, TILE, CULL_DIST, mag3, aboveSea, isLaunchpad, SEA, infection, ENEMY_CRAB_BULLET_LIFE } from './constants.js';
+import { tileKey, toTile, TILE, CULL_DIST, mag3, aboveSea, isLaunchpad, SEA, infection, ENEMY_CRAB_BULLET_LIFE, ENEMY_DRAW_SCALE } from './constants.js';
 import { findNearest, maybePlayLaunchpadAlarm } from './utils.js';
 import { EnemyRenderer } from './enemyRenderer.js';
 import { EnemyAirAI } from './enemyAirBehaviors.js';
@@ -41,8 +41,8 @@ import { physicsEngine } from './PhysicsEngine.js';
 // Hoisted out of the draw loop so the nested array literal is not re-allocated every frame.
 const SEEDER_LAYERS = [[-10, 220, 30, 30], [6, 170, 15, 15]];
 
-// Uniform scale applied to every enemy mesh in both rendering passes.
-export const ENEMY_DRAW_SCALE = 4;
+// Back-compat re-export: canonical source now lives in constants.js.
+export { ENEMY_DRAW_SCALE };
 
 // (Constants removed and consolidated in constants.js)
 

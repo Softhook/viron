@@ -32,9 +32,10 @@ import {
   TANK_SHELL_CLEAR_R,
   isLaunchpad,
   swapRemove,
-  getVironProfiler
+  getVironProfiler,
+  ENEMY_DRAW_SCALE
 } from './constants.js';
-import { ENEMY_DRAW_SCALE, enemyManager } from './enemies.js';
+import { enemyManager } from './enemies.js';
 import { gameState } from './gameState.js';
 import { terrain } from './terrain.js';
 import { particleSystem } from './particles.js';
@@ -44,10 +45,9 @@ import { killPlayer } from './player.js';
 import { clearInfectionRadius, maybePlayLaunchpadAlarm } from './utils.js';
 import { gameRenderer } from './gameRenderer.js';
 
-// ENEMY_DRAW_SCALE is defined in enemies.js (= 4). Precompute the squared
+// ENEMY_DRAW_SCALE is defined in constants.js (= 4). Precompute the squared
 // half-scale used in every checkCollisions() call so Math.pow() is never
 // called inside the per-enemy hot loop.
-// enemies.js loads before gameLoop.js (see index.html script order).
 const _ENEMY_HALF_SCALE_SQ = (ENEMY_DRAW_SCALE / 2) * (ENEMY_DRAW_SCALE / 2);
 
 // Velocity damping applied along the collision normal to simulate inelastic impact.

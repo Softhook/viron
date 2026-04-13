@@ -63,9 +63,9 @@ export const TerrainBuildings = {
     return ctx._buildingBuckets.get(`${cx},${cz}`) || [];
   },
 
-  _drawBuildingShadow(ctx, b, groundY, sun) {
+  _drawBuildingShadow(ctx, b, groundY, sun, timeMs) {
     const bw = b.w, bh = b.h;
-    const floatY = groundY - bh - 100 - Math.sin(p.millis() * 0.0012 + b.x) * 50;
+    const floatY = groundY - bh - 100 - Math.sin(timeMs * 0.0012 + b.x) * 50;
     const casterH = Math.max(35, groundY - floatY);
     ctx._drawProjectedEllipseShadow(b.x, b.z, groundY, casterH, bw * 2.2, bw * 1.4, 70, sun, true);
   },
@@ -91,6 +91,11 @@ export const TerrainBuildings = {
     let maxCz = Math.floor((gz + VIEW_FAR) / CHUNK_SIZE);
 
     const chunkHalf = CHUNK_SIZE * TILE;
+    const timeMs = p.millis();
+    const wobblePhase = timeMs * 0.0012;
+    const spinYPhase = timeMs * 0.0006;
+    const spinZPhase = timeMs * 0.0009;
+    const torusSpinPhase = timeMs * 0.00192;
 
     ctx.applyShader();
 
@@ -132,10 +137,10 @@ export const TerrainBuildings = {
 
       if (b.type === 3) {
         p.push(); p.translate(b.x, y, b.z);
-        let floatY = y - b.h - 100 - Math.sin(p.millis() * 0.0012 + b.x) * 50;
+        let floatY = y - b.h - 100 - Math.sin(wobblePhase + b.x) * 50;
         p.translate(0, floatY - y, 0);
-        p.rotateY(p.millis() * 0.0006 + b.x);
-        p.rotateZ(p.millis() * 0.0009 + b.z);
+        p.rotateY(spinYPhase + b.x);
+        p.rotateZ(spinZPhase + b.z);
         let geom = this._getPowerupGeom(ctx, b, inf);
         if (geom) p.model(geom);
         p.pop();
@@ -144,14 +149,13 @@ export const TerrainBuildings = {
         const safeR = (r) => (r === 1 || r === 2 || r === 10 || r === 11 || r === 20 || r === 21 || r === 30) ? r + 1 : r;
         p.fill(safeR(inf ? 220 : 20), inf ? 60 : 230, inf ? 20 : 210);
         p.translate(0, -b.h * 0.87, 0);
-        p.rotateY(p.millis() * 0.00192 + b.x * 0.001);
+        p.rotateY(torusSpinPhase + b.x * 0.001);
         p.torus(b.w * 0.32, b.w * 0.07, 14, 6);
         p.pop();
       }
     }
 
     p.resetShader();
-    setSceneLighting();
 
     p.noLights(); p.noStroke();
     ctx.applyShadowShader();
@@ -179,7 +183,7 @@ export const TerrainBuildings = {
     for (const v of visibleBldgs) {
       const b = v.b;
       if (b.type === 3 && v.dSq < 2250000 && !aboveSea(b.y) && !isLaunchpad(b.x, b.z)) {
-        this._drawBuildingShadow(ctx, b, b.y, sun);
+        this._drawBuildingShadow(ctx, b, b.y, sun, timeMs);
       }
     }
 

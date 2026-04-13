@@ -328,7 +328,7 @@ export class GameSFX {
      * Limit to one sound every 60ms.
      */
     playInfectionSpread(x, y, z) {
-        if (typeof SfxEnemies !== 'undefined') SfxEnemies.playInfectionSpread(this, x, y, z);
+        SfxEnemies.playInfectionSpread(this, x, y, z);
     }
 
 
@@ -719,7 +719,7 @@ export class GameSFX {
      * @param {number} x,y,z   World position for spatialization.
      */
     setThrust(id, active, x, y, z) {
-        if (typeof SfxAmbient !== 'undefined') SfxAmbient.setThrust(this, id, active, x, y, z);
+        SfxAmbient.setThrust(this, id, active, x, y, z, gameState);
     }
 
     /**

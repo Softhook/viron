@@ -169,15 +169,21 @@ async function setupPlayableState(page, scenarioId) {
           });
         }
 
+        window.BENCHMARK = Object.assign({}, window.BENCHMARK, {
+          disableHUD: false,
+          disableRadar: false,
+          disableShadows: false,
+        });
+
         if (id === 'no-particles') {
           particleSystem.clear();
           particleSystem.updatePhysics = function () { };
           particleSystem.render = function () { };
           particleSystem.renderHardParticles = function () { };
         } else if (id === 'no-hud') {
-          window.drawPlayerHUD = function () { };
+          window.BENCHMARK.disableHUD = true;
         } else if (id === 'no-radar') {
-          window.drawRadarForPlayer = function () { };
+          window.BENCHMARK.disableRadar = true;
         } else if (id === 'no-trees') {
           terrain.drawTrees = function () { };
         } else if (id === 'no-enemies') {
@@ -196,8 +202,7 @@ async function setupPlayableState(page, scenarioId) {
         } else if (id === 'no-lighting') {
           gameRenderer.setSceneLighting = function () { };
         } else if (id === 'no-shadows') {
-          window._beginShadowStencil = function () { };
-          window._endShadowStencil = function () { };
+          window.BENCHMARK.disableShadows = true;
         } else if (id === 'cockpit-mode') {
           gameState.firstPersonView = true;
         } else if (id === 'no-sound') {
@@ -211,15 +216,14 @@ async function setupPlayableState(page, scenarioId) {
             gameSFX.setThrust = function () { };
           }
         } else if (id === 'no-villagers') {
-          if (typeof villagerManager !== 'undefined') {
-            villagerManager.villagers = [];
-            villagerManager.update = function () { };
-            villagerManager.draw = function () { };
-          }
+          villagerManager.villagers = [];
+          villagerManager.update = function () { };
+          villagerManager.draw = function () { };
         }
 
         const stats = Object.create(null);
         const counts = Object.create(null);
+        const hookStatus = Object.create(null);
         let benchFrameCount = 0;
         let wrappedDrawMs = 0;
         let wrappedDrawFrames = 0;
@@ -232,8 +236,11 @@ async function setupPlayableState(page, scenarioId) {
         function wrapFunction(target, key, label) {
           if (!target) return;
           const original = target[key];
-          if (typeof original !== 'function') return;
-          target[key] = function (...args) {
+          if (typeof original !== 'function') {
+            hookStatus[label] = false;
+            return;
+          }
+          const wrapped = function (...args) {
             const t0 = performance.now();
             try {
               return original.apply(this, args);
@@ -241,16 +248,19 @@ async function setupPlayableState(page, scenarioId) {
               record(label, performance.now() - t0);
             }
           };
+          try {
+            target[key] = wrapped;
+            hookStatus[label] = target[key] === wrapped;
+          } catch (_err) {
+            hookStatus[label] = false;
+          }
         }
 
-        wrapFunction(window, 'updateShipInput', 'updateShipInput');
         wrapFunction(enemyManager, 'update', 'enemyManager.update');
         wrapFunction(GameLoop, 'checkCollisions', 'checkCollisions');
         wrapFunction(GameLoop, 'spreadInfection', 'spreadInfection');
         wrapFunction(particleSystem, 'updatePhysics', 'particleSystem.updatePhysics');
-        wrapFunction(window, 'updateProjectilePhysics', 'updateProjectilePhysics');
-        wrapFunction(window, 'updateBarrierPhysics', 'updateBarrierPhysics');
-        if (typeof villagerManager !== 'undefined') wrapFunction(villagerManager, 'update', 'villagerManager.update');
+        wrapFunction(villagerManager, 'update', 'villagerManager.update');
 
         wrapFunction(gameRenderer, 'renderAllPlayers', 'gameRenderer.renderAllPlayers');
         wrapFunction(gameRenderer, 'renderPlayerView', 'renderPlayerView');
@@ -258,15 +268,10 @@ async function setupPlayableState(page, scenarioId) {
         wrapFunction(terrain, 'drawTrees', 'terrain.drawTrees');
         wrapFunction(terrain, 'drawBuildings', 'terrain.drawBuildings');
         wrapFunction(enemyManager, 'draw', 'enemyManager.draw');
-        if (typeof villagerManager !== 'undefined') wrapFunction(villagerManager, 'draw', 'villagerManager.draw');
+        wrapFunction(villagerManager, 'draw', 'villagerManager.draw');
         wrapFunction(particleSystem, 'render', 'particleSystem.render');
         wrapFunction(particleSystem, 'renderHardParticles', 'particleSystem.renderHardParticles');
         wrapFunction(gameRenderer, 'setSceneLighting', 'setSceneLighting');
-        wrapFunction(window, 'renderProjectiles', 'renderProjectiles');
-        wrapFunction(window, 'renderInFlightBarriers', 'renderInFlightBarriers');
-        wrapFunction(window, 'drawPlayerHUD', 'drawPlayerHUD');
-        wrapFunction(window, 'drawRadarForPlayer', 'drawRadarForPlayer');
-        wrapFunction(window, 'shipDisplay', 'shipDisplay');
 
         if (typeof gameSFX !== 'undefined') {
           wrapFunction(gameSFX, 'updateAmbiance', 'gameSFX.updateAmbiance');
@@ -334,6 +339,7 @@ async function setupPlayableState(page, scenarioId) {
               viewNear: constantsMod.VIEW_NEAR,
               viewFar: constantsMod.VIEW_FAR,
               cullDist: constantsMod.CULL_DIST,
+              hookStatus,
               budgetMs: (window._perf && window._perf.budgetMs) || 0,
               profiler: profilerSummary
             };
@@ -505,6 +511,14 @@ function printScenarioResult(r) {
   console.log(`    unattributed:   ${f.rpv.unattributedPerFrame.toFixed(3)} ms/frame (${f.rpv.unattributedPct.toFixed(1)}% of renderPlayerView)`);
   console.log(`  entities:      enemies=${s.enemies}, infection=${s.infectionTiles}, particles=${s.particles}`);
   console.log(`  view:          VIEW_NEAR=${s.viewNear}, VIEW_FAR=${s.viewFar}, CULL_DIST=${s.cullDist}`);
+  console.log('  instrumentation:');
+  console.log('    note: free-function call sites imported via ESM bindings are not monkey-patched here; totals appear in parent buckets');
+  if (s.hookStatus) {
+    const failedHooks = Object.keys(s.hookStatus).filter(k => !s.hookStatus[k]);
+    if (failedHooks.length > 0) {
+      console.log(`    failed hooks: ${failedHooks.join(', ')}`);
+    }
+  }
   console.log('  top contributors (ms/frame, % of draw):');
   for (const row of f.top) {
     console.log(`    ${row.k.padEnd(26)} ${row.perFrame.toFixed(3).padStart(7)} ms   ${row.pct.toFixed(1).padStart(5)}%   calls=${row.calls}`);

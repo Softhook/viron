@@ -264,7 +264,7 @@ export class VillagerManager extends AgentManager {
   // ---------------------------------------------------------------------------
 
   update() {
-    if (typeof window !== 'undefined' && window.BENCHMARK && window.BENCHMARK.disableVillagers) return;
+    if (typeof window !== 'undefined' && window.BENCHMARK && typeof window.BENCHMARK === 'object' && window.BENCHMARK.disableVillagers) return;
 
     super.update();
 

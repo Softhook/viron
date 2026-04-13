@@ -7,9 +7,21 @@
 import { p } from './p5Context.js';
 import {
   SUN_DIR_MIN_Y, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ,
-  shadowOpacityFactor, shadowShift, TILE
+  shadowOpacityFactor, shadowShift, TILE,
+  AMBIENT_R, AMBIENT_G, AMBIENT_B,
+  SUN_KEY_R, SUN_KEY_G, SUN_KEY_B
 } from './constants.js';
 import { _beginShadowStencil, _endShadowStencil } from './terrain.js';
+import { gameState } from './gameState.js';
+
+function _restoreSceneLighting() {
+  p.noLights();
+  p.specularColor(0, 0, 0);
+  p.specularMaterial(0);
+  p.shininess(0);
+  p.ambientLight(AMBIENT_R, AMBIENT_G, AMBIENT_B);
+  p.directionalLight(SUN_KEY_R, SUN_KEY_G, SUN_KEY_B, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ);
+}
 
 export const TerrainShadows = {
 
@@ -66,6 +78,7 @@ export const TerrainShadows = {
    * Draws a cast shadow polygon from a base footprint and caster height.
    */
   drawProjectedFootprintShadow(ctx, wx, wz, groundY, casterH, footprint, alpha, sun, isFloating = false, isBaking = false) {
+    if (typeof window !== 'undefined' && window.BENCHMARK && typeof window.BENCHMARK === 'object' && window.BENCHMARK.disableShadows) return;
     const shift = this.shadowShift(casterH, sun);
     let rawHull;
     if (isFloating) {
@@ -112,13 +125,12 @@ export const TerrainShadows = {
     const MAX_SHADOW_TRIS = 5000;
     let triCount = 0;
 
-    const lightsWereOn = (typeof SUN_KEY_R !== 'undefined');
     p.noStroke();
     const shadowAlpha = alpha * this.shadowOpacityFactor(casterH);
     p.fill(0, 0, 0, shadowAlpha);
 
     if (!isBaking) {
-      if (lightsWereOn) p.noLights();
+      p.noLights();
       ctx.applyShadowShader();
       _beginShadowStencil();
     }
@@ -162,7 +174,7 @@ export const TerrainShadows = {
     if (!isBaking) {
       _endShadowStencil();
       p.resetShader();
-      if (lightsWereOn && typeof setSceneLighting === 'function') setSceneLighting();
+      _restoreSceneLighting();
     }
   },
 

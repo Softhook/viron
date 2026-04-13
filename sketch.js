@@ -77,10 +77,12 @@ export function spawnYellowCrab(wx = undefined, wz = undefined) {
 }
 
 // Back-compat shims for modules that still reference global helpers.
-window.startGame = startGame;
-window.startLevel = startLevel;
-window.spawnYellowCrab = spawnYellowCrab;
-window._handlePauseScreenHit = _handlePauseScreenHit;
+if (typeof window !== 'undefined') {
+  window.startGame = startGame;
+  window.startLevel = startLevel;
+  window.spawnYellowCrab = spawnYellowCrab;
+  window._handlePauseScreenHit = _handlePauseScreenHit;
+}
 
 inputManager.setTransitionHandlers({
   startGame,
@@ -129,10 +131,10 @@ const sketch = (inst) => {
     }
 
     gameState.worldSeed = inst.floor(inst.random(1, 1000000));
-    initWorld(gameState.worldSeed);
+    initWorld(gameState.worldSeed, gameState);
 
     gameState.mode = 'menu';
-    if (window.BENCHMARK && window.BENCHMARK.setup) {
+    if (window.BENCHMARK && typeof window.BENCHMARK === 'object' && window.BENCHMARK.setup) {
       startGame(1);
       gameState.activatePlayingMode();
     }
@@ -156,7 +158,7 @@ const sketch = (inst) => {
       return;
     }
 
-    if (window.BENCHMARK && window.BENCHMARK.active) {
+    if (window.BENCHMARK && typeof window.BENCHMARK === 'object' && window.BENCHMARK.active) {
       if (!window.BENCHMARK.frames) window.BENCHMARK.frames = 0;
       if (!window.BENCHMARK.startTime) window.BENCHMARK.startTime = performance.now();
       window.BENCHMARK.frames++;

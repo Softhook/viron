@@ -33,7 +33,7 @@ import { SHIP_DESIGNS } from './shipDesigns.js';
 import {
   LAUNCH_ALT, WEAPON_MODES, TILE, tileKey, toTile, infection,
   YAW_RATE, PITCH_RATE, MOUSE_SENSITIVITY, MOUSE_SMOOTHING,
-  SUN_DIR_MIN_Y, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ, aboveSea
+  SUN_DIR_MIN_Y, SUN_DIR_NX, SUN_DIR_NY, SUN_DIR_NZ, aboveSea, isLaunchpad
 } from './constants.js';
 import { Vehicle } from './Vehicle.js';
 import { TerrainShadows } from './terrainShadows.js';

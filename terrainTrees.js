@@ -98,7 +98,7 @@ export const TerrainTrees = {
       }
     }
 
-    const maxTreesPerChunk = (typeof gameState !== 'undefined' && gameState.isMobile) ? 9 : 13;
+    const maxTreesPerChunk = gameState.isMobile ? 9 : 13;
     if (out.length > maxTreesPerChunk) {
       out.sort((a, b) => b._score - a._score);
       out.length = maxTreesPerChunk;
@@ -161,7 +161,6 @@ export const TerrainTrees = {
     }
 
     p.resetShader();
-    setSceneLighting();
 
     p.noLights(); p.noStroke();
     ctx.applyShadowShader();

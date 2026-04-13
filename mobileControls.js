@@ -16,9 +16,15 @@
 import { p } from './p5Context.js';
 import { gameState } from './gameState.js';
 import { aimAssist } from './aimAssist.js';
-import { setup2DViewport } from './gameRenderer.js';
 import { SHIP_DESIGNS } from './shipDesigns.js';
-import { startGame } from './sketch.js';
+
+function _setupMobileOverlay2D() {
+    const pxD = p.pixelDensity();
+    p.drawingContext.viewport(0, 0, p.width * pxD, p.height * pxD);
+    p.push();
+    p.ortho(-p.width / 2, p.width / 2, -p.height / 2, p.height / 2, 0, 1000);
+    p.resetMatrix();
+}
 
 export class MobileController {
     constructor() {
@@ -401,11 +407,7 @@ export class MobileController {
         // Update layout parameters (scaling, button positions) without touching input state
         this._updateLayout(w, h);
 
-        if (typeof setup2DViewport === 'function') {
-            setup2DViewport();
-        } else {
-            p.push();
-        }
+        _setupMobileOverlay2D();
         let gl = p.drawingContext;
         gl.disable(gl.DEPTH_TEST);
         p.translate(-w / 2, -h / 2, 0);
@@ -743,7 +745,10 @@ export function handleTouchStarted(event) {
     }
 
     if (gameState.mode === 'menu') {
-        setTimeout(() => { if (typeof startGame === 'function') startGame(1); }, 50);
+        setTimeout(() => {
+            const start = (typeof window !== 'undefined') ? window.startGame : undefined;
+            if (typeof start === 'function') start(1);
+        }, 50);
     }
     return false;
 }

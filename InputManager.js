@@ -92,7 +92,7 @@ export class InputManager {
     if (!this.isMobile && 'ontouchstart' in window) {
       if (!/Windows NT|Macintosh|Linux/i.test(ua)) this.isMobile = true;
     }
-    if (typeof gameState !== 'undefined' && gameState) {
+    if (gameState) {
       gameState.isMobile = this.isMobile;
       gameState.isAndroid = this.isAndroid;
     }

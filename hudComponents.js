@@ -133,6 +133,7 @@ function _drawWeaponSelector(player, h) {
  * Renders the 2D HUD overlay for one player within their viewport slice.
  */
 export function drawPlayerHUD(player, pi, viewW, viewH) {
+  if (typeof window !== 'undefined' && window.BENCHMARK && typeof window.BENCHMARK === 'object' && window.BENCHMARK.disableHUD) return;
   if (viewW <= 0 || viewH <= 0) return;
   let hw = viewW, h = viewH;
   let ship = player.ship;
@@ -189,12 +190,18 @@ export function drawPlayerHUD(player, pi, viewW, viewH) {
 /**
  * Renders a circular mini-map radar.
  */
-function drawRadarForPlayer(player, hw, h) {
+export function drawRadarForPlayer(player, hw, h) {
+  if (typeof window !== 'undefined' && window.BENCHMARK && typeof window.BENCHMARK === 'object' && window.BENCHMARK.disableRadar) return;
   let ship = player.ship;
   let radarSize = 150;
   let gb = _getRadarBuffer(player.id, radarSize);
 
-  const shouldUpdate = !gameState.isMobile || (p.frameCount + player.id) % 2 === 0;
+  let radarStride = gameState.isMobile ? 2 : 2;
+  const infCount = infection?.count ?? 0;
+  const enemyCount = enemyManager?.enemies?.length ?? 0;
+  if (infCount > 800 || enemyCount > 24) radarStride = Math.max(radarStride, 3);
+  if (infCount > 1600 || enemyCount > 40) radarStride = Math.max(radarStride, 4);
+  const shouldUpdate = (p.frameCount + player.id) % radarStride === 0;
 
   if (shouldUpdate) {
     gb.clear();
@@ -261,8 +268,6 @@ function drawRadarForPlayer(player, hw, h) {
   }
 
   p.push();
-  p.ortho(-hw / 2, hw / 2, -h / 2, h / 2, 0, 1000);
-  p.resetMatrix();
   p.imageMode(p.CENTER);
   p.translate(Math.floor(hw / 2 - radarSize / 2 - 4), Math.floor(-h / 2 + radarSize / 2 + 4));
   p.image(gb, 0, 0);

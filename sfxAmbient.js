@@ -6,6 +6,14 @@
 
 export const SfxAmbient = {
 
+    _lerp(a, b, t) {
+        return a + (b - a) * t;
+    },
+
+    _clamp(v, lo, hi) {
+        return Math.min(hi, Math.max(lo, v));
+    },
+
     updateAmbiance(sfxCore, proximityData, infectionCount, maxInfection) {
         if (!sfxCore.initialized || !sfxCore.ctx) return;
         const dest = sfxCore.master || sfxCore.ctx.destination;
@@ -109,9 +117,7 @@ export const SfxAmbient = {
         }
 
         const targetProximity = proximityData.dist < 800 ? (1 - proximityData.dist / 800) : 0;
-        sfxCore._infectionProximityAlpha = typeof lerp !== 'undefined' 
-            ? lerp(sfxCore._infectionProximityAlpha, targetProximity, 0.05)
-            : sfxCore._infectionProximityAlpha + (targetProximity - sfxCore._infectionProximityAlpha) * 0.05;
+        sfxCore._infectionProximityAlpha = this._lerp(sfxCore._infectionProximityAlpha, targetProximity, 0.05);
 
         const humVol = sfxCore._infectionProximityAlpha * 1.0;
         sfxCore._paramSetTarget(sfxCore.ambientNodes.proximityHum.gain.gain, humVol, now, 0.1);
@@ -119,9 +125,7 @@ export const SfxAmbient = {
 
         {
             const scanAlpha = Math.min(1, Math.max(0, proximityData.pulseOverlap || 0));
-            sfxCore._scanPulseAlpha = typeof lerp !== 'undefined'
-                ? lerp(sfxCore._scanPulseAlpha, scanAlpha, 0.22)
-                : sfxCore._scanPulseAlpha + (scanAlpha - sfxCore._scanPulseAlpha) * 0.22;
+            sfxCore._scanPulseAlpha = this._lerp(sfxCore._scanPulseAlpha, scanAlpha, 0.22);
             const alphaSq = sfxCore._scanPulseAlpha * sfxCore._scanPulseAlpha;
             sfxCore._paramSetTarget(sfxCore.ambientNodes.scanningMod.gain.gain, alphaSq * 0.7, now, 0.06);
             sfxCore._paramSetTarget(sfxCore.ambientNodes.scanningMod.lfo.frequency, 8.0 + alphaSq * 8.5, now, 0.08);
@@ -145,21 +149,16 @@ export const SfxAmbient = {
         }
 
         const sweepAlphaTarget = Math.min(1, Math.max(0, proximityData.scanSweepAlpha || 0));
-        sfxCore._scanSweepAlpha = typeof lerp !== 'undefined'
-            ? lerp(sfxCore._scanSweepAlpha, sweepAlphaTarget, 0.2)
-            : sfxCore._scanSweepAlpha + (sweepAlphaTarget - sfxCore._scanSweepAlpha) * 0.2;
+        sfxCore._scanSweepAlpha = this._lerp(sfxCore._scanSweepAlpha, sweepAlphaTarget, 0.2);
         const sweepVol = sfxCore._scanSweepAlpha * sfxCore._infectionProximityAlpha * 0.52;
         sfxCore._paramSetTarget(sfxCore.ambientNodes.scanSweep.gain.gain, sweepVol, now, 0.08);
         sfxCore._paramSetTarget(sfxCore.ambientNodes.scanSweep.filter.frequency, 1400 + sfxCore._scanSweepAlpha * 1300, now, 0.08);
     },
 
-    setThrust(sfxCore, id, active, x, y, z) {
+    setThrust(sfxCore, id, active, x, y, z, gameStateRef = null) {
         sfxCore.init();
         if (!sfxCore.ctx) return;
         const t = sfxCore.ctx.currentTime;
-
-        // Uses a fallback to Math.min / Math.max if constrain is missing, but it is available globally
-        const constrainLocal = (typeof constrain !== 'undefined') ? constrain : Math.max;
 
         if (!active) {
             if (sfxCore.thrustNodes[id]) {
@@ -261,10 +260,10 @@ export const SfxAmbient = {
 
         if (x !== undefined && y !== undefined && z !== undefined) {
             let minDistSq = Infinity;
-            if (typeof gameState !== 'undefined' && gameState.players.length > 0) {
-                const numPlayers = gameState.players.length;
+            if (gameStateRef && gameStateRef.players.length > 0) {
+                const numPlayers = gameStateRef.players.length;
                 for (let i = 0; i < numPlayers; i++) {
-                    const p = gameState.players[i];
+                    const p = gameStateRef.players[i];
                     if (p.dead || !p.ship) continue;
                     const dSq = (x - p.ship.x) ** 2 + (y - p.ship.y) ** 2 + (z - p.ship.z) ** 2;
                     if (dSq < minDistSq) minDistSq = dSq;
@@ -281,8 +280,7 @@ export const SfxAmbient = {
         sfxCore._paramSetTarget(n.gain.gain, finalVol, t, 0.05);
 
         if (id === 0 && y !== undefined) {
-            let clamped = Math.max(0, Math.min(1, (100 - y) / 2000));
-            const altFactor = typeof constrain !== 'undefined' ? constrain((100 - y) / 2000, 0, 1) : clamped;
+            const altFactor = this._clamp((100 - y) / 2000, 0, 1);
             sfxCore._paramSetTarget(n.filter.frequency, 110 + altFactor * 40, t, 0.1);
             sfxCore._paramSetTarget(n.osc.frequency, 42 + altFactor * 10, t, 0.1);
         }

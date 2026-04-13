@@ -512,8 +512,7 @@ export class TileManager {
    * @returns {object|null} the newly added tile object, or null if it already existed.
    */
   add(k, type = 'normal') {
-    const gs = globalThis.gameState;
-    if (this === infection && gs?.barrierTiles?.has(k)) return null;
+    if (this === infection && _infectionBarrierLookup && _infectionBarrierLookup(k)) return null;
     if (this.tiles.has(k)) return null;
     const tx = Math.floor(k / 20001) - 10000;
     const tz = (k % 20001) - 10000;
@@ -625,6 +624,13 @@ export class TileManager {
 
   /** Compatibility with internal Map usage. */
   get size() { return this.count; }
+}
+
+let _infectionBarrierLookup = null;
+
+/** Register a barrier-tile lookup used to prevent infection from occupying barrier cells. */
+export function setInfectionBarrierLookup(lookupFn) {
+  _infectionBarrierLookup = typeof lookupFn === 'function' ? lookupFn : null;
 }
 
 /** Singleton infection state shared across all modules. */
@@ -808,6 +814,7 @@ export const ENEMY_BULLET_LIFE      = 1000;  // Standard enemy bullets
 export const ENEMY_CRAB_BULLET_LIFE = 1000;  // Crab / scorpion upward shots
 export const BOSS_BULLET_LIFE       = 1200;  // Kraken burst projectiles
 export const KRAKEN_TENTACLE_LIFE   = 900;   // Kraken tentacle lash projectiles
+export const ENEMY_DRAW_SCALE       = 4;     // Uniform enemy mesh scale
 
 export const BOMBER_BOUNDARY_LIMIT      = 4000;
 export const BOMBER_DROP_INTERVAL_TICKS = 600;

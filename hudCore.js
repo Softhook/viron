@@ -14,7 +14,14 @@ import { p } from './p5Context.js';
 import { SEA, NORMAL_SHOT_MODE_LABELS, infection } from './constants.js';
 import { gameState } from './gameState.js';
 import { enemyManager } from './enemies.js';
-import { setup2DViewport } from './gameRenderer.js';
+
+function _setupHud2DViewport() {
+  const pxD = p.pixelDensity();
+  p.drawingContext.viewport(0, 0, p.width * pxD, p.height * pxD);
+  p.push();
+  p.ortho(-p.width / 2, p.width / 2, -p.height / 2, p.height / 2, 0, 1000);
+  p.resetMatrix();
+}
 
 export const HUD_WEAPON_LABELS = ['NORMAL', 'MISSILE', 'BARRIER'];
 export const HUD_WEAPON_ACTIVE_COLS = [[255, 255, 255], [0, 220, 255], [255, 160, 20]];
@@ -83,7 +90,7 @@ export const HUD_Manager = {
   /** Draws a full-screen dimming overlay based on current dimAlpha. */
   drawDimOverlay() {
     if (this.dimAlpha <= 0) return;
-    setup2DViewport();
+    _setupHud2DViewport();
     p.fill(0, 0, 0, this.dimAlpha);
     p.noStroke();
     p.rect(-p.width / 2, -p.height / 2, p.width, p.height);

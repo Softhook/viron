@@ -23,7 +23,8 @@ import {
   toTile,
   isLaunchpad,
   aboveSea,
-  updateTimeOfDay
+  updateTimeOfDay,
+  setInfectionBarrierLookup
 } from './constants.js';
 import { createPlayer, resetShip, getSpawnX } from './player.js';
 import { physicsEngine } from './PhysicsEngine.js';
@@ -35,7 +36,6 @@ import { particleSystem } from './particles.js';
 import { gameSFX } from './sfx.js';
 import { initWorld } from './worldGenerator.js';
 import { inputManager } from './InputManager.js';
-import { mobileController } from './mobileControls.js';
 
 class GameState {
   constructor() {
@@ -183,7 +183,7 @@ class GameState {
     // to ensure ephemeral entities like powerups and buildings respawn correctly
     // for a fresh game start.  Terrain caching itself is preserved inside terrain.reset().
     this.resetWorld(this.worldSeed);
-    initWorld?.(this.worldSeed);
+    initWorld?.(this.worldSeed, this);
 
     this.startLevel(1);
     this.mode = 'mission';
@@ -363,7 +363,7 @@ class GameState {
    * Resets all input states to prevent "stuck" keys on focus loss.
    */
   clearInputs() {
-    if (typeof inputManager !== 'undefined' && inputManager?.clearInputs) {
+    if (inputManager?.clearInputs) {
       inputManager.clearInputs();
       return;
     }
@@ -382,13 +382,6 @@ class GameState {
         p.input.pitchDown = false;
       }
     }
-    if (mobileController) {
-      mobileController.thrustActive = false;
-      mobileController.shootActive = false;
-      mobileController.barrierActive = false;
-      mobileController.aimTouchId = null;
-      mobileController.missileTouchId = null;
-    }
   }
 
   resetWorld(seed) {
@@ -403,6 +396,7 @@ class GameState {
 
 // Single global state instance
 const gameState = new GameState();
+setInfectionBarrierLookup((k) => gameState.barrierTiles.has(k));
 
 if (typeof globalThis !== 'undefined') {
   globalThis.gameState = gameState;

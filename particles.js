@@ -472,6 +472,10 @@ class ParticleSystem {
     const renderLoadScale = particleLoad > 700 ? 0.65 : (particleLoad > 500 ? 0.8 : 1.0);
     const MAX_FOG_RENDER = Math.floor(140 * renderLoadScale);
     const MAX_THRUST_RENDER = Math.floor(180 * renderLoadScale);
+    const inv255 = 1 / 255;
+    const camXBill = camCX ?? camX;
+    const camYBill = camCY ?? 0;
+    const camZBill = camCZ ?? (camZ + 1);
     let fogRendered = 0;
     let thrustRendered = 0;
     let pxD = p.pixelDensity();
@@ -550,8 +554,8 @@ class ParticleSystem {
         let [r, g, b] = _calcSoftParticleColor(part, t);
 
         if (useDepthSoftShader || useBillowSprites) {
-          let dx = (camCX ?? part.x) - part.x, dy = (camCY ?? part.y) - part.y, dz = (camCZ ?? (part.z + 1)) - part.z;
-          let horiz = Math.hypot(dx, dz);
+          let dx = camXBill - part.x, dy = camYBill - part.y, dz = camZBill - part.z;
+          let horiz = Math.sqrt(dx * dx + dz * dz);
           if (horiz < 0.0001 && Math.abs(dy) < 0.0001) continue;
           let yaw = Math.atan2(dx, dz), pitch = -Math.atan2(dy, Math.max(horiz, 0.0001));
           let sz = part.size || 8;
@@ -562,11 +566,11 @@ class ParticleSystem {
           if (useDepthSoftShader) {
             // Direct gl.uniform4f — zero allocations vs setUniform's slice(0) copy.
             if (_directColorLoc !== null) {
-              p.drawingContext.uniform4f(_directColorLoc, r / 255, g / 255, b / 255, alpha);
+              p.drawingContext.uniform4f(_directColorLoc, r * inv255, g * inv255, b * inv255, alpha);
             } else {
               // Fallback if location unavailable (first frame or driver quirk).
-              _softShaderColorBuf[0] = r / 255; _softShaderColorBuf[1] = g / 255;
-              _softShaderColorBuf[2] = b / 255; _softShaderColorBuf[3] = alpha;
+              _softShaderColorBuf[0] = r * inv255; _softShaderColorBuf[1] = g * inv255;
+              _softShaderColorBuf[2] = b * inv255; _softShaderColorBuf[3] = alpha;
               _softShader.setUniform('uParticleColor', _softShaderColorBuf);
             }
             p.plane(sz, sz);
@@ -585,9 +589,9 @@ class ParticleSystem {
       if (useDepthSoftShader) p.resetShader();
       if (disableDepthForSoft) p.drawingContext.enable(p.drawingContext.DEPTH_TEST);
 
-      if (!sceneFBO) this._drawHardGeometry(camCX ?? camX, camCY ?? 0, camCZ ?? camZ, camX, camZ, cullSq);
+      if (!sceneFBO) this._drawHardGeometry(camXBill, camYBill, camCZ ?? camZ, camX, camZ, cullSq);
     } else if (!sceneFBO) {
-      this._drawHardGeometry(camCX ?? camX, camCY ?? 0, camCZ ?? camZ, camX, camZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
+      this._drawHardGeometry(camXBill, camYBill, camCZ ?? camZ, camX, camZ, (CULL_DIST * 0.6) * (CULL_DIST * 0.6));
     }
   }
 

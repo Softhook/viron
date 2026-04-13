@@ -51,7 +51,7 @@ export class AgentManager {
   }
 
   getTargetHubs() {
-    if (typeof window !== 'undefined' && window.BENCHMARK && window.BENCHMARK.disableVillagerCulling) {
+    if (typeof window !== 'undefined' && window.BENCHMARK && typeof window.BENCHMARK === 'object' && window.BENCHMARK.disableVillagerCulling) {
       return this.hubs;
     }
     return this.activeHubs;

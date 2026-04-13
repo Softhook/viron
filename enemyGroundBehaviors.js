@@ -14,6 +14,7 @@ import {
 import { gameState } from './gameState.js';
 import { physicsEngine } from './PhysicsEngine.js';
 import { terrain } from './terrain.js';
+import { villagerManager } from './villagers.js';
 
 export const EnemyGroundAI = {
 
@@ -129,7 +130,7 @@ export const EnemyGroundAI = {
     let targetX = null, targetZ = null;
     let bestDistSq = Infinity;
 
-    if (typeof villagerManager !== 'undefined' && villagerManager) {
+    if (villagerManager) {
       for (let v of villagerManager.villagers) {
         const d2 = (v.x - e.x) ** 2 + (v.z - e.z) ** 2;
         if (d2 < bestDistSq) {
@@ -141,7 +142,7 @@ export const EnemyGroundAI = {
     }
 
     if (targetX !== null && bestDistSq < 3600) {
-      if (typeof villagerManager !== 'undefined' && villagerManager) {
+      if (villagerManager) {
         for (let i = villagerManager.villagers.length - 1; i >= 0; i--) {
           const v = villagerManager.villagers[i];
           if ((v.x - e.x) ** 2 + (v.z - e.z) ** 2 < 3600) {

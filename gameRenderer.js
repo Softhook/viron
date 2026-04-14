@@ -218,6 +218,21 @@ export class GameRenderer {
     p.camera(cx, cy, cz, lx, ly, lz, 0, 1, 0);
   }
 
+  _prepareWorldViewport(gl, vx, vw, vh) {
+    this._applyViewportScissor(gl, vx, vw, vh);
+    gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+  }
+
+  _renderWorldPass(s, player, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz, drawAimAssistInSharedWorld, drawExtras) {
+    p.push();
+    this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
+    this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
+    this._drawSharedWorld(s, player, viewW / viewH, drawAimAssistInSharedWorld);
+    if (drawExtras) drawExtras();
+    p.pop();
+  }
+
   _drawSharedWorld(s, player, viewAspect, drawAimAssist) {
     terrain.drawLandscape(s, viewAspect, gameState.firstPersonView);
     terrain.drawTrees(s);
@@ -280,18 +295,12 @@ export class GameRenderer {
 
   _renderWithFBO(gl, s, player, viewX, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
     this.sceneFBO.begin();
-    this._applyViewportScissor(gl, vx, vw, vh);
-    gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    p.push();
-    this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
-    this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
-    this._drawSharedWorld(s, player, viewW / viewH, true);
-
-    this._profileParticles(() => {
-      particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
+    this._prepareWorldViewport(gl, vx, vw, vh);
+    this._renderWorldPass(s, player, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz, true, () => {
+      this._profileParticles(() => {
+        particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
+      });
     });
-    p.pop();
     this.sceneFBO.end();
 
     this._applyViewportScissor(gl, vx, vw, vh);
@@ -316,19 +325,13 @@ export class GameRenderer {
   }
 
   _renderSinglePass(gl, s, player, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
-    this._applyViewportScissor(gl, vx, vw, vh);
-    gl.clearColor(SKY_R / 255, SKY_G / 255, SKY_B / 255, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    p.push();
-    this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
-    this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
-    this._drawSharedWorld(s, player, viewW / viewH, false);
-
-    this._profileParticles(() => {
-      particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
+    this._prepareWorldViewport(gl, vx, vw, vh);
+    this._renderWorldPass(s, player, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz, false, () => {
+      this._profileParticles(() => {
+        particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
+      });
+      if (aimAssist) aimAssist.drawDebug3D(s);
     });
-    if (aimAssist) aimAssist.drawDebug3D(s);
-    p.pop();
   }
 
   _drawShared2DOverlay() {

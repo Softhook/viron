@@ -92,6 +92,13 @@ export class GameRenderer {
     this.shakeAmount = 0;
   }
 
+  _profileParticles(renderFn) {
+    const profiler = getVironProfiler();
+    const pStart = profiler ? performance.now() : 0;
+    renderFn();
+    if (profiler) profiler.record('particles', performance.now() - pStart);
+  }
+
   setShake(amt) {
     this.shakeAmount = Math.max(this.shakeAmount, amt);
   }
@@ -249,6 +256,28 @@ export class GameRenderer {
     gl.disable(gl.SCISSOR_TEST);
   }
 
+  _renderPlayersLayout(gl, h, pxDensity) {
+    if (gameState.numPlayers === 1) {
+      this.renderPlayerView(gl, gameState.players[0], 0, 0, p.width, h, pxDensity);
+      return;
+    }
+
+    const hw = Math.floor(p.width / 2);
+    for (let pi = 0; pi < 2; pi++) {
+      this.renderPlayerView(gl, gameState.players[pi], pi, pi * hw, hw, h, pxDensity);
+    }
+  }
+
+  _ensureDesktopBuffers(h) {
+    if (!this.masterFBO) {
+      this.masterFBO = p.createFramebuffer();
+      this.postShader = p.createShader(POST_VERT, POST_FRAG);
+    }
+    if (this.masterFBO.width !== p.width || this.masterFBO.height !== h) {
+      this.masterFBO.resize(p.width, h);
+    }
+  }
+
   _renderWithFBO(gl, s, player, viewX, vx, vw, vh, viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz) {
     this.sceneFBO.begin();
     this._applyViewportScissor(gl, vx, vw, vh);
@@ -259,10 +288,9 @@ export class GameRenderer {
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     this._drawSharedWorld(s, player, viewW / viewH, true);
 
-    const profiler = getVironProfiler();
-    let pStart = profiler ? performance.now() : 0;
-    particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
-    if (profiler) profiler.record('particles', performance.now() - pStart);
+    this._profileParticles(() => {
+      particleSystem.renderHardParticles(cx, cy, cz, s.x, s.z);
+    });
     p.pop();
     this.sceneFBO.end();
 
@@ -281,9 +309,9 @@ export class GameRenderer {
     this._applyViewportScissor(gl, vx, vw, vh);
     p.push();
     this._setupSceneCamera(viewW, viewH, camNear, camFar, cx, cy, cz, lx, ly, lz);
-    pStart = profiler ? performance.now() : 0;
-    particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, this.sceneFBO);
-    if (profiler) profiler.record('particles', performance.now() - pStart);
+    this._profileParticles(() => {
+      particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, this.sceneFBO);
+    });
     p.pop();
   }
 
@@ -296,10 +324,9 @@ export class GameRenderer {
     this.drawSunInWorld(cx, cy, cz, VIEW_FAR * TILE, 1.0);
     this._drawSharedWorld(s, player, viewW / viewH, false);
 
-    const profiler = getVironProfiler();
-    const pStart = profiler ? performance.now() : 0;
-    particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
-    if (profiler) profiler.record('particles', performance.now() - pStart);
+    this._profileParticles(() => {
+      particleSystem.render(s.x, s.z, cx, cy, cz, camNear, camFar, null);
+    });
     if (aimAssist) aimAssist.drawDebug3D(s);
     p.pop();
   }
@@ -338,39 +365,19 @@ export class GameRenderer {
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
-      if (gameState.numPlayers === 1) {
-        this.renderPlayerView(gl, gameState.players[0], 0, 0, p.width, h, pxDensity);
-      } else {
-        const hw = Math.floor(p.width / 2);
-        for (let pi = 0; pi < 2; pi++) {
-          this.renderPlayerView(gl, gameState.players[pi], pi, pi * hw, hw, h, pxDensity);
-        }
-      }
+      this._renderPlayersLayout(gl, h, pxDensity);
 
       this._drawShared2DOverlay();
       return;
     }
 
-    if (!this.masterFBO) {
-      this.masterFBO = p.createFramebuffer();
-      this.postShader = p.createShader(POST_VERT, POST_FRAG);
-    }
-    if (this.masterFBO.width !== p.width || this.masterFBO.height !== h) {
-      this.masterFBO.resize(p.width, h);
-    }
+    this._ensureDesktopBuffers(h);
 
     this.masterFBO.begin();
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
-    if (gameState.numPlayers === 1) {
-      this.renderPlayerView(gl, gameState.players[0], 0, 0, p.width, h, pxDensity);
-    } else {
-      const hw = Math.floor(p.width / 2);
-      for (let pi = 0; pi < 2; pi++) {
-        this.renderPlayerView(gl, gameState.players[pi], pi, pi * hw, hw, h, pxDensity);
-      }
-    }
+    this._renderPlayersLayout(gl, h, pxDensity);
 
     this._drawShared2DOverlay();
     this.masterFBO.end();

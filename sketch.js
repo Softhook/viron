@@ -52,16 +52,11 @@ function _handlePauseScreenHit(mx, my) {
 }
 
 /**
- * Draws all gamepad-related HUD overlays onto the raw 2D canvas:
- *   • Toast notification (connect / disconnect)
- *   • Persistent controller icon (top-right corner)
- *   • Full controller info panel (shown for ~5 s after connecting)
- * Uses the raw drawingContext so it works safely inside a WEBGL p5 sketch.
+ * Draws all gamepad-related HUD overlays using p5's orthographic 2D overlay
+ * (same pattern as mobileControls.js).  Safe to call inside a WEBGL p5 sketch.
  */
-function _drawGamepadOverlays(ctx, w, h) {
-  gamepadManager.drawToast(ctx, w, h);
-  gamepadManager.drawControllerIndicator(ctx, w, h);
-  gamepadManager.drawControllerInfoOverlay(ctx, w, h);
+function _drawGamepadOverlays() {
+  gamepadManager.drawHUD();
 }
 
 export function spawnYellowCrab(wx = undefined, wz = undefined) {
@@ -157,20 +152,20 @@ const sketch = (inst) => {
   inst.draw = function () {
     HUD_Manager?.update();
 
-    if (gameState.mode === 'menu') { drawMenu(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
-    if (gameState.mode === 'mission') { drawMission(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
-    if (gameState.mode === 'instructions') { drawInstructions(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
+    if (gameState.mode === 'menu') { drawMenu(); _drawGamepadOverlays(); return; }
+    if (gameState.mode === 'mission') { drawMission(); _drawGamepadOverlays(); return; }
+    if (gameState.mode === 'instructions') { drawInstructions(); _drawGamepadOverlays(); return; }
     if (gameState.mode === 'cockpitSelection') {
       HUD_Screens?.drawCockpitSelection();
-      _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height);
+      _drawGamepadOverlays();
       return;
     }
-    if (gameState.mode === 'shipselect') { drawShipSelect(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
-    if (gameState.mode === 'gameover') { drawGameOver(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
+    if (gameState.mode === 'shipselect') { drawShipSelect(); _drawGamepadOverlays(); return; }
+    if (gameState.mode === 'gameover') { drawGameOver(); _drawGamepadOverlays(); return; }
 
     if (gameState.mode === 'paused' && !gameState.shouldCapture) {
       drawPauseScreen();
-      _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height);
+      _drawGamepadOverlays();
       return;
     }
 
@@ -233,7 +228,7 @@ const sketch = (inst) => {
     }
 
     // Gamepad HUD overlays (toast + small icon + info panel on connect)
-    _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height);
+    _drawGamepadOverlays();
 
     if (profiler) profiler.frameEnd(performance.now() - frameStart);
   };

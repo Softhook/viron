@@ -17,6 +17,9 @@
  * @exports   gamepadManager    — singleton
  */
 
+import { p } from './p5Context.js';
+import { gameState } from './gameState.js';
+
 /** Raw button and axis indices for the 8BitDo Pro 2 / Ultimate. */
 export const GAMEPAD_MAP = {
   // Face buttons
@@ -39,9 +42,24 @@ export const GAMEPAD_MAP = {
 };
 
 const DEADZONE = 0.15;
+/** Controls the speed of the blinking dismiss hint in the info overlay. */
+const BLINK_SPEED = 0.06;
 
 function _applyDeadzone(v) {
   return Math.abs(v) < DEADZONE ? 0 : v;
+}
+
+/**
+ * Sets up a full-screen 2D orthographic overlay.
+ * Identical pattern to mobileControls.js _setupMobileOverlay2D().
+ * Caller must call p.pop() when done.
+ */
+function _setup2DOverlay() {
+  const pxD = p.pixelDensity();
+  p.drawingContext.viewport(0, 0, p.width * pxD, p.height * pxD);
+  p.push();
+  p.ortho(-p.width / 2, p.width / 2, -p.height / 2, p.height / 2, 0, 1000);
+  p.resetMatrix();
 }
 
 export class GamepadManager {
@@ -83,7 +101,7 @@ export class GamepadManager {
         this._gamepadIndex    = i;
         this._connected       = true;
         this._infoOverlayFrames = 300; // show info panel for ~5 s
-        this._showToast('🎮  CONTROLLER CONNECTED');
+        this._showToast('CONTROLLER CONNECTED');
         console.log(`[Viron] Gamepad already connected: ${pads[i].id}`);
         break;
       }
@@ -94,7 +112,7 @@ export class GamepadManager {
     this._gamepadIndex      = e.gamepad.index;
     this._connected         = true;
     this._infoOverlayFrames = 300;
-    this._showToast('🎮  CONTROLLER CONNECTED');
+    this._showToast('CONTROLLER CONNECTED');
     console.log(`[Viron] Gamepad connected: ${e.gamepad.id}`);
   }
 
@@ -106,7 +124,7 @@ export class GamepadManager {
       this._justPressed       = {};
       this._prevButtons       = {};
       this._infoOverlayFrames = 0;
-      this._showToast('🎮  CONTROLLER DISCONNECTED');
+      this._showToast('CONTROLLER DISCONNECTED');
       console.log('[Viron] Gamepad disconnected.');
     }
   }
@@ -199,7 +217,7 @@ export class GamepadManager {
       sel: this._state.sel.pressed,
     };
 
-    if (this.toastFrames       > 0) this.toastFrames--;
+    if (this.toastFrames > 0) this.toastFrames--;
     if (this._infoOverlayFrames > 0) this._infoOverlayFrames--;
   }
 
@@ -259,174 +277,163 @@ export class GamepadManager {
   }
 
   // ---------------------------------------------------------------------------
-  // HUD rendering helpers (use raw Canvas 2D, safe inside WEBGL context)
+  // HUD rendering — uses p5 API with an orthographic 2D overlay,
+  // matching the pattern used by mobileControls.js and hudCore.js.
   // ---------------------------------------------------------------------------
 
   /**
-   * Draws the connect / disconnect toast banner near the top of the screen.
-   * Call this each frame inside a 2D canvas context (after 3-D rendering).
-   * @param {CanvasRenderingContext2D} ctx  p5 drawingContext.
-   * @param {number} w  Canvas CSS width.
-   * @param {number} h  Canvas CSS height.
+   * Draws all gamepad HUD overlays in a single p5 push/pop:
+   *   • Toast notification (connect / disconnect)
+   *   • Persistent controller indicator (top-right corner)
+   *   • Full controller info panel (shown for ~5 s after connecting)
+   *
+   * Call once per frame after 3-D rendering is complete.
    */
-  drawToast(ctx, w, h) {
-    if (this.toastFrames <= 0) return;
-    const t     = this.toastFrames;
-    const alpha = Math.min(t / 30, 1) * Math.min((180 - t) / 30 + 1, 1);
+  drawHUD() {
+    const needToast   = this.toastFrames > 0;
+    const needIcon    = this._connected;
+    const needOverlay = this._infoOverlayFrames > 0;
+    if (!needToast && !needIcon && !needOverlay) return;
 
-    ctx.save();
-    ctx.font      = 'bold 22px Impact, Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    _setup2DOverlay();
+    const gl = p.drawingContext;
+    gl.disable(gl.DEPTH_TEST);
+
+    const w = p.width;
+    const h = p.height;
+    // Shift origin to top-left so coordinates match screen pixels
+    p.translate(-w / 2, -h / 2, 0);
+
+    p.noStroke();
+    p.textAlign(p.CENTER, p.CENTER);
+    if (gameState && gameState.gameFont) p.textFont(gameState.gameFont);
+
+    if (needToast)   this._drawToast(w, h);
+    if (needIcon)    this._drawControllerIcon(w, h);
+    if (needOverlay) this._drawInfoOverlay(w, h);
+
+    gl.enable(gl.DEPTH_TEST);
+    p.pop();
+  }
+
+  /** @private — toast banner near top of screen */
+  _drawToast(w, h) {
+    const t     = this.toastFrames;
+    const alpha = Math.round(255 * Math.min(t / 30, 1) * Math.min((180 - t) / 30 + 1, 1));
+    if (alpha <= 0) return;
 
     const msg = this.toastMessage;
-    const mx  = w / 2;
-    const my  = 60;
-    const tw  = ctx.measureText(msg).width + 40;
-    const th  = 44;
+    const cx  = w / 2;
+    const cy  = 60;
+
+    p.textSize(22);
+    const tw = p.textWidth(msg) + 40;
+    const th = 44;
 
     // Background
-    ctx.fillStyle = `rgba(0,0,0,${alpha * 0.75})`;
-    _roundRect(ctx, mx - tw / 2, my - th / 2, tw, th, 8);
-    ctx.fill();
+    p.noStroke();
+    p.fill(0, 0, 0, alpha * 0.75);
+    p.rect(cx - tw / 2, cy - th / 2, tw, th, 8);
 
     // Border
-    ctx.strokeStyle = `rgba(0,220,120,${alpha})`;
-    ctx.lineWidth   = 2;
-    _roundRect(ctx, mx - tw / 2, my - th / 2, tw, th, 8);
-    ctx.stroke();
+    p.stroke(0, 220, 120, alpha);
+    p.strokeWeight(2);
+    p.noFill();
+    p.rect(cx - tw / 2, cy - th / 2, tw, th, 8);
 
     // Text
-    ctx.fillStyle = `rgba(200,255,200,${alpha})`;
-    ctx.fillText(msg, mx, my);
-
-    ctx.restore();
+    p.noStroke();
+    p.fill(200, 255, 200, alpha);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.text(msg, cx, cy);
   }
 
-  /**
-   * Draws a small persistent 🎮 icon in the top-right corner when a
-   * controller is connected.
-   * @param {CanvasRenderingContext2D} ctx
-   * @param {number} w
-   * @param {number} h
-   */
-  drawControllerIndicator(ctx, w, h) {
-    if (!this._connected) return;
-    ctx.save();
-    ctx.font         = '18px Arial, sans-serif';
-    ctx.textAlign    = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle    = 'rgba(0,220,120,0.85)';
-    ctx.fillText('🎮', w - 10, 10);
-    ctx.restore();
+  /** @private — small [CTRL] badge in the top-right corner */
+  _drawControllerIcon(w, h) {
+    p.noStroke();
+    p.textSize(14);
+    p.fill(0, 220, 120, 215);
+    p.textAlign(p.RIGHT, p.TOP);
+    p.text('[CTRL]', w - 10, 10);
   }
 
-  /**
-   * Draws a full-screen controller info overlay showing the button-to-action
-   * mapping.  Displayed for ~5 seconds after the controller connects.
-   * @param {CanvasRenderingContext2D} ctx
-   * @param {number} w
-   * @param {number} h
-   */
-  drawControllerInfoOverlay(ctx, w, h) {
-    if (this._infoOverlayFrames <= 0) return;
-
+  /** @private — full mapping info panel */
+  _drawInfoOverlay(w, h) {
     const t     = this._infoOverlayFrames;
-    const alpha = Math.min(t / 30, 1) * Math.min((300 - t) / 30 + 1, 1);
+    const alpha = Math.round(255 * Math.min(t / 30, 1) * Math.min((300 - t) / 30 + 1, 1));
+    if (alpha <= 0) return;
 
     const cx = w / 2;
     const cy = h / 2;
     const bw = Math.min(540, w - 40);
-    const bh = 360;
+    const bh = 320;
     const bx = cx - bw / 2;
     const by = cy - bh / 2;
 
-    ctx.save();
-
     // Panel background
-    ctx.fillStyle = `rgba(0,0,0,${alpha * 0.88})`;
-    _roundRect(ctx, bx, by, bw, bh, 14);
-    ctx.fill();
+    p.noStroke();
+    p.fill(0, 0, 0, alpha * 0.88);
+    p.rect(bx, by, bw, bh, 14);
 
     // Panel border
-    ctx.strokeStyle = `rgba(0,200,100,${alpha})`;
-    ctx.lineWidth   = 2;
-    _roundRect(ctx, bx, by, bw, bh, 14);
-    ctx.stroke();
+    p.stroke(0, 200, 100, alpha);
+    p.strokeWeight(2);
+    p.noFill();
+    p.rect(bx, by, bw, bh, 14);
 
     // Title
-    ctx.fillStyle    = `rgba(0,255,150,${alpha})`;
-    ctx.font         = 'bold 26px Impact, Arial, sans-serif';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('🎮  CONTROLLER DETECTED', cx, by + 18);
+    p.noStroke();
+    p.fill(0, 255, 150, alpha);
+    p.textSize(24);
+    p.textAlign(p.CENTER, p.TOP);
+    p.text('CONTROLLER DETECTED', cx, by + 16);
 
-    ctx.fillStyle = `rgba(160,160,160,${alpha})`;
-    ctx.font      = '13px Arial, sans-serif';
-    ctx.fillText('8BitDo Pro 2 / Ultimate — Default Mapping', cx, by + 54);
+    // Sub-title
+    p.fill(160, 160, 160, alpha);
+    p.textSize(13);
+    p.text('8BitDo Pro 2 / Ultimate - Default Mapping', cx, by + 50);
 
-    // Mapping table
+    // Mapping table — two columns
     const mappings = [
-      ['Left Stick',  'Steer ship (yaw / pitch)'],
-      ['R2',          'Thrust'],
-      ['A',           'Primary weapon (shoot)'],
-      ['X',           'Fire missile'],
-      ['Y',           'Cycle weapon mode'],
-      ['B',           'Brake'],
-      ['L1',          'Barrier weapon'],
-      ['D-Pad',       'Steer (when stick centred)'],
-      ['Start',       'Pause / Resume'],
+      ['Left Stick', 'Steer (yaw/pitch)'],
+      ['R2',         'Thrust'],
+      ['A',          'Shoot'],
+      ['X',          'Fire missile'],
+      ['Y',          'Cycle weapon'],
+      ['B',          'Brake'],
+      ['L1',         'Barrier'],
+      ['D-Pad',      'Steer (fallback)'],
+      ['Start',      'Pause/Resume'],
     ];
 
-    const colW   = bw / 2 - 20;
-    const rowH   = 28;
-    const startY = by + 88;
+    const colW   = bw / 2 - 30;
+    const rowH   = 26;
+    const startY = by + 80;
 
-    ctx.font         = 'bold 14px Arial, sans-serif';
-    ctx.textBaseline = 'top';
-
+    p.textSize(13);
     mappings.forEach(([key, desc], i) => {
-      const col  = i % 2;
-      const row  = Math.floor(i / 2);
-      const tx   = bx + 20 + col * (colW + 20);
-      const ty   = startY + row * rowH;
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const tx  = bx + 20 + col * (colW + 20);
+      const ty  = startY + row * rowH;
 
-      ctx.fillStyle = `rgba(0,220,120,${alpha})`;
-      ctx.textAlign = 'left';
-      ctx.fillText(key, tx, ty);
+      p.fill(0, 220, 120, alpha);
+      p.textAlign(p.LEFT, p.TOP);
+      p.text(key, tx, ty);
 
-      ctx.fillStyle = `rgba(220,220,220,${alpha})`;
-      ctx.fillText(`  —  ${desc}`, tx + ctx.measureText(key).width, ty);
+      p.fill(210, 210, 210, alpha);
+      p.text('  - ' + desc, tx + p.textWidth(key), ty);
     });
 
-    // Dismiss hint
-    ctx.fillStyle    = `rgba(120,120,120,${alpha * Math.abs(Math.sin(Date.now() / 500))})`;
-    ctx.font         = '12px Arial, sans-serif';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('(panel closes automatically)', cx, by + bh - 10);
+    // Dismiss hint (blinking)
+    const blink = Math.round(alpha * Math.abs(Math.sin(p.frameCount * BLINK_SPEED)));
+    p.fill(110, 110, 110, blink);
+    p.textSize(11);
+    p.textAlign(p.CENTER, p.BOTTOM);
+    p.text('(closes automatically)', cx, by + bh - 10);
 
-    ctx.restore();
-  }
-}
-
-/** Polyfill-safe rounded rect path helper. */
-function _roundRect(ctx, x, y, w, h, r) {
-  if (ctx.roundRect) {
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, r);
-  } else {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.arcTo(x + w, y, x + w, y + r, r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-    ctx.lineTo(x + r, y + h);
-    ctx.arcTo(x, y + h, x, y + h - r, r);
-    ctx.lineTo(x, y + r);
-    ctx.arcTo(x, y, x + r, y, r);
-    ctx.closePath();
+    // Reset textAlign for callers
+    p.textAlign(p.CENTER, p.CENTER);
   }
 }
 

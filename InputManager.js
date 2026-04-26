@@ -11,8 +11,10 @@ import { gameState } from './gameState.js';
 import { p } from './p5Context.js';
 import { mobileController } from './mobileControls.js';
 import { WEAPON_MODES, YAW_RATE, PITCH_RATE, MOUSE_SENSITIVITY, MOUSE_SMOOTHING } from './constants.js';
+import { SHIP_DESIGNS } from './shipDesigns.js';
 import { aimAssist } from './aimAssist.js';
 import { enemyManager } from './enemies.js';
+import { gamepadManager } from './gamepadManager.js';
 
 export class InputManager {
   constructor() {
@@ -80,6 +82,7 @@ export class InputManager {
     document.addEventListener('contextmenu', e => e.preventDefault());
 
     this.detectPlatform();
+    gamepadManager.initialize();
     this.initialized = true;
   }
 
@@ -137,6 +140,10 @@ export class InputManager {
     if (this.isMobile && mobileController) {
       mobileController.update(p.touches, p.width, p.height);
     }
+
+    // Poll gamepad state and handle per-frame transitions (Start = pause/resume)
+    gamepadManager.update();
+    this._handleGamepadTransitions();
   }
 
   /**
@@ -149,7 +156,7 @@ export class InputManager {
 
   /**
    * Returns whether a weapon fire action should trigger for a player.
-   * Merges mouse/keyboard/mobile inputs.
+   * Merges mouse/keyboard/mobile/gamepad inputs.
    */
   getActionActive(player, action) {
     if (player.dead || gameState.mode !== 'playing') return false;
@@ -162,22 +169,26 @@ export class InputManager {
       case 'thrust':
         return this.isKeyDown(k.thrust) || 
                (isP1 && !isMobile && this.mouse.right) ||
-               (isP1 && isMobile && mobileController?.thrustActive);
+               (isP1 && isMobile && mobileController?.thrustActive) ||
+               (isP1 && gamepadManager.getAction('thrust'));
       
       case 'shoot':
         return this.isKeyDown(k.shoot) || 
                (isP1 && !isMobile && this.mouse.left && this.mouseReleasedSinceStart) ||
-               (isP1 && isMobile && mobileController?.shootActive);
+               (isP1 && isMobile && mobileController?.shootActive) ||
+               (isP1 && gamepadManager.getAction('shoot'));
 
       case 'brake':
-        return this.isKeyDown(k.brake);
+        return this.isKeyDown(k.brake) ||
+               (isP1 && gamepadManager.getAction('brake'));
 
       case 'missile':
-        // Specifically for mobile one-shot or keyboard edge detect
-        return false; // Handled via events/edge detect usually
+        // Handled via edge-detect in updateShipInput
+        return false;
 
       case 'barrier':
-        return (isP1 && isMobile && mobileController?.barrierActive);
+        return (isP1 && isMobile && mobileController?.barrierActive) ||
+               (isP1 && gamepadManager.getAction('barrier'));
 
       case 'up': return this.isKeyDown(k.up);
       case 'down': return this.isKeyDown(k.down);
@@ -193,7 +204,7 @@ export class InputManager {
 
   /**
    * Returns steering (yaw/pitch) deltas for a player.
-   * Merges mouse-look, keyboard turning, and mobile joysticks.
+   * Merges mouse-look, keyboard turning, mobile joysticks, and gamepad stick.
    */
   getSteeringDeltas(player, design) {
     let dy = 0, dp = 0;
@@ -231,9 +242,17 @@ export class InputManager {
       player.aimTarget = aimAssist.lastTracking.target;
     }
 
-    // 4. Aim Assist (Desktop/Keyboard)
+    // 4. Gamepad Left Stick (P1, any platform)
+    if (isP1 && gamepadManager.isConnected) {
+      const gpDeltas = gamepadManager.getSteeringDeltas(turnRate, pitchRate);
+      dy += gpDeltas.yaw;
+      dp += gpDeltas.pitch;
+    }
+
+    // 5. Aim Assist (Desktop/Keyboard — skip when gamepad provides steering)
     const isKeyboardPlayer = !(isP1 && !isMobile && document.pointerLockElement);
-    if (!isMobile && aimAssist.enabled && isKeyboardPlayer) {
+    const gpSteering = isP1 && gamepadManager.isConnected;
+    if (!isMobile && aimAssist.enabled && isKeyboardPlayer && !gpSteering) {
       const assist = aimAssist.getAssistDeltas(player.ship, enemyManager.enemies, false);
       dy += assist.yawDelta;
       dp += assist.pitchDelta;
@@ -248,6 +267,13 @@ export class InputManager {
    * Returns true if the input was consumed by a transition.
    */
   handleTransition(type, event) {
+    // Consume any pending pointer-lock request that was deferred from a gamepad
+    // resume (browsers require a trusted user-activation event).
+    if (this._pendingPointerLock && !gameState.isMobile) {
+      this._pendingPointerLock = false;
+      p.requestPointerLock();
+    }
+
     const mode = gameState.mode;
 
     if (type === 'key') {
@@ -259,6 +285,87 @@ export class InputManager {
     }
 
     return false;
+  }
+
+  /**
+   * Handles per-frame gamepad transitions (Start = pause/resume, menu navigation).
+   * Called from update() every frame after gamepadManager.update().
+   * @private
+   */
+  _handleGamepadTransitions() {
+    if (!gamepadManager.isConnected) return;
+
+    const mode = gameState.mode;
+
+    // Start button: pause / resume
+    if (gamepadManager.justPressed('str')) {
+      if (mode === 'playing') {
+        gameState.pauseGame();
+        return;
+      }
+      if (mode === 'paused') {
+        gameState.resumeGame();
+        // Flag pointer lock to be requested on the next real user gesture
+        // (browsers require trusted activation for requestPointerLock).
+        if (!gameState.isMobile) this._pendingPointerLock = true;
+        return;
+      }
+      // Advance through pre-game screens
+      if (mode === 'menu' && this._startGame) { this._startGame(1); return; }
+      if (mode === 'mission')     { gameState.mode = 'instructions'; return; }
+      if (mode === 'instructions'){ gameState.mode = 'shipselect'; return; }
+      if (mode === 'shipselect')  { this._gamepadConfirmShipSelect(); return; }
+      if (mode === 'cockpitSelection') { gameState.activatePlayingMode(); return; }
+    }
+
+    // A button: also advances screens (acts like Start on menus)
+    if (gamepadManager.justPressed('a')) {
+      if (mode === 'menu' && this._startGame) { this._startGame(1); return; }
+      if (mode === 'mission')     { gameState.mode = 'instructions'; return; }
+      if (mode === 'instructions'){ gameState.mode = 'shipselect'; return; }
+      if (mode === 'shipselect')  { this._gamepadConfirmShipSelect(); return; }
+      if (mode === 'cockpitSelection') { gameState.activatePlayingMode(); return; }
+    }
+
+    // Select button: also starts a new game from the menu
+    if (gamepadManager.justPressed('sel') && mode === 'menu' && this._startGame) {
+      this._startGame(1);
+      return;
+    }
+
+    // Ship selection: D-pad left/right cycles the ship for player 1
+    if (mode === 'shipselect') {
+      const player = gameState.players?.[0];
+      if (player && !player.ready) {
+        if (gamepadManager.justPressedDpad('left')) {
+          player.designIndex = (player.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+        }
+        if (gamepadManager.justPressedDpad('right')) {
+          player.designIndex = (player.designIndex + 1) % SHIP_DESIGNS.length;
+        }
+      }
+    }
+
+    // Weapon cycling (Y button) — only during gameplay
+    if (mode === 'playing' && gamepadManager.justPressed('y')) {
+      for (const player of (gameState.players || [])) {
+        if (player.id === 0 && !player.dead) {
+          player.weaponMode = (player.weaponMode + 1) % WEAPON_MODES.length;
+          break;
+        }
+      }
+    }
+  }
+
+  /** @private — confirm ship selection for all players via gamepad. */
+  _gamepadConfirmShipSelect() {
+    const players = gameState.players || [];
+    for (const player of players) {
+      player.ready = true;
+    }
+    if (players.length > 0) {
+      gameState.mode = 'cockpitSelection';
+    }
   }
 
   _handleKeyTransition(mode, keyCode, key) {

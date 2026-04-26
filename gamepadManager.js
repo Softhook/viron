@@ -43,10 +43,26 @@ export const GAMEPAD_MAP = {
 
 /**
  * Sensitivity scalar applied to analogue stick steering.
- * Reduces the maximum turn rate so fine control is easier.
  * A value of 1.0 = full keyboard-equivalent turn rate at full deflection.
  */
 const GAMEPAD_STICK_SENSITIVITY = 0.5;
+
+/**
+ * Exponent for the analogue stick response curve (must be > 1).
+ * Values near centre produce very little output; extremes produce full response.
+ * 2.5 gives good fine-control precision while keeping crisp maximum response.
+ */
+const GAMEPAD_STICK_EXPO = 2.5;
+
+/**
+ * Applies an exponential (power) response curve to an axis value in [-1, 1].
+ * Small deflections near centre are significantly reduced; full deflection is unchanged.
+ * @param {number} v  Axis value in the range [-1, 1].
+ * @returns {number}  Transformed value in the range [-1, 1].
+ */
+function _applyExpo(v) {
+  return Math.sign(v) * Math.pow(Math.abs(v), GAMEPAD_STICK_EXPO);
+}
 
 /**
  * Sets up a full-screen 2D orthographic overlay.
@@ -283,8 +299,8 @@ export class GamepadManager {
     if (ly === 0 && dpad.down)  ly =  1;
 
     return {
-      yaw:   -lx * turnRate * GAMEPAD_STICK_SENSITIVITY,
-      pitch:  ly * pitchRate * GAMEPAD_STICK_SENSITIVITY
+      yaw:   -_applyExpo(lx) * turnRate  * GAMEPAD_STICK_SENSITIVITY,
+      pitch: -_applyExpo(ly) * pitchRate * GAMEPAD_STICK_SENSITIVITY  // negated: push stick forward = pitch up
     };
   }
 

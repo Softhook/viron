@@ -152,18 +152,27 @@ const sketch = (inst) => {
   inst.draw = function () {
     HUD_Manager?.update();
 
-    if (gameState.mode === 'menu') { drawMenu(); return; }
-    if (gameState.mode === 'mission') { drawMission(); return; }
-    if (gameState.mode === 'instructions') { drawInstructions(); return; }
+    // Always update input (gamepad polling, button edge-detect, menu transitions).
+    // This must run before the mode-specific early returns so that gamepad
+    // button events and the toast notification work on all screens.
+    const inputStart = typeof performance !== 'undefined' ? performance.now() : 0;
+    inputManager.update();
+    const inputCost = typeof performance !== 'undefined' ? performance.now() - inputStart : 0;
+
+    if (gameState.mode === 'menu') { drawMenu(); _drawGamepadOverlays(); return; }
+    if (gameState.mode === 'mission') { drawMission(); _drawGamepadOverlays(); return; }
+    if (gameState.mode === 'instructions') { drawInstructions(); _drawGamepadOverlays(); return; }
     if (gameState.mode === 'cockpitSelection') {
       HUD_Screens?.drawCockpitSelection();
+      _drawGamepadOverlays();
       return;
     }
-    if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
-    if (gameState.mode === 'gameover') { drawGameOver(); return; }
+    if (gameState.mode === 'shipselect') { drawShipSelect(); _drawGamepadOverlays(); return; }
+    if (gameState.mode === 'gameover') { drawGameOver(); _drawGamepadOverlays(); return; }
 
     if (gameState.mode === 'paused' && !gameState.shouldCapture) {
       drawPauseScreen();
+      _drawGamepadOverlays();
       return;
     }
 
@@ -182,9 +191,8 @@ const sketch = (inst) => {
     const profiler = getVironProfiler();
     const frameStart = profiler ? performance.now() : 0;
 
-    const inputStart = profiler ? performance.now() : 0;
-    inputManager.update();
-    if (profiler) profiler.record('input', performance.now() - inputStart);
+    // inputManager.update() ran above (before mode checks); record its real cost.
+    if (profiler) profiler.record('input', inputCost);
 
     const perfScaleStart = profiler ? performance.now() : 0;
     gameRenderer.updatePerformanceScaling();

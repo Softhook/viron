@@ -20,6 +20,7 @@ import { SHIP_DESIGNS } from './shipDesigns.js';
 import { gameState } from './gameState.js';
 import { mobileController } from './mobileControls.js';
 import { drawBackgroundLandscape, setup2DViewport } from './gameRenderer.js';
+import { gamepadManager } from './gamepadManager.js';
 
 /**
  * Sets up the p.perspective p.camera and scene lights for a 3D ship preview.
@@ -245,9 +246,44 @@ export function drawInstructions() {
 
   if (gameState.isMobile) {
     _drawMobileController();
+  } else if (gamepadManager.isConnected) {
+    _drawScreenTitle('CONTROLLER CONNECTED');
+
+    const drawConfig = (title, color, items, side) => {
+      const tx = p.width * 0.25 * side;
+      const ty = p.height * UI_LAYOUT_HEADER_Y;
+      const my = ty + 40;
+      const lh = 34;
+      p.textAlign(p.CENTER, p.TOP);
+      p.textSize(UI_TYPE_HEADER * 0.7);
+      p.fill(...color, 200);
+      p.text(title, tx, ty);
+      p.textSize(UI_TYPE_BODY * 0.9);
+      p.fill(255, 255, 255, 180);
+      items.forEach((item, i) => {
+        p.text(item, tx, my + lh * i);
+      });
+    };
+
+    drawConfig('IN GAME', [200, 255, 200], [
+      'Left Stick — Steer (yaw / pitch)',
+      'R2         — Thrust',
+      'A          — Shoot',
+      'B          — Brake',
+      'X          — Fire Missile',
+      'Y          — Cycle Weapon',
+      'L1         — Barrier',
+    ], -1);
+    drawConfig('NAVIGATION', [255, 220, 100], [
+      'D-Pad      — Steer (fallback)',
+      'Start      — Pause / Resume',
+      '',
+      'On menus:',
+      'Start / A  — Advance screen',
+      'D-Pad Left/Right — Cycle ship',
+    ], 1);
   } else {
     _drawScreenTitle('HOW TO PLAY');
-
 
     const drawConfig = (title, color, items, side) => {
       const tx = p.width * 0.25 * side;

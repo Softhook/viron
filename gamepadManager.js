@@ -41,17 +41,12 @@ export const GAMEPAD_MAP = {
   SELECT: 10, START: 11, HOME: 12, STAR: 13  // STAR = the ☆ "screenshot" / share button on 8BitDo
 };
 
-const DEADZONE = 0.15;
-/** Controls the speed of the blinking dismiss hint in the info overlay. */
-const BLINK_SPEED = 0.06;
-
-function _applyDeadzone(v) {
-  const abs = Math.abs(v);
-  if (abs < DEADZONE) return 0;
-  // Rescale so the response runs continuously from 0 (at deadzone edge) to 1 (at full deflection).
-  // Without this, there is a jump from 0 to DEADZONE at the threshold, making it feel digital.
-  return (v > 0 ? 1 : -1) * (abs - DEADZONE) / (1 - DEADZONE);
-}
+/**
+ * Sensitivity scalar applied to analogue stick steering.
+ * Reduces the maximum turn rate so fine control is easier.
+ * A value of 1.0 = full keyboard-equivalent turn rate at full deflection.
+ */
+const GAMEPAD_STICK_SENSITIVITY = 0.5;
 
 /**
  * Sets up a full-screen 2D orthographic overlay.
@@ -73,13 +68,12 @@ export class GamepadManager {
     this._state        = null;
     this._prevButtons  = {};
     this._justPressed  = {};
+    this._prevDpad     = { left: false, right: false, up: false, down: false };
+    this._justDpad     = { left: false, right: false, up: false, down: false };
 
     // Toast notification
     this.toastFrames  = 0;
     this.toastMessage = '';
-
-    // Info overlay (shown briefly on first connect)
-    this._infoOverlayFrames = 0;
 
     this._boundConnect    = this._onConnect.bind(this);
     this._boundDisconnect = this._onDisconnect.bind(this);
@@ -104,7 +98,6 @@ export class GamepadManager {
       if (pads[i]) {
         this._gamepadIndex    = i;
         this._connected       = true;
-        this._infoOverlayFrames = 300; // show info panel for ~5 s
         this._showToast('CONTROLLER CONNECTED');
         console.log(`[Viron] Gamepad already connected: ${pads[i].id}`);
         break;
@@ -115,7 +108,6 @@ export class GamepadManager {
   _onConnect(e) {
     this._gamepadIndex      = e.gamepad.index;
     this._connected         = true;
-    this._infoOverlayFrames = 300;
     this._showToast('CONTROLLER CONNECTED');
     console.log(`[Viron] Gamepad connected: ${e.gamepad.id}`);
   }
@@ -127,7 +119,6 @@ export class GamepadManager {
       this._state             = null;
       this._justPressed       = {};
       this._prevButtons       = {};
-      this._infoOverlayFrames = 0;
       this._showToast('CONTROLLER DISCONNECTED');
       console.log('[Viron] Gamepad disconnected.');
     }
@@ -192,12 +183,12 @@ export class GamepadManager {
       r3:  btn(GAMEPAD_MAP.R3),
       dpad,
       ls: {
-        x: _applyDeadzone(gp.axes[GAMEPAD_MAP.LX] ?? 0),
-        y: _applyDeadzone(gp.axes[GAMEPAD_MAP.LY] ?? 0)
+        x: gp.axes[GAMEPAD_MAP.LX] ?? 0,
+        y: gp.axes[GAMEPAD_MAP.LY] ?? 0
       },
       rs: {
-        x: _applyDeadzone(gp.axes[GAMEPAD_MAP.RX] ?? 0),
-        y: _applyDeadzone(gp.axes[GAMEPAD_MAP.RY] ?? 0)
+        x: gp.axes[GAMEPAD_MAP.RX] ?? 0,
+        y: gp.axes[GAMEPAD_MAP.RY] ?? 0
       }
     };
 
@@ -222,7 +213,16 @@ export class GamepadManager {
     };
 
     if (this.toastFrames > 0) this.toastFrames--;
-    if (this._infoOverlayFrames > 0) this._infoOverlayFrames--;
+
+    // D-pad edge detection (just-pressed this frame)
+    const d = this._state.dpad;
+    this._justDpad = {
+      left:  d.left  && !this._prevDpad.left,
+      right: d.right && !this._prevDpad.right,
+      up:    d.up    && !this._prevDpad.up,
+      down:  d.down  && !this._prevDpad.down,
+    };
+    this._prevDpad = { left: d.left, right: d.right, up: d.up, down: d.down };
   }
 
   // ---------------------------------------------------------------------------
@@ -237,6 +237,14 @@ export class GamepadManager {
   /** True if the named button was newly pressed this frame (edge-detect). */
   justPressed(btnName) {
     return this._justPressed ? (this._justPressed[btnName] === true) : false;
+  }
+
+  /**
+   * True if the given D-pad direction was newly pressed this frame.
+   * @param {'left'|'right'|'up'|'down'} dir
+   */
+  justPressedDpad(dir) {
+    return this._justDpad ? (this._justDpad[dir] === true) : false;
   }
 
   /**
@@ -275,8 +283,8 @@ export class GamepadManager {
     if (ly === 0 && dpad.down)  ly =  1;
 
     return {
-      yaw:   -lx * turnRate,
-      pitch:  ly * pitchRate
+      yaw:   -lx * turnRate * GAMEPAD_STICK_SENSITIVITY,
+      pitch:  ly * pitchRate * GAMEPAD_STICK_SENSITIVITY
     };
   }
 
@@ -286,19 +294,12 @@ export class GamepadManager {
   // ---------------------------------------------------------------------------
 
   /**
-   * Draws transient gamepad HUD events in a single p5 push/pop:
-   *   • Toast notification (connect / disconnect)
-   *   • Full controller info panel (shown for ~5 s after connecting)
-   *
-   * The persistent controller indicator is drawn by drawPlayerHUD() in
-   * hudComponents.js as part of the normal in-game HUD.
-   *
-   * Call once per frame after 3-D rendering is complete.
+   * Draws a brief toast notification (connect / disconnect) using a p5
+   * orthographic 2D overlay.  Call once per frame after 3-D rendering.
+   * The full controller mapping is shown on the Instructions screen instead.
    */
   drawHUD() {
-    const needToast   = this.toastFrames > 0;
-    const needOverlay = this._infoOverlayFrames > 0;
-    if (!needToast && !needOverlay) return;
+    if (this.toastFrames <= 0) return;
 
     _setup2DOverlay();
     const gl = p.drawingContext;
@@ -306,15 +307,13 @@ export class GamepadManager {
 
     const w = p.width;
     const h = p.height;
-    // Shift origin to top-left so coordinates match screen pixels
     p.translate(-w / 2, -h / 2, 0);
 
     p.noStroke();
     p.textAlign(p.CENTER, p.CENTER);
     if (gameState && gameState.gameFont) p.textFont(gameState.gameFont);
 
-    if (needToast)   this._drawToast(w, h);
-    if (needOverlay) this._drawInfoOverlay(w, h);
+    this._drawToast(w, h);
 
     gl.enable(gl.DEPTH_TEST);
     p.pop();
@@ -350,85 +349,6 @@ export class GamepadManager {
     p.fill(200, 255, 200, alpha);
     p.textAlign(p.CENTER, p.CENTER);
     p.text(msg, cx, cy);
-  }
-
-  /** @private — full mapping info panel */
-  _drawInfoOverlay(w, h) {
-    const t     = this._infoOverlayFrames;
-    const alpha = Math.round(255 * Math.min(t / 30, 1) * Math.min((300 - t) / 30 + 1, 1));
-    if (alpha <= 0) return;
-
-    const cx = w / 2;
-    const cy = h / 2;
-    const bw = Math.min(540, w - 40);
-    const bh = 320;
-    const bx = cx - bw / 2;
-    const by = cy - bh / 2;
-
-    // Panel background
-    p.noStroke();
-    p.fill(0, 0, 0, alpha * 0.88);
-    p.rect(bx, by, bw, bh, 14);
-
-    // Panel border
-    p.stroke(0, 200, 100, alpha);
-    p.strokeWeight(2);
-    p.noFill();
-    p.rect(bx, by, bw, bh, 14);
-
-    // Title
-    p.noStroke();
-    p.fill(0, 255, 150, alpha);
-    p.textSize(24);
-    p.textAlign(p.CENTER, p.TOP);
-    p.text('CONTROLLER DETECTED', cx, by + 16);
-
-    // Sub-title
-    p.fill(160, 160, 160, alpha);
-    p.textSize(13);
-    p.text('8BitDo Pro 2 / Ultimate - Default Mapping', cx, by + 50);
-
-    // Mapping table — two columns
-    const mappings = [
-      ['Left Stick', 'Steer (yaw/pitch)'],
-      ['R2',         'Thrust'],
-      ['A',          'Shoot'],
-      ['X',          'Fire missile'],
-      ['Y',          'Cycle weapon'],
-      ['B',          'Brake'],
-      ['L1',         'Barrier'],
-      ['D-Pad',      'Steer (fallback)'],
-      ['Start',      'Pause/Resume'],
-    ];
-
-    const colW   = bw / 2 - 30;
-    const rowH   = 26;
-    const startY = by + 80;
-
-    p.textSize(13);
-    mappings.forEach(([key, desc], i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const tx  = bx + 20 + col * (colW + 20);
-      const ty  = startY + row * rowH;
-
-      p.fill(0, 220, 120, alpha);
-      p.textAlign(p.LEFT, p.TOP);
-      p.text(key, tx, ty);
-
-      p.fill(210, 210, 210, alpha);
-      p.text('  - ' + desc, tx + p.textWidth(key), ty);
-    });
-
-    // Dismiss hint (blinking)
-    const blink = Math.round(alpha * Math.abs(Math.sin(p.frameCount * BLINK_SPEED)));
-    p.fill(110, 110, 110, blink);
-    p.textSize(11);
-    p.textAlign(p.CENTER, p.BOTTOM);
-    p.text('(closes automatically)', cx, by + bh - 10);
-
-    // Reset textAlign for callers
-    p.textAlign(p.CENTER, p.CENTER);
   }
 }
 

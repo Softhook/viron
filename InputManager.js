@@ -11,6 +11,7 @@ import { gameState } from './gameState.js';
 import { p } from './p5Context.js';
 import { mobileController } from './mobileControls.js';
 import { WEAPON_MODES, YAW_RATE, PITCH_RATE, MOUSE_SENSITIVITY, MOUSE_SMOOTHING } from './constants.js';
+import { SHIP_DESIGNS } from './shipDesigns.js';
 import { aimAssist } from './aimAssist.js';
 import { enemyManager } from './enemies.js';
 import { gamepadManager } from './gamepadManager.js';
@@ -304,6 +305,16 @@ export class InputManager {
       if (mode === 'menu' && this._startGame) { this._startGame(1); return; }
       if (mode === 'mission')     { gameState.mode = 'instructions'; return; }
       if (mode === 'instructions'){ gameState.mode = 'shipselect'; return; }
+      if (mode === 'shipselect')  { this._gamepadConfirmShipSelect(); return; }
+      if (mode === 'cockpitSelection') { gameState.activatePlayingMode(); return; }
+    }
+
+    // A button: also advances screens (acts like Start on menus)
+    if (gamepadManager.justPressed('a')) {
+      if (mode === 'menu' && this._startGame) { this._startGame(1); return; }
+      if (mode === 'mission')     { gameState.mode = 'instructions'; return; }
+      if (mode === 'instructions'){ gameState.mode = 'shipselect'; return; }
+      if (mode === 'shipselect')  { this._gamepadConfirmShipSelect(); return; }
       if (mode === 'cockpitSelection') { gameState.activatePlayingMode(); return; }
     }
 
@@ -311,6 +322,19 @@ export class InputManager {
     if (gamepadManager.justPressed('sel') && mode === 'menu' && this._startGame) {
       this._startGame(1);
       return;
+    }
+
+    // Ship selection: D-pad left/right cycles the ship for player 1
+    if (mode === 'shipselect') {
+      const player = gameState.players?.[0];
+      if (player && !player.ready) {
+        if (gamepadManager.justPressedDpad('left')) {
+          player.designIndex = (player.designIndex - 1 + SHIP_DESIGNS.length) % SHIP_DESIGNS.length;
+        }
+        if (gamepadManager.justPressedDpad('right')) {
+          player.designIndex = (player.designIndex + 1) % SHIP_DESIGNS.length;
+        }
+      }
     }
 
     // Weapon cycling (Y button) — only during gameplay
@@ -321,6 +345,17 @@ export class InputManager {
           break;
         }
       }
+    }
+  }
+
+  /** @private — confirm ship selection for all players via gamepad. */
+  _gamepadConfirmShipSelect() {
+    const players = gameState.players || [];
+    for (const player of players) {
+      player.ready = true;
+    }
+    if (players.length > 0) {
+      gameState.mode = 'cockpitSelection';
     }
   }
 

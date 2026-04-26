@@ -209,27 +209,27 @@ function spawnProjectileOffset(s, power, life, yawOffset, pitchOffset = 0) {
 
 /**
  * Fires the player's normal weapon pattern.
- * Pattern is controlled by p.normalShotMode and can be upgraded by powerups.
+ * Pattern is controlled by player.normalShotMode and can be upgraded by powerups.
  */
-function fireNormalPattern(p, s) {
-  const ship = s || p.ship;
-  const mode = p.normalShotMode || 'single';
+function fireNormalPattern(player, s) {
+  const ship = s || player.ship;
+  const mode = player.normalShotMode || 'single';
   const power = 25;
   const life = 1000;
 
   if (mode === 'double') {
-    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.055));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.055));
+    player.bullets.push(spawnProjectileOffset(ship, power, life, -0.055));
+    player.bullets.push(spawnProjectileOffset(ship, power, life, 0.055));
   } else if (mode === 'triple') {
-    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.08));
-    p.bullets.push(spawnProjectile(ship, power, life));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.08));
+    player.bullets.push(spawnProjectileOffset(ship, power, life, -0.08));
+    player.bullets.push(spawnProjectile(ship, power, life));
+    player.bullets.push(spawnProjectileOffset(ship, power, life, 0.08));
   } else if (mode === 'spread') {
-    p.bullets.push(spawnProjectileOffset(ship, power, life, -0.05 + p.random(-0.03, 0.03)));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, p.random(-0.025, 0.025)));
-    p.bullets.push(spawnProjectileOffset(ship, power, life, 0.05 + p.random(-0.03, 0.03)));
+    player.bullets.push(spawnProjectileOffset(ship, power, life, -0.05 + p.random(-0.03, 0.03)));
+    player.bullets.push(spawnProjectileOffset(ship, power, life, p.random(-0.025, 0.025)));
+    player.bullets.push(spawnProjectileOffset(ship, power, life, 0.05 + p.random(-0.03, 0.03)));
   } else {
-    p.bullets.push(spawnProjectile(ship, power, life));
+    player.bullets.push(spawnProjectile(ship, power, life));
   }
 
   gameSFX?.playShot(ship.x, ship.y, ship.z);

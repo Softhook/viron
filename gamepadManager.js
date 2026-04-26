@@ -46,7 +46,11 @@ const DEADZONE = 0.15;
 const BLINK_SPEED = 0.06;
 
 function _applyDeadzone(v) {
-  return Math.abs(v) < DEADZONE ? 0 : v;
+  const abs = Math.abs(v);
+  if (abs < DEADZONE) return 0;
+  // Rescale so the response runs continuously from 0 (at deadzone edge) to 1 (at full deflection).
+  // Without this, there is a jump from 0 to DEADZONE at the threshold, making it feel digital.
+  return (v > 0 ? 1 : -1) * (abs - DEADZONE) / (1 - DEADZONE);
 }
 
 /**
@@ -282,18 +286,19 @@ export class GamepadManager {
   // ---------------------------------------------------------------------------
 
   /**
-   * Draws all gamepad HUD overlays in a single p5 push/pop:
+   * Draws transient gamepad HUD events in a single p5 push/pop:
    *   • Toast notification (connect / disconnect)
-   *   • Persistent controller indicator (top-right corner)
    *   • Full controller info panel (shown for ~5 s after connecting)
+   *
+   * The persistent controller indicator is drawn by drawPlayerHUD() in
+   * hudComponents.js as part of the normal in-game HUD.
    *
    * Call once per frame after 3-D rendering is complete.
    */
   drawHUD() {
     const needToast   = this.toastFrames > 0;
-    const needIcon    = this._connected;
     const needOverlay = this._infoOverlayFrames > 0;
-    if (!needToast && !needIcon && !needOverlay) return;
+    if (!needToast && !needOverlay) return;
 
     _setup2DOverlay();
     const gl = p.drawingContext;
@@ -309,7 +314,6 @@ export class GamepadManager {
     if (gameState && gameState.gameFont) p.textFont(gameState.gameFont);
 
     if (needToast)   this._drawToast(w, h);
-    if (needIcon)    this._drawControllerIcon(w, h);
     if (needOverlay) this._drawInfoOverlay(w, h);
 
     gl.enable(gl.DEPTH_TEST);
@@ -346,15 +350,6 @@ export class GamepadManager {
     p.fill(200, 255, 200, alpha);
     p.textAlign(p.CENTER, p.CENTER);
     p.text(msg, cx, cy);
-  }
-
-  /** @private — small [CTRL] badge in the top-right corner */
-  _drawControllerIcon(w, h) {
-    p.noStroke();
-    p.textSize(14);
-    p.fill(0, 220, 120, 215);
-    p.textAlign(p.RIGHT, p.TOP);
-    p.text('[CTRL]', w - 10, 10);
   }
 
   /** @private — full mapping info panel */

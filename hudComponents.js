@@ -13,6 +13,7 @@ import {
 import { gameState } from './gameState.js';
 import { enemyManager } from './enemies.js';
 import { infection, SEA, NORMAL_SHOT_MODE_LABELS, CHUNK_SIZE, TILE, chunkKey, toTile } from './constants.js';
+import { gamepadManager } from './gamepadManager.js';
 
 const HUD_STATS = [
   { label: 'SCORE', color: [255, 255, 255], size: 20, py: 8, getVal: player => player.score },
@@ -22,6 +23,10 @@ const HUD_STATS = [
   { label: 'MISSILES', color: [0, 200, 255], size: 14, py: 90, getVal: player => player.missilesRemaining },
   { label: 'SHOT', color: [220, 220, 220], size: 14, py: 108, getVal: player => (NORMAL_SHOT_MODE_LABELS[player.normalShotMode] || 'SINGLE') }
 ];
+
+// Position of the gamepad indicator within the HUD stats column (left-aligned, below SHOT stat).
+const CTRL_INDICATOR_X_OFFSET = 14;
+const CTRL_INDICATOR_Y_OFFSET = 126;
 
 const HUD_STATS_BY_SIZE = (() => {
   const groups = new Map();
@@ -182,6 +187,15 @@ export function drawPlayerHUD(player, pi, viewW, viewH) {
   drawRadarForPlayer(player, hw, h);
   if (!gameState.isMobile) {
     _drawWeaponSelector(player, h);
+  }
+
+  // Controller indicator — shown as part of the HUD when a gamepad is connected.
+  if (gamepadManager.isConnected) {
+    p.noStroke();
+    p.textSize(14);
+    p.fill(0, 220, 120, 200);
+    p.textAlign(p.LEFT, p.TOP);
+    p.text('[CTRL]', -hw / 2 + CTRL_INDICATOR_X_OFFSET, -h / 2 + CTRL_INDICATOR_Y_OFFSET);
   }
 
   p.pop();

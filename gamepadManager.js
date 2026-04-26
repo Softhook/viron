@@ -159,6 +159,10 @@ export class GamepadManager {
    * Must be called once per draw frame (before any action / steering queries).
    */
   update() {
+    // Tick down the toast timer regardless of connection state so
+    // the "CONTROLLER DISCONNECTED" message clears itself correctly.
+    if (this.toastFrames > 0) this.toastFrames--;
+
     if (!this._connected || this._gamepadIndex < 0) {
       this._state = null;
       return;
@@ -166,7 +170,12 @@ export class GamepadManager {
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const gp   = pads[this._gamepadIndex];
-    if (!gp) return;
+    if (!gp) {
+      this._state = null;
+      this._connected = false;
+      this._gamepadIndex = -1;
+      return;
+    }
 
     const btn = (idx) => gp.buttons[idx] || { pressed: false, value: 0 };
 
@@ -227,8 +236,6 @@ export class GamepadManager {
       str: this._state.str.pressed,
       sel: this._state.sel.pressed,
     };
-
-    if (this.toastFrames > 0) this.toastFrames--;
 
     // D-pad edge detection (just-pressed this frame)
     const d = this._state.dpad;
@@ -292,11 +299,15 @@ export class GamepadManager {
     let lx = ls.x;
     let ly = ls.y;
 
+    const dpadDeadzone = 0.1;
+    const lxCentered = Math.abs(lx) < dpadDeadzone;
+    const lyCentered = Math.abs(ly) < dpadDeadzone;
+
     // D-Pad supplements analog when stick is centred
-    if (lx === 0 && dpad.left)  lx = -1;
-    if (lx === 0 && dpad.right) lx =  1;
-    if (ly === 0 && dpad.up)    ly = -1;
-    if (ly === 0 && dpad.down)  ly =  1;
+    if (lxCentered && dpad.left)  lx = -1;
+    if (lxCentered && dpad.right) lx =  1;
+    if (lyCentered && dpad.up)    ly = -1;
+    if (lyCentered && dpad.down)  ly =  1;
 
     return {
       yaw:   -_applyExpo(lx) * turnRate  * GAMEPAD_STICK_SENSITIVITY,

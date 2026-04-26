@@ -189,8 +189,9 @@ export function drawPlayerHUD(player, pi, viewW, viewH) {
     _drawWeaponSelector(player, h);
   }
 
-  // Controller indicator — shown as part of the HUD when a gamepad is connected.
-  if (gamepadManager.isConnected) {
+  // Controller indicator — shown as part of the HUD when a gamepad is connected,
+  // but only for player 1 (id 0) since gamepad input is always routed to P1.
+  if (gamepadManager.isConnected && player.id === 0) {
     p.noStroke();
     p.textSize(14);
     p.fill(0, 220, 120, 200);

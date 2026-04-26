@@ -267,6 +267,13 @@ export class InputManager {
    * Returns true if the input was consumed by a transition.
    */
   handleTransition(type, event) {
+    // Consume any pending pointer-lock request that was deferred from a gamepad
+    // resume (browsers require a trusted user-activation event).
+    if (this._pendingPointerLock && !gameState.isMobile) {
+      this._pendingPointerLock = false;
+      p.requestPointerLock();
+    }
+
     const mode = gameState.mode;
 
     if (type === 'key') {
@@ -298,7 +305,9 @@ export class InputManager {
       }
       if (mode === 'paused') {
         gameState.resumeGame();
-        if (!gameState.isMobile) p.requestPointerLock();
+        // Flag pointer lock to be requested on the next real user gesture
+        // (browsers require trusted activation for requestPointerLock).
+        if (!gameState.isMobile) this._pendingPointerLock = true;
         return;
       }
       // Advance through pre-game screens

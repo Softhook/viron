@@ -155,9 +155,16 @@ const sketch = (inst) => {
     // Always update input (gamepad polling, button edge-detect, menu transitions).
     // This must run before the mode-specific early returns so that gamepad
     // button events and the toast notification work on all screens.
-    const inputStart = typeof performance !== 'undefined' ? performance.now() : 0;
-    inputManager.update();
-    const inputCost = typeof performance !== 'undefined' ? performance.now() - inputStart : 0;
+    // Only measure the cost when the profiler is active to avoid per-frame overhead.
+    const profiler = getVironProfiler();
+    let inputCost = 0;
+    if (profiler && typeof performance !== 'undefined') {
+      const inputStart = performance.now();
+      inputManager.update();
+      inputCost = performance.now() - inputStart;
+    } else {
+      inputManager.update();
+    }
 
     if (gameState.mode === 'menu') { drawMenu(); _drawGamepadOverlays(); return; }
     if (gameState.mode === 'mission') { drawMission(); _drawGamepadOverlays(); return; }
@@ -188,7 +195,6 @@ const sketch = (inst) => {
       }
     }
 
-    const profiler = getVironProfiler();
     const frameStart = profiler ? performance.now() : 0;
 
     // inputManager.update() ran above (before mode checks); record its real cost.

@@ -52,6 +52,7 @@ import {
 } from './projectiles.js';
 import { clearInfectionRadius as clearInfectionRadiusImpl } from './utils.js';
 import { gameRenderer, setSceneLighting } from './gameRenderer.js';
+import { enemyManager } from './enemies.js';
 
 /** Fallback ship-design object used when the player's designIndex has no entry in SHIP_DESIGNS. */
 const DEFAULT_SHIP_DESIGN = { turnRate: YAW_RATE, pitchRate: PITCH_RATE, thrust: 0.45, mass: 1.0 };

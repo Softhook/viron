@@ -17,6 +17,7 @@ import { inputManager } from './InputManager.js';
 import { enemyManager } from './enemies.js';
 import { terrain } from './terrain.js';
 import { mobileController, handleTouchStarted, shouldRequestFullscreen } from './mobileControls.js';
+import { gamepadManager } from './gamepadManager.js';
 import { aimAssist } from './aimAssist.js';
 import { particleSystem } from './particles.js';
 import { villagerManager } from './villagers.js';
@@ -48,6 +49,19 @@ function _handlePauseScreenHit(mx, my) {
   if (cx > -140 && cx < 140 && cy > -10 && cy < 50) return 'resume';
   if (cx > -140 && cx < 140 && cy > 90 && cy < 150) return 'restart';
   return null;
+}
+
+/**
+ * Draws all gamepad-related HUD overlays onto the raw 2D canvas:
+ *   • Toast notification (connect / disconnect)
+ *   • Persistent controller icon (top-right corner)
+ *   • Full controller info panel (shown for ~5 s after connecting)
+ * Uses the raw drawingContext so it works safely inside a WEBGL p5 sketch.
+ */
+function _drawGamepadOverlays(ctx, w, h) {
+  gamepadManager.drawToast(ctx, w, h);
+  gamepadManager.drawControllerIndicator(ctx, w, h);
+  gamepadManager.drawControllerInfoOverlay(ctx, w, h);
 }
 
 export function spawnYellowCrab(wx = undefined, wz = undefined) {
@@ -143,18 +157,20 @@ const sketch = (inst) => {
   inst.draw = function () {
     HUD_Manager?.update();
 
-    if (gameState.mode === 'menu') { drawMenu(); return; }
-    if (gameState.mode === 'mission') { drawMission(); return; }
-    if (gameState.mode === 'instructions') { drawInstructions(); return; }
+    if (gameState.mode === 'menu') { drawMenu(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
+    if (gameState.mode === 'mission') { drawMission(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
+    if (gameState.mode === 'instructions') { drawInstructions(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
     if (gameState.mode === 'cockpitSelection') {
       HUD_Screens?.drawCockpitSelection();
+      _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height);
       return;
     }
-    if (gameState.mode === 'shipselect') { drawShipSelect(); return; }
-    if (gameState.mode === 'gameover') { drawGameOver(); return; }
+    if (gameState.mode === 'shipselect') { drawShipSelect(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
+    if (gameState.mode === 'gameover') { drawGameOver(); _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height); return; }
 
     if (gameState.mode === 'paused' && !gameState.shouldCapture) {
       drawPauseScreen();
+      _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height);
       return;
     }
 
@@ -215,6 +231,9 @@ const sketch = (inst) => {
     if (gameState.mode === 'paused') {
       drawPauseScreen();
     }
+
+    // Gamepad HUD overlays (toast + small icon + info panel on connect)
+    _drawGamepadOverlays(inst.drawingContext, inst.width, inst.height);
 
     if (profiler) profiler.frameEnd(performance.now() - frameStart);
   };

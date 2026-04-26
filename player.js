@@ -44,6 +44,7 @@ import { terrain } from './terrain.js';
 import { particleSystem } from './particles.js';
 import { gameSFX } from './sfx.js';
 import { inputManager } from './InputManager.js';
+import { gamepadManager } from './gamepadManager.js';
 import { physicsEngine } from './PhysicsEngine.js';
 import {
   renderProjectiles as renderProjectilesImpl,
@@ -669,6 +670,11 @@ export function updateShipInput(p) {
     } else if (!isMissilePressed) {
       p.mobileMissilePressed = false;
     }
+  }
+
+  // Gamepad X button: fire missile (edge-detect, player 1 only)
+  if (p.id === 0 && gamepadManager.isConnected && gamepadManager.justPressed('x')) {
+    p.fireMissile();
   }
 
   // Sustained thrust sound

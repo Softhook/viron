@@ -266,13 +266,13 @@ export function drawInstructions() {
     };
 
     drawConfig('IN GAME', [200, 255, 200], [
-      'Left Stick — Steer (yaw / pitch)',
-      'R2         — Thrust',
-      'A          — Shoot',
-      'B          — Brake',
-      'X          — Fire Missile',
-      'Y          — Cycle Weapon',
-      'L1         — Barrier',
+      'Left Stick  — Steer (yaw / pitch)',
+      'Right Trigger — Thrust (analog)',
+      'A           — Shoot',
+      'B           — Brake',
+      'X           — Fire Missile',
+      'Y           — Cycle Weapon',
+      'LB          — Barrier',
     ], -1);
     drawConfig('NAVIGATION', [255, 220, 100], [
       'D-Pad      — Steer (fallback)',

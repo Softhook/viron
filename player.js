@@ -525,9 +525,9 @@ export function shipDisplay(s, tintColor) {
     p.endShape(p.CLOSE);
   };
 
-  let isPushing = false;
+  let isPushing = 0;
   if (shipPlayer) {
-    isPushing = inputManager.getActionActive(shipPlayer, 'thrust');
+    isPushing = inputManager.getActionActive(shipPlayer, 'thrust'); // 0.0–1.0
   }
 
   let flamePoints = [], thrustAngle = 0;
@@ -560,7 +560,7 @@ export function shipDisplay(s, tintColor) {
       p.rotateX(s.pitch + thrustAngle);
 
       let flicker = 1.0 + Math.sin(p.frameCount * 0.8) * 0.15;
-      let power = isPushing ? 1.0 : 0.3;
+      let power = isPushing > 0 ? (0.3 + 0.7 * isPushing) : 0.3;  // scale flame with analog thrust
       p.noStroke();
 
       // Cone 1: Hot Core
@@ -570,7 +570,7 @@ export function shipDisplay(s, tintColor) {
       p.translate(0, h1 / 2, 0);
       p.specularMaterial(255);
       p.shininess(60);
-      p.fill(isPushing ? 200 : 80, 230, 255, isPushing ? 255 : 180);
+      p.fill(isPushing > 0.3 ? 200 : 80, 230, 255, isPushing > 0.3 ? 255 : 180);
       p.cone(4 * power * flicker, h1, 8);
       p.pop();
 
@@ -580,11 +580,11 @@ export function shipDisplay(s, tintColor) {
       p.translate(0, h2 / 2 + 5 * power, 0); // Start slightly further out
       p.specularMaterial(255);
       p.shininess(40);
-      p.fill(50, 150, 255, isPushing ? 200 : 80);
+      p.fill(50, 150, 255, isPushing > 0.3 ? 200 : 80);
       p.cone(7 * power * flicker, h2, 8);
       p.pop();
 
-      if (isPushing) {
+      if (isPushing > 0.5) {
         // Outer Exhaust Glow
         let h3 = 50 * flicker;
         p.push();

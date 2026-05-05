@@ -51,7 +51,7 @@ export class Vehicle {
   /**
    * Main physics integration step.
    * @param {object} design  Ship design parameters (turnRate, thrust, mass, etc.)
-   * @param {object} inputs  Active input states (thrust, brake)
+   * @param {object} inputs  Active input states (thrust: 0.0–1.0, brake: boolean)
    * @param {object} deltas  Steering deltas (yaw, pitch)
    */
   update(design, inputs, deltas) {
@@ -67,9 +67,10 @@ export class Vehicle {
 
   /**
    * Ground-vehicle movement model.
+   * @param {number} thrustAmount  Thrust intensity 0.0–1.0 (0 = idle, 1 = full power).
    * @private
    */
-  _updateGround(d, isThrusting, isBraking) {
+  _updateGround(d, thrustAmount, isBraking) {
     const m = d.mass || 1.0;
     this.y += this.vy;
     
@@ -96,8 +97,8 @@ export class Vehicle {
       }
     }
 
-    if (isThrusting) {
-      const pw = (d.thrust || 0.45) / m;
+    if (thrustAmount > 0) {
+      const pw = (d.thrust || 0.45) / m * thrustAmount;
       const dVec = this.getThrustVector(d);
       this.vx += dVec.x * pw;
       this.vz += dVec.z * pw;
@@ -109,7 +110,7 @@ export class Vehicle {
       this.vx *= br; this.vz *= br;
     }
 
-    const groundFriction = isThrusting ? 0.95 : 0.85;
+    const groundFriction = thrustAmount > 0 ? 0.95 : 0.85;
     this.vx *= groundFriction; this.vz *= groundFriction;
     if (Math.abs(this.vx) < 0.05) this.vx = 0;
     if (Math.abs(this.vz) < 0.05) this.vz = 0;
@@ -126,9 +127,10 @@ export class Vehicle {
 
   /**
    * Airborne movement model.
+   * @param {number} thrustAmount  Thrust intensity 0.0–1.0 (0 = idle, 1 = full power).
    * @private
    */
-  _updateAir(d, isThrusting, isBraking) {
+  _updateAir(d, thrustAmount, isBraking) {
     const m = d.mass || 1.0;
     this.vy += GRAV;
 
@@ -147,8 +149,8 @@ export class Vehicle {
       currentDrag -= (fSpd * INDUCED_DRAG * 0.01);
     }
 
-    if (isThrusting) {
-      const pw = (d.thrust || 0.45) / m;
+    if (thrustAmount > 0) {
+      const pw = (d.thrust || 0.45) / m * thrustAmount;
       const dVec = this.getThrustVector(d);
       this.vx += dVec.x * pw;
       this.vy += dVec.y * pw;

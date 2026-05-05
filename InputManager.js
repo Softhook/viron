@@ -166,11 +166,14 @@ export class InputManager {
     const isMobile = this.isMobile;
 
     switch (action) {
-      case 'thrust':
-        return this.isKeyDown(k.thrust) || 
-               (isP1 && !isMobile && this.mouse.right) ||
-               (isP1 && isMobile && mobileController?.thrustActive) ||
-               (isP1 && gamepadManager.getAction('thrust'));
+      case 'thrust': {
+        // Analog thrust: keyboard/mouse/mobile → 1.0, gamepad → 0.0–1.0
+        const kbThrust  = this.isKeyDown(k.thrust) ? 1 : 0;
+        const msThrust  = (isP1 && !isMobile && this.mouse.right) ? 1 : 0;
+        const mobThrust = (isP1 && isMobile && mobileController?.thrustActive) ? 1 : 0;
+        const gpThrust  = isP1 ? gamepadManager.getAction('thrust') : 0; // returns 0.0–1.0
+        return Math.max(kbThrust, msThrust, mobThrust, gpThrust);
+      }
       
       case 'shoot':
         return this.isKeyDown(k.shoot) || 

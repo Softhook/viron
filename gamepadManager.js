@@ -1,18 +1,42 @@
 /**
- * GamepadManager — 8BitDo Pro 2 / Ultimate / "Pro 3" controller integration.
+ * GamepadManager — Universal gamepad integration for Viron.
  *
- * Control scheme for Viron:
- *   Left Stick  — steer the ship (yaw left/right, pitch up/down)
- *   R2          — thrust
- *   A  (btn 0)  — primary weapon (shoot)
- *   B  (btn 1)  — brake
- *   X  (btn 3)  — fire missile (edge-detect, one shot per press)
- *   Y  (btn 4)  — cycle weapon mode (edge-detect)
- *   L1 (btn 6)  — barrier weapon
- *   Start       — pause / resume the game
- *   D-Pad       — supplementary steering (overrides stick when stick is centred)
+ * Supports two mapping modes, detected automatically each frame:
  *
- * @exports   GAMEPAD_MAP       — raw button/axis index constants
+ *   STANDARD  (gp.mapping === "standard")
+ *     Xbox, PlayStation, Switch Pro, 8BitDo X-mode, and most modern pads.
+ *     Uses the W3C Standard Gamepad button/axis indices.
+ *
+ *   DIRECT  (everything else — 8BitDo D-mode, generic DirectInput)
+ *     Button and axis indices differ from the standard layout.
+ *     R2 is an analog axis (not a button), D-pad is a HAT axis, etc.
+ *
+ * Control scheme for Viron (physical labels):
+ *   Left Stick   — steer the ship (yaw left/right, pitch up/down)
+ *   R2 / RT      — analog thrust (0.0→1.0 on analog triggers, digital 0/1 otherwise)
+ *   A  (btn 0)   — primary weapon (shoot)
+ *   B  (btn 1)   — brake
+ *   X            — fire missile (edge-detect, one shot per press)
+ *   Y            — cycle weapon mode (edge-detect)
+ *   L1 / LB      — barrier weapon
+ *   Start        — pause / resume the game
+ *   D-Pad        — supplementary steering (overrides stick when centred)
+ *
+ * Standard Gamepad button layout (W3C):
+ *   0:A  1:B  2:X  3:Y  4:LB  5:RB  6:LT  7:RT
+ *   8:Back/Select  9:Start  10:L3  11:R3
+ *   12:D-Up  13:D-Down  14:D-Left  15:D-Right  16:Home
+ *
+ * Standard Gamepad axes:
+ *   0:LX  1:LY  2:RX  3:RY
+ *
+ * DirectInput (8BitDo D-mode) button layout:
+ *   0:A  1:B  2:Pr  3:X  4:Y  5:Pl  6:L1  7:R1
+ *   8:L2(digital)  9:R2(digital)  10:Select  11:Start  12:Home  13:Star
+ *
+ * DirectInput axes:
+ *   0:LX  1:LY  2:RX  3:L2(analog)  4:R2(analog)  5:RY  9:HAT(D-pad)
+ *
  * @exports   GamepadManager    — class definition
  * @exports   gamepadManager    — singleton
  */
@@ -20,26 +44,43 @@
 import { p } from './p5Context.js';
 import { gameState } from './gameState.js';
 
-/** Raw button and axis indices for the 8BitDo Pro 2 / Ultimate. */
-export const GAMEPAD_MAP = {
-  // Face buttons
-  A: 0, B: 1, X: 3, Y: 4,
-
-  // Triggers & paddles
-  L1: 6, R1: 7,
-  L2: 8, R2: 9,
-  L4: 16, R4: 17,
-  Pl: 5, Pr: 2,
-
-  // Sticks & D-Pad
-  LX: 0, LY: 1,
-  RX: 2, RY: 5,
+// ---------------------------------------------------------------------------
+// Standard Gamepad button indices (W3C "standard" mapping)
+// ---------------------------------------------------------------------------
+const STD_BTN = {
+  A: 0,  B: 1,  X: 2,  Y: 3,
+  LB: 4, RB: 5, LT: 6, RT: 7,
+  BACK: 8, START: 9,
   L3: 10, R3: 11,
-  HAT: 9,
-
-  // Utility
-  SELECT: 10, START: 11, HOME: 12, STAR: 13  // STAR = the ☆ "screenshot" / share button on 8BitDo
+  D_UP: 12, D_DOWN: 13, D_LEFT: 14, D_RIGHT: 15,
+  HOME: 16
 };
+const STD_AXIS = { LX: 0, LY: 1, RX: 2, RY: 3 };
+
+// ---------------------------------------------------------------------------
+// DirectInput button indices (8BitDo D-mode / generic DirectInput)
+// ---------------------------------------------------------------------------
+const DI_BTN = {
+  A: 0,  B: 1,  Pr: 2,  X: 3,  Y: 4,  Pl: 5,
+  L1: 6, R1: 7,
+  L2: 8, R2: 9,      // digital click of the triggers
+  BACK: 10, START: 11,
+  HOME: 12, STAR: 13,
+  L3: 10, R3: 11     // L3/R3 share indices with Select/Start on 8BitDo D-mode
+};
+const DI_AXIS = {
+  LX: 0, LY: 1,
+  RX: 2, RY: 5,      // RY is axis 5, not 3
+  L2: 3, R2: 4,      // analog trigger axes (-1 rest → +1 full)
+  HAT: 9             // D-pad as single HAT axis
+};
+
+// ---------------------------------------------------------------------------
+// Tuning constants
+// ---------------------------------------------------------------------------
+
+/** Deadzone threshold — axis values below this are treated as zero. */
+const DEADZONE = 0.12;
 
 /**
  * Sensitivity scalar applied to analogue stick steering.
@@ -65,6 +106,42 @@ function _applyExpo(v) {
 }
 
 /**
+ * Applies deadzone to an axis value.  Returns 0 if within the deadzone.
+ * @param {number} v  Raw axis value.
+ * @returns {number}
+ */
+function _dz(v) {
+  return Math.abs(v) < DEADZONE ? 0 : v;
+}
+
+/**
+ * Converts a D-mode trigger axis from [-1, +1] to [0, 1].
+ * The 8BitDo D-mode triggers rest at -1 (released) and go to +1 (fully pressed).
+ * @param {number} v  Raw axis value in [-1, 1].
+ * @returns {number}  Normalised value in [0, 1].
+ */
+function _normTriggerAxis(v) {
+  return Math.max(0, Math.min(1, (v + 1) / 2));
+}
+
+/**
+ * Decodes the D-mode HAT axis into individual D-pad booleans.
+ * The HAT axis encodes direction as a single float value.
+ * @param {number} h  HAT axis value.
+ * @returns {{ up: boolean, down: boolean, left: boolean, right: boolean }}
+ */
+function _decodeHat(h) {
+  const dpad = { up: false, down: false, left: false, right: false };
+  if (h >= -1.01 && h <= 1.01) {
+    if (h < -0.5  || h > 0.8)  dpad.up    = true;
+    if (h > -0.85 && h < -0.1) dpad.right = true;
+    if (h > -0.25 && h < 0.5)  dpad.down  = true;
+    if (h > 0.3   && h < 1.1)  dpad.left  = true;
+  }
+  return dpad;
+}
+
+/**
  * Sets up a full-screen 2D orthographic overlay.
  * Identical pattern to mobileControls.js _setupMobileOverlay2D().
  * Caller must call p.pop() when done.
@@ -81,6 +158,7 @@ export class GamepadManager {
   constructor() {
     this._gamepadIndex = -1;
     this._connected    = false;
+    this._isStandard   = true;   // true = W3C standard, false = DirectInput
     this._state        = null;
     this._prevButtons  = {};
     this._justPressed  = {};
@@ -114,8 +192,10 @@ export class GamepadManager {
       if (pads[i]) {
         this._gamepadIndex    = i;
         this._connected       = true;
+        this._isStandard      = (pads[i].mapping === 'standard');
         this._showToast('CONTROLLER CONNECTED');
-        console.log(`[Viron] Gamepad already connected: ${pads[i].id}`);
+        const mode = this._isStandard ? 'standard' : 'direct';
+        console.log(`[Viron] Gamepad connected: ${pads[i].id} (${mode})`);
         break;
       }
     }
@@ -124,8 +204,10 @@ export class GamepadManager {
   _onConnect(e) {
     this._gamepadIndex      = e.gamepad.index;
     this._connected         = true;
+    this._isStandard        = (e.gamepad.mapping === 'standard');
     this._showToast('CONTROLLER CONNECTED');
-    console.log(`[Viron] Gamepad connected: ${e.gamepad.id}`);
+    const mode = this._isStandard ? 'standard' : 'direct';
+    console.log(`[Viron] Gamepad connected: ${e.gamepad.id} (${mode})`);
   }
 
   _onDisconnect(e) {
@@ -156,6 +238,8 @@ export class GamepadManager {
 
   /**
    * Polls the raw Gamepad API and refreshes internal state.
+   * Detects standard vs DirectInput mapping and normalises both layouts
+   * into a single unified internal state object.
    * Must be called once per draw frame (before any action / steering queries).
    */
   update() {
@@ -177,45 +261,14 @@ export class GamepadManager {
       return;
     }
 
-    const btn = (idx) => gp.buttons[idx] || { pressed: false, value: 0 };
+    // Re-check mapping each frame (some browsers update it lazily)
+    this._isStandard = (gp.mapping === 'standard');
 
-    // ---- Diagonal D-Pad from HAT axis ----
-    const h    = gp.axes[GAMEPAD_MAP.HAT] ?? 2; // 2 = out-of-range → no hat input
-    const dpad = { up: false, down: false, left: false, right: false };
-    if (h >= -1.01 && h <= 1.01) {
-      if (h < -0.5  || h > 0.8)  dpad.up    = true;
-      if (h > -0.85 && h < -0.1) dpad.right = true;
-      if (h > -0.25 && h < 0.5)  dpad.down  = true;
-      if (h > 0.3   && h < 1.1)  dpad.left  = true;
+    if (this._isStandard) {
+      this._parseStandard(gp);
+    } else {
+      this._parseDirect(gp);
     }
-
-    this._state = {
-      a:   btn(GAMEPAD_MAP.A),
-      b:   btn(GAMEPAD_MAP.B),
-      x:   btn(GAMEPAD_MAP.X),
-      y:   btn(GAMEPAD_MAP.Y),
-      l1:  btn(GAMEPAD_MAP.L1),
-      r1:  btn(GAMEPAD_MAP.R1),
-      l2:  btn(GAMEPAD_MAP.L2),
-      r2:  btn(GAMEPAD_MAP.R2),
-      l4:  btn(GAMEPAD_MAP.L4),
-      r4:  btn(GAMEPAD_MAP.R4),
-      pl:  btn(GAMEPAD_MAP.Pl),
-      pr:  btn(GAMEPAD_MAP.Pr),
-      sel: btn(GAMEPAD_MAP.SELECT),
-      str: btn(GAMEPAD_MAP.START),
-      l3:  btn(GAMEPAD_MAP.L3),
-      r3:  btn(GAMEPAD_MAP.R3),
-      dpad,
-      ls: {
-        x: gp.axes[GAMEPAD_MAP.LX] ?? 0,
-        y: gp.axes[GAMEPAD_MAP.LY] ?? 0
-      },
-      rs: {
-        x: gp.axes[GAMEPAD_MAP.RX] ?? 0,
-        y: gp.axes[GAMEPAD_MAP.RY] ?? 0
-      }
-    };
 
     // ---- Edge-detect (just-pressed this frame) ----
     const prev = this._prevButtons;
@@ -248,6 +301,81 @@ export class GamepadManager {
     this._prevDpad = { left: d.left, right: d.right, up: d.up, down: d.down };
   }
 
+  /**
+   * Parses a gamepad with W3C "standard" mapping into the unified state.
+   * @private
+   */
+  _parseStandard(gp) {
+    const btn = (idx) => gp.buttons[idx] || { pressed: false, value: 0 };
+
+    const dpad = {
+      up:    btn(STD_BTN.D_UP).pressed,
+      down:  btn(STD_BTN.D_DOWN).pressed,
+      left:  btn(STD_BTN.D_LEFT).pressed,
+      right: btn(STD_BTN.D_RIGHT).pressed
+    };
+
+    this._state = {
+      a:   btn(STD_BTN.A),
+      b:   btn(STD_BTN.B),
+      x:   btn(STD_BTN.X),
+      y:   btn(STD_BTN.Y),
+      l1:  btn(STD_BTN.LB),
+      r1:  btn(STD_BTN.RB),
+      l2:  btn(STD_BTN.LT),
+      r2:  btn(STD_BTN.RT),
+      sel: btn(STD_BTN.BACK),
+      str: btn(STD_BTN.START),
+      l3:  btn(STD_BTN.L3),
+      r3:  btn(STD_BTN.R3),
+      dpad,
+      ls: { x: _dz(gp.axes[STD_AXIS.LX] ?? 0), y: _dz(gp.axes[STD_AXIS.LY] ?? 0) },
+      rs: { x: _dz(gp.axes[STD_AXIS.RX] ?? 0), y: _dz(gp.axes[STD_AXIS.RY] ?? 0) }
+    };
+  }
+
+  /**
+   * Parses a DirectInput gamepad (8BitDo D-mode / generic) into the unified state.
+   * Key differences from standard:
+   *   - X is btn 3, Y is btn 4 (not 2/3)
+   *   - L1/R1 are btns 6/7 (not 4/5)
+   *   - R2 is analog axis 4 (not button 7)
+   *   - Select is btn 10, Start is btn 11 (not 8/9)
+   *   - D-pad is encoded as a single HAT axis (axis 9)
+   *   - RY is axis 5 (not axis 3)
+   * @private
+   */
+  _parseDirect(gp) {
+    const btn = (idx) => gp.buttons[idx] || { pressed: false, value: 0 };
+
+    // D-pad from HAT axis
+    const hatVal = gp.axes[DI_AXIS.HAT] ?? 2; // 2 = out-of-range → no hat input
+    const dpad = _decodeHat(hatVal);
+
+    // R2 trigger: use the analog axis for proportional thrust.
+    // Convert from [-1, +1] to { pressed, value } to match standard button format.
+    const r2Analog = _normTriggerAxis(gp.axes[DI_AXIS.R2] ?? -1);
+    const l2Analog = _normTriggerAxis(gp.axes[DI_AXIS.L2] ?? -1);
+
+    this._state = {
+      a:   btn(DI_BTN.A),
+      b:   btn(DI_BTN.B),
+      x:   btn(DI_BTN.X),
+      y:   btn(DI_BTN.Y),
+      l1:  btn(DI_BTN.L1),
+      r1:  btn(DI_BTN.R1),
+      l2:  { pressed: l2Analog > 0.1, value: l2Analog },
+      r2:  { pressed: r2Analog > 0.1, value: r2Analog },
+      sel: btn(DI_BTN.BACK),
+      str: btn(DI_BTN.START),
+      l3:  btn(DI_BTN.L3),
+      r3:  btn(DI_BTN.R3),
+      dpad,
+      ls: { x: _dz(gp.axes[DI_AXIS.LX] ?? 0), y: _dz(gp.axes[DI_AXIS.LY] ?? 0) },
+      rs: { x: _dz(gp.axes[DI_AXIS.RX] ?? 0), y: _dz(gp.axes[DI_AXIS.RY] ?? 0) }
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Action queries
   // ---------------------------------------------------------------------------
@@ -271,13 +399,22 @@ export class GamepadManager {
   }
 
   /**
-   * Returns true while the given gameplay action is active via gamepad.
+   * Returns the current value of a gameplay action via gamepad.
+   *
+   * For 'thrust' this returns a float 0.0–1.0 from the R2 / RT trigger.
+   * On controllers with analog triggers (Xbox, PS, 8BitDo D-mode/X-mode)
+   * this gives proportional thrust.  On digital triggers (Switch, 8BitDo
+   * S-mode) the value snaps to 0 or 1.
+   *
+   * All other actions return boolean true/false.
+   *
    * @param {'thrust'|'shoot'|'brake'|'barrier'} action
+   * @returns {number|boolean}
    */
   getAction(action) {
-    if (!this._state) return false;
+    if (!this._state) return (action === 'thrust') ? 0 : false;
     switch (action) {
-      case 'thrust':  return this._state.r2.value > 0.1;
+      case 'thrust':  return this._state.r2.value;  // 0.0–1.0 (analog) or 0/1 (digital)
       case 'shoot':   return this._state.a.pressed;
       case 'brake':   return this._state.b.pressed;
       case 'barrier': return this._state.l1.pressed;

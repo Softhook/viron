@@ -267,7 +267,7 @@ export function drawInstructions() {
 
     drawConfig('IN GAME', [200, 255, 200], [
       'Left Stick  — Steer (yaw / pitch)',
-      'Right Trigger — Thrust (analog)',
+      'L2 / R2    — Thrust (analog)',
       'A           — Shoot',
       'B           — Brake',
       'X           — Fire Missile',

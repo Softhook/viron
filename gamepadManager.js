@@ -13,7 +13,7 @@
  *
  * Control scheme for Viron (physical labels):
  *   Left Stick   — steer the ship (yaw left/right, pitch up/down)
- *   R2 / RT      — analog thrust (0.0→1.0 on analog triggers, digital 0/1 otherwise)
+ *   L2/R2 (either) — analog thrust (0.0→1.0 on analog triggers, digital 0/1 otherwise)
  *   A  (btn 0)   — primary weapon (shoot)
  *   B  (btn 1)   — brake
  *   X            — fire missile (edge-detect, one shot per press)
@@ -401,10 +401,10 @@ export class GamepadManager {
   /**
    * Returns the current value of a gameplay action via gamepad.
    *
-   * For 'thrust' this returns a float 0.0–1.0 from the R2 / RT trigger.
-   * On controllers with analog triggers (Xbox, PS, 8BitDo D-mode/X-mode)
-   * this gives proportional thrust.  On digital triggers (Switch, 8BitDo
-   * S-mode) the value snaps to 0 or 1.
+   * For 'thrust' this returns a float 0.0–1.0 from L2 or R2 (whichever
+   * is pressed harder).  On controllers with analog triggers (Xbox, PS,
+   * 8BitDo D-mode/X-mode) this gives proportional thrust.  On digital
+   * triggers (Switch, 8BitDo S-mode) the value snaps to 0 or 1.
    *
    * All other actions return boolean true/false.
    *
@@ -414,7 +414,7 @@ export class GamepadManager {
   getAction(action) {
     if (!this._state) return (action === 'thrust') ? 0 : false;
     switch (action) {
-      case 'thrust':  return this._state.r2.value;  // 0.0–1.0 (analog) or 0/1 (digital)
+      case 'thrust':  return Math.max(this._state.l2.value, this._state.r2.value);
       case 'shoot':   return this._state.a.pressed;
       case 'brake':   return this._state.b.pressed;
       case 'barrier': return this._state.l1.pressed;

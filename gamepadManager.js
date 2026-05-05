@@ -48,7 +48,7 @@ import { gameState } from './gameState.js';
 // Standard Gamepad button indices (W3C "standard" mapping)
 // ---------------------------------------------------------------------------
 const STD_BTN = {
-  A: 0,  B: 1,  X: 2,  Y: 3,
+  A: 0, B: 1, X: 2, Y: 3,
   LB: 4, RB: 5, LT: 6, RT: 7,
   BACK: 8, START: 9,
   L3: 10, R3: 11,
@@ -61,7 +61,7 @@ const STD_AXIS = { LX: 0, LY: 1, RX: 2, RY: 3 };
 // DirectInput button indices (8BitDo D-mode / generic DirectInput)
 // ---------------------------------------------------------------------------
 const DI_BTN = {
-  A: 0,  B: 1,  Pr: 2,  X: 3,  Y: 4,  Pl: 5,
+  A: 0, B: 1, Pr: 2, X: 3, Y: 4, Pl: 5,
   L1: 6, R1: 7,
   L2: 8, R2: 9,      // digital click of the triggers
   BACK: 10, START: 11,
@@ -71,7 +71,7 @@ const DI_BTN = {
 const DI_AXIS = {
   LX: 0, LY: 1,
   RX: 2, RY: 5,      // RY is axis 5, not 3
-  L2: 3, R2: 4,      // analog trigger axes (-1 rest → +1 full)
+  L2: 4, R2: 3,      // analog trigger axes (-1 rest → +1 full)
   HAT: 9             // D-pad as single HAT axis
 };
 
@@ -133,10 +133,10 @@ function _normTriggerAxis(v) {
 function _decodeHat(h) {
   const dpad = { up: false, down: false, left: false, right: false };
   if (h >= -1.01 && h <= 1.01) {
-    if (h < -0.5  || h > 0.8)  dpad.up    = true;
+    if (h < -0.5 || h > 0.8) dpad.up = true;
     if (h > -0.85 && h < -0.1) dpad.right = true;
-    if (h > -0.25 && h < 0.5)  dpad.down  = true;
-    if (h > 0.3   && h < 1.1)  dpad.left  = true;
+    if (h > -0.25 && h < 0.5) dpad.down = true;
+    if (h > 0.3 && h < 1.1) dpad.left = true;
   }
   return dpad;
 }
@@ -157,19 +157,19 @@ function _setup2DOverlay() {
 export class GamepadManager {
   constructor() {
     this._gamepadIndex = -1;
-    this._connected    = false;
-    this._isStandard   = true;   // true = W3C standard, false = DirectInput
-    this._state        = null;
-    this._prevButtons  = {};
-    this._justPressed  = {};
-    this._prevDpad     = { left: false, right: false, up: false, down: false };
-    this._justDpad     = { left: false, right: false, up: false, down: false };
+    this._connected = false;
+    this._isStandard = true;   // true = W3C standard, false = DirectInput
+    this._state = null;
+    this._prevButtons = {};
+    this._justPressed = {};
+    this._prevDpad = { left: false, right: false, up: false, down: false };
+    this._justDpad = { left: false, right: false, up: false, down: false };
 
     // Toast notification
-    this.toastFrames  = 0;
+    this.toastFrames = 0;
     this.toastMessage = '';
 
-    this._boundConnect    = this._onConnect.bind(this);
+    this._boundConnect = this._onConnect.bind(this);
     this._boundDisconnect = this._onDisconnect.bind(this);
   }
 
@@ -183,16 +183,16 @@ export class GamepadManager {
    */
   initialize() {
     if (typeof window === 'undefined') return;
-    window.addEventListener('gamepadconnected',    this._boundConnect);
+    window.addEventListener('gamepadconnected', this._boundConnect);
     window.addEventListener('gamepaddisconnected', this._boundDisconnect);
 
     // Pick up any already-connected gamepads (e.g. page reload after plugging in)
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (let i = 0; i < pads.length; i++) {
       if (pads[i]) {
-        this._gamepadIndex    = i;
-        this._connected       = true;
-        this._isStandard      = (pads[i].mapping === 'standard');
+        this._gamepadIndex = i;
+        this._connected = true;
+        this._isStandard = (pads[i].mapping === 'standard');
         this._showToast('CONTROLLER CONNECTED');
         const mode = this._isStandard ? 'standard' : 'direct';
         console.log(`[Viron] Gamepad connected: ${pads[i].id} (${mode})`);
@@ -202,9 +202,9 @@ export class GamepadManager {
   }
 
   _onConnect(e) {
-    this._gamepadIndex      = e.gamepad.index;
-    this._connected         = true;
-    this._isStandard        = (e.gamepad.mapping === 'standard');
+    this._gamepadIndex = e.gamepad.index;
+    this._connected = true;
+    this._isStandard = (e.gamepad.mapping === 'standard');
     this._showToast('CONTROLLER CONNECTED');
     const mode = this._isStandard ? 'standard' : 'direct';
     console.log(`[Viron] Gamepad connected: ${e.gamepad.id} (${mode})`);
@@ -212,11 +212,11 @@ export class GamepadManager {
 
   _onDisconnect(e) {
     if (e.gamepad.index === this._gamepadIndex) {
-      this._gamepadIndex      = -1;
-      this._connected         = false;
-      this._state             = null;
-      this._justPressed       = {};
-      this._prevButtons       = {};
+      this._gamepadIndex = -1;
+      this._connected = false;
+      this._state = null;
+      this._justPressed = {};
+      this._prevButtons = {};
       this._showToast('CONTROLLER DISCONNECTED');
       console.log('[Viron] Gamepad disconnected.');
     }
@@ -224,7 +224,7 @@ export class GamepadManager {
 
   _showToast(msg) {
     this.toastMessage = msg;
-    this.toastFrames  = 180; // ~3 s at 60 fps
+    this.toastFrames = 180; // ~3 s at 60 fps
   }
 
   /** True when at least one controller is active. */
@@ -253,7 +253,7 @@ export class GamepadManager {
     }
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const gp   = pads[this._gamepadIndex];
+    const gp = pads[this._gamepadIndex];
     if (!gp) {
       this._state = null;
       this._connected = false;
@@ -273,19 +273,19 @@ export class GamepadManager {
     // ---- Edge-detect (just-pressed this frame) ----
     const prev = this._prevButtons;
     this._justPressed = {
-      a:   this._state.a.pressed   && !prev.a,
-      b:   this._state.b.pressed   && !prev.b,
-      x:   this._state.x.pressed   && !prev.x,
-      y:   this._state.y.pressed   && !prev.y,
+      a: this._state.a.pressed && !prev.a,
+      b: this._state.b.pressed && !prev.b,
+      x: this._state.x.pressed && !prev.x,
+      y: this._state.y.pressed && !prev.y,
       str: this._state.str.pressed && !prev.str,
       sel: this._state.sel.pressed && !prev.sel,
     };
 
     this._prevButtons = {
-      a:   this._state.a.pressed,
-      b:   this._state.b.pressed,
-      x:   this._state.x.pressed,
-      y:   this._state.y.pressed,
+      a: this._state.a.pressed,
+      b: this._state.b.pressed,
+      x: this._state.x.pressed,
+      y: this._state.y.pressed,
       str: this._state.str.pressed,
       sel: this._state.sel.pressed,
     };
@@ -293,10 +293,10 @@ export class GamepadManager {
     // D-pad edge detection (just-pressed this frame)
     const d = this._state.dpad;
     this._justDpad = {
-      left:  d.left  && !this._prevDpad.left,
+      left: d.left && !this._prevDpad.left,
       right: d.right && !this._prevDpad.right,
-      up:    d.up    && !this._prevDpad.up,
-      down:  d.down  && !this._prevDpad.down,
+      up: d.up && !this._prevDpad.up,
+      down: d.down && !this._prevDpad.down,
     };
     this._prevDpad = { left: d.left, right: d.right, up: d.up, down: d.down };
   }
@@ -309,25 +309,25 @@ export class GamepadManager {
     const btn = (idx) => gp.buttons[idx] || { pressed: false, value: 0 };
 
     const dpad = {
-      up:    btn(STD_BTN.D_UP).pressed,
-      down:  btn(STD_BTN.D_DOWN).pressed,
-      left:  btn(STD_BTN.D_LEFT).pressed,
+      up: btn(STD_BTN.D_UP).pressed,
+      down: btn(STD_BTN.D_DOWN).pressed,
+      left: btn(STD_BTN.D_LEFT).pressed,
       right: btn(STD_BTN.D_RIGHT).pressed
     };
 
     this._state = {
-      a:   btn(STD_BTN.A),
-      b:   btn(STD_BTN.B),
-      x:   btn(STD_BTN.X),
-      y:   btn(STD_BTN.Y),
-      l1:  btn(STD_BTN.LB),
-      r1:  btn(STD_BTN.RB),
-      l2:  btn(STD_BTN.LT),
-      r2:  btn(STD_BTN.RT),
+      a: btn(STD_BTN.A),
+      b: btn(STD_BTN.B),
+      x: btn(STD_BTN.X),
+      y: btn(STD_BTN.Y),
+      l1: btn(STD_BTN.LB),
+      r1: btn(STD_BTN.RB),
+      l2: btn(STD_BTN.LT),
+      r2: btn(STD_BTN.RT),
       sel: btn(STD_BTN.BACK),
       str: btn(STD_BTN.START),
-      l3:  btn(STD_BTN.L3),
-      r3:  btn(STD_BTN.R3),
+      l3: btn(STD_BTN.L3),
+      r3: btn(STD_BTN.R3),
       dpad,
       ls: { x: _dz(gp.axes[STD_AXIS.LX] ?? 0), y: _dz(gp.axes[STD_AXIS.LY] ?? 0) },
       rs: { x: _dz(gp.axes[STD_AXIS.RX] ?? 0), y: _dz(gp.axes[STD_AXIS.RY] ?? 0) }
@@ -358,18 +358,18 @@ export class GamepadManager {
     const l2Analog = _normTriggerAxis(gp.axes[DI_AXIS.L2] ?? -1);
 
     this._state = {
-      a:   btn(DI_BTN.A),
-      b:   btn(DI_BTN.B),
-      x:   btn(DI_BTN.X),
-      y:   btn(DI_BTN.Y),
-      l1:  btn(DI_BTN.L1),
-      r1:  btn(DI_BTN.R1),
-      l2:  { pressed: l2Analog > 0.1, value: l2Analog },
-      r2:  { pressed: r2Analog > 0.1, value: r2Analog },
+      a: btn(DI_BTN.A),
+      b: btn(DI_BTN.B),
+      x: btn(DI_BTN.X),
+      y: btn(DI_BTN.Y),
+      l1: btn(DI_BTN.L1),
+      r1: btn(DI_BTN.R1),
+      l2: { pressed: l2Analog > 0.1, value: l2Analog },
+      r2: { pressed: r2Analog > 0.1, value: r2Analog },
       sel: btn(DI_BTN.BACK),
       str: btn(DI_BTN.START),
-      l3:  btn(DI_BTN.L3),
-      r3:  btn(DI_BTN.R3),
+      l3: btn(DI_BTN.L3),
+      r3: btn(DI_BTN.R3),
       dpad,
       ls: { x: _dz(gp.axes[DI_AXIS.LX] ?? 0), y: _dz(gp.axes[DI_AXIS.LY] ?? 0) },
       rs: { x: _dz(gp.axes[DI_AXIS.RX] ?? 0), y: _dz(gp.axes[DI_AXIS.RY] ?? 0) }
@@ -414,11 +414,11 @@ export class GamepadManager {
   getAction(action) {
     if (!this._state) return (action === 'thrust') ? 0 : false;
     switch (action) {
-      case 'thrust':  return Math.max(this._state.l2.value, this._state.r2.value);
-      case 'shoot':   return this._state.a.pressed;
-      case 'brake':   return this._state.b.pressed;
+      case 'thrust': return Math.max(this._state.l2.value, this._state.r2.value);
+      case 'shoot': return this._state.a.pressed;
+      case 'brake': return this._state.b.pressed;
       case 'barrier': return this._state.l1.pressed;
-      default:        return false;
+      default: return false;
     }
   }
 
@@ -441,13 +441,13 @@ export class GamepadManager {
     const lyCentered = Math.abs(ly) < dpadDeadzone;
 
     // D-Pad supplements analog when stick is centred
-    if (lxCentered && dpad.left)  lx = -1;
-    if (lxCentered && dpad.right) lx =  1;
-    if (lyCentered && dpad.up)    ly = -1;
-    if (lyCentered && dpad.down)  ly =  1;
+    if (lxCentered && dpad.left) lx = -1;
+    if (lxCentered && dpad.right) lx = 1;
+    if (lyCentered && dpad.up) ly = -1;
+    if (lyCentered && dpad.down) ly = 1;
 
     return {
-      yaw:   -_applyExpo(lx) * turnRate  * GAMEPAD_STICK_SENSITIVITY,
+      yaw: -_applyExpo(lx) * turnRate * GAMEPAD_STICK_SENSITIVITY,
       pitch: -_applyExpo(ly) * pitchRate * GAMEPAD_STICK_SENSITIVITY  // negated: push stick forward = pitch up
     };
   }
@@ -485,13 +485,13 @@ export class GamepadManager {
 
   /** @private — toast banner near top of screen */
   _drawToast(w, h) {
-    const t     = this.toastFrames;
+    const t = this.toastFrames;
     const alpha = Math.round(255 * Math.min(t / 30, 1) * Math.min((180 - t) / 30 + 1, 1));
     if (alpha <= 0) return;
 
     const msg = this.toastMessage;
-    const cx  = w / 2;
-    const cy  = 60;
+    const cx = w / 2;
+    const cy = 60;
 
     p.textSize(22);
     const tw = p.textWidth(msg) + 40;
